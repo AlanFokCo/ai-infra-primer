@@ -133,7 +133,7 @@ graph LR
 | 2.3 Attention 机制解剖 | [03-attention-mechanism.md](02-transformer-anatomy/03-attention-mechanism.md) | 已写 |
 | 2.4 Causality 与 KV Cache | [04-causality-and-kv-cache.md](02-transformer-anatomy/04-causality-and-kv-cache.md) | 已写 |
 | 2.5 位置编码全谱系 | [05-positional-encoding.md](02-transformer-anatomy/05-positional-encoding.md) | 已写 |
-| 2.6 FFN 与非线性 | [06-ffn.md](02-transformer-anatomy/06-ffn.md) | 未开始 |
+| 2.6 FFN 与非线性 | [06-ffn.md](02-transformer-anatomy/06-ffn.md) | 已写 |
 | 2.7 Normalization 与 Residual | [07-norm-and-residual.md](02-transformer-anatomy/07-norm-and-residual.md) | 未开始 |
 | 2.8 组装完整 Decoder Block | [08-assembly.md](02-transformer-anatomy/08-assembly.md) | 未开始 |
 
