@@ -25,7 +25,7 @@
 
 **OLMo-2-7B = allenai/OLMo-2-1124-7B**（本轮 hf-mirror 实测）：hidden_size=4096，num_hidden_layers=32，num_attention_heads=32，**num_key_value_heads=32（纯 MHA，无 GQA）**，intermediate_size=11008，vocab_size=100352，max_position_embeddings=4096，rope_theta=500000，rms_norm_eps=1e-6，attention_bias=false，tie_word_embeddings=false。来源：`olmo-2-7b-config` + `olmo2`（arXiv:2501.00656）。
 
-**GPT-2 small（openai-community/gpt2）**（本轮实测 config）：n_layer=12，n_head=12，n_embd=768，n_ctx=n_positions=1024，vocab_size=50257，bos=eos=50256（`<|endoftext|>`），activation=gelu_new，initializer_range=0.02，layer_norm_epsilon=1e-5（Post-LN + learned absolute position 的老配方活化石）。来源：`gpt2`（[W]：OpenAI 技术报告 PDF + HF 权重，无 arXiv）。注意 openai.com 正文页 curl 403，引用走 CDN PDF URL。
+**GPT-2 small（openai-community/gpt2）**（本轮实测 config）：n_layer=12，n_head=12，n_embd=768，n_ctx=n_positions=1024，vocab_size=50257，bos=eos=50256（`<|endoftext|>`），activation=gelu_new，initializer_range=0.02，layer_norm_epsilon=1e-5（Pre-LN + 末尾 final LN + learned absolute position 的老配方活化石——GPT-2 报告 §2.2：LN 移到每个子块输入端、末尾再加一层 LN；W1 初版误写 Post-LN，2.7 审查轮修正）。来源：`gpt2`（[W]：OpenAI 技术报告 PDF + HF 权重，无 arXiv）。注意 openai.com 正文页 curl 403，引用走 CDN PDF URL。
 
 ## 1.1 语言建模的数学形式化
 

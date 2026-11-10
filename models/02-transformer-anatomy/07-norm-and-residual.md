@@ -264,9 +264,9 @@ Gemma 2 的两处取值：attention logits $c = 50.0$，最终输出 logits $c =
 | OLMo-2-7B | RMSNorm（eps $10^{-6}$） | reordered：$x + \mathrm{RMSNorm}(f(x))$，norm 在子层输出 | QK-norm（`q_norm` / `k_norm`，全维变体） | [A] |
 | Gemma 2 | zero-centered RMSNorm | pre + post | soft-capping（50.0 / 30.0，无 QK-norm） | [A] |
 | Gemma 3 | zero-centered RMSNorm | pre + post | QK-norm（取代 soft-capping） | [A] |
-| GPT-2（活化石对照） | LayerNorm | Post-LN | 无 | [W] |
+| GPT-2（活化石对照） | LayerNorm | Pre-LN + 末尾 final LN（GPT-2 §2.2） | 无 | [W] |
 
-GPT-2 一行是老配方的活化石：LayerNorm + Post-LN（layer_norm_epsilon = $10^{-5}$，[Radford et al., 2019](../references.md)，[W]，config 口径）——§5 的梯度分析给出它深堆叠必须配 warmup 的原因，nanoGPT 的教学配方与其逐项对照见 2.8。Qwen3-Next 的 zero-centered norm 与其 hybrid 结构在 4.4 / 5.3 展开。实现锚点：transformers repo 的 `LlamaRMSNorm`（`src/transformers/models/llama/modeling_llama.py`，[HuggingFace, modeling_llama.py](../references.md)，[A]）是式 (5) 的逐行对应。教学版（教学用，非优化实现）与官方实现的对应关系：
+GPT-2 一行是老配方的活化石：LayerNorm（非 RMSNorm）+ Pre-LN + 末尾 final LN——GPT-2 §2.2 的原文表述即「LN 移到每个子块的输入端、末尾再加一层 LN」（[Radford et al., 2019](../references.md)，[W]；layer_norm_epsilon = $10^{-5}$，config 口径），结构上正是本章式 (9) 的 Pre-LN 行加 final norm 收尾，在结构上绕开了 Post-LN 路线的 warmup 困境（§5.4）。它与现代配方的差异在 norm 种类（LayerNorm vs RMSNorm）而非摆放；nanoGPT 的教学配方与其逐项对照见 2.8。Qwen3-Next 的 zero-centered norm 与其 hybrid 结构在 4.4 / 5.3 展开。实现锚点：transformers repo 的 `LlamaRMSNorm`（`src/transformers/models/llama/modeling_llama.py`，[HuggingFace, modeling_llama.py](../references.md)，[A]）是式 (5) 的逐行对应。教学版（教学用，非优化实现）与官方实现的对应关系：
 
 ```python
 import torch
@@ -314,6 +314,6 @@ def rmsnorm(x, weight, eps=1e-6):             # x: [B, T, d]；教学用，非�
 - [Team OLMo et al., 2025](../references.md)：2 OLMo 2 Furious，arXiv:2501.00656，[A]（key: olmo2）
 - [AllenAI, OLMo-2-7B config.json](../references.md)：[A]（key: olmo-2-7b-config）——rms_norm_eps = $10^{-6}$
 - [Qwen, Qwen3-8B config.json](../references.md)：[A]（key: qwen3-8b-config）——rms_norm_eps = $10^{-6}$
-- [Radford et al., 2019](../references.md)：[W]（key: gpt2）——Post-LN + LayerNorm 活化石对照
+- [Radford et al., 2019](../references.md)：[W]（key: gpt2）——Pre-LN + final LN + LayerNorm 老配方对照（§2.2 原文表述）
 - [HuggingFace, transformers repo Llama modeling 代码](../references.md)：[A]（key: llama-modeling）——`LlamaRMSNorm` 实现对照
 - [HuggingFace, transformers repo OLMo 2 modeling 代码](../references.md)：[A]（key: olmo2-modeling）——`q_norm` / `k_norm` 走读
