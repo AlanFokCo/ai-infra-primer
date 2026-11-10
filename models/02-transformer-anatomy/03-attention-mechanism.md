@@ -59,7 +59,7 @@ X [B, T, d]                          ← 2.1 式 (1) 中 RMSNorm(x) 的输出
                           O = PV   [B, T, d_k]
 ```
 
-score 的另一种读法值得登记：$\langle q_t, k_s \rangle = x_t^{\top} W^{Q} W^{K\top} x_s$。矩阵 $A = W^{Q} W^{K\top} \in \mathbb{R}^{d \times d}$ 的秩至多为 $d_k$——attention 通过一个 rank-$d_k$ 的双线性型读 stream。代入锚点：$d$ = 4096、$d_k$ = 128（Llama-3.1-8B 与 OLMo-2-7B 同值），每个 score 只经过 rank-128 的透镜，是 $d$ 维内容的 3% 截面。多头（第 5 节）就是并排摆放 $H$ 个这样的低秩透镜。
+score 的另一种读法值得登记：$\langle q_t, k_s \rangle = x_t^{\top} W^{Q} W^{K\top} x_s$。矩阵 $A = W^{Q} W^{K\top} \in \mathbb{R}^{d \times d}$ 的秩至多为 $d_k$——attention 通过一个 rank-$d_k$ 的双线性型（bilinear form）读 stream。代入锚点：$d$ = 4096、$d_k$ = 128（Llama-3.1-8B 与 OLMo-2-7B 同值），每个 score 只经过 rank-128 的透镜，是 $d$ 维内容的 3% 截面。多头（第 5 节）就是并排摆放 $H$ 个这样的低秩透镜。
 
 ## 3. $\sqrt{d_k}$ 完整推导链
 
@@ -87,7 +87,7 @@ $$
 \mathrm{Var}(s) = \mathbb{E}[s^{2}] = \sum_{i=1}^{d_k} \mathbb{E}\left[q_i^{2}\right] \mathbb{E}\left[k_i^{2}\right] = \sum_{i=1}^{d_k} 1 = d_k \qquad (7)
 $$
 
-即 $\mathrm{std}(s) = \sqrt{d_k}$。$s$ 是 $d_k$ 个独立零均值项之和，$d_k \gtrsim 100$ 时由中心极限定理近似 $\mathcal{N}(0, d_k)$。
+即 $\mathrm{std}(s) = \sqrt{d_k}$。$s$ 是 $d_k$ 个独立零均值项之和，$d_k \gg 1$（实际工作点 128）时由中心极限定理近似 $\mathcal{N}(0, d_k)$。
 
 量级直觉：$d_k$ = 128 时一个典型 score 的绝对值就是 $O(11)$；式 (2) 里 score 差 1 个 nat、权重差 $e$ 倍，差 11 个 nat 差约 $6 \times 10^{4}$ 倍。高维点积天然很大，不加处理，softmax 必然落在极端区。
 
@@ -95,7 +95,7 @@ $$
 
 把一行 $T$ 个 score 看作近似 iid 的 $\mathcal{N}(0, d_k)$ 样本（同一 query 对全部 key）。$T$ 个标准正态样本的最大值约为 $\sqrt{2 \ln T}$ 个标准差（正态次序统计量的标准估计），代入 $d_k$ = 128（$\sigma_s = 11.3$）、$T$ = 4096（$\sqrt{2 \ln T} \approx 4.1$）走一遍量级：
 
-- **不缩放**：行内最大 score 高出中心约 $11.3 \times 4.1 \approx 46$ 个 nat。$e^{-46} \approx 10^{-20}$——除最高分附近的少数 key 外，全部 4090 余个 key 的权重合计低于 $10^{-15}$，机器精度下等于零；即便最高分与次高分的间隔（正态最大值附近的间距约为 $\sigma_s / \sqrt{2 \ln T} \approx 2.8$ nat 量级）也只给次高分留下 $e^{-2.8} \approx 6\%$ 的相对权重。整行概率集中在头部一两个 key 上，$p_{\max}$ 为 $O(1)$——对照均匀分布的 $1/T \approx 2.4 \times 10^{-4}$，这就是饱和（saturation）：softmax 输出接近 one-hot。
+- **不缩放**：行内最大 score 高出中心的量级为 $\sigma_s \sqrt{2 \ln T} \approx 46$ nat（首阶近似；计入最大值修正项后约 40 nat，与 Monte Carlo 中位数一致）。中位 key（score ≈ 0）相对最大值的权重 $e^{-40} \approx 4 \times 10^{-18}$：约七成 key 的权重**各自**低于 $10^{-15}$、机器精度下为零——是「各自」而非「合计」，顶部少数 key 仍握着可见权重。顶部沿名次的典型间距约 $\sigma_s / \sqrt{2 \ln T} \approx 2.8$ nat，权重按公比 $r = e^{-2.8} \approx 6\%$ 几何衰减：恒定间距近似下，非最大项合计是几何级数 $\sum_{k \ge 1} r^{k} = r / (1 - r) \approx 6.5\%$，即 $p_{\max} \approx 0.94$；更细一层，高斯次序统计量的间距随名次以 $\sim 1/k$ 收缩（近顶部更密），非最大合计升至约 15%–20%、$p_{\max} \approx 0.8$（Monte Carlo 中位 0.84）。两个口径结论一致：单个 top key 握有 $O(1)$ 权重（0.8–0.94），其余 4095 个共分零头——对照均匀分布的 $1/T \approx 2.4 \times 10^{-4}$，这就是饱和（saturation）：softmax 输出逼近 one-hot。
 - **缩放后**（$z_s = s_s / \sqrt{d_k}$，方差为 1）：行内最大值约 4.1，其余近似标准正态，$\mathbb{E}[e^{z}] = e^{1/2} \approx 1.65$，于是 $p_{\max} \approx \dfrac{e^{4.1}}{e^{4.1} + 4095 \times 1.65} \approx 0.009$——接近均匀起步，每个 key 都握着非零权重。
 
 饱和为什么要紧，答案写在梯度上。
@@ -108,7 +108,7 @@ $$
 \frac{\partial p_i}{\partial z_j} = \frac{\delta_{ij} \, e^{z_i} S - e^{z_i} e^{z_j}}{S^{2}} = p_i \left( \delta_{ij} - p_j \right), \qquad J = \mathrm{diag}(p) - p p^{\top} \qquad (8)
 $$
 
-**符号**：$\delta_{ij}$：Kronecker delta；$J \in \mathbb{R}^{T \times T}$：softmax 的 Jacobian（雅可比矩阵）。$i = j$ 时分子为 $e^{z_i} S - e^{2 z_i}$，得 $p_i (1 - p_i)$；$i \neq j$ 时第一项为 0，得 $-p_i p_j$；合并即式 (8)。$J$ 对称，且每行和为 0（$\sum_j p_i (\delta_{ij} - p_j) = p_i - p_i \cdot 1 = 0$）——行和为 0 正是「全体 logit 加同一常数不改变 softmax」（第 4 节）的微分形式。
+**符号**：$\delta_{ij}$：Kronecker delta；$J \in \mathbb{R}^{T \times T}$：softmax 的雅可比（Jacobian）矩阵。$i = j$ 时分子为 $e^{z_i} S - e^{2 z_i}$，得 $p_i (1 - p_i)$；$i \neq j$ 时第一项为 0，得 $-p_i p_j$；合并即式 (8)。$J$ 对称，且每行和为 0（$\sum_j p_i (\delta_{ij} - p_j) = p_i - p_i \cdot 1 = 0$）——行和为 0 正是「全体 logit 加同一常数不改变 softmax」（第 4 节）的微分形式。
 
 ### 3.4 第四步：饱和 ⇒ 梯度消失
 
@@ -120,10 +120,10 @@ $$
 
 即：logit 收到的梯度 = 自身权重 $p_j$ 乘「$g_j$ 超出权重均值 $\bar{g}$ 的部分」。代入饱和形态 $p_m = 1 - \varepsilon$（$m$ 为 argmax 位置），其余权重合计 $\varepsilon$：
 
-- 非最大项 $j \neq m$：$\left| \partial L / \partial z_j \right| = p_j \left| g_j - \bar{g} \right| \le 2 p_j \lVert g \rVert_{\infty}$。$p_j$ 本身是 $e^{-\Delta_j}$ 量级（$\Delta_j$ 为与最大 score 的差距），§3.2 里 $\Delta \approx 46$ 时梯度约 $10^{-20} \lVert g \rVert_\infty$——机器精度下的零。
+- 非最大项 $j \neq m$：$\left| \partial L / \partial z_j \right| = p_j \left| g_j - \bar{g} \right| \le 2 p_j \lVert g \rVert_{\infty}$。$p_j$ 本身是 $e^{-\Delta_j}$ 量级（$\Delta_j$ 为与最大 score 的差距），§3.2 的中位 key（$\Delta \approx 40$ nat）梯度约 $10^{-17} \lVert g \rVert_\infty$——机器精度下的零。
 - 最大项 $j = m$：$\bar{g} = (1 - \varepsilon) g_m + O(\varepsilon)$，故 $g_m - \bar{g} = O(\varepsilon)$，梯度 $\le 2 \varepsilon (1 - \varepsilon) \lVert g \rVert_{\infty} = O(\varepsilon)$。
 
-整行梯度被「饱和亏空」$\varepsilon$ 统一压制：$\left\lVert \partial L / \partial z \right\rVert_{\infty} \le 2 \varepsilon \lVert g \rVert_{\infty}$。极端情形 $\varepsilon \to 0$（精确 one-hot）时式 (9) 恒等于 0：one-hot 行是梯度的死胡同，无论上游信号多强，score 与上游的 Q/K 投影一概收不到更新。$\varepsilon$ 不是固定常数——训练中权重幅度增长会继续拉大 logit 差距，$\varepsilon$ 向 0 滑，消失自我强化。
+整行梯度被「饱和亏空」$\varepsilon$ 统一压制：$\left\lVert \partial L / \partial z \right\rVert_{\infty} \le 2 \varepsilon \lVert g \rVert_{\infty}$。代入 §3.2 的初始化估算，$\varepsilon$ 在 0.06–0.2 量级，且 $d_k$、$T$ 越大越饱和。极端情形 $\varepsilon \to 0$（精确 one-hot）时式 (9) 恒等于 0：one-hot 行是梯度的死胡同，无论上游信号多强，score 与上游的 Q/K 投影一概收不到更新。$\varepsilon$ 不是固定常数——训练中权重幅度增长会继续拉大 logit 差距，$\varepsilon$ 向 0 滑，消失自我强化。
 
 缩放令 $\tilde{z} = z / \sqrt{d_k}$，则 $\mathrm{Var}(\tilde{z}) = 1$：softmax 落在敏感区（权重分散，$p_j$ 与 $1 - p_j$ 都是 $O(1)$），式 (9) 的梯度尺度健康。$\sqrt{d_k}$ 就是 §1 温度问题的答案：$\tau = \sqrt{d_k}$ 是「让 score 方差与 head 维无关」的取法。
 
@@ -174,7 +174,7 @@ Q, K, V [B, T, 4096] ──view──► [B, T, 32, 128] ──transpose──�
 
 本节证明一个贯穿后文的结构性质：不含位置信息时，attention 对输入序列的置换是等变的——打乱输入顺序，输出原样跟着打乱，内容不变。
 
-记 $\pi$ 为 $\{1, \ldots, T\}$ 的置换，$P_\pi \in \{0, 1\}^{T \times T}$ 为对应置换矩阵，$(P_\pi)_{ij} = 1 \Leftrightarrow j = \pi(i)$，即 $(P_\pi X)_{i,:} = X_{\pi(i),:}$（第 $i$ 行取原第 $\pi(i)$ 行）。置换矩阵正交：$P_\pi^{\top} P_\pi = I$。
+记 $\pi$ 为 $\{1, \ldots, T\}$ 的置换，$P_\pi \in \{0, 1\}^{T \times T}$ 为对应的置换矩阵（permutation matrix），$(P_\pi)_{ij} = 1 \Leftrightarrow j = \pi(i)$，即 $(P_\pi X)_{i,:} = X_{\pi(i),:}$（第 $i$ 行取原第 $\pi(i)$ 行）。置换矩阵正交：$P_\pi^{\top} P_\pi = I$。
 
 **命题**（置换等变，permutation equivariance）：无 mask 的 attention 满足 $\mathrm{Attention}(P_\pi Q, P_\pi K, P_\pi V) = P_\pi \, \mathrm{Attention}(Q, K, V)$。
 
@@ -276,7 +276,7 @@ k = mha.W_k(x).view(2, 1024, 32, 128).transpose(1, 2)
 v = mha.W_v(x).view(2, 1024, 32, 128).transpose(1, 2)
 o_ref = F.scaled_dot_product_attention(q, k, v, is_causal=True)  # 默认 scale = D**-0.5
 o_ref = mha.W_o(o_ref.transpose(1, 2).reshape(2, 1024, 4096))
-assert torch.allclose(mha(x), o_ref, atol=1e-5, rtol=1e-5)  # 累加序差异在容差内
+assert torch.allclose(mha(x), o_ref, atol=1e-5, rtol=1e-5)  # 容差口径：CPU / fp32；GPU 融合 kernel 累加序不同，需放宽
 ```
 
 逐维对照：
@@ -289,7 +289,7 @@ assert torch.allclose(mha(x), o_ref, atol=1e-5, rtol=1e-5)  # 累加序差异在
 | 数值稳定 | `torch.softmax` 内部 max 减法（式 (10)） | kernel 内同法，且以 fp32 累加 |
 | 其他 | 无 dropout、无 GQA | `dropout_p`、`enable_gqa`（GQA 归 4.1） |
 
-真实模型代码把同一张公式图写成生产形态。OLMo 2 官方实现走读（huggingface/transformers repo，`src/transformers/models/olmo2/modeling_olmo2.py`，类 `Olm2Attention` 与函数 `eager_attention_forward`；论文 [Team OLMo et al., 2025](../references.md)，arXiv:2501.00656，[A]；config 同见 [OLMo-2-7B config](../references.md)，[A]）：投影为四个 `nn.Linear`（`q_proj / k_proj / v_proj / o_proj`，bias 由 config.attention_bias 控制、7B 为 false）；`self.scaling = self.head_dim**-0.5`——式 (4) 的 $1/\sqrt{d_k}$ 原样。eager 路径与式 (4) 逐行对应：`torch.matmul(query, key_states.transpose(2, 3)) * scaling` → 加 mask → `nn.functional.softmax(..., dim=-1, dtype=torch.float32)`（升 fp32 再 softmax，§4 数值议题的生产写法）→ `torch.matmul(attn_weights, value_states)`。与教学版两处实质差异：其一，`Olm2Attention` 在 q/k 投影后各过一次 RMSNorm（`q_norm` / `k_norm`）——§3.4 末「训练中 logit 增长」问题的工程回答，归 2.7 的 QK-Norm 一族；其二，默认不跑 eager 路径，而经 `ALL_ATTENTION_FUNCTIONS` 派发到 SDPA / FlashAttention——算子融合归 4.1，数学内容与本章式 (4) 恒等。
+真实模型代码把同一张公式图写成生产形态。OLMo 2 官方实现走读（huggingface/transformers repo，`src/transformers/models/olmo2/modeling_olmo2.py`，类 `Olmo2Attention` 与函数 `eager_attention_forward`，[HuggingFace, modeling_olmo2.py](../references.md)，[A]；论文 [Team OLMo et al., 2025](../references.md)，arXiv:2501.00656，[A]；config 同见 [OLMo-2-7B config](../references.md)，[A]）：投影为四个 `nn.Linear`（`q_proj / k_proj / v_proj / o_proj`，bias 由 config.attention_bias 控制、7B 为 false）；`self.scaling = self.head_dim**-0.5`——式 (4) 的 $1/\sqrt{d_k}$ 原样。eager 路径与式 (4) 逐行对应：`torch.matmul(query, key_states.transpose(2, 3)) * scaling` → 加 mask → `nn.functional.softmax(..., dim=-1, dtype=torch.float32)`（升 fp32 再 softmax，§4 数值议题的生产写法）→ `torch.matmul(attn_weights, value_states)`。与教学版两处实质差异：其一，`Olmo2Attention` 在 q/k 投影后各过一次 RMSNorm（`q_norm` / `k_norm`）——§3.4 末「训练中 logit 增长」问题的工程回答，归 2.7 的 QK-Norm 一族；其二，默认不跑 eager 路径，而经 `ALL_ATTENTION_FUNCTIONS` 派发到 SDPA / FlashAttention——算子融合归 4.1，数学内容与本章式 (4) 恒等。Llama 的同构实现（`LlamaAttention`，同 repo `src/transformers/models/llama/modeling_llama.py`，[HuggingFace, modeling_llama.py](../references.md)，[A]）结构相同、另含 GQA 的 K/V 复用，逐行走读归 2.8。
 
 ## 总结
 
@@ -298,7 +298,7 @@ assert torch.allclose(mha(x), o_ref, atol=1e-5, rtol=1e-5)  # 累加序差异在
 | 软检索 | argmax 不可导 → softmax 凸组合，式 (1)(2) | $\tau \to 0$ 退回硬检索；温度即缩放 |
 | QKV 投影 | $W^{Q}, W^{K}, W^{V} \in \mathbb{R}^{d \times d_k}$，式 (3) | 同源三角色；score 是 rank-$d_k$ 双线性型 |
 | attention 公式 | $\mathrm{softmax}(QK^{\top}/\sqrt{d_k}) V$，式 (4) | 唯一 $T^{2}$ 对象 $[B,H,T,T]$ |
-| $\sqrt{d_k}$ 链 | $\mathrm{Var}(q \cdot k) = d_k$（式 (5)–(7)）→ 饱和（$d_k$ = 128、$T$ = 4096 时最大值高出中心约 46 nat）→ $J = \mathrm{diag}(p) - pp^{\top}$（式 (8)）→ $\partial L / \partial z_j = p_j (g_j - \bar{g})$（式 (9)） | 假设 (A1) 是初始化口径；幂次 $1/2$ 唯一；训练中 logit 增长归 2.7 |
+| $\sqrt{d_k}$ 链 | $\mathrm{Var}(q \cdot k) = d_k$（式 (5)–(7)）→ 饱和（$d_k$ = 128、$T$ = 4096 时 $p_{\max} \approx 0.8$–$0.94$，中位 key 权重 $\sim 10^{-18}$）→ $J = \mathrm{diag}(p) - pp^{\top}$（式 (8)）→ $\partial L / \partial z_j = p_j (g_j - \bar{g})$（式 (9)） | 假设 (A1) 是初始化口径；幂次 $1/2$ 唯一；训练中 logit 增长归 2.7 |
 | 数值稳定 | max 减法不变性，式 (10) | fp32/bf16 在 $z \approx 88$ 溢出、fp16 在 $z \approx 11$ 溢出；生产侧 fp32 softmax |
 | multi-head | 式 (11)；参数 $4d^{2}$ 与 $H$ 无关 | $H$ 个 rank-$d_k$ 透镜并行；scores 内存 $\propto H$ |
 | 置换等变 | $\mathrm{Attention}(P_\pi Q, P_\pi K, P_\pi V) = P_\pi \, \mathrm{Attention}(Q, K, V)$ | 无位置信息的整机等变 ⇒ 位置编码必要 → 2.5 |
@@ -318,4 +318,5 @@ assert torch.allclose(mha(x), o_ref, atol=1e-5, rtol=1e-5)  # 累加序差异在
 - [Meta, Llama-3.1-8B config.json](../references.md)：[A]（key: llama-3.1-8b-config）——$H$ = 32、$d_k$ = 128、$T_{\max}$ = 131072 算例
 - [AllenAI, OLMo-2-7B config.json](../references.md)：[A]（key: olmo-2-7b-config）——32/32 纯 MHA 对照锚点
 - [DeepSeek-AI, DeepSeek-V3 config.json](../references.md)：[A]（key: deepseek-v3-config）——head 维 192 ≠ hidden/heads 的反例（2.8 展开）
-- OLMo 2 官方实现走读：huggingface/transformers repo `src/transformers/models/olmo2/modeling_olmo2.py`（类 `Olm2Attention`、函数 `eager_attention_forward`），https://github.com/huggingface/transformers/blob/main/src/transformers/models/olmo2/modeling_olmo2.py
+- [HuggingFace, transformers repo OLMo 2 modeling 代码](../references.md)：[A]（key: olmo2-modeling）——`Olmo2Attention` 与 `eager_attention_forward` 走读对象
+- [HuggingFace, transformers repo Llama modeling 代码](../references.md)：[A]（key: llama-modeling）——`LlamaAttention`，逐行走读归 2.8
