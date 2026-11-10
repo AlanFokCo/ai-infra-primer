@@ -18,7 +18,7 @@ Qwen3-8B 的 config.json 写着 vocab_size = 151936（[Qwen3-8B config](../refer
 
 **符号**：$T_{\max}$ ：模型的上下文窗口（context window），即单次可处理的最大序列长度。
 
-两个边界 token 需要显式登记，后面的公式要用：GPT-2 用同一个 id 50256（`<|endoftext|>`）充当序列开始与结束符；Qwen3-8B 的 bos_token_id = 151643（`<|endoftext|>`）、eos_token_id = 151645（`<|im_end|>`）。全书统一约定 $x_0$ = bos token：它是人为添加的第 0 个 token，作用是给「第一个 token 的分布」一个条件对象。
+两个边界 token 需要显式登记，后面的公式要用：GPT-2 用同一个 id 50256（`<|endoftext|>`）充当序列开始与结束符；Qwen3-8B 的 bos_token_id = 151643（`<|endoftext|>`）、eos_token_id = 151645（`<|im_end|>`）。全书统一约定 $x_0$ = bos token：它是人为添加的第 0 个 token，作用是给「第一个 token 的分布」一个条件对象。$x_0$ 只在 $t$ = 1 的边界条件里出现，不计入序列本身——$x_{<t}$ 的定义（式 (3)）从 $x_1$ 起算。
 
 **样本空间** $X$ 是所有长度 $T$ 满足 $1 \le T \le T_{\max}$ 的 token 序列的并集：$X$ 的每个元素是某个 $V^{T}$ 里的序列。一个语言模型就是 $X$ 上的一个概率分布 $P$ 。
 
@@ -86,19 +86,19 @@ $$
 P(x_1, x_2, x_3) = P(x_3 | x_1, x_2) \cdot P(x_1, x_2) = P(x_3 | x_1, x_2) \cdot P(x_2 | x_1) \cdot P(x_1)
 $$
 
-对一般 $T$ 用归纳法。**归纳基**： $T$ = 1 时 $P(x_1) = P(x_1 | x_0)$ ，靠约定 $x_0$ = bos 成立。**归纳假设**：对长度 $k$ 成立，即 $P(x_{1:k}) = \prod_{t=1}^{k} P(x_t | x_{<t})$ 。**归纳步骤**：对长度 $k+1$ ，
+对一般 $T$ 用归纳法。**归纳基**： $T$ = 1 时序列为单 token， $P(x_1)$ 写成条件形式 $P(x_1 | x_0)$ ——这是 bos 约定唯一进入公式的地方（ $x_{<1}$ 本身为空序列）。**归纳假设**：对长度 $k$ 成立，即 $P(x_{1:k}) = \prod_{t=1}^{k} P(x_t | x_{<t})$ 。**归纳步骤**：对长度 $k+1$ ，
 
 $$
 P(x_{1:k+1}) = P(x_{k+1} | x_{1:k}) \cdot P(x_{1:k}) = P(x_{k+1} | x_{1:k}) \cdot \prod_{t=1}^{k} P(x_t | x_{<t}) = \prod_{t=1}^{k+1} P(x_t | x_{<t})
 $$
 
-第一步是条件概率定义式（取 $A = \{x_{k+1}\}$ 、 $B = \{x_{1:k}\}$ ），第二步代入归纳假设，第三步把因子并入连乘。归纳成立，得**自回归分解（autoregressive factorization）**。严格性注记：定义式 $P(A, B) = P(A | B) P(B)$ 在 $P(B) = 0$ 时条件概率无定义；对语言数据这不是问题——实际语料里每个出现的前缀都有正概率，而模型侧由 softmax 的严格正性（第 2 节）保证 $q_\theta$ 处处有定义，归纳链条每一步都合法：
+**注**：上面几行中间推导无新符号——$A, B$ 沿用定义式注记，$k$ 为归纳变量（序列长度），$x_{1:k}$ 表示前 $k$ 个 token 的联合。第一步是条件概率定义式（取 $A = \{x_{k+1}\}$ 、 $B = \{x_{1:k}\}$ ），第二步代入归纳假设，第三步把因子并入连乘。归纳成立，得**自回归分解（autoregressive factorization）**。严格性注记：定义式 $P(A, B) = P(A | B) P(B)$ 在 $P(B) = 0$ 时条件概率无定义；对语言数据这不是问题——实际语料里每个出现的前缀都有正概率，而模型侧由 softmax 的严格正性（第 2 节）保证 $q_\theta$ 处处有定义，归纳链条每一步都合法：
 
 $$
 P(x_{1:T}) = \prod_{t=1}^{T} P(x_t | x_{<t}), \qquad x_{<t} = (x_1, ..., x_{t-1}) \qquad (3)
 $$
 
-**符号**：$x_{1:T}$ ：完整序列；$x_{<t}$ ：位置 $t$ 之前的全部 token（含约定的 $x_0$ ）。
+**符号**：$x_{1:T}$ ：完整序列；$x_{<t}$ ：位置 $t$ 之前的全部 token，即 $(x_1, ..., x_{t-1})$ ，共 $t-1$ 个元素，与式 (1) 的定义域 $V^{t-1}$ 一致。注意 $x_{<t}$ 不含 $x_0$ ：位置 $t$ 的完整条件是 $(x_0, x_{<t})$ ，因 $x_0$ 恒为 bos，本书统一简记为 $q_\theta(\cdot | x_{<t})$ 。
 
 三个性质决定它为什么是所有 LLM 的工作方式：
 
@@ -132,7 +132,7 @@ $$
 
 求和里只有 $v = x_t$ 一项非零。对 $t$ 取平均即式 (4)。所以「训 NLL」「训 cross-entropy」「训 MLE」在 LM 语境下是同一句话。另外记一个反向传播的入口事实：softmax 与 CE 复合后，式 (4) 对 logits $z_i$ 的偏导数有闭式 $q_i - \delta_{x_t}(i)$ ，即「预测概率减真值」，逐位置的分类误差信号直接落在 logits 上。
 
-计算层面靠 **teacher forcing**：训练时喂给模型的条件 $x_{<t}$ 一律是数据里的真实 token，不是模型自己采样的结果。这样 $T$ 个位置的条件分布可以在一次前向里并行算出，loss 再求平均：
+计算层面靠 **教师强制（teacher forcing）**：训练时喂给模型的条件 $x_{<t}$ 一律是数据里的真实 token，不是模型自己采样的结果。这样 $T$ 个位置的条件分布可以在一次前向里并行算出，loss 再求平均：
 
 ```
 位置 t     :   1      2      3      4      5
@@ -145,7 +145,7 @@ $$
 逐位置 loss: -log q1(w1)  ...        -log q5(<eos>)   →  取平均得式 (4)
 ```
 
-代价是训练与生成的分布不一致：生成时条件来自模型自己的输出，错了会滚雪球。这个落差叫 **exposure bias**，缓解方法属于 training 维度，本章只登记定义。
+代价是训练与生成的分布不一致：生成时条件来自模型自己的输出，错了会滚雪球。这个落差叫 **暴露偏差（exposure bias）**，缓解方法属于 training 维度，本章只登记定义。
 
 teacher forcing 的另一面是数据效率：一条长 $T$ 的序列经右移对齐后给出 $T$ 个分类问题（每个位置一个，类别数 $V$ ），一次前向全部打分。对照生成阶段：每产出一个 token 需要一次前向，长 $T$ 的输出要串行 $T$ 次。训练并行、生成串行的不对称，是 KV cache（2.4）与整个 inference 维度存在的根本原因。
 
@@ -213,19 +213,19 @@ $$
 
 ## 7. CLM / MLM / prefix-LM：attention mask + loss mask 的统一形式
 
-三类训练目标不需要三套定义。统一成两个对象：**attention mask** $M \in \{0, -\infty\}^{T \times T}$ 决定位置 $i$ 能看见谁（进入 attention 的 softmax，细节在 2.3），**loss mask** $\ell \in \{0, 1\}^{T}$ 决定哪些位置计入损失：
+三类训练目标不需要三套定义。统一成三个对象：**attention mask** $M \in \{0, -\infty\}^{T \times T}$ 决定位置 $i$ 能看见谁（进入 attention 的 softmax，细节在 2.3），**loss mask** $\ell \in \{0, 1\}^{T}$ 决定哪些位置计入损失，**输入序列** $x'$ 是实际送入模型的 token 序列（可能被腐蚀）：
 
 $$
-\alpha_{ij} = \frac{\exp(s_{ij} + M_{ij})}{\sum_{l=1}^{T} \exp(s_{il} + M_{il})}, \qquad L(\theta) = - \sum_{t=1}^{T} \ell_t \log q_\theta(x_t | x_{<t}; M) \qquad (8)
+\alpha_{ij} = \frac{\exp(s_{ij} + M_{ij})}{\sum_{l=1}^{T} \exp(s_{il} + M_{il})}, \qquad L(\theta) = - \sum_{t=1}^{T} \ell_t \log q_\theta(x_t | x'; M) \qquad (8)
 $$
 
-**符号**：$s_{ij}$ ：未加 mask 的 attention 打分（2.3 定义）；$\alpha_{ij}$ ：mask 后的注意力权重， $M_{ij} = -\infty$ 时 $\exp$ 项为 0，位置 $j$ 对 $i$ 不可见；$\ell_t$ ：loss mask，1 表示该位置计损失；$q_\theta(\cdot | \cdot; M)$ ：可见性由 $M$ 决定的条件分布。
+**符号**：$s_{ij}$ ：未加 mask 的 attention 打分（2.3 定义）；$\alpha_{ij}$ ：mask 后的注意力权重， $M_{ij} = -\infty$ 时 $\exp$ 项为 0，位置 $j$ 对 $i$ 不可见；$\ell_t$ ：loss mask，1 表示该位置计损失；$x'$ ：经 mask 方案处理后的输入序列；$q_\theta(x_t | x'; M)$ ：在输入 $x'$ 与可见性 $M$ 下，位置 $t$ 处真实 token $x_t$ 的条件概率。
 
-三种 objective 只是 $(M, \ell)$ 的三个取值：
+式 (8) 的条件是整条输入 $x'$ 而不是前缀 $x_{<t}$ ：可见性语义由 $M$ 承担，腐蚀语义由 $x'$ 承担。CLM 时 $x' = x$ 且 $M$ 取下三角，位置 $t$ 恰好只能看到 $x_{<t}$ ，式 (8) 退化为本章前半的 $q_\theta(x_t | x_{<t})$ ；MLM 与 prefix-LM 的双向可见性也收进同一记号。三种 objective 只是 $(x', M, \ell)$ 的三个取值：
 
-- **CLM**（causal LM，GPT 家族）： $M_{ij} = 0$ 当 $j \le i$ ，否则 $-\infty$ （下三角可见）， $\ell_t = 1$ 对所有 $t$ 。即本章式 (3)(4)。
-- **MLM**（masked LM，BERT 家族）： $M$ 全 0（双向全可见），输入中一个子集的位置被替换为特殊 mask token， $\ell_t = 1$ 仅落在被替换的位置上。
-- **prefix-LM**：前缀区双向可见、续写区因果可见， $\ell_t = 1$ 仅落在续写区。
+- **CLM**（causal LM，GPT 家族）：$x' = x$ ， $M_{ij} = 0$ 当 $j \le i$ ，否则 $-\infty$ （下三角可见）， $\ell_t = 1$ 对所有 $t$ 。即本章式 (3)(4)。
+- **MLM**（masked LM，BERT 家族）：$x'$ 为腐蚀序列——一个子集的位置被替换为特殊 mask token； $M$ 全 0（双向全可见）， $\ell_t = 1$ 仅落在被替换的位置上。
+- **prefix-LM**：$x' = x$ ，前缀区双向可见、续写区因果可见， $\ell_t = 1$ 仅落在续写区。
 
 $T$ = 4 的两个 $M$ 实例（左 CLM，右 prefix 长为 2 的 prefix-LM）：
 
@@ -235,11 +235,11 @@ $$
 
 **符号**：行 $i$ 是被影响的位置，列 $j$ 是被看的位置；0 = 可见， $-\infty$ = 屏蔽。
 
-这套 $(M, \ell)$ 记号是本书后续章节的接口：2.4 用它定义因果性与 KV cache 的依赖结构，3.1 在此基础上把 span corruption、UL2 等更多目标收进同一框架，3.2 则证明 $M$ 全 0 的架构为什么不能直接做自回归生成。此处只建记号，不展开。
+这套 $(x', M, \ell)$ 记号是本书后续章节的接口：2.4 用它定义因果性与 KV cache 的依赖结构，3.1 在此基础上把 span corruption、UL2 等更多目标收进同一框架，3.2 则证明 $M$ 全 0 的架构为什么不能直接做自回归生成。此处只建记号，不展开。
 
 ## 8. 采样生成：temperature 与 top-p
 
-训练好的 $f_\theta$ 生成文本就是把式 (3) 反过来用：从 $x_0$ = bos 出发，逐位置从 $q_\theta(\cdot | x_{<t})$ 中采样 $x_t$ ，拼回上下文继续，直到采出 eos 或达到 $T_{\max}$ 。由链式法则，这样得到的序列恰好是模型分布的精确样本（ancestral sampling）。两个最常用的分布整形手段：
+训练好的 $f_\theta$ 生成文本就是把式 (3) 反过来用：从 $x_0$ = bos 出发，逐位置从 $q_\theta(\cdot | x_{<t})$ 中采样 $x_t$ ，拼回上下文继续，直到采出 eos 或达到 $T_{\max}$ 。由链式法则，这样得到的序列恰好是模型分布的精确样本，即祖先采样（ancestral sampling）。两个最常用的分布整形手段：
 
 **温度（temperature）**：对 logits 做缩放再 softmax，
 
@@ -259,7 +259,7 @@ $$
 
 两个极端各自的失效模式说明为什么需要整形：argmax（ $\tau \to 0$ 的极限）逐步取 mode，而逐位置 mode 的串联不保证整句高概率——局部最优的贪心链，实际行为是退化成重复循环； $\tau = 1$ 的纯采样保留了分布尾部，长尾里低质量 token 积少成多。top-p 的机制正好对症：集合大小随分布形状自适应——分布尖锐时 $S$ 只有一两个元素，分布平坦时 $S$ 放大，尾部噪声被按质量而不是按个数切掉。生成阶段的系统工程——KV cache、批处理、投机采样——属于 [inference 维度](../../inference/README.md)，本章只保证采样侧的分布语义清楚。
 
-## 9. Softmax bottleneck：输出头的 rank 上限
+## 9. Softmax 瓶颈（softmax bottleneck）：输出头的 rank 上限
 
 式 (2) 藏着一个与数据无关的表示上限。把 $N$ 个不同上下文的隐状态堆成 $H \in \mathbb{R}^{N \times d}$ ，对应的 logits 矩阵为
 
@@ -269,7 +269,7 @@ $$
 
 **符号**：$e$ ：全 1 列向量； $H W^{\top}$ 的 rank 不超过 $d$ ， $e b^{\top}$ 是 rank 1（每一行都是同一个 $b$ ）。
 
-log-softmax 是逐行操作： $\log q_{c,v} = z_{c,v} - \log \sum_{v'} \exp(z_{c,v'})$ ，行 $c$ 减去的常数记为 $u_c$ ，于是
+log-softmax 是逐行操作： $\log q_{c,v} = z_{c,v} - \log \sum_{v'} \exp(z_{c,v'})$（ $v'$ 为词表上的求和哑指标，$c$ 为上下文下标），行 $c$ 减去的常数记为 $u_c$ ，于是
 
 $$
 \log P = Z - u e^{\top}, \qquad \mathrm{rank}(\log P) \le d + 2 \qquad (11)
@@ -277,7 +277,7 @@ $$
 
 **符号**：$\log P \in \mathbb{R}^{N \times V}$ ：模型在 $N$ 个上下文上的对数概率矩阵；$u \in \mathbb{R}^{N}$ ：逐行归一化常数， $u e^{\top}$ rank 1。不含 bias 时上界收紧为 $d + 1$ 。
 
-结论：无论 softmax 怎么训练，模型能表达的对数概率矩阵 rank 以 $d$ 为上界，与 $V$ 无关。真实语言的条件分布矩阵没有理由落在这个低秩子空间里：同一上下文后面接哪些 token，由语义、语法、语用多组近似独立的因素决定，互斥但各自合理的续写集合很大，对应的 $\log P$ 矩阵行与行之间的线性关系接近满秩。只要真实矩阵的 rank 超过 $d + 2$ ，就存在模型永远拟合不了的残差——增加数据、加深主干都无效，因为瓶颈在输出头的线性结构上，这就是 **softmax bottleneck**（[Yang et al., 2018](../references.md)，arXiv:1711.03953，[A]）。代入锚点： $d$ = 4096、 $V$ = 151936（Qwen3-8B），rank 上限 4098 对满秩 151936，不到词表大小的 3%。原论文的解法是 Mixture of Softmaxes（MoS）：用多个低秩头的凸组合把 rank 抬上去，公式拆解连同它与 weight tying 的关系放在 2.2。
+结论：无论 softmax 怎么训练，模型能表达的对数概率矩阵 rank 以 $d$ 为上界，与 $V$ 无关。真实语言的条件分布矩阵没有理由落在这个低秩子空间里：同一上下文后面接哪些 token，由语义、语法、语用多组近似独立的因素决定，互斥但各自合理的续写集合很大，对应的 $\log P$ 矩阵行与行之间的线性关系接近满秩。只要真实矩阵的 rank 超过 $d + 2$ ，就存在模型永远拟合不了的残差——增加数据、加深主干都无效，因为瓶颈在输出头的线性结构上，这就是 **softmax 瓶颈（softmax bottleneck）**（[Yang et al., 2018](../references.md)，arXiv:1711.03953，[A]）。代入锚点： $d$ = 4096、 $V$ = 151936（Qwen3-8B），rank 上限 4098 对满秩 151936，不到词表大小的 3%。原论文的解法是 Mixture of Softmaxes（MoS）：用多个低秩头的凸组合把 rank 抬上去，公式拆解连同它与 weight tying 的关系放在 2.2。
 
 ## 总结
 
@@ -289,9 +289,9 @@ $$
 | 训练目标 | $\mathrm{NLL}$ = 逐位置 CE 的平均 | NLL = CE = MLE，式 (4)(5) |
 | 信息论分解 | $\mathrm{CE} = H(p) + \mathrm{KL}(p \Vert q_\theta)$ | 地板是数据熵；超出的 bits 即浪费码长，式 (6) |
 | perplexity | $\mathrm{PPL} = \exp(\mathrm{CE})$ | uniform 基线 = $V$ ；跨词表、跨 tokenizer 不可比，式 (7) |
-| objective 统一 | $(M, \ell)$ ：attention mask + loss mask | CLM / MLM / prefix-LM 只是三种取值，式 (8) |
+| objective 统一 | $(x', M, \ell)$ ：输入 + attention mask + loss mask | CLM / MLM / prefix-LM 只是三种取值，式 (8) |
 | 采样整形 | 温度式 (9)、top-p 式 (10) | $\tau \to 0$ 为 argmax；top-p 动态截断尾部 |
-| softmax bottleneck | $\mathrm{rank}(\log P) \le d + 2$ | 上限由 $d$ 定，与 $V$ 无关；MoS 见 2.2，式 (11) |
+| softmax 瓶颈 | $\mathrm{rank}(\log P) \le d + 2$ | 上限由 $d$ 定，与 $V$ 无关；MoS 见 2.2，式 (11) |
 
 ## 练习
 
