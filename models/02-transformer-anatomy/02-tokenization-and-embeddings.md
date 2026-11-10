@@ -109,7 +109,7 @@ $$
 \mathrm{score}(a, b) = \frac{p(ab)}{p(a) \, p(b)} = \frac{n(a, b) \cdot N}{n(a) \, n(b)} \qquad (2)
 $$
 
-**符号**：$p(ab)$ ：合并后新符号的经验概率；分母是 $a$ 、 $b$ 独立假设下的共现概率。
+**符号**：$p(ab)$ ：合并后新符号的经验概率；分母是 $a$ 、 $b$ 独立假设下的共现概率。式 (2) 是 WordPiece 选对准则的社区标准重述口径——GNMT 原文只描述「合并使训练语料似然增益最大」的准则，未给显式公式。
 
 逐轮选 score 最大的对。读法：式 (2) 是共现对独立性的偏离度——频次高但各自更高频的对（如 e+s）被压下去，「黏性强」的对优先合并。编码端是另一套规矩：从串首开始的贪心最长匹配，子词间的续写关系由实现侧的标记表达——这与 BPE 编码的 rank 序贪心不同，两套规矩不通用（§12 常见误解）。
 
@@ -117,7 +117,7 @@ $$
 
 Unigram 方案（[Kudo, 2018](../references.md)，arXiv:1804.10959，[A]；SentencePiece 为其官方实现）换方向：不构造 merge 规则，直接给「切分」一个概率模型，从一个远大于目标的种子词表出发自顶向下剪枝。
 
-模型假设：词表 $\mathcal{V}$ 上每个 token 有概率 $p(v)$ ，$\sum_{v \in \mathcal{V}} p(v) = 1$ ；字符串 $x$ 的合法切分全体记为 $S(x)$（长 $n$ 的串有 $2^{n-1}$ 种切法）；切分 $z = (z_1, \ldots, z_k)$ 的概率取独立乘积 $p(z) = \prod_{i=1}^{k} p(z_i)$ 。字符串的边缘似然是全部切分之和，训练目标为
+模型假设：词表 $\mathcal{V}$ 上每个 token 有概率 $p(v)$ ，$\sum_{v \in \mathcal{V}} p(v) = 1$ ；字符串 $x$ 的合法切分全体记为 $S(x)$（切法数的上限为 $2^{n-1}$ ：每对相邻位置切或不切，词表约束再筛掉一批）；切分 $z = (z_1, \ldots, z_k)$ 的概率取独立乘积 $p(z) = \prod_{i=1}^{k} p(z_i)$ 。字符串的边缘似然是全部切分之和，训练目标为
 
 $$
 \max_{\theta} \; \sum_{x \in D} \log \sum_{z \in S(x)} p(z; \theta) \qquad (3)
@@ -176,19 +176,21 @@ fertility 低 = 切得粗 = 同一文本的 token 序列更短。但 per-token �
 
 | 模型 | $V$ | tokenizer | 出处 |
 | --- | --- | --- | --- |
-| Llama-2 | 32000 | BPE | [Grattafiori et al., 2024](../references.md)（arXiv:2407.21783，[A]）中转述 |
 | GPT-2 | 50257 | byte-level BPE | [Radford et al., 2019](../references.md)，[W] |
 | Llama-3.1 | 128256 | byte-level BPE | [Llama-3.1-8B config](../references.md)，[A] |
 | Qwen3 | 151936 | byte-level BPE | [Qwen3-8B config](../references.md)，[A] |
-| Gemma 2 / 3 | 262144 | SentencePiece | 论文口径：[Gemma Team, 2024](../references.md)（arXiv:2408.00118）、[Gemma Team, 2025](../references.md)（arXiv:2503.19786），均 [A]；HF 仓库 gated |
+| Gemma 2 | 256128 | SentencePiece | 论文口径：[Gemma Team, 2024](../references.md)（arXiv:2408.00118，[A]）；HF 仓库 gated |
+| Gemma 3 | 262144 | SentencePiece | 论文口径：[Gemma Team, 2025](../references.md)（arXiv:2503.19786，[A]）；HF 仓库 gated |
+
+跨代对照的补充锚点在 Llama 3 论文里：其 128K 词表 tokenizer 的压缩率为 3.94 chars/token，论文同处给出前一代 Llama 2 tokenizer 的对照值 3.17 chars/token（[Grattafiori et al., 2024](../references.md)，arXiv:2407.21783，[A]）——换词表后每 token 平均多吞约 24% 的字符。Llama-2 词表的通行数值 32000 出自其 HF config（[W]：有 config 与权重、无独立论文条目，故不进对照表）。
 
 $V$ 同时挤压三个方向，这就是 T × V × d 账：
 
 1. **$V \uparrow \Rightarrow T \downarrow$（序列账）**。merge 越多、压缩越高，同字节文本的 token 数越少：attention 的 $O(T^{2} d)$ 项（1.2 第 6 节）、推理的串行 decode 步数（2.4）都随 $T$ 省。这是把 $V$ 往大推的力。
-2. **$V \uparrow \Rightarrow$ 参数与 softmax 账 $\uparrow$**。untied 时输入 embedding 加输出头共 $2Vd$ 参数（2.1 式 (4)）：Llama-3.1-8B 为 $2 \times 128256 \times 4096 = 1.05 \times 10^{9}$ ，占全部 8.03B 参数的 13.1%；Qwen3-8B 为 $1.245 \times 10^{9}$ 。输出头的每 token 前向 FLOPs 同为 $2Vd$（Llama-3.1-8B 约 $1.05 \times 10^{9}$ FLOPs，对照层部分 $2N \approx 1.4 \times 10^{10}$ FLOPs，约占 7%），词表上的 softmax 归一化与采样另乘一个 $V$ 。
+2. **$V \uparrow \Rightarrow$ 参数与 softmax 账 $\uparrow$**。untied 时输入 embedding 加输出头共 $2Vd$ 参数（2.1 式 (4)）：Llama-3.1-8B 为 $2 \times 128256 \times 4096 = 1.05 \times 10^{9}$ ，占全部 8.03B 参数的 13.1%；Qwen3-8B 为 $1.245 \times 10^{9}$ 。输出头的每 token 前向 FLOPs 同为 $2Vd$（Llama-3.1-8B 约 $1.05 \times 10^{9}$ FLOPs，对照层部分 $2N \approx 1.4 \times 10^{10}$ FLOPs，约占 7%），词表上的 softmax 归一化与采样每位置再花 $O(V)$ ，相对输出头 matmul 的 $O(Vd)$ 是低阶项。
 3. **$V \uparrow \Rightarrow$ 学习难度 $\uparrow$**。固定数据预算下词表越大长尾越长，低频 token 的 embedding 行被更新的次数越少（§8 的稀疏梯度）；分类类别数变多，uniform 基线 $\ln V$ 抬高（1.1 §6）。这是把 $V$ 往小压的力。
 
-32000 / 50257 / 128256 / 151936 / 262144 这五档不是「越大越好」的爬坡，而是三笔账在不同数据配比（多语言与代码占比）下的不同最优解；P5 各章对具体模型的 vocab 选择对账时复用本表。
+50257 / 128256 / 151936 / 256128 / 262144 这五档不是「越大越好」的爬坡，而是三笔账在不同数据配比（多语言与代码占比）下的不同最优解；P5 各章对具体模型的 vocab 选择对账时复用本表。
 
 ## 8. embedding 层：one-hot 等价、稀疏梯度与初始化
 
@@ -245,7 +247,7 @@ $$
 
 **符号**：$h_t$ ：位置 $t$ 的 final 隐状态（$d$ 维）；$r_t$ ：softmax 概率减真值；$o_t$ 、 $g_t$ 同式 (7)(8)。两路都是 $[V, d]$ 。
 
-逐行看耦合：第 $v$ 行的更新是 $\sum_t r_{t,v} \, h_t + \sum_{t : x_t = v} g_t$ 。第一路**每个位置更新每一行**（非目标行也有 $r_{t,v} = q_{t,v} > 0$ ），把行推向「正确分类器方向」；第二路只在 $v$ 出现在输入时更新该行，把行推向「有用的输入特征方向」。两个角色对同一向量提出不同需求：作为分类器，$E_v$ 要与「应当预测 $v$ 」的隐状态方向对齐；作为输入特征，$E_v$ 要编码「$v$ 出现了」对后续预测有用的信息——高频功能词作为输入信息量低、作为目标出现频繁，两个方向一般不重合，tied 行被迫折中。untie 就是让两份几何各自收敛。与 §10 的衔接：tied 时输入映射与输出映射共用同一矩阵的 rank 预算，untie 把这块容量翻倍——大模型倾向 untie 的容量侧理由就在这里。2.8 组装整机时复用本节的 tied / untied 判定口径。
+逐行看耦合：第 $v$ 行的更新是 $\sum_t r_{t,v} \, h_t + \sum_{t : x_t = v} g_t$ 。第一路**每个位置更新每一行**（非目标行也有 $r_{t,v} = q_{t,v} > 0$ ），把行推向「正确分类器方向」；第二路只在 $v$ 出现在输入时更新该行，把行推向「有用的输入特征方向」。两个角色对同一向量提出不同需求：作为分类器，$E_v$ 要与「应当预测 $v$ 」的隐状态方向对齐；作为输入特征，$E_v$ 要编码「$v$ 出现了」对后续预测有用的信息——高频功能词作为输入信息量低、作为目标出现频繁，两个方向一般不重合，tied 行被迫折中。untie 就是让两份几何各自收敛。与 §10 的衔接：tied 时输入映射与输出映射共用同一矩阵的 rank 预算，untie 把联合参数预算翻倍（单矩阵的 rank 上限仍为 $d$ ）——大模型倾向 untie 的容量侧理由就在这里。2.8 组装整机时复用本节的 tied / untied 判定口径。
 
 工程注记：共用一份矩阵时输入侧与输出侧的合理动态范围不同，老配方靠显式缩放调和——Transformer 原文在 tied 配方下把 embedding 乘 $\sqrt{d}$ 再进 stream（[Vaswani et al., 2017](../references.md)，arXiv:1706.03762，[A]，§3.4）；现代配方直接 untie，缩放问题随之一并消失。
 
@@ -254,20 +256,20 @@ $$
 1.1 §9 引入了 softmax 瓶颈并给出结论 $\mathrm{rank}(\log P) \le d + 2$ ；此处把推导补全，再讨论它与 tying 的关系。取 $N$ 个不同上下文，隐状态堆成 $H \in \mathbb{R}^{N \times d}$ ，logits 矩阵
 
 $$
-Z = H W_U^{\top} + e \, b^{\top} \in \mathbb{R}^{N \times V} \qquad (11)
+Z = H W_U^{\top} + e_N \, b^{\top} \in \mathbb{R}^{N \times V} \qquad (11)
 $$
 
-**符号**：$e \in \mathbb{R}^{N}$ ：全 1 列向量；$W_U \in \mathbb{R}^{V \times d}$ 、 $b \in \mathbb{R}^{V}$ ：输出头权重与偏置。
+**符号**：$e_N \in \mathbb{R}^{N}$ ：行方向全 1 向量；$W_U \in \mathbb{R}^{V \times d}$ 、 $b \in \mathbb{R}^{V}$ ：输出头权重与偏置。$e_N b^{\top}$ 是 $[N, 1] \times [1, V]$ 的外积，维度相容。
 
-逐步推。第一步，$\mathrm{rank}(H W_U^{\top}) \le \min(\mathrm{rank}(H), \mathrm{rank}(W_U)) \le d$（乘积的秩不超过各因子的秩）；$e b^{\top}$ 的每一行都是 $b$ ，秩为 1；矩阵和的秩不超过秩的和，故 $\mathrm{rank}(Z) \le d + 1$ 。
+逐步推。第一步，$\mathrm{rank}(H W_U^{\top}) \le \min(\mathrm{rank}(H), \mathrm{rank}(W_U)) \le d$（乘积的秩不超过各因子的秩）；$e_N b^{\top}$ 的每一行都是 $b$ ，秩为 1；矩阵和的秩不超过秩的和，故 $\mathrm{rank}(Z) \le d + 1$ 。
 
-第二步，log-softmax 逐行进行：$\log q_{c, v} = z_{c, v} - u_c$ ，其中 $u_c = \log \sum_{v'} \exp(z_{c, v'})$ 只依赖行。每行减去一个行常数，等价于减一个 rank-1 矩阵 $u e^{\top}$ ：
+第二步，log-softmax 逐行进行：$\log q_{c, v} = z_{c, v} - u_c$ ，其中 $u_c = \log \sum_{v'} \exp(z_{c, v'})$ 只依赖行。每行减去一个行常数，等价于减一个 rank-1 矩阵 $u \, 1_V^{\top}$ ：
 
 $$
-\log P = Z - u \, e^{\top} \quad \Longrightarrow \quad \mathrm{rank}(\log P) \le d + 2 \qquad (12)
+\log P = Z - u \, 1_V^{\top} \quad \Longrightarrow \quad \mathrm{rank}(\log P) \le d + 2 \qquad (12)
 $$
 
-**符号**：$\log P \in \mathbb{R}^{N \times V}$ ：$N$ 个上下文上的模型对数概率矩阵；$u \in \mathbb{R}^{N}$ ：逐行归一化常数。无 bias 时第一步收紧为 $d$ ，结果为 $d + 1$ 。
+**符号**：$\log P \in \mathbb{R}^{N \times V}$ ：$N$ 个上下文上的模型对数概率矩阵；$u \in \mathbb{R}^{N}$ ：逐行归一化常数；$1_V \in \mathbb{R}^{V}$ ：词表方向全 1 向量，$u \, 1_V^{\top}$ 是 $[N, 1] \times [1, V]$ 的外积。无 bias 时第一步收紧为 $d$ ，结果为 $d + 1$ 。
 
 瓶颈的含义：真实语言在 $N$ 个上下文上的对数概率矩阵没有理由低秩——同一前缀之后的合理续写由语义、语法、语用等多组近似独立的因素决定，行与行之间接近满秩；原论文在上下文独立性假设下证明了真实矩阵满秩（[Yang et al., 2018](../references.md)，arXiv:1711.03953，[A]）。只要真实 rank 超过 $d + 2$ ，单 softmax 头就有拟合不了的残差，加深主干、加数据都无效——瓶颈在 $z = W_U h$ 这个线性结构上。代入锚点：$d$ = 4096、$V$ = 151936，rank 上限 4098 不足满秩的 3%。
 
@@ -303,7 +305,7 @@ patch   [b1 b2 b3] [b4 b5] [b6 b7 b8] ...    ← 长度随可预测性变化
 
 **Qwen3-8B**（repo 文件实测，[Qwen3-8B config](../references.md)，[A]）：tokenizer_class = Qwen2Tokenizer，即 byte-level BPE，与 Qwen2 / 2.5 同一 tokenizer 家族。repo 内三件：vocab.json（token → id，151643 条）、merges.txt（merge 按 rank 排列）、tokenizer.json（HF tokenizers 的编译产物，加载走这条）。added_tokens_decoder 含 26 个特殊 token，占 id 151643–151668（`<|endoftext|>` 、`<|im_start|>` 、`<|im_end|>` 、`<think>` 、`</think>` 等）；config vocab_size 151936 = 151643 + 26 再向上对齐。bos_token_id = 151643，eos_token_id = 151645（聊天模板以 `<|im_end|>` 收尾）。两个长度字段不要混：config 的 max_position_embeddings = 40960 是模型原生窗口，tokenizer_config 的 model_max_length = 131072 是 tokenizer 侧上限（1.1 §1 已核对）。
 
-**Llama-3.1**：config 侧 vocab_size = 128256（[Llama-3.1-8B config](../references.md)，[A]）；Llama 3 论文记录其 tokenizer 为 BPE 家族，词表从前一代的 32K 扩到 128K，动机是压缩效率（[Grattafiori et al., 2024](../references.md)，arXiv:2407.21783，[A]）。与 Qwen3 对照着读：同属 byte-level BPE 路线，$V$ 差约 1.18 倍；§7 的三方账（多语言覆盖、$2Vd$ 、长尾冷启动）就是解读这两家取值的框架。
+**Llama-3.1**：config 侧 vocab_size = 128256（[Llama-3.1-8B config](../references.md)，[A]）；Llama 3 论文记录其 tokenizer 为 BPE 家族、128K 词表，并给出压缩率对照：3.94 chars/token 对前一代 Llama 2 tokenizer 的 3.17 chars/token（[Grattafiori et al., 2024](../references.md)，arXiv:2407.21783，[A]）。与 Qwen3 对照着读：同属 byte-level BPE 路线，$V$ 差约 1.18 倍；§7 的三方账（多语言覆盖、$2Vd$ 、长尾冷启动）就是解读这两家取值的框架。
 
 动手核对入口：HF 侧 `AutoTokenizer.from_pretrained` 之后，`tokenizer.get_vocab()` 给词表，BPE 系的 merge 表看 merges.txt 或 `tokenizer.backend_tokenizer`；Unigram 系（SentencePiece 产物）的 token 概率存在 `.model` 文件里。
 
@@ -322,7 +324,7 @@ patch   [b1 b2 b3] [b4 b5] [b6 b7 b8] ...    ← 长度随可预测性变化
 | WordPiece | score = $p(ab) / (p(a) \, p(b))$，式 (2) | 似然增益驱动；最长匹配编码 |
 | Unigram | $\max_\theta \sum_x \log \sum_{z \in S(x)} p(z)$，式 (3)–(5) | EM + 剪枝；Viterbi 编码；切分采样 = subword regularization |
 | 质量指标 | fertility、$r_{\mathrm{comp}}$，式 (6) | 跨 tokenizer 只比 bits per byte（1.1 §6） |
-| vocab 三方账 | $T$ ↓ vs $2Vd$ ↑ vs 长尾冷启动 | 32000 / 50257 / 128256 / 151936 / 262144 对照；Llama-3.1-8B 的 $2Vd$ = 1.05B（13.1%） |
+| vocab 三方账 | $T$ ↓ vs $2Vd$ ↑ vs 长尾冷启动 | 50257 / 128256 / 151936 / 256128 / 262144 对照；Llama-3.1-8B 的 $2Vd$ = 1.05B（13.1%） |
 | embedding | $e_t = o_t E$，式 (7)(8) | one-hot 乘 ≡ gather；行稀疏梯度 → cold rows |
 | 初始化 | $\sigma$ = 0.02；$\mathrm{std}(z_v) = \sigma \sqrt{d}$，式 (9) | GPT-2 / Qwen3 同值；初始 loss ≈ $\ln V$ |
 | weight tying | $W_U = E$；两路梯度耦合，式 (10) | GPT-2 tied（124M 算例）；现代 8B 锚点全 untied |
@@ -344,10 +346,11 @@ patch   [b1 b2 b3] [b4 b5] [b6 b7 b8] ...    ← 长度随可预测性变化
 - [Press & Wolf, 2017](../references.md)：Using the Output Embedding to Improve Language Models，arXiv:1608.05859，[B]（key: weight-tying）
 - [Yang et al., 2018](../references.md)：Breaking the Softmax Bottleneck: A High-Rank RNN Language Model，arXiv:1711.03953，[A]（key: softmax-bottleneck）
 - [Pagnoni et al., 2024](../references.md)：Byte Latent Transformer: Patches Scale Better Than Tokens，arXiv:2412.09871，[A]（key: blt）
-- [Grattafiori et al., 2024](../references.md)：The Llama 3 Herd of Models，arXiv:2407.21783，[A]（key: llama3）——Llama-2 32K → Llama-3 128K 的词表出处
-- [Gemma Team, 2024](../references.md)：Gemma 2: Improving Open Language Models at a Practical Size，arXiv:2408.00118，[A]（key: gemma2）——262144 词表的论文口径
-- [Gemma Team, 2025](../references.md)：Gemma 3 Technical Report，arXiv:2503.19786，[A]（key: gemma3）
+- [Grattafiori et al., 2024](../references.md)：The Llama 3 Herd of Models，arXiv:2407.21783，[A]（key: llama3）——128K 词表与 3.17 → 3.94 chars/token 压缩对照的出处
+- [Gemma Team, 2024](../references.md)：Gemma 2: Improving Open Language Models at a Practical Size，arXiv:2408.00118，[A]（key: gemma2）——256128 词表的论文口径
+- [Gemma Team, 2025](../references.md)：Gemma 3 Technical Report，arXiv:2503.19786，[A]（key: gemma3）——262144 词表的论文口径
 - [Vaswani et al., 2017](../references.md)：Attention Is All You Need，arXiv:1706.03762，[A]（key: transformer）——tied 配方下 embedding 乘 $\sqrt{d}$ 的出处（§3.4）
 - [Radford et al., 2019](../references.md)：Language Models are Unsupervised Multitask Learners + HF 权重，[W]（key: gpt2）——50257 分解与 initializer_range = 0.02
 - [Meta, Llama-3.1-8B config.json](../references.md)：[A]（key: llama-3.1-8b-config）
 - [Qwen, Qwen3-8B config.json 与 tokenizer 文件](../references.md)：[A]（key: qwen3-8b-config）
+- [AllenAI, OLMo-2-7B config.json](../references.md)：[A]（key: olmo-2-7b-config）——tie_word_embeddings = false 的对照锚点
