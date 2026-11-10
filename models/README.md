@@ -121,7 +121,7 @@ graph LR
 | 章节 | 文件 | 状态 |
 | --- | --- | --- |
 | 1.1 语言建模的数学形式化 | [01-formulation.md](01-foundations/01-formulation.md) | 已写 |
-| 1.2 参数、计算、内存的账 | [02-compute-accounting.md](01-foundations/02-compute-accounting.md) | 未开始 |
+| 1.2 参数、计算、内存的账 | [02-compute-accounting.md](01-foundations/02-compute-accounting.md) | 已写 |
 | 1.3 Scaling Laws（作为理论） | [03-scaling-laws.md](01-foundations/03-scaling-laws.md) | 未开始 |
 
 ### Part 2 · Transformer Anatomy（W1）
