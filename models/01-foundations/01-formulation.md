@@ -264,18 +264,18 @@ $$
 式 (2) 藏着一个与数据无关的表示上限。把 $N$ 个不同上下文的隐状态堆成 $H \in \mathbb{R}^{N \times d}$ ，对应的 logits 矩阵为
 
 $$
-Z = H W^{\top} + e b^{\top} \in \mathbb{R}^{N \times V}
+Z = H W^{\top} + e_N b^{\top} \in \mathbb{R}^{N \times V}
 $$
 
-**符号**：$e$ ：全 1 列向量； $H W^{\top}$ 的 rank 不超过 $d$ ， $e b^{\top}$ 是 rank 1（每一行都是同一个 $b$ ）。
+**符号**：$e_N \in \mathbb{R}^{N}$ ：行方向的全 1 列向量；$b \in \mathbb{R}^{V}$ ：词表维偏置， $e_N b^{\top} \in \mathbb{R}^{N \times V}$ 是 rank 1（每一行都是同一个 $b$ ）； $H W^{\top}$ 的 rank 不超过 $d$ 。
 
 log-softmax 是逐行操作： $\log q_{c,v} = z_{c,v} - \log \sum_{v'} \exp(z_{c,v'})$（ $v'$ 为词表上的求和哑指标，$c$ 为上下文下标），行 $c$ 减去的常数记为 $u_c$ ，于是
 
 $$
-\log P = Z - u e^{\top}, \qquad \mathrm{rank}(\log P) \le d + 2 \qquad (11)
+\log P = Z - u 1_V^{\top}, \qquad \mathrm{rank}(\log P) \le d + 2 \qquad (11)
 $$
 
-**符号**：$\log P \in \mathbb{R}^{N \times V}$ ：模型在 $N$ 个上下文上的对数概率矩阵；$u \in \mathbb{R}^{N}$ ：逐行归一化常数， $u e^{\top}$ rank 1。不含 bias 时上界收紧为 $d + 1$ 。
+**符号**：$\log P \in \mathbb{R}^{N \times V}$ ：模型在 $N$ 个上下文上的对数概率矩阵；$u \in \mathbb{R}^{N}$ ：逐行归一化常数；$1_V \in \mathbb{R}^{V}$ ：词表维的全 1 列向量， $u 1_V^{\top} \in \mathbb{R}^{N \times V}$ 是 rank 1（第 $c$ 行是常向量 $u_c \cdot 1_V^{\top}$ ）。不含 bias 时上界收紧为 $d + 1$ 。
 
 结论：无论 softmax 怎么训练，模型能表达的对数概率矩阵 rank 以 $d$ 为上界，与 $V$ 无关。真实语言的条件分布矩阵没有理由落在这个低秩子空间里：同一上下文后面接哪些 token，由语义、语法、语用多组近似独立的因素决定，互斥但各自合理的续写集合很大，对应的 $\log P$ 矩阵行与行之间的线性关系接近满秩。只要真实矩阵的 rank 超过 $d + 2$ ，就存在模型永远拟合不了的残差——增加数据、加深主干都无效，因为瓶颈在输出头的线性结构上，这就是 **softmax 瓶颈（softmax bottleneck）**（[Yang et al., 2018](../references.md)，arXiv:1711.03953，[A]）。代入锚点： $d$ = 4096、 $V$ = 151936（Qwen3-8B），rank 上限 4098 对满秩 151936，不到词表大小的 3%。原论文的解法是 Mixture of Softmaxes（MoS）：用多个低秩头的凸组合把 rank 抬上去，公式拆解连同它与 weight tying 的关系放在 2.2。
 
