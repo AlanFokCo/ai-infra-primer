@@ -16,4 +16,5 @@
 
 models 侧交叉链接到这里的章节：
 
+- [2.4 Causality 与 KV Cache](../models/02-transformer-anatomy/04-causality-and-kv-cache.md)：prefill / decode 算术强度分野（§6）是 roofline 入口；roofline 的逐卡参数与测量方法归本维度
 - [4.1 KV 压缩与精确 Attention 加速](../models/04-modern-architectures/01-kv-compression-and-exact-attention.md)：FlashAttention 数学讲完后的 kernel 细节

@@ -186,9 +186,9 @@ fertility 低 = 切得粗 = 同一文本的 token 序列更短。但 per-token �
 
 $V$ 同时挤压三个方向，这就是 T × V × d 账：
 
-1. **$V \uparrow \Rightarrow T \downarrow$（序列账）**。merge 越多、压缩越高，同字节文本的 token 数越少：attention 的 $O(T^{2} d)$ 项（1.2 第 6 节）、推理的串行 decode 步数（2.4）都随 $T$ 省。这是把 $V$ 往大推的力。
-2. **$V \uparrow \Rightarrow$ 参数与 softmax 账 $\uparrow$**。untied 时输入 embedding 加输出头共 $2Vd$ 参数（2.1 式 (4)）：Llama-3.1-8B 为 $2 \times 128256 \times 4096 = 1.05 \times 10^{9}$ ，占全部 8.03B 参数的 13.1%；Qwen3-8B 为 $1.245 \times 10^{9}$ 。输出头的每 token 前向 FLOPs 同为 $2Vd$（Llama-3.1-8B 约 $1.05 \times 10^{9}$ FLOPs，对照层部分 $2N \approx 1.4 \times 10^{10}$ FLOPs，约占 7%），词表上的 softmax 归一化与采样每位置再花 $O(V)$ ，相对输出头 matmul 的 $O(Vd)$ 是低阶项。
-3. **$V \uparrow \Rightarrow$ 学习难度 $\uparrow$**。固定数据预算下词表越大长尾越长，低频 token 的 embedding 行被更新的次数越少（§8 的稀疏梯度）；分类类别数变多，uniform 基线 $\ln V$ 抬高（1.1 §6）。这是把 $V$ 往小压的力。
+1. **$V$ 大 $\Rightarrow$ $T$ 小（序列账）**。merge 越多、压缩越高，同字节文本的 token 数越少：attention 的 $O(T^{2} d)$ 项（1.2 第 6 节）、推理的串行 decode 步数（2.4）都随 $T$ 省。这是把 $V$ 往大推的力。
+2. **$V$ 大 $\Rightarrow$ 参数与 softmax 账大**。untied 时输入 embedding 加输出头共 $2Vd$ 参数（2.1 式 (4)）：Llama-3.1-8B 为 $2 \times 128256 \times 4096 = 1.05 \times 10^{9}$ ，占全部 8.03B 参数的 13.1%；Qwen3-8B 为 $1.245 \times 10^{9}$ 。输出头的每 token 前向 FLOPs 同为 $2Vd$（Llama-3.1-8B 约 $1.05 \times 10^{9}$ FLOPs，对照层部分 $2N \approx 1.4 \times 10^{10}$ FLOPs，约占 7%），词表上的 softmax 归一化与采样每位置再花 $O(V)$ ，相对输出头 matmul 的 $O(Vd)$ 是低阶项。
+3. **$V$ 大 $\Rightarrow$ 学习难度高**。固定数据预算下词表越大长尾越长，低频 token 的 embedding 行被更新的次数越少（§8 的稀疏梯度）；分类类别数变多，uniform 基线 $\ln V$ 抬高（1.1 §6）。这是把 $V$ 往小压的力。
 
 50257 / 128256 / 151936 / 256128 / 262144 这五档不是「越大越好」的爬坡，而是三笔账在不同数据配比（多语言与代码占比）下的不同最优解；P5 各章对具体模型的 vocab 选择对账时复用本表。
 
@@ -205,10 +205,10 @@ $$
 one-hot 乘矩阵等于按行取——实现上是 gather（索引读），没有乘加：1.2 的 FLOPs 账把 embedding 排除在外，原因就是这个等价性，它不是 matmul 而是内存寻址。反向传播同样稀疏：
 
 $$
-\frac{\partial L}{\partial E} = \sum_{t} o_t^{\top} g_t^{\top}, \qquad g_t = \frac{\partial L}{\partial e_t} \qquad (8)
+\frac{\partial L}{\partial E} = \sum_{t} o_t^{\top} g_t, \qquad g_t = \frac{\partial L}{\partial e_t} \qquad (8)
 $$
 
-**符号**：$g_t$ ：backbone 回传给 embedding 向量的上游梯度；$o_t^{\top} g_t^{\top}$ 是 $[V, 1] \times [1, d]$ 的外积，只在第 $x_t$ 行非零。
+**符号**：$g_t$ ：backbone 回传给 embedding 向量的上游梯度，与 $e_t$ 同取行向量（约定同 1.2 式 (3) 的 $x_b^{\top} G_b$ ）；$o_t^{\top} g_t$ 是 $[V, 1] \times [1, d]$ 的外积，只在第 $x_t$ 行非零。
 
 每一步只有 batch 中出现过的 token 行拿到非零梯度。两个直接后果：低频 token 的行长期停在初始化附近（cold rows）；$V$ 越大长尾越冷——§7 第三方账在梯度侧的根据就是式 (8)。
 
@@ -242,10 +242,10 @@ $d$ = 4096、$\sigma$ = 0.02 时 $\mathrm{std}(z_v) \approx 1.28$ ：初始 logi
 省参数之外，tying 改变的是梯度结构。记每位置 loss 对 logits 的梯度 $r_t = q_t - \delta_{x_{t+1}} \in \mathbb{R}^{V}$（1.1 §4 的 softmax-CE 复合导数），则共享矩阵 $E$ 收到两路梯度：
 
 $$
-\frac{\partial L}{\partial E} = \underbrace{\sum_{t} r_t \, h_t^{\top}}_{\text{output role}} + \underbrace{\sum_{t} o_t^{\top} g_t^{\top}}_{\text{input role}} \qquad (10)
+\frac{\partial L}{\partial E} = \underbrace{\sum_{t} r_t \, h_t^{\top}}_{\text{output role}} + \underbrace{\sum_{t} o_t^{\top} g_t}_{\text{input role}} \qquad (10)
 $$
 
-**符号**：$h_t$ ：位置 $t$ 的 final 隐状态（$d$ 维）；$r_t$ ：softmax 概率减真值；$o_t$ 、 $g_t$ 同式 (7)(8)。两路都是 $[V, d]$ 。
+**符号**：$h_t$ ：位置 $t$ 的 final 隐状态（$d$ 维）；$r_t$ ：softmax 概率减真值；$o_t$ 、 $g_t$ 同式 (7)(8)。输出侧 $r_t$ 、 $h_t$ 取列向量（ $z_t = E h_t$ ），输入侧 $o_t$ 、 $g_t$ 取行向量（式 (7)），两路都是 $[V, 1] \times [1, d]$ 的外积，和为 $[V, d]$ 。
 
 逐行看耦合：第 $v$ 行的更新是 $\sum_t r_{t,v} \, h_t + \sum_{t : x_t = v} g_t$ 。第一路**每个位置更新每一行**（非目标行也有 $r_{t,v} = q_{t,v} > 0$ ），把行推向「正确分类器方向」；第二路只在 $v$ 出现在输入时更新该行，把行推向「有用的输入特征方向」。两个角色对同一向量提出不同需求：作为分类器，$E_v$ 要与「应当预测 $v$ 」的隐状态方向对齐；作为输入特征，$E_v$ 要编码「$v$ 出现了」对后续预测有用的信息——高频功能词作为输入信息量低、作为目标出现频繁，两个方向一般不重合，tied 行被迫折中。untie 就是让两份几何各自收敛。与 §10 的衔接：tied 时输入映射与输出映射共用同一矩阵的 rank 预算，untie 把联合参数预算翻倍（单矩阵的 rank 上限仍为 $d$ ）——大模型倾向 untie 的容量侧理由就在这里。2.8 组装整机时复用本节的 tied / untied 判定口径。
 

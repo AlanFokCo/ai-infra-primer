@@ -17,5 +17,5 @@
 
 models 侧交叉链接到这里的章节：
 
-- [1.2 参数、计算、内存的账](../models/01-foundations/02-compute-accounting.md)：优化器态内存账（6N~12N bytes）
+- [1.2 参数、计算、内存的账](../models/01-foundations/02-compute-accounting.md)：优化器状态内存账（6N~12N bytes）
 - P5 案例章训练侧：[5.2 DeepSeek](../models/05-case-studies/02-deepseek.md)（FP8 训练工程）、[5.3 Qwen](../models/05-case-studies/03-qwen.md)（thinking 模式）、[5.5 Kimi / Moonshot](../models/05-case-studies/05-kimi-moonshot.md)（Muon、K1.5 RL）

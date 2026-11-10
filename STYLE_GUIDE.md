@@ -47,6 +47,7 @@
 | 分式变体 / 积分 / 大型运算 | `\dfrac`、`\tfrac`、`\int`、`\oint`、`\bigcup`、`\bigcap` | [M2] |
 | 微分 / 修饰符号 | `\partial`、`\nabla`、`\hat{}`、`\tilde{}`、`\vec{}`、`\dot{}`、`\ddot{}`、`\overline{}`、`\underline{}`、`\widehat{}`、`\widetilde{}` | [M2] |
 | 定界符 | 伸缩配对 `\left( \right)`、`\left[ \right]`、`\left\{ \right\}`、`\left\| \right\|`、`\left\langle \right\rangle`、`\left. ... \right\|`（`.` 为空占位）；裸 `\{`、`\}`、`\|` 为 base symbol，允许直接使用（无需 `\left\right`） | [G1][M2] |
+| 固定尺寸定界符 | `\big(` `\big)`、`\Big(` `\Big)`、`\bigg(` `\bigg)`、`\Bigg(` `\Bigg)` 配对（`\bigl` / `\bigr` 等左右变体同收）——W1 波末收编（2026-11-11），2.2 式 (4)(13) 与 2.6 式 (5)(6) 已有使用先例；probe 文件 P17 待首次推送后复核 | [M2] |
 | 间距 | `\,`（thin）、`\:`（medium）、`\;`（thick）、`\!`（negative） | [M2] |
 | 其他 | `\mathcal{}`、`\operatorname{}`、`\operatorname*{}`（星号变体 [M1]/[M2] 未单列，P15 重点复核，复核前优先用不带星形式）、`\binom{n}{k}`、`\dbinom{n}{k}`、`\tbinom{n}{k}`、`\Pr`、`\stackrel{}{}`、`\underbrace{}_{}`、`\overbrace{}^{}`、`\times`、`\setminus`、`\forall`、`\exists`、`\oplus`、`\oslash`、`\ldots`、`\cdots`、`\vdots`、`\ddots` | [M2]（`\operatorname`、`\binom` 族亦见 [M1]） |
 | 数集 / 算子字体 | `\mathbb{R}`、`\mathrm{softmax}` | [M2] |
@@ -65,7 +66,7 @@
 - [G2] GitHub Blog, "Math support in Markdown"（2022-05-19 发布，2024-05-21 更新）：<https://github.blog/news-insights/product-news/math-support-in-markdown/>。`$` / `$$` 定界符原生支持，MathJax 渲染。
 - [G3] GitHub Changelog（2022-06-28）`math` 围栏代码块：<https://github.blog/changelog/2022-06-28-fenced-block-syntax-for-mathematical-expressions/>。
 - [M1] MathJax Docs, "ams" 扩展：<https://docs.mathjax.org/en/latest/input/tex/extensions/ams.html>。原文："This extension is already loaded in all the components that include the TeX input jax, other than `input/tex-base`"；环境清单明确含 `aligned`、`cases`、`bmatrix`、`pmatrix`；宏清单含 `\lVert`、`\rVert`。
-- [M2] MathJax Docs, "Supported TeX/LaTeX commands"：<https://docs.mathjax.org/en/latest/input/tex/macros/index.html>。base 宏含 `\text`、`\mathbb`、`\mathrm`、`\sqrt`、`\langle`、`\rangle`、`\bar`、`\vert`、`\Vert`、`\mid`、`\frac`、`\sum`、`\prod`，及基础函数 / 关系与运算符 `\exp`、`\log`、`\ln`、`\sin`、`\cos`、`\tanh`、`\min`、`\max`、`\sup`、`\inf`、`\top`、`\in`、`\le`、`\ge`、`\neq`、`\infty`、`\pm`、`\cdot`、`\odot`、`\otimes`、`\quad`、`\qquad`（2026-11-10 逐项核对存在）；希腊字母小写常用集（`\varsigma`/`\varpi`/`\varrho`/`\varkappa` 变体亦存在但未收）与常用大写、关系/箭头/近似符、`\dfrac`/`\tfrac`/`\int`/`\oint`/`\bigcup`/`\bigcap`、`\partial`/`\nabla`/修饰符号（`\hat`/`\tilde`/`\vec`/`\dot`/`\ddot`/`\overline`/`\underline`/`\widehat`/`\widetilde`）、`\left`/`\right` 伸缩定界符（[G1] 官方示例亦用 `\left( \right)`）、`\mathcal`/`\operatorname`/`\stackrel`/`\underbrace`/`\overbrace`、`\times`/`\setminus`/`\forall`/`\exists`/`\oplus`/`\oslash`、`\ldots`/`\cdots`/`\vdots`/`\ddots`、薄空格 `\,`、`\{`、`\}` 与裸竖线符号同页逐项核对存在（2026-11-10）；大写箭头 `\Rightarrow`、`\Longrightarrow`、`\Leftarrow`、`\Leftrightarrow`、`\Longleftrightarrow`，间距 `\;`、`\:`、`\!`，`\Pr`，及 `\binom`、`\dbinom`、`\tbinom`（亦见 [M1]）同页逐项核对存在（2026-11-10）。
+- [M2] MathJax Docs, "Supported TeX/LaTeX commands"：<https://docs.mathjax.org/en/latest/input/tex/macros/index.html>。base 宏含 `\text`、`\mathbb`、`\mathrm`、`\sqrt`、`\langle`、`\rangle`、`\bar`、`\vert`、`\Vert`、`\mid`、`\frac`、`\sum`、`\prod`，及基础函数 / 关系与运算符 `\exp`、`\log`、`\ln`、`\sin`、`\cos`、`\tanh`、`\min`、`\max`、`\sup`、`\inf`、`\top`、`\in`、`\le`、`\ge`、`\neq`、`\infty`、`\pm`、`\cdot`、`\odot`、`\otimes`、`\quad`、`\qquad`（2026-11-10 逐项核对存在）；希腊字母小写常用集（`\varsigma`/`\varpi`/`\varrho`/`\varkappa` 变体亦存在但未收）与常用大写、关系/箭头/近似符、`\dfrac`/`\tfrac`/`\int`/`\oint`/`\bigcup`/`\bigcap`、`\partial`/`\nabla`/修饰符号（`\hat`/`\tilde`/`\vec`/`\dot`/`\ddot`/`\overline`/`\underline`/`\widehat`/`\widetilde`）、`\left`/`\right` 伸缩定界符（[G1] 官方示例亦用 `\left( \right)`）与同页 base 定界符族 `\big` / `\Big` / `\bigg` / `\Bigg`（2026-11-11 收编时核对）、`\mathcal`/`\operatorname`/`\stackrel`/`\underbrace`/`\overbrace`、`\times`/`\setminus`/`\forall`/`\exists`/`\oplus`/`\oslash`、`\ldots`/`\cdots`/`\vdots`/`\ddots`、薄空格 `\,`、`\{`、`\}` 与裸竖线符号同页逐项核对存在（2026-11-10）；大写箭头 `\Rightarrow`、`\Longrightarrow`、`\Leftarrow`、`\Leftrightarrow`、`\Longleftrightarrow`，间距 `\;`、`\:`、`\!`，`\Pr`，及 `\binom`、`\dbinom`、`\tbinom`（亦见 [M1]）同页逐项核对存在（2026-11-10）。
 
 **已知边界**（官方文档未覆盖，列为探测项，首次推送后复核）：行内 `$...$` 紧贴中文字符或中文标点的解析行为（探测项 P12）——写作规则定为「行内公式与中文之间一律加空格」；`\text{}` 内放中文（探测项 P7b）；`\operatorname*` 星号变体未在 [M1]/[M2] 单列（探测项 P15，复核前优先用 `\operatorname`）。
 
@@ -116,7 +117,7 @@
 ## 参考（本章引用列表，链接 references.md）
 ```
 
-篇幅约定：
+篇幅约定（字数口径：总字符数，含标点与公式代码，按章节文件全文计）：
 
 - 推导重章 6000-9000 字（如 7.2 / 4.3 / 7.5）；
 - 标准章 4000-7000 字；

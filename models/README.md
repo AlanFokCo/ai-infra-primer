@@ -105,7 +105,7 @@ graph LR
     P4 --> P5["P5 Case Studies"]
     P2 --> P6["P6 Vision Representations"]
     P6 --> P7["P7 Diffusion & Image Generation"]
-    P7 --> P8["P8 Multimodal LLM"]
+    P7 --> P8["P8 Multimodal LLMs"]
     P7 --> P9["P9 Video Generation"]
     P6 -->|"RVQ codec"| P10["P10 Audio & Speech"]
 ```
@@ -120,22 +120,22 @@ graph LR
 
 | 章节 | 文件 | 状态 |
 | --- | --- | --- |
-| 1.1 语言建模的数学形式化 | [01-formulation.md](01-foundations/01-formulation.md) | 已写 |
-| 1.2 参数、计算、内存的账 | [02-compute-accounting.md](01-foundations/02-compute-accounting.md) | 已写 |
-| 1.3 Scaling Laws（作为理论） | [03-scaling-laws.md](01-foundations/03-scaling-laws.md) | 已写 |
+| 1.1 语言建模的数学形式化 | [01-formulation.md](01-foundations/01-formulation.md) | 已关闭 |
+| 1.2 参数、计算、内存的账 | [02-compute-accounting.md](01-foundations/02-compute-accounting.md) | 已关闭 |
+| 1.3 Scaling Laws（作为理论） | [03-scaling-laws.md](01-foundations/03-scaling-laws.md) | 已关闭 |
 
 ### Part 2 · Transformer Anatomy（W1）
 
 | 章节 | 文件 | 状态 |
 | --- | --- | --- |
-| 2.1 架构总览与设计约束 | [01-overview.md](02-transformer-anatomy/01-overview.md) | 已写 |
-| 2.2 Tokenization 与 Embedding | [02-tokenization-and-embeddings.md](02-transformer-anatomy/02-tokenization-and-embeddings.md) | 已写 |
-| 2.3 Attention 机制解剖 | [03-attention-mechanism.md](02-transformer-anatomy/03-attention-mechanism.md) | 已写 |
-| 2.4 Causality 与 KV Cache | [04-causality-and-kv-cache.md](02-transformer-anatomy/04-causality-and-kv-cache.md) | 已写 |
-| 2.5 位置编码全谱系 | [05-positional-encoding.md](02-transformer-anatomy/05-positional-encoding.md) | 已写 |
-| 2.6 FFN 与非线性 | [06-ffn.md](02-transformer-anatomy/06-ffn.md) | 已写 |
-| 2.7 Normalization 与 Residual | [07-norm-and-residual.md](02-transformer-anatomy/07-norm-and-residual.md) | 已写 |
-| 2.8 组装完整 Decoder Block | [08-assembly.md](02-transformer-anatomy/08-assembly.md) | 已写 |
+| 2.1 架构总览与设计约束 | [01-overview.md](02-transformer-anatomy/01-overview.md) | 已关闭 |
+| 2.2 Tokenization 与 Embedding | [02-tokenization-and-embeddings.md](02-transformer-anatomy/02-tokenization-and-embeddings.md) | 已关闭 |
+| 2.3 Attention 机制解剖 | [03-attention-mechanism.md](02-transformer-anatomy/03-attention-mechanism.md) | 已关闭 |
+| 2.4 Causality 与 KV Cache | [04-causality-and-kv-cache.md](02-transformer-anatomy/04-causality-and-kv-cache.md) | 已关闭 |
+| 2.5 位置编码全谱系 | [05-positional-encoding.md](02-transformer-anatomy/05-positional-encoding.md) | 已关闭 |
+| 2.6 FFN 与非线性 | [06-ffn.md](02-transformer-anatomy/06-ffn.md) | 已关闭 |
+| 2.7 Normalization 与 Residual | [07-norm-and-residual.md](02-transformer-anatomy/07-norm-and-residual.md) | 已关闭 |
+| 2.8 组装完整 Decoder Block | [08-assembly.md](02-transformer-anatomy/08-assembly.md) | 已关闭 |
 
 ### Part 3 · Objectives & Variants（W2）
 
@@ -223,5 +223,4 @@ graph LR
 
 | 波次 | 日期 | 覆盖章节 | 审查轮次 | S1 | S2 | S3 | 未关闭项 | 结论 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-
-（暂无）
+| W1 | 2026-11-11 | P1+P2 共 11 章 | 逐章 evaluator review × 11 + 波末独立对抗审查 1 轮 | 2（全部关闭） | 2（全部关闭） | 5（波末 sweep 全部清零） | 无 | 放行（强制重推导 5 项 pass：Chinchilla Lagrangian / 2.3 √d_k / 2.4 KV cache / 2.5 RoPE / 2.7 Pre-Post-LN 梯度；完整档案见 [w1-review-report.md](../docs/reviews/w1-review-report.md)） |

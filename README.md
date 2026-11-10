@@ -27,4 +27,4 @@
 
 `波次 W1` `models 维度写作中` `training / inference / gpu / cluster 占位`
 
-逐章进度（未开始 / 已写 / 审查中 / 已关闭）见 models/README.md 的进度表。
+逐章进度（未开始 / 已写 / 审查中 / 已关闭）见 [models/README.md](models/README.md) 的进度表。

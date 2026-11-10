@@ -4,7 +4,7 @@
 
 ## 1. 一笔真实账单：2.788M H800-hours 从哪来
 
-DeepSeek-V3 技术报告 Table 1 给出四个数：671B 总参数、每 token 激活 37B、预训练语料 14.8T token、全训练耗 2.788M H800 GPU-hours——拆分为 pre-training 2664K、context extension 119K、post-training 5K（[DeepSeek-AI, 2024](../references.md)，arXiv:2412.19437，[A]；注意这是 GPU-hours 口径，不是货币总成本口径）。这四个数之间是什么关系？本章的答案是三个公式：每 token 前向 FLOPs $\approx 2N$ ，训练总计算量 $C \approx 6ND$ ，参数内存 $= 2N$ bytes（bf16），其中 $N$ 是非 embedding 参数量、 $D$ 是训练处理的 token 总数。推完之后，pre-training 的 2664K GPU-hours 与 14.8T token 就能互相核对——第 9 节会真正对上这笔账。
+DeepSeek-V3 技术报告给出四个数：671B 总参数、每 token 激活 37B、预训练语料 14.8T token（三者见摘要与模型架构节）、全训练耗 2.788M H800 GPU-hours——训练时长拆分 pre-training 2664K + context extension 119K + post-training 5K，见论文 Table 1 的成本行（[DeepSeek-AI, 2024](../references.md)，arXiv:2412.19437，[A]；注意这是 GPU-hours 口径，不是货币总成本口径）。这四个数之间是什么关系？本章的答案是三个公式：每 token 前向 FLOPs $\approx 2N$ ，训练总计算量 $C \approx 6ND$ ，参数内存 $= 2N$ bytes（bf16），其中 $N$ 是非 embedding 参数量、 $D$ 是训练处理的 token 总数。推完之后，pre-training 的 2664K GPU-hours 与 14.8T token 就能互相核对——第 9 节会真正对上这笔账。
 
 这套账值得先学的原因不是算术本身，而是它的用法：架构设计的每个决定——加宽 $d_{\mathrm{ff}}$ 、砍 KV head、换 MoE、拉长上下文窗口——在工程上都等价于把数字在参数、FLOPs、激活、KV cache 这几笔账之间搬来搬去。看懂账，config.json 里每个整数的代价就直接可读。
 
@@ -44,7 +44,7 @@ $$
 
 式 (2) 有个不平凡的推论：固定 $N$ 时，per-token 前向 FLOPs 与 $N$ 如何分布在层数与宽度上无关——24 层宽模型与 48 层窄模型只要参数量相同，FLOPs 账就一样；深浅取舍改变的是并行度、优化行为与表达结构，不是这笔账。若只要估算，层参数有经验公式 $N \approx 12Ld^{2}$ （attention $4d^{2}$ + FFN $8d^{2}$ ，推导与 GQA / SwiGLU 对它的偏离在 2.1）；本章第 9 节直接用 config 精确值。
 
-attention 的打分与加权和（ $QK^{\top}$ 与 $PV$ 两个 batched matmul， $P$ 为 softmax 归一化的注意力权重矩阵，形式定义见 2.3）不含参数，不进式 (2)——它是随 $T^{2}$ 增长的另一笔账，第 6 节单算。
+attention 的打分与加权和（ $QK^{\top}$ 与 $PV$ 两个 batched matmul， $P$ 为 softmax 归一化的 attention 权重矩阵，形式定义见 2.3）不含参数，不进式 (2)——它是随 $T^{2}$ 增长的另一笔账，第 6 节单算。
 
 ## 4. 反向：两倍前向
 
@@ -204,7 +204,7 @@ Llama-3.1-8B 的训练态权重相关账（bf16 工作权重 + bf16 梯度 + 优
 
 ## 9. 实例演算：Llama-3.1-8B 与 DeepSeek-V3
 
-**Llama-3.1-8B 参数逐项**（config 数值乘出来，config 字段见 [Llama-3.1-8B config](../references.md)，[A]）。先固定口径：本节实例中的 $N$ 取层参数口径，即下面逐项加出的 $6.98 \times 10^{9}$ ，untied 输出头作为单列加项；式 (2) 符号表的 $N$ 是全量口径（含输出头， $7.51 \times 10^{9}$ ）。两种口径的换算只有一行： $N_{\mathrm{full}} = N + Vd$ ，于是前向 $2N_{\mathrm{full}} = 2N + 2Vd$ ——下文「前向 $2N$ + 输出头 $2Vd$ 」的写法即按此展开， $T^{*}$ 与训练账同此口径。
+**Llama-3.1-8B 参数逐项**（config 数值乘出来，config 字段见 [Llama-3.1-8B config](../references.md)，[A]）。先固定口径：本节实例中的 $N$ 取层参数口径，即下面逐项加出的 $6.98 \times 10^{9}$ ，untied 输出头作为单列加项；式 (2) 符号表的 $N$ 是全量口径（含输出头， $7.50 \times 10^{9}$ ）。两种口径的换算只有一行： $N_{\mathrm{full}} = N + Vd$ ，于是前向 $2N_{\mathrm{full}} = 2N + 2Vd$ ——下文「前向 $2N$ + 输出头 $2Vd$ 」的写法即按此展开， $T^{*}$ 与训练账同此口径。
 
 - 每层 attention：Q 投影 $d^{2}$ = 16777216，K、V 投影 $2 \times d \times H_{kv} d_{\mathrm{head}} = 2 \times 4096 \times 1024$ = 8388608，out 投影 $d^{2}$ = 16777216，小计 41943040；
 - 每层 FFN： $3 d \, d_{\mathrm{ff}} = 3 \times 4096 \times 14336$ = 176160768；
@@ -228,7 +228,7 @@ $$
 | 账 | Llama-3.1-8B | DeepSeek-V3 |
 | --- | --- | --- |
 | 总参数 | $8.03 \times 10^{9}$ | $671 \times 10^{9}$ |
-| 计入 FLOPs 的 $N$ | $7.51 \times 10^{9}$ （含输出头） | $37 \times 10^{9}$ （激活口径） |
+| 计入 FLOPs 的 $N$ | $7.50 \times 10^{9}$ （含输出头） | $37 \times 10^{9}$ （激活口径） |
 | 前向 /token | $1.50 \times 10^{10}$ | $7.4 \times 10^{10}$ |
 | 训练 /token | $4.50 \times 10^{10}$ | $2.22 \times 10^{11}$ |
 | 权重 bf16 | 16 GB | 1.34 TB |

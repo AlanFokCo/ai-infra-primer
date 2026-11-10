@@ -260,7 +260,7 @@ assert n == expect
 | 位置编码 | learned absolute 查表（1024 行，加进 stream） | RoPE（attention 内旋转，stream 无位置向量） |
 | 投影 bias | True（attention 与 FFN 全带） | False |
 | tying | tied（$W_U = E$，124M 对账见 2.2 §9） | untied（独立 $W_U$，$+Vd$） |
-| FFN | 两矩阵 GELU，$d_{\mathrm{ff}} = 4d$（gelu_new = tanh 近似） | 三矩阵 SwiGLU，$d_{\mathrm{ff}} = 3.5d$ |
+| FFN | 两矩阵 GELU，$d_{\mathrm{ff}} = 4d$（GPT-2 的 HF config 为 gelu_new = tanh 近似；nanoGPT 的 `nn.GELU()` 默认是精确 GELU） | 三矩阵 SwiGLU，$d_{\mathrm{ff}} = 3.5d$ |
 | attention | MHA（$H_{kv} = H_q$） | GQA（$H_{kv} = H_q / 4$） |
 
 读这张表的方式：左列到右列的每一行都对应 P2 某一章的一次推导（LayerNorm→RMSNorm 是 2.7 §3，learned abs→RoPE 是 2.5，bias 与 tying 是 §8 误解二三，GELU→SwiGLU 是 2.6，MHA→GQA 是 4.1 的预告）。骨架七年未动，动的是组件——这就是「现代标准配方」的精确含义：式 (1) 的接线 + 右列的组件选择。

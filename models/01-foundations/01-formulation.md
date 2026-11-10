@@ -219,7 +219,7 @@ $$
 \alpha_{ij} = \frac{\exp(s_{ij} + M_{ij})}{\sum_{l=1}^{T} \exp(s_{il} + M_{il})}, \qquad L(\theta) = - \sum_{t=1}^{T} \ell_t \log q_\theta(x_t | x'; M) \qquad (8)
 $$
 
-**符号**：$s_{ij}$ ：未加 mask 的 attention 打分（2.3 定义）；$\alpha_{ij}$ ：mask 后的注意力权重， $M_{ij} = -\infty$ 时 $\exp$ 项为 0，位置 $j$ 对 $i$ 不可见；$\ell_t$ ：loss mask，1 表示该位置计损失；$x'$ ：经 mask 方案处理后的输入序列；$q_\theta(x_t | x'; M)$ ：在输入 $x'$ 与可见性 $M$ 下，位置 $t$ 处真实 token $x_t$ 的条件概率。
+**符号**：$s_{ij}$ ：未加 mask 的 attention 打分（2.3 定义）；$\alpha_{ij}$ ：mask 后的 attention 权重， $M_{ij} = -\infty$ 时 $\exp$ 项为 0，位置 $j$ 对 $i$ 不可见；$\ell_t$ ：loss mask，1 表示该位置计损失；$x'$ ：经 mask 方案处理后的输入序列；$q_\theta(x_t | x'; M)$ ：在输入 $x'$ 与可见性 $M$ 下，位置 $t$ 处真实 token $x_t$ 的条件概率。
 
 式 (8) 的条件是整条输入 $x'$ 而不是前缀 $x_{<t}$ ：可见性语义由 $M$ 承担，腐蚀语义由 $x'$ 承担。CLM 时 $x' = x$ 且 $M$ 取下三角，位置 $t$ 恰好只能看到 $x_{<t}$ ，式 (8) 退化为本章前半的 $q_\theta(x_t | x_{<t})$ ；MLM 与 prefix-LM 的双向可见性也收进同一记号。三种 objective 只是 $(x', M, \ell)$ 的三个取值：
 

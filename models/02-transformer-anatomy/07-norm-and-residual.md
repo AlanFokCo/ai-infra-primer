@@ -284,7 +284,7 @@ def rmsnorm(x, weight, eps=1e-6):             # x: [B, T, d]；教学用，非�
     return weight * x * torch.rsqrt(var + eps)  # rsqrt = 1/sqrt；weight 即 gamma（zero-centered 变体存 1+omega）
 ```
 
-官方 `LlamaRMSNorm.forward` 与这三行的唯一实质差异是精度处理：先升 fp32 做归约与除法再降回输入 dtype。`Olmo2Attention` 的 `q_norm` / `k_norm`（`modeling_olmo2.py`，[A]）是式 (15) 的生产形态。
+官方 `LlamaRMSNorm.forward` 与这三行的唯一实质差异是精度处理：先升 fp32 做归约与除法再降回输入 dtype。`Olmo2Attention` 的 `q_norm` / `k_norm`（`modeling_olmo2.py`，[A]）是式 (15a) 的生产形态。
 
 ## 总结
 

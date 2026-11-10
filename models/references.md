@@ -139,6 +139,62 @@
 
 | 英文术语 | 中文处理 | 首次出现章节 |
 | --- | --- | --- |
+| vocabulary | 词表（vocabulary）；token 保留英文 | 1.1 |
+| tokenizer | 分词器（tokenizer） | 1.1 |
+| context window | 上下文窗口 | 1.1 |
+| probability simplex | 概率单纯形 | 1.1 |
+| output head / unembedding | 输出头 | 1.1 |
+| hidden state | 隐状态 | 1.1 |
+| support（分布语境） | 支持集 | 1.1 |
+| chain rule | 链式法则 | 1.1 |
+| autoregressive factorization | 自回归分解 | 1.1 |
+| maximum likelihood estimation (MLE) | 极大似然估计（MLE） | 1.1 |
+| negative log-likelihood (NLL) | 负对数似然（NLL） | 1.1 |
+| cross-entropy (CE) | 交叉熵（cross-entropy） | 1.1 |
+| KL divergence | KL 散度 | 1.1 |
+| teacher forcing | 教师强制（teacher forcing） | 1.1 |
+| exposure bias | 暴露偏差 | 1.1 |
+| entropy | 熵 | 1.1 |
+| perplexity (PPL) | 困惑度（perplexity） | 1.1 |
+| bits per byte | 保留英文（bits per byte） | 1.1 |
+| ancestral sampling | 祖先采样 | 1.1 |
+| temperature | 温度（temperature） | 1.1 |
+| softmax bottleneck | softmax 瓶颈 | 1.1 |
+| mixture of softmaxes (MoS) | 保留英文（Mixture of Softmaxes，MoS） | 1.1 |
+| KV cache | 保留英文（KV cache） | 1.1 |
+| FLOPs / FLOPS | 保留英文（FLOPs 计次数、FLOPS 计速率） | 1.2 |
+| fused multiply-add (FMA) | 融合乘加（FMA） | 1.2 |
+| multiply-accumulate (MAC) | 保留英文（MAC） | 1.2 |
+| multi-head attention (MHA) | 保留英文（MHA） | 1.2 |
+| grouped-query attention (GQA) | 保留英文（GQA） | 1.2 |
+| gradient checkpointing（= activation checkpointing） | 梯度检查点（亦称激活检查点） | 1.2 |
+| arithmetic intensity | 算术强度 | 1.2 |
+| model FLOPs utilization (MFU) | 算力利用率（MFU） | 1.2 |
+| compute-optimal | 保留英文（compute-optimal，算力最优分配） | 1.3 |
+| over-training | 过度训练 | 1.3 |
+| emergence / emergent ability | 涌现（emergence）/ 涌现能力（emergent ability） | 1.3 |
+| residual stream | 保留英文（residual stream；残差流） | 2.1 |
+| Pre-LN / Post-LN | 保留英文（Pre-LN / Post-LN） | 2.1 |
+| sequential operations | 串行操作数 | 2.1 |
+| byte-pair encoding (BPE) | 保留英文（BPE） | 2.2 |
+| WordPiece | 保留英文（WordPiece） | 2.2 |
+| Unigram | 保留英文（Unigram） | 2.2 |
+| subword regularization | 保留英文（subword regularization） | 2.2 |
+| out-of-vocabulary (OOV) | 未登录词（OOV） | 2.2 |
+| weight tying | 权重绑定（weight tying） | 2.2 |
+| byte latent transformer (BLT) | 保留英文（BLT） | 2.2 |
+| attention weights | attention 权重（首现作「注意力权重（attention weights）」；attention 为 STYLE_GUIDE §1 保护术语，不译） | 2.3 |
+| bilinear form | 双线性型 | 2.3 |
+| saturation（softmax 语境） | 饱和 | 2.3 |
+| Jacobian | 雅可比（Jacobian） | 2.3 |
+| permutation matrix / permutation equivariance | 置换矩阵 / 置换等变 | 2.3 |
+| online softmax | 保留英文（online softmax） | 2.3 |
+| causal mask | 因果掩码（causal mask） | 2.4 |
+| prefill / decode | 保留英文（prefill / decode） | 2.4 |
+| chunked prefill | 保留英文（chunked prefill，分块 prefill） | 2.4 |
+| multi-query attention (MQA) | 保留英文（MQA） | 2.4 |
+| roofline model | 屋顶线模型（roofline） | 2.4 |
+| ridge point | 分界线（ridge point） | 2.4 |
 | positional encoding | 位置编码 | 2.5 |
 | rotary position embedding (RoPE) | 旋转位置编码（RoPE） | 2.5 |
 | relative position bias | 相对位置偏置 | 2.5 |
@@ -146,12 +202,21 @@
 | wavelength（RoPE 语境） | 波长 | 2.5 |
 | partial / decoupled RoPE | 部分旋转（partial RoPE） | 2.5 |
 | NoPE | 无显式位置编码（NoPE） | 2.5 |
+| sinusoidal position encoding | 保留英文（sinusoidal） | 2.5 |
+| learned absolute position embedding | 可学绝对位置嵌入（learned absolute） | 2.5 |
+| ALiBi (attention with linear biases) | 保留英文（ALiBi） | 2.5 |
+| position interpolation (PI) | 位置插值（PI） | 2.5 |
+| half-split / interleaved | 保留英文（RoPE 两种维度配对约定） | 2.5 |
 | position-wise feed-forward network (FFN) | 逐位置前馈网络（FFN） | 2.6 |
 | gated linear unit (GLU) | 门控线性单元（GLU） | 2.6 |
 | gating | 门控（gating） | 2.6 |
 | SiLU / Swish | 保留英文（SiLU / Swish） | 2.6 |
 | key-value memory（FFN 语境） | 键值记忆 | 2.6 |
 | dead zone | 死区 | 2.6 |
+| Gaussian error linear unit (GELU) | 保留英文（GELU） | 2.6 |
+| cumulative distribution function (CDF) | 累积分布函数（CDF） | 2.6 |
+| SwiGLU / ReGLU / GEGLU | 保留英文（GLU 族变体） | 2.6 |
+| mixture-of-experts (MoE) | 保留英文（MoE） | 2.6 |
 | normalization | 归一化 | 2.7 |
 | layer normalization (LayerNorm) | 层归一化（LayerNorm） | 2.7 |
 | batch normalization (BatchNorm) | 批归一化（BatchNorm） | 2.7 |
@@ -161,4 +226,9 @@
 | QK-Norm | 保留英文（QK-Norm） | 2.7 |
 | zero-centered norm | zero-centered 增益（增益存成相对恒等的偏差） | 2.7 |
 | soft-capping | 保留英文（soft-capping，软钳制） | 2.7 |
+| invariance | 不变性 | 2.7 |
+| weight decay | 权重衰减 | 2.7 |
+| automatic gain control | 自动增益控制 | 2.7 |
+| DeepNorm | 保留英文（DeepNorm） | 2.7 |
 | parallel (attention/FFN) block | 并行块（parallel block） | 2.8 |
+| tensor parallelism | 张量并行 | 2.8 |

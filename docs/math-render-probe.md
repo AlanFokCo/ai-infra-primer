@@ -367,6 +367,24 @@ $$
 
 预期结果：三行全部渲染；间距行四处间距宽窄可辨（`\!` 最窄、`\;` 最宽）；`\binom` 带括号上下堆叠，`\dbinom` 大字号、`\tbinom` 小字号；`\Pr` 正体算子、`\mid` 条件竖线间距正确。
 
+### P17 · `\big` / `\Big` / `\bigg` / `\Bigg` 固定尺寸定界符（基础命令，[M2] 直接证据；W1 波末随白名单收编补入，2026-11-11）
+
+源码：
+
+```tex
+$$
+\big( x + y \big), \quad \Big( \frac{a}{b} \Big), \quad \bigg( \sum_{i=1}^{n} x_i \bigg), \quad \Bigg( \dfrac{a}{\dfrac{b}{c}} \Bigg)
+$$
+```
+
+实时渲染：
+
+$$
+\big( x + y \big), \quad \Big( \frac{a}{b} \Big), \quad \bigg( \sum_{i=1}^{n} x_i \bigg), \quad \Bigg( \dfrac{a}{\dfrac{b}{c}} \Bigg)
+$$
+
+预期结果：四组括号全部渲染，尺寸逐档递增可辨；不渲染或尺寸不递增则回改 2.2 式 (4)(13) 与 2.6 式 (5)(6) 改用 `\left(...\right)`。
+
 ## 核对清单
 
 | 用例 | 覆盖的白名单构造 | 预期 | 核对结果 |
@@ -388,6 +406,7 @@ $$
 | P14 | 希腊字母小写常用集 26 个 + 大写 9 个（基础命令，[M2] 直接证据） | 渲染 | 待首次推送后填写 |
 | P15 | 关系/箭头/近似；`\dfrac`/`\tfrac`/`\int`/`\oint`/`\bigcup`/`\bigcap`；`\partial`/`\nabla`/修饰符号；`\left...\right` 伸缩定界符；`\mathcal`/`\operatorname*`/`\stackrel`/`\underbrace`/`\overbrace`/`\times`/`\setminus`/`\forall`/`\exists`/`\oplus`/`\oslash`/省略号/`\,`（基础命令，[M2] 直接证据） | 渲染；`\operatorname*` 重点复核 | 待首次推送后填写 |
 | P16 | 大写箭头（`\Rightarrow` 等 5 个）；间距 `\:`、`\;`、`\!`（`\,` 见 P15）；`\binom`/`\dbinom`/`\tbinom`；`\Pr`（基础命令，[M2] 直接证据） | 渲染 | 待首次推送后填写 |
+| P17 | `\big` / `\Big` / `\bigg` / `\Bigg` 固定尺寸定界符（基础命令，[M2] 直接证据；2026-11-11 随 W1 波末白名单收编补入） | 渲染且尺寸逐档递增 | 待首次推送后填写 |
 
 注：本表 code span 内的 `\|` 是 GFM 表格转义写法，渲染后显示为单个竖线字符（反斜杠不显示）；真实 LaTeX 源码以 P11 源码区为准。
 

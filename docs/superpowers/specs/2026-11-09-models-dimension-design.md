@@ -519,7 +519,7 @@ STYLE_GUIDE.md 是写作 agent 与 evaluator agent 的共同唯一标准，必�
 
 ### 波次完成记录
 
-（暂无）
+- 2026-11-11 W0+W1 完成：11 章（P1 三章 + P2 八章）+ W0 脚手架（STYLE_GUIDE / references.md / lint 脚本 / math-render-probe）；审查为逐章 review + 波末独立对抗审查；S1 2 起 / S2 2 起全部关闭，S3 5 起于波末 sweep 清零；强制重推导 5 项（1.3 Chinchilla Lagrangian、2.3 √d_k、2.4 KV cache、2.5 RoPE、2.7 Pre-Post-LN 梯度）全部 pass；无大纲偏差。审查档案：docs/reviews/w1-review-report.md
 
 ---
 

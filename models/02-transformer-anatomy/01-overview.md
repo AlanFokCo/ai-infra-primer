@@ -79,7 +79,7 @@ $$
 | 3 | QKV 投影 | $[B, T, d]$ | Q $[B, T, H_q, D]$；K、V $[B, T, H_{kv}, D]$ | $[B,T,32,128]$ / $[B,T,8,128]$ |
 | 4 | RoPE（作用于 Q、K） | 同上 | shape 不变 | 2.5 |
 | 5 | scores $= QK^{\top} / \sqrt{D}$ | Q、K | $[B, H_q, T, T]$ | 唯一的 $T^{2}$ 对象 |
-| 6 | causal mask + softmax | $[B, H_q, T, T]$ | $[B, H_q, T, T]$ | 1.1 式 (8) 的 $M$ |
+| 6 | causal mask + softmax | $[B, H_q, T, T]$ | $[B, H_q, T, T]$（输出记作 $P$ ，attention 权重矩阵，正式定义见 2.3 式 (4)） | 1.1 式 (8) 的 $M$ |
 | 7 | 加权和 $PV$ | P、V | $[B, T, H_q, D]$ | 转置回 $T$ 在前 |
 | 8 | concat heads + out 投影 | $[B, T, H_q D]$ | $[B, T, d]$ | $H_q D = 4096$ |
 | 9 | 残差加（attention 半层完） | 两个 $[B, T, d]$ | $[B, T, d]$ | 式 (1) 第二行 |
