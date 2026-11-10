@@ -224,21 +224,29 @@ $$
 
 ## 7. QK-Norm：把归一化搬进 attention 内部
 
-2.3 §3.4 留了一个口子：$\sqrt{d_k}$ 缩放只保证**初始化时** $\mathrm{Var}(s) = 1$；训练中 $q, k$ 的范数没有任何机制封顶，$\langle q, k \rangle$ 幅度随训练漂移，logit 持续长大则 softmax 重新滑进饱和区、2.3 式 (9) 的梯度再被饱和亏空 $\varepsilon$ 压制。QK-Norm（[Henry et al., 2020](../references.md)，arXiv:2010.04245，[B]）的做法直接：在 score 之前对 $q, k$ 各做一次归一化（原文用 LayerNorm；OLMo 2 用 RMSNorm——`q_norm` / `k_norm`，2.3 §8 代码走读，[A]）：
+2.3 §3.4 留了一个口子：$\sqrt{d_k}$ 缩放只保证**初始化时** $\mathrm{Var}(s) = 1$；训练中 $q, k$ 的范数没有任何机制封顶，$\langle q, k \rangle$ 幅度随训练漂移，logit 持续长大则 softmax 重新滑进饱和区、2.3 式 (9) 的梯度再被饱和亏空 $\varepsilon$ 压制。QK-Norm（[Henry et al., 2020](../references.md)，arXiv:2010.04245，[B]）的原始形式是把点积整个换成余弦相似度：逐 head 对 $q, k$ 做 $\ell_2$ 归一化，并用一个可学标量 $g$ **替换** $1/\sqrt{d_k}$ 缩放：
 
 $$
-q_h \leftarrow \mathrm{Norm}(q_h), \qquad k_h \leftarrow \mathrm{Norm}(k_h), \qquad s_{ts} = \frac{\langle q_t, k_s \rangle}{\sqrt{d_k}} \qquad (15)
+s_{ts} = g \cdot \left\langle \frac{q_t}{\lVert q_t \rVert_{2}}, \frac{k_s}{\lVert k_s \rVert_{2}} \right\rangle \qquad (15)
 $$
 
-归一化粒度有两种：Henry et al. 原文与 Gemma 3 为**逐 head**（在每 head 的 $d_k$ 维上做——§1 的特征维在这里换成 head 维）；OLMo 2 的 `q_norm` / `k_norm` 实测为**全投影维**变体——RMSNorm 作用于 `q_proj` 输出的 $H d_k = 4096$ 维、在 head 拆分之前（2.3 §8 走读）。摆放位置注记：RoPE 是块对角旋转、正交变换（2.5），保持范数——QK-Norm 放在 RoPE 之前还是之后，下面的封顶结论不变；OLMo 2 的实现把它放在投影之后、RoPE 之前。
+**符号**：$g$：可学标量增益，初始化值依赖训练语料的序列长度（取词数的 97.5 分位数，原文 eq (3)，Table 5 消融该分位数选择）。原文口径下 logit 的硬上界就是 $|g|$ 本身（余弦有界，$|\langle \hat{q}, \hat{k} \rangle| \le 1$）——原文消融中掉分最多的一项正是去掉 $g$：没有它 logits 被压在 $[-1, 1]$，softmax 分不开谁该被注意。
 
-封顶效果是一行 Cauchy-Schwarz：RMSNorm（无增益）后 $\lVert q_h \rVert = \lVert k_h \rVert = \sqrt{d_k}$，故
+现代变体（Gemma 3、OLMo 2）把「$\ell_2$ 归一化 + $g$」换成 RMSNorm，并**保留** $1/\sqrt{d_k}$ 缩放（OLMo 2 的 `q_norm` / `k_norm`，2.3 §8 代码走读，[A]）：
+
+$$
+s_{ts} = \frac{\left\langle \mathrm{RMSNorm}(q_t), \mathrm{RMSNorm}(k_s) \right\rangle}{\sqrt{d_k}} \qquad (15\text{a})
+$$
+
+归一化粒度有两种：Gemma 3 与 Henry et al. 原文同为**逐 head**（在每 head 的 $d_k$ 维上做——§1 的特征维在这里换成 head 维）；OLMo 2 的 `q_norm` / `k_norm` 实测为**全投影维**变体——RMSNorm 作用于 `q_proj` 输出的 $H d_k = 4096$ 维、在 head 拆分之前（2.3 §8 走读）。摆放位置注记：RoPE 是块对角旋转、正交变换（2.5），保持范数——归一化放在 RoPE 之前还是之后，下面的封顶结论不变；OLMo 2 的实现把它放在投影之后、RoPE 之前。
+
+现代变体的封顶效果是一行 Cauchy-Schwarz：RMSNorm（无增益）后 $\lVert q_h \rVert = \lVert k_h \rVert = \sqrt{d_k}$，故
 
 $$
 |s| \le \frac{\lVert q \rVert \, \lVert k \rVert}{\sqrt{d_k}} = \sqrt{d_k} \qquad (16)
 $$
 
-式 (16) 的硬封顶是**逐 head 口径**（Henry et al. 原文与 Gemma 3 的粒度）：$d_k = 128$ 时 logit 幅度被钉死在 11.3 以内。全维变体（OLMo 2）下，拆分后每 head 范数只在平均意义上为 $\sqrt{d_k}$（$\sum_h \lVert q_h \rVert^{2} = d$），逐 head 最坏界松到 $H\sqrt{d_k}$——封顶仍成立，但按典型值而非逐 head 硬界理解。可学增益会把上界乘上 $\gamma^{2}$，但**增长本身被关进了参数里**：logit 失控从「激活统计的自由漂移」变成「增益向量的学习问题」，尺度小、可监控。
+式 (16) 的硬封顶是现代变体的**逐 head 口径**（Gemma 3 的粒度；原文形式的上界是 $|g|$ 本身）：$d_k = 128$ 时 logit 幅度被钉死在 11.3 以内。全维变体（OLMo 2）下，拆分后每 head 范数只在平均意义上为 $\sqrt{d_k}$（$\sum_h \lVert q_h \rVert^{2} = d$），逐 head 最坏界松到 $H\sqrt{d_k}$——封顶仍成立，但按典型值而非逐 head 硬界理解。可学增益会把上界乘上 $\gamma^{2}$，但**增长本身被关进了参数里**：logit 失控从「激活统计的自由漂移」变成「增益向量的学习问题」，尺度小、可监控。
 
 失控的速度可以量化：2.3 式 (7) 的口径下 logit 标准差正比于 $\lVert q \rVert \, \lVert k \rVert / \sqrt{d_k}$，$q, k$ 范数同乘 $g$ 则 logit 幅度乘 $g^{2}$。初始化时 std $\approx 1$；$g^{2} \approx \sqrt{d_k} = 11.3$、即 $g \approx 3.4$ 时 std 回到 11 量级——即 2.3 §3.2 未缩放情形（$\sigma_s \approx 11$、行内最大差距 $\Delta \approx 40$ nat、$p_{\max} \approx 0.8$–$0.94$）的饱和区，梯度再被饱和亏空压制。式 (16) 把这个自由度从激活统计中拿走，饱和回归的唯一通道只剩增益 $\gamma$ 的学习。
 
@@ -290,7 +298,7 @@ def rmsnorm(x, weight, eps=1e-6):             # x: [B, T, d]；教学用，非�
 | LN Jacobian 引理 | $J = \frac{1}{\sigma}(P - \hat{x}\hat{x}^{\top}/d)$，式 (10)(11) | rank $d-2$；$\lVert J \rVert = O(\sqrt{d}/\lVert x \rVert)$：反向增益反比输入范数 |
 | Xiong Theorem 1 | 式 (13) | Post-LN $O(d\sqrt{\ln d})$ 与 $L$ 无关 / Pre-LN $O(d\sqrt{\ln d / L})$；扩展分析：Post-LN 近输出大、向输入衰减（非浅层爆炸）⟹ warmup 数学必然 |
 | DeepNorm | $\alpha = (2L)^{1/4}$、$\beta = (8L)^{-1/4}$（encoder-only / decoder-only 同式），式 (14)(14a) | 更新界条件 $2L(v^{2}+w^{2})/\alpha^{2}=1$ 出 $\alpha/\beta = \Theta(\sqrt{L})$；$\alpha\beta = 1/\sqrt{2}$ 是解的后果；warmup 写成架构常数 |
-| QK-Norm | 式 (15)(16) | 硬封顶 $\sqrt{d_k}$ 为逐 head 口径（Henry et al. / Gemma 3）；OLMo 2 为全维变体；Gemma 3 取代 Gemma 2 的 soft-capping |
+| QK-Norm | 原文 $s = g\langle q/\lVert q \rVert, k/\lVert k \rVert \rangle$（逐 head ℓ2 + 可学 $g$，式 (15)）；现代变体 RMSNorm + $1/\sqrt{d_k}$，式 (15a)(16) | 上界：原文 $|g|$ 本身；变体 $\sqrt{d_k}$（逐 head 口径，OLMo 2 全维变体最坏 $H\sqrt{d_k}$）；Gemma 3 取代 Gemma 2 的 soft-capping |
 | soft-capping | $z' = c\tanh(z/c)$，attn 50.0 / final 30.0，式 (17) | 仅 Gemma 2；导数处处非零 vs clip 界外零梯度；Gemma 3 已弃用 |
 
 ## 练习
