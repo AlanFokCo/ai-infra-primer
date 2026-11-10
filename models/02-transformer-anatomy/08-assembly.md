@@ -46,7 +46,7 @@ $$
 x^{(0)}_t = E_{x_t}, \qquad z_t = W_U \, \mathrm{RMSNorm}_f\left( x^{(L)}_t \right), \qquad q_\theta\left( \cdot \mid x_{<t} \right) = \mathrm{softmax}\left( z_{t-1} \right) \qquad (4)
 $$
 
-**符号**：$E \in \mathbb{R}^{V \times d}$：输入 embedding（查表，2.2 式 (7)）；$\mathrm{RMSNorm}_f$：final norm（其必要性 = Pre-LN stream 范数随 $\sqrt{L}$ 增长，2.7 式 (12)）；$W_U \in \mathbb{R}^{V \times d}$：输出头，tie_word_embeddings = false 时与 $E$ 独立（2.2 §9）；$z_t \in \mathbb{R}^{V}$：位置 $t$ 的 logits；$q_\theta(\cdot | x_{<t})$：1.1 式 (1) 的逐位置条件分布。
+**符号**：$E \in \mathbb{R}^{V \times d}$：输入 embedding（查表，2.2 式 (7)）；$\mathrm{RMSNorm}_f$：final norm（其必要性 = Pre-LN stream 范数随 $\sqrt{L}$ 增长，2.7 式 (12)）；$W_U \in \mathbb{R}^{V \times d}$：输出头，tie_word_embeddings = false 时与 $E$ 独立（2.2 §9）；$z_t \in \mathbb{R}^{V}$：位置 $t$ 的 logits；$q_\theta(\cdot | x_{<t})$：1.1 式 (2) 的逐位置条件分布。
 
 式 (4) 的两端各管一件事：$E$ 把整数下标变成 $d$ 维向量（gather，不进 FLOPs 账，1.2 §3 口径）；$\mathrm{RMSNorm}_f$ 把随 $\sqrt{L}$ 变粗的 stream 压回 $O(\sqrt{d})$ 再交给输出头；$W_U$ 做一次 $d \to V$ 的 matmul（每 token $2Vd$ FLOPs，不可忽略，§5）；softmax 把 logits 变成分布，采样属 1.1 §8。整机公式在两个工作模式下是同一套：训练 / prefill 时 $T > 1$ 并行打分全部位置（teacher forcing，1.1 §4）；decode 时 $T = 1$、式 (2) 的求和上限由 KV cache 的当前长度扮演（2.4 §4.4）——式 (1)–(4) 一行不改，改的只有输入形状与 $k_{s,g}$、$v_{s,g}$ 的来源（现算 vs 缓存）。
 
@@ -358,7 +358,7 @@ mask 的组装同样在模型级完成一次：`LlamaModel.forward` 依据 atten
 | attention 后端 | 手写物化 scores | `ALL_ATTENTION_FUNCTIONS` 派发到 sdpa / flash / flex |
 | 生产钩子 | 无 | 初始化方案、张量并行切分、梯度检查点、量化 |
 
-走读的读法：官方代码里凡是不出现在式 (1)–(4) 的部分，都可以归入上表后四行——数值精度、内存管理、算子派发、分布式。公式与实现之间隔着的就是这四层工程，不多不少。核对方式也是现成的：把 §3 教学版与该文件并排打开，逐类对照上表七行；任何一行对不上，要么是你读漏了生产钩子，要么是 modeling 代码升级改了接线——后者值得停下来查 commit，因为接线变化就是配方变化（§1 变体注记的各家差异在代码里就体现为这些行）。
+走读的读法：官方代码里凡是不出现在式 (1)–(4) 的部分，都可以归入上表后四行——数值精度、内存管理、算子派发、分布式。公式与实现之间隔着的就是这四层工程，不多不少。术语注：表中「张量并行」（tensor parallelism）指把单层权重矩阵按行/列切分到多张卡、行并行 GEMM 的尾部需要一次 all-reduce 合并部分和的分布式方案；其系统展开属 cluster 维度，本书只用到「每层 all-reduce 次数」这一账面量（§7）。核对方式也是现成的：把 §3 教学版与该文件并排打开，逐类对照上表七行；任何一行对不上，要么是你读漏了生产钩子，要么是 modeling 代码升级改了接线——后者值得停下来查 commit，因为接线变化就是配方变化（§1 变体注记的各家差异在代码里就体现为这些行）。
 
 ## 5. 单层单 token FLOPs 全算
 
@@ -429,7 +429,7 @@ $$
 | norm 次数 / block | 2（$\gamma_1, \gamma_2$） | 1 |
 | 分支依赖 | FFN 输入含 attention 当层输出 | 两分支独立，同读 $x^{(\ell-1)}$ |
 | block 内复合深度 | 每 block 两级复合（全机 $2L$ 级子层复合） | 每 block 一级并列（$L$ 级复合） |
-| 参数量 / FLOPs | $2.5d^{2} + 3 d\, d_{\mathrm{ff}}$ / 层（GQA 口径） | 逐项相同 |
+| 参数量 / FLOPs | $2.5d^{2} + 3 d\, d_{\mathrm{ff}}$ / 层（GQA 口径） | 逐项相同（唯一差：每层 norm 增益 $2d \to d$，见上行） |
 | GEMM 形态 | 两批输入不同，天然先后 | QKV 与 gate/up 读同一输入，可拼成一个大 GEMM；out 与 down 同理（输出相加） |
 | 张量并行通信 | 每层两次行并行 all-reduce | 两分支输出求和后合并为一次 |
 
@@ -450,9 +450,9 @@ $$
 ## 8. 常见误解清单
 
 1. **head_dim = hidden_size / num_attention_heads 是巧合不是定义**。Llama-3.1-8B 的 $128 = 4096 / 32$ 恰好整除成立；Qwen3-8B 的 config 则把 head_dim = 128 写成了显式字段（[Qwen3-8B config](../references.md)，[A]）——同一数值，一种是导出、一种是声明；DeepSeek-V3 的 qk head 维 $= 128$（nope）$+ 64$（rope）$= 192 \neq$ hidden/heads（[DeepSeek-V3 config](../references.md)，[A]；2.3 §5、2.5 §4.7 已用）是显式字段脱离整除关系的实例。代码侧的根据：`LlamaAttention.__init__` 先查显式 `head_dim` 字段、缺省才整除导出（§4）。读陌生 config 时先查有没有显式 head_dim，再决定能不能整除；参数账（$W_h^{Q}$ 的形状）与 RoPE 通道数（$D/2$）都跟在 head_dim 后面，硬整除会连环错。
-2. **bias 的有无是配方分野，不是默认值问题**。Llama-3.1-8B、Qwen3-8B、OLMo-2-7B 的 attention_bias 与 mlp_bias 全为 false（各 config 条目，[A]；走读见 §4）；GPT-2 与 nanoGPT 老配方全为 true（[Radford et al., 2019](../references.md)，[W]；[Karpathy, nanoGPT](../references.md)，教学参照）。bias 参数只占 $O(Ld)$ 低阶（2.1 §4 口径），去掉它不是「bias 被证明有害」，是现代配方的收敛点；照抄 nanoGPT 的 bias=True 去复现 Llama 类模型是错配。另外两件事不要混：投影的 bias 与 norm 的 $\beta$——LayerNorm 有 $\beta$（2.7 式 (1)），RMSNorm 没有（2.7 式 (5)），「这个模型无 bias」断言的是前者。
+2. **bias 的有无是配方分野，不是默认值问题**。attention_bias 字段三家全为 false（Llama-3.1-8B、Qwen3-8B、OLMo-2-7B，各 config 条目，[A]）；FFN 侧 Llama-3.1-8B 另有显式 mlp_bias = false，Qwen3 / OLMo-2 的 config 无此字段、其 FFN 无 bias 以 modeling 代码为准（OLMo 2 侧见 `modeling_olmo2.py` 的 `Olmo2MLP`，三个投影硬编码 bias=False，[HuggingFace, modeling_olmo2.py](../references.md)，[A]）——这正呼应 §2 的分工：config 管形状与账，接线与缺省在代码里。GPT-2 与 nanoGPT 老配方全为 true（[Radford et al., 2019](../references.md)，[W]；[Karpathy, nanoGPT](../references.md)，教学参照）。bias 参数只占 $O(Ld)$ 低阶（2.1 §4 口径），去掉它不是「bias 被证明有害」，是现代配方的收敛点；照抄 nanoGPT 的 bias=True 去复现 Llama 类模型是错配。另外两件事不要混：投影的 bias 与 norm 的 $\beta$——LayerNorm 有 $\beta$（2.7 式 (1)），RMSNorm 没有（2.7 式 (5)），「这个模型无 bias」断言的是前者。
 3. **tied vs untied 差的是一整个 $Vd$**。tie_word_embeddings = false 时输出头是独立的第二份词表矩阵：Llama-3.1-8B 为 $0.53 \times 10^{9}$、占总参数 6.5%；GPT-2 为 tied（[W]，2.2 §9 的 124M 对账）。对账时漏掉这个字段就凭空「丢」5 亿参数（§6 的四种错法之一）；梯度耦合的取舍（同一份 $E$ 两路梯度）在 2.2 §9，此处只登记口径：判定只看 config 一个布尔字段。
-4. **block 之外的参数与 FLOPs 不要漏**。「整机 = $L$ 个 block」的口径会漏掉三样：final RMSNorm（$d$ 个参数 + 每 token 一次归约，2.7 §5.2 给出它必须存在的理由）、输入 embedding（$Vd$ 参数、0 FLOPs——查表不是 matmul，1.2 §3）、输出头（$Vd$ 参数 + $2Vd$ FLOPs，Llama-3.1-8B 上占前向约 7%，1.2 §9）。§5、§6 的闭环之所以精确到个位，靠的就是这三样都入账。
+4. **block 之外的参数与 FLOPs 不要漏**。「整机 = $L$ 个 block」的口径会漏掉三样：final RMSNorm（$d$ 个参数 + 每 token 一次归约，2.7 §5.2 给出它必须存在的理由）、输入 embedding（$Vd$ 参数、0 FLOPs——查表不是 matmul，1.2 §3）、输出头（$Vd$ 参数 + $2Vd$ FLOPs，Llama-3.1-8B 上占前向约 7%，1.2 §3 式 (2) 符号表）。§5、§6 的闭环之所以精确到个位，靠的就是这三样都入账。
 
 四条误解共享同一个检出流程：先读 config（§2 的表），再读 modeling 代码的 `__init__`（投影宽度、bias、norm 个数都在那里），最后 `sum(p.numel())` 与式 (6) 对账收尾。任何一步与预期不符，回头查这四条——它们的覆盖面就是实践里参数账对不上的主要原因。
 
