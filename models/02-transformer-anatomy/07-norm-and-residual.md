@@ -173,7 +173,7 @@ $$
 
 ### 5.3 Theorem 1（精确表述）与推导骨架
 
-[Xiong et al., 2020](../references.md)（arXiv:2002.04745，[B]）§3 Theorem 1：假设末层相关量的范数平方——Post-LN 第 $L$ 层 LN 输出 $\lVert x^{\mathrm{post}}_{L,i} \rVert^{2}$ 与 Pre-LN 末层 LN 输入 $\lVert x^{\mathrm{pre}}_{L+1,i} \rVert^{2}$——对所有**序列位置** $i$ 均 $(\varepsilon, \delta)$-bounded（$\varepsilon$、$\delta$ 为小量；下标 $L$ 表明假设只涉末层量，$i$ 是位置指标不是特征维）。这里 $(\varepsilon, \delta)$-bounded 是标量随机变量 $Z = \lVert x \rVert^{2}$ 的集中度条件：$\Pr\left( (Z - \mathbb{E}Z) / \mathbb{E}Z \le \varepsilon \right) \ge 1 - \delta$；分量近似高斯时 $\delta$ 为 $\exp\left( -d\varepsilon^{2}/8 \right)$ 量级——维数越高，范数平方的集中度越强。则以至少 $0.99 - \delta - \varepsilon/(0.9 + \varepsilon)$ 的概率，**初始化时最后一层 FFN 参数** $W^{2,L}$ 的梯度满足
+[Xiong et al., 2020](../references.md)（arXiv:2002.04745，[B]）§3 Theorem 1：假设末层相关量的范数平方——Post-LN 末层 LN 输入（残差和）$\lVert x^{\mathrm{post}}_{L,i} \rVert^{2}$ 与 Pre-LN 末层 LN 输入 $\lVert x^{\mathrm{pre}}_{L+1,i} \rVert^{2}$——对所有**序列位置** $i$ 均 $(\varepsilon, \delta)$-bounded（$\varepsilon$、$\delta = \delta(\varepsilon)$ 为小量；下标 $L$ 表明假设只涉末层量，$i$ 是位置指标不是特征维）。这里 $(\varepsilon, \delta)$-bounded 是标量随机变量 $Z = \lVert x \rVert^{2}$ 的集中度条件：$\Pr\left( (Z - \mathbb{E}Z) / \mathbb{E}Z \le \varepsilon \right) \ge 1 - \delta$；分量近似高斯时 $\delta$ 为 $\exp\left( -d\varepsilon^{2}/8 \right)$ 量级——维数越高，范数平方的集中度越强。则以至少 $0.99 - \delta - \varepsilon/(0.9 + \varepsilon)$ 的概率，**初始化时最后一层 FFN 参数** $W^{2,L}$ 的梯度满足
 
 $$
 \text{Post-LN:} \quad \left\lVert \frac{\partial \tilde{L}}{\partial W^{2,L}} \right\rVert_{F} \le O\left( d \sqrt{\ln d} \right); \qquad \text{Pre-LN:} \quad \left\lVert \frac{\partial \tilde{L}}{\partial W^{2,L}} \right\rVert_{F} \le O\left( d \sqrt{\frac{\ln d}{L}} \right) \qquad (13)
@@ -307,7 +307,7 @@ def rmsnorm(x, weight, eps=1e-6):             # x: [B, T, d]；教学用，非�
 - [Xiong et al., 2020](../references.md)：On Layer Normalization in the Transformer Architecture，arXiv:2002.04745，[B]（key: pre-ln）——§5 Theorem 1（式 (13)）、extended analysis 与 warmup 实验
 - [Wang et al., 2022](../references.md)：DeepNet: Scaling Transformers to 1,000 Layers，arXiv:2203.00555，[A]（key: deepnorm）——式 (14) 与缩放常数
 - [Henry et al., 2020](../references.md)：Query-Key Normalization for Transformers，arXiv:2010.04245，[B]（key: qk-norm）——式 (15)
-- [Gemma Team, 2024](../references.md)：Gemma 2: Improving Open Language Models at a Practical Size，arXiv:2408.00118，[A]（key: gemma2）——soft-capping 50.0 / 30.0、zero-centered RMSNorm、QK-norm 并用
+- [Gemma Team, 2024](../references.md)：Gemma 2: Improving Open Language Models at a Practical Size，arXiv:2408.00118，[A]（key: gemma2）——soft-capping 50.0 / 30.0、zero-centered RMSNorm
 - [Gemma Team, 2025](../references.md)：Gemma 3 Technical Report，arXiv:2503.19786，[A]（key: gemma3）——QK-norm 取代 soft-capping、pre+post RMSNorm
 - [Grattafiori et al., 2024](../references.md)：The Llama 3 Herd of Models，arXiv:2407.21783，[A]（key: llama3）——RMSNorm + Pre-LN 标准配方
 - [Meta, Llama-3.1-8B config.json](../references.md)：[A]（key: llama-3.1-8b-config）
