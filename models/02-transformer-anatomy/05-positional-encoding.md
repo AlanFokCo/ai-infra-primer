@@ -70,7 +70,7 @@ $$
 
 ### 2.3 learned absolute：外推 = 未定义
 
-learned absolute position embedding（可学绝对位置嵌入）把位置当 token 处理：一张可训练查找表 $P \in \mathbb{R}^{T_{\max} \times d}$，第 $t$ 行加进第 $t$ 个 token 的 embedding。GPT-2 的 `wpe` 即此形：n_positions = 1024、$d$ = 768（[Radford et al., 2019](../references.md)，[W]，config 口径）。两个硬后果。其一，外推不是「退化」而是**未定义**：位置 $T_{\max}$ 之外表里没有行，位置 id 越界是非法访问，连函数值都不存在。其二，即便把表加长，新区间的行是随机初始化、从未被训练；且训练动态本身就不均——行 $t$ 只在长度超过 $t$ 的样本上收到梯度，短序列居多的语料里大行号的行训练信号天然稀薄——这和 §2.1 的 sinusoidal（函数在任意整数位置有定义，只是行为漂移）是两个层级的失败。参数账也记一笔：GPT-2 的表是 $1024 \times 768 \approx 0.79$M（约占总参数 0.6%），小头；若按 Llama-3.1 的窗口造表则是 $131072 \times 4096 \approx 0.54$B——加性绝对编码在长窗时代光查表就要半 B 参数，这条路自己把自己走死了。
+可学绝对位置嵌入（learned absolute position embedding）把位置当 token 处理：一张可训练查找表 $P \in \mathbb{R}^{T_{\max} \times d}$，第 $t$ 行加进第 $t$ 个 token 的 embedding。GPT-2 的 `wpe` 即此形：n_positions = 1024、$d$ = 768（[Radford et al., 2019](../references.md)，[W]，config 口径）。两个硬后果。其一，外推不是「退化」而是**未定义**：位置 $T_{\max}$ 之外表里没有行，位置 id 越界是非法访问，连函数值都不存在。其二，即便把表加长，新区间的行是随机初始化、从未被训练；且训练动态本身就不均——行 $t$ 只在长度超过 $t$ 的样本上收到梯度，短序列居多的语料里大行号的行训练信号天然稀薄——这和 §2.1 的 sinusoidal（函数在任意整数位置有定义，只是行为漂移）是两个层级的失败。参数账也记一笔：GPT-2 的表是 $1024 \times 768 \approx 0.79$M（约占总参数 0.6%），小头；若按 Llama-3.1 的窗口造表则是 $131072 \times 4096 \approx 0.54$B——加性绝对编码在长窗时代光查表就要半 B 参数，这条路自己把自己走死了。
 
 ## 3. 相对位置偏置族：T5 分桶与 ALiBi 线性惩罚
 
@@ -110,7 +110,7 @@ slope 是公比 $2^{-8/H}$ 的几何级数：$h = 1$ 时 $m_1 = 2^{-8/H}$（斜�
 
 逐头看机制。先用 2.3 的平移不变性化简：$-m_h(i - j) = -m_h i + m_h j$，其中 $-m_h i$ 对第 $i$ 行是常数项、被 softmax 原样吃掉（2.3 式 (10)）——真正起作用的只剩 $+m_h j$：行内越近（$j$ 越大）的 key 加分越多。$j = i$ 处净惩罚为 0，随距离线性变负——远处 key 的 logit 被等比压低，注意力天然近密远疏。对照 2.3 §3 的饱和分析：ALiBi 是有意注入的「近端饱和」，用一条固定直线换掉了学出来的位置结构，可调维度只剩 $H$ 个 slope；RoPE（§4）则让位置以 $d/2$ 个频率乘性进入内积，与内容耦合。
 
-外推机制分析（为什么 train short / test long 能成立）：(a) $b(\Delta) = -m_h \Delta$ 没有查表边界，测试时更大的 $\Delta$ 只是同一直线上的更大自变量——函数形态不变，不像 T5 落末桶、不像 learned absolute 越界；(b) 模型在窗内学到的是「logit ≈ 内容项 − $m_h \Delta$」的校准，外延时内容项的分布没变，惩罚项按同一线性率继续压低远处 key，softmax 归一化后有效感受野自动收缩回训练尺度；(c) 代数字走一遍：最小 slope $2^{-8}$ 的头在 $L$ = 1024 窗内的惩罚跨度是 $1024 \times 2^{-8} = 4$ nat；外推到 4096 时跨度 16 nat，最远 key 被压到相对 $e^{-12}$ 量级——行为平滑过渡到「该头只看近处」，而非数值崩溃。论文实测 1024 训练窗外推 2048+ 的 perplexity 与直接训长窗相当（[A]）。
+外推机制分析（为什么 train short / test long 能成立）：(a) $b(\Delta) = -m_h \Delta$ 没有查表边界，测试时更大的 $\Delta$ 只是同一直线上的更大自变量——函数形态不变，不像 T5 落末桶、不像 learned absolute 越界；(b) 模型在窗内学到的是「logit ≈ 内容项 − $m_h \Delta$」的校准，外延时内容项的分布没变，惩罚项按同一线性率继续压低远处 key，softmax 归一化后有效感受野自动收缩回训练尺度；(c) 代数字走一遍：最小 slope $2^{-8}$ 的头在 $L$ = 1024 窗内的惩罚跨度是 $1024 \times 2^{-8} = 4$ nat；外推到 4096 时跨度 16 nat，最远 key 被压到相对 $e^{-12}$ 量级——行为平滑过渡到「该头只看近处」，而非数值崩溃。论文实测 1024 训练窗外推 2048+ 的 perplexity，与从头训练长窗的 sinusoidal 基线相当（[A]）。
 
 ## 4. RoPE：内积不变性的完整推导
 
@@ -122,7 +122,7 @@ $$
 \langle f(q, m),\ f(k, n) \rangle = g(q, k, m - n) \qquad (8)
 $$
 
-**符号**：$q, k \in \mathbb{R}^{d}$：某头某位置的 query / key 向量（已投影）；$g$：只依赖内容与相对位移的函数。式 (8) 是「score 只含 $m-n$」的精确写法，也是「语言的规律与出现位置无关」这一先验的形式化：「主语谓语相邻」应当无论出现在文首还是文尾都同样被识别。本节证明 $f(q, m) = R_m q$（逐位置乘一个旋转矩阵）以显式形式解出式 (8)，且 $g$ 可以逐通道写出。整条构造链不含任何可学参数——位置先验由频率 schedule 一个超参数族（§4.5 的 base）完全决定。
+**符号**：$q, k \in \mathbb{R}^{d}$：某头某位置的 query / key 向量（已投影）；$g$：只依赖内容与相对位移的函数。记法复用提示：§2 的 $d$ 是 stream 宽度（原文 512），本节起 $d$ 指被旋转向量的维数——单头口径，锚点家族为 128（DeepSeek-V3 只旋其中 64，见 §4.7）。式 (8) 是「score 只含 $m-n$」的精确写法，也是「语言的规律与出现位置无关」这一先验的形式化：「主语谓语相邻」应当无论出现在文首还是文尾都同样被识别。本节证明 $f(q, m) = R_m q$（逐位置乘一个旋转矩阵）以显式形式解出式 (8)，且 $g$ 可以逐通道写出。整条构造链不含任何可学参数——位置先验由频率 schedule 一个超参数族（§4.5 的 base）完全决定。
 
 ### 4.2 2D 旋转引理
 
@@ -142,7 +142,7 @@ $$
 \langle R(a)\, q,\ R(b)\, k \rangle = (R(a)q)^{\top} R(b)\, k = q^{\top} R(a)^{\top} R(b)\, k = q^{\top} R(-a)\, R(b)\, k = q^{\top} R(b - a)\, k = \langle q,\ R(b-a)\, k \rangle \qquad (10)
 $$
 
-逐步：第二步内积的矩阵写法；第三步引理 (i)；第四步引理 (ii)。$a, b$ 只以差 $b - a$ 出现——引理 (iii) 就是式 (8) 在 2 维的解：取 $f(q, m) = R(m\theta)\, q$，则 $\langle f(q,m), f(k,n) \rangle = q^{\top} R\left((n-m)\theta\right) k$。
+逐步点名：第一个等号是内积的矩阵写法；第二个等号是转置规则 $(AB)^{\top} = B^{\top} A^{\top}$；第三个等号是引理 (i)；第四个等号是引理 (ii)；末个等号回到内积记号。$a, b$ 只以差 $b - a$ 出现——引理 (iii) 就是式 (8) 在 2 维的解：取 $f(q, m) = R(m\theta)\, q$，则 $\langle f(q,m), f(k,n) \rangle = q^{\top} R\left((n-m)\theta\right) k$。
 
 代数字验证：$q = (1, 2)$、$k = (3, 1)$、$a = 1.5$、$b = 3.5$。左侧 $\langle R(1.5)q, R(3.5)k \rangle \approx \langle (-1.924, 1.139), (-2.459, -1.989) \rangle \approx 2.47$；右侧 $q^{\top} R(2)\, k \approx (1, 2) \cdot (-2.158, 2.312) \approx 2.47$。两侧相合；而原始内积 $\langle q, k \rangle = 5$——旋转确实改变了内积，但改变量只由 $b - a = 2$ 决定。
 
@@ -230,15 +230,15 @@ $$
 
 （[Llama-3.1-8B config](../references.md)、[OLMo-2-7B config](../references.md)、[Qwen3-8B config](../references.md)、[DeepSeek-V3 config](../references.md)，均 [A]；$\lambda_{\max}$ 由 config 数值按式 (16) 自算。）
 
-读表的一个角度是 $\lambda_{\max}$ 与原生窗口的比值：Llama-3.1 约 20 倍、Qwen3-8B 约 124 倍、OLMo-2 约 640 倍、DeepSeek-V3 约 11 倍（配 YaRN 扩展）——比值越大，慢通道在窗内覆盖的角度弧越短，越依赖「不出窗」的前提；这不是优劣排名，是各家对「窗口目标 vs 频率分辨率」权衡的不同取点。
+读表的一个角度是 $\lambda_{\max}$ 与原生窗口的比值：Llama-3.1 约 20 倍、Qwen3-8B 约 124 倍、OLMo-2 约 625 倍、DeepSeek-V3 约 11 倍（配 YaRN 扩展）——比值越大，慢通道在窗内覆盖的角度弧越短，越依赖「不出窗」的前提；这不是优劣排名，是各家对「窗口目标 vs 频率分辨率」权衡的不同取点。
 
 沿通道轴走一遍具体数字（base = 10000、$d$ = 128，$\lambda_j = 2\pi \cdot 10^{j/16}$）：$j$ = 0 时 $\lambda_0 = 2\pi \approx 6.3$，$j$ = 16 时约 63，$j$ = 32 时约 628，$j$ = 48 时约 6300，$j$ = 63 时约 $5.4 \times 10^{4}$——每 16 个通道波长乘 10。
 
-**周期覆盖账**。通道 $j$ 在窗口 $W$ 内转满至少一圈 ⟺ $\lambda_j \le W$。注意「窗内不满圈」本身不是缺陷：慢通道在窗内只走一段弧，行为接近「全局位置的单调坐标」，窗内用它分辨大尺度位置反而干净；缺陷只在越窗那一刻触发。取上述对照组配 $W$ = 4096：$\lambda_j > 4096$ ⟺ $j \ge 46$——64 个通道里 18 个（28%）在窗内从未转满一圈，它们见过的角度只是 $[0,\ W\theta_j]$ 的一段弧。弧有多短可以直接算：最慢通道 $\theta_{63} = 10000^{-126/128} \approx 1.15 \times 10^{-4}$，$W\theta_{63} \approx 0.47$ rad $\approx 27^{\circ}$——训练全程这个通道只在 27 度的扇区里取值。位置一旦超出窗口，这些通道的角度进入训练中从未出现的区间——这就是 §6 外推失败的直接机制，而且失败集中在慢通道。抬 base 的账同样可算：Llama-3.1 的 base = 500000 把 $\lambda_{\max}$ 顶到约 20 倍窗口，窗口内慢通道的角度弧更短（最慢通道 $\theta_{63} \approx 2.5 \times 10^{-6}$、131072 窗内弧长约 0.32 rad）、相邻位置的相对角度差更小，长程分辨更细；对照侧 OLMo-2 用同一 base = 500000 配 4096 窗口：$\lambda_j > 4096$ ⟺ $j \ge 32$，即 64 个通道里一半在窗内转不满一圈——超窗使用这类配置，半数通道的角度直接出训练域。base 是「把频率轴对齐到目标窗口」的旋钮；DeepSeek-V3 走的不是抬 base 而是分频缩放（§6）。
+**周期覆盖账**。通道 $j$ 在窗口 $W$ 内转满至少一圈 ⟺ $\lambda_j \le W$。注意「窗内不满圈」本身不是缺陷：慢通道在窗内只走一段弧，行为接近「全局位置的单调坐标」，窗内用它分辨大尺度位置反而干净；缺陷只在越窗那一刻触发。取上述对照组配 $W$ = 4096：$\lambda_j > 4096$ ⟺ $j \ge 46$——64 个通道里 18 个（28%）在窗内从未转满一圈，它们见过的角度只是 $[0,\ W\theta_j]$ 的一段弧。弧有多短可以直接算：最慢通道 $\theta_{63} = 10000^{-126/128} \approx 1.15 \times 10^{-4}$，$W\theta_{63} \approx 0.47$ rad——训练全程这个通道只在约 27° 的扇区里取值。位置一旦超出窗口，这些通道的角度进入训练中从未出现的区间——这就是 §6 外推失败的直接机制，而且失败集中在慢通道。抬 base 的账同样可算：Llama-3.1 的 base = 500000 把 $\lambda_{\max}$ 顶到约 20 倍窗口，窗口内慢通道的角度弧更短（最慢通道 $\theta_{63} \approx 2.5 \times 10^{-6}$、131072 窗内弧长约 0.32 rad）、相邻位置的相对角度差更小，长程分辨更细；对照侧 OLMo-2 用同一 base = 500000 配 4096 窗口：$\lambda_j > 4096$ ⟺ $j \ge 32$，即 64 个通道里一半在窗内转不满一圈——超窗使用这类配置，半数通道的角度直接出训练域。base 是「把频率轴对齐到目标窗口」的旋钮；DeepSeek-V3 走的不是抬 base 而是分频缩放（§6）。
 
 ### 4.6 远程衰减性质
 
-直觉预期：$|m - n|$ 大时位置项应衰减——近处 token 默认更相关。RoPE 论文（§3.4.3）给出的论证：固定内容，式 (15) 的和 $\sum_j h_j\, e^{i\Delta\theta_j}$（$h_j = \tilde{q}_j \overline{\tilde{k}_j}$、$\Delta = m - n$）随 $\Delta$ 增大时各通道相位以不同角速度散开、相互抵消；$\theta_j$ 几何衰减使通道角速度跨多个量级，去相（dephasing）随 $\Delta$ 迅速发生。一个端点值把上界钉死：$\Delta = 0$ 时所有相位同相，和取最大值 $d/2$；$\Delta$ 增大后各通道相位在对数频率轴上散开，和式进入振荡下行——论文给出该和上界随 $\Delta$ 衰减的估计与实测曲线，即使取 $h_j$ 同相位的极端情形，$\left| \sum_j e^{i\Delta\theta_j} \right|$ 也从 $d/2$ 随 $\Delta$ 趋势性衰减。
+直觉预期：$|m - n|$ 大时位置项应衰减——近处 token 默认更相关。RoPE 论文（§3.4.3）给出的论证：固定内容，式 (15) 的和 $\sum_j h_j\, e^{i\Delta\theta_j}$（$h_j = \tilde{q}_j \overline{\tilde{k}_j}$、$\Delta = m - n$）随 $\Delta$ 增大时各通道相位以不同角速度散开、相互抵消；$\theta_j$ 几何衰减使通道角速度跨多个量级，去相（dephasing）随 $\Delta$ 迅速发生。一个端点值把上界钉死（以下取 $h_j$ 模长为 1 的同相位极端情形）：$\Delta = 0$ 时所有相位同相、$\left| \sum_j e^{i\Delta\theta_j} \right|$ 取最大值 $d/2$；$\Delta$ 增大后各通道相位在对数频率轴上散开，和式进入振荡下行。论文用 Abel 分部求和给出该和的上界因子，并绘制了该界随 $\Delta$ 衰减的确定性曲线（非实测曲线）：即使在这一极端情形下，$\left| \sum_j e^{i\Delta\theta_j} \right|$ 也从 $d/2$ 随 $\Delta$ 趋势性衰减。
 
 两个注记。其一，这是典型/平均行为，不是对任意 $q, k$ 的定理——$h_j$ 由训练塑造，特定头的特定通道可以学会抵抗衰减；去相给的是先验形状，不是硬约束。且衰减不单调：振荡使和式在更大 $\Delta$ 处仍会取到局部峰（revival），只是峰值趋势性走低。其二，与 ALiBi 对照：ALiBi 的衰减是显式钉死的直线（式 (7)），RoPE 的衰减是去相涌现的振荡衰减——带涟漪的近密远疏。
 
@@ -252,7 +252,7 @@ $$
 
 **符号**：$q^{\mathrm{nope}}, k^{\mathrm{nope}} \in \mathbb{R}^{128}$：不旋转部分（no rotary）；$q^{\mathrm{rope}}, k^{\mathrm{rope}} \in \mathbb{R}^{64}$：旋转部分。位置信息由 32 个频率通道承担，内容匹配由 128 维纯内积承担——partial（decoupled）RoPE。
 
-账分三笔。(a) 频率带宽基本不亏：通道数从 64 减到 32，但 $\lambda_{\max} = 2\pi \cdot base^{1 - 2/d_{\mathrm{rope}}}$ 主要由 base 决定，base = 10000 下从 $5.4 \times 10^{4}$ 到 $4.7 \times 10^{4}$，谱覆盖只窄了一线；少的是中间频率的采样密度。相对地，位置信号的承载被集中到 1/3 的维数上——score 的 192 维里只有 64 维对 $m - n$ 敏感，位置分辨的精度预算全押在这 32 个通道上。(b) nope 部分不经过任何位置变换，$k^{\mathrm{nope}}$ 可以被低秩压缩、压缩矩阵还能被吸收进 W_q 一侧——这是 4.1 MLA 的 W_UK absorption 成立的前提。障碍可以写清楚：若全维旋转，score 含 $\langle R_m q,\ R_n C c_n \rangle$ 形的项（$C$ 为压缩矩阵、$c_n$ 为压缩态），要把 $C$ 吸收进 q 侧必须让 $R_n$ 与 $C$ 换位，而 $R_n$ 逐块角度不同、$C$ 是全维混合——$R_n C \neq C R_n$ 一般成立不了，吸收即死。decoupled 是 absorption 的必要条件，不是顺手优化。DeepSeek-V3 把这条结构选择与 MLA 一起设计（[DeepSeek-AI, 2024](../references.md)，arXiv:2412.19437，[A]）。(c) 窗口账：DeepSeek-V3 原生窗 4096、rope_theta = 10000，配 §6 的 YaRN 块（factor 40）扩到 163840——base 与旋转维数是缩放方案的输入参数，不是独立旋钮。对照组：Llama-3.1 / Qwen3 / OLMo-2 全族旋满 128 维（各 config 无 partial 字段，默认全旋）——partial 是为 KV 压缩让路的结构选择，不是免费午餐。
+账分三笔。(a) 频率带宽基本不亏：通道数从 64 减到 32，但 $\lambda_{\max} = 2\pi \cdot base^{1 - 2/d_{\mathrm{rope}}}$ 主要由 base 决定，base = 10000 下从 $5.4 \times 10^{4}$ 到 $4.7 \times 10^{4}$，谱覆盖只窄了一线；少的是中间频率的采样密度。相对地，位置信号的承载被集中到 1/3 的维数上——score 的 192 维里只有 64 维对 $m - n$ 敏感，位置分辨的精度预算全押在这 32 个通道上。(b) nope 部分不经过任何位置变换，$k^{\mathrm{nope}}$ 可以被低秩压缩、压缩矩阵还能被吸收进 W_q 一侧——这是 4.1 MLA 的 W_UK absorption 成立的前提。障碍可以写清楚：若全维旋转，score 含 $\langle R_m q,\ R_n C c_n \rangle$ 形的项（$C$ 为压缩矩阵、$c_n$ 为压缩态），要把 $C$ 吸收进 q 侧必须让 $R_n$ 与 $C$ 换位，而 $R_n$ 逐块角度不同、$C$ 是全维混合——一般有 $R_n C \neq C R_n$，换位即死。decoupled 是 absorption 的必要条件，不是顺手优化。DeepSeek-V3 把这条结构选择与 MLA 一起设计（[DeepSeek-AI, 2024](../references.md)，arXiv:2412.19437，[A]）。(c) 窗口账：DeepSeek-V3 原生窗 4096、rope_theta = 10000，配 §6 的 YaRN 块（factor 40）扩到 163840——base 与旋转维数是缩放方案的输入参数，不是独立旋钮。对照组：Llama-3.1 / Qwen3 / OLMo-2 全族旋满 128 维（各 config 无 partial 字段，默认全旋）——partial 是为 KV 压缩让路的结构选择，不是免费午餐。
 
 ### 4.8 两种等价实现：half-split 与 interleaved
 
@@ -284,7 +284,7 @@ def rope_half_split(x, cos, sin):
     return x * cos + rotate_half(x) * sin
 ```
 
-等价性：存在维度排列 $\sigma$（把相邻对映到首尾对）使两实现逐通道相同——half-split 的第 $j$ 对通道 $(x_j, x_{j+d/2})$ 上，`x * cos + rotate_half(x) * sin` 的第 $j$ 元为 $x_j \cos - x_{j+d/2} \sin$、第 $j + d/2$ 元为 $x_j \sin + x_{j+d/2} \cos$，正是式 (9)。数值断言留作练习 4。官方实现走读：transformers repo `src/transformers/models/llama/modeling_llama.py` 的 `rotate_half` 与 `apply_rotary_pos_emb` 即 half-split 形，cos/sin 表按 max_position_embeddings 预算、前向按 position_ids 切片（[HuggingFace, modeling_llama.py](../references.md)，[A]）。partial RoPE 的落地只差一步：对 x 的 rope 维切片过 `apply_rotary_pos_emb`、nope 维原样拼接。
+等价性：存在维度排列 $\sigma$（把相邻对映到首尾对）使两实现逐通道相同——half-split 的第 $j$ 对通道 $(x_j, x_{j+d/2})$ 上，`x * cos + rotate_half(x) * sin` 的第 $j$ 元为 $x_j \cos - x_{j+d/2} \sin$、第 $j + d/2$ 元为 $x_j \sin + x_{j+d/2} \cos$，正是式 (9)。数值断言留作练习 4。官方实现走读：transformers repo `src/transformers/models/llama/modeling_llama.py` 的 `rotate_half` 与 `apply_rotary_pos_emb` 即 half-split 形，cos/sin 由 `LlamaRotaryEmbedding` 内的 inv_freq 与 position_ids 逐前向外积现算（[HuggingFace, modeling_llama.py](../references.md)，[A]）。partial RoPE 的落地只差一步：对 x 的 rope 维切片过 `apply_rotary_pos_emb`、nope 维原样拼接。
 
 ## 5. NoPE：causal mask 自带的隐式位置信号
 
