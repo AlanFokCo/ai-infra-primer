@@ -27,7 +27,7 @@
 5. **[M2] MathJax Docs《Supported TeX/LaTeX commands》**
    <https://docs.mathjax.org/en/latest/input/tex/macros/index.html>
    - base 宏含：`\text`、`\mathbb`、`\mathrm`、`\sqrt`、`\langle`、`\rangle`、`\bar`、`\vert`、`\Vert`、`\frac`、`\sum`、`\prod` 等。
-   - 2026-11-10 逐项核对同页存在（提取该页全部 1536 个命令 token 逐一比对）：希腊字母小写全套（`\alpha`-`\omega` 含 `\varepsilon`/`\vartheta`/`\varphi`/`\iota`/`\upsilon`）与大写 `\Gamma`/`\Delta`/`\Theta`/`\Lambda`/`\Pi`/`\Sigma`/`\Phi`/`\Psi`/`\Omega`；`\to`/`\rightarrow`/`\mapsto`/`\approx`/`\sim`/`\simeq`/`\propto`/`\equiv`/`\ll`/`\gg`/`\subset`/`\subseteq`/`\supset`/`\supseteq`；`\dfrac`/`\tfrac`/`\int`/`\oint`/`\bigcup`/`\bigcap`；`\partial`/`\nabla`/`\hat`/`\tilde`/`\vec`/`\dot`/`\ddot`/`\overline`/`\underline`/`\widehat`/`\widetilde`；`\left`/`\right`；`\mathcal`/`\operatorname`/`\stackrel`/`\underbrace`/`\overbrace`；`\times`/`\setminus`/`\forall`/`\exists`/`\oplus`/`\oslash`；`\ldots`/`\cdots`/`\vdots`/`\ddots`；薄空格 `\,`。
+   - 2026-11-10 逐项核对同页存在（提取该页全部 1536 个命令 token 逐一比对）：希腊字母小写常用集（`\alpha`-`\omega` 含 `\varepsilon`/`\vartheta`/`\varphi`/`\iota`/`\upsilon`；变体 `\varsigma`/`\varpi`/`\varrho`/`\varkappa` 存在但未收）与大写 `\Gamma`/`\Delta`/`\Theta`/`\Lambda`/`\Pi`/`\Sigma`/`\Phi`/`\Psi`/`\Omega`；`\to`/`\rightarrow`/`\mapsto`/`\approx`/`\sim`/`\simeq`/`\propto`/`\equiv`/`\ll`/`\gg`/`\subset`/`\subseteq`/`\supset`/`\supseteq`；`\dfrac`/`\tfrac`/`\int`/`\oint`/`\bigcup`/`\bigcap`；`\partial`/`\nabla`/`\hat`/`\tilde`/`\vec`/`\dot`/`\ddot`/`\overline`/`\underline`/`\widehat`/`\widetilde`；`\left`/`\right`；`\mathcal`/`\operatorname`/`\stackrel`/`\underbrace`/`\overbrace`；`\times`/`\setminus`/`\forall`/`\exists`/`\oplus`/`\oslash`；`\ldots`/`\cdots`/`\vdots`/`\ddots`；薄空格 `\,`；`\{`、`\}` 与裸竖线符号（该页符号表）。
    - 注：`\operatorname*`（星号变体，limits 式）未在该页与 ams 页单列，列为 P15 重点复核项。
 
 **官方文档未覆盖、需本文件实测确认的边界**：
@@ -205,11 +205,11 @@ $$
 
 ### P11 · 范数与竖线（`\lVert \rVert`、`\|`、`\vert`、`\Vert`、`\mid`）
 
-源码：`残差分支要求 $\lVert x \rVert_2$ 有界；简写 $\|x\|_2$ 等价；条件概率 $p(y \mid x)$ 用关系竖线；单竖线 $\vert x \vert$、双竖线 $\Vert x \Vert$ 亦直接书写。`
+源码：`残差分支要求 $\lVert x \rVert_2$ 有界；简写 $\|x\|_2$ 等价；条件概率 $p(y \mid x)$ 用关系竖线；单竖线 $\vert x \vert$、双竖线 $\Vert x \Vert$ 亦直接书写；集合 $\{ x \mid x > 0 \}$ 与裸竖线 $|x|$ 为 base symbol 直写。`
 
-实时渲染：残差分支要求 $\lVert x \rVert_2$ 有界；简写 $\|x\|_2$ 等价；条件概率 $p(y \mid x)$ 用关系竖线；单竖线 $\vert x \vert$、双竖线 $\Vert x \Vert$ 亦直接书写。
+实时渲染：残差分支要求 $\lVert x \rVert_2$ 有界；简写 $\|x\|_2$ 等价；条件概率 $p(y \mid x)$ 用关系竖线；单竖线 $\vert x \vert$、双竖线 $\Vert x \Vert$ 亦直接书写；集合 $\{ x \mid x > 0 \}$ 与裸竖线 $|x|$ 为 base symbol 直写。
 
-预期结果：两种范数写法显示为双竖线、下标 2 就位；`\mid` 两侧带关系间距；`\vert`/`\Vert` 显示为单 / 双竖线。
+预期结果：两种范数写法显示为双竖线、下标 2 就位；`\mid` 两侧带关系间距；`\vert`/`\Vert` 显示为单 / 双竖线；`\{`、`\}` 显示为花括号，裸 `|` 显示为单竖线。
 
 ### P12 · 行内 `$...$` 与中文相邻的边界（官方文档未说明，重点核对）
 
@@ -348,11 +348,13 @@ $$
 | P8 | `\mathbb{R}` | 渲染 | 待首次推送后填写 |
 | P9 | `\bar\alpha`；`\prod_{s=1}^{t}` | 渲染 | 待首次推送后填写 |
 | P10 | `\langle q, k \rangle` | 渲染 | 待首次推送后填写 |
-| P11 | `\lVert x \rVert`；`\&#124;x\&#124;`（源码即 `\|x\|`）；`\vert`；`\Vert`；`\mid` | 渲染 | 待首次推送后填写 |
+| P11 | `\lVert x \rVert`；`\|x\|`；`\vert`；`\Vert`；`\mid`；裸 `\{`、`\}`、`\|` | 渲染 | 待首次推送后填写 |
 | P12a-e | 行内 `$...$` 与中文/中文标点相邻、`$` 内侧空格（边界） | a/d/e 未知，b/c 渲染 | 待首次推送后填写 |
 | P13 | 基础函数/关系与运算符：`\ln`、`\sin`、`\cos`、`\tanh`、`\min`、`\max`、`\sup`、`\inf`、`\neq`、`\pm`、`\cdot`、`\odot`、`\otimes`、`\qquad` | 渲染 | 待首次推送后填写 |
-| P14 | 希腊字母小写全套 + 大写 9 个（基础命令，[M2] 直接证据） | 渲染 | 待首次推送后填写 |
+| P14 | 希腊字母小写常用集 26 个 + 大写 9 个（基础命令，[M2] 直接证据） | 渲染 | 待首次推送后填写 |
 | P15 | 关系/箭头/近似；`\dfrac`/`\tfrac`/`\int`/`\oint`/`\bigcup`/`\bigcap`；`\partial`/`\nabla`/修饰符号；`\left...\right` 伸缩定界符；`\mathcal`/`\operatorname*`/`\stackrel`/`\underbrace`/`\overbrace`/`\times`/`\setminus`/`\forall`/`\exists`/`\oplus`/`\oslash`/省略号/`\,`（基础命令，[M2] 直接证据） | 渲染；`\operatorname*` 重点复核 | 待首次推送后填写 |
+
+注：本表 code span 内的 `\|` 是 GFM 表格转义写法，渲染后显示为单个竖线字符（反斜杠不显示）；真实 LaTeX 源码以 P11 源码区为准。
 
 ## 核对记录
 
