@@ -4,7 +4,7 @@
 
 ## 1. 一笔真实账单：2.788M H800-hours 从哪来
 
-DeepSeek-V3 技术报告 Table 1 给出四个数：671B 总参数、每 token 激活 37B、预训练语料 14.8T token、预训练耗 2.788M H800 GPU-hours——这个口径只含 pre-training 本身，不含前期研究与 post-training（[DeepSeek-AI, 2024](../references.md)，arXiv:2412.19437，[A]）。这四个数之间是什么关系？本章的答案是三个公式：每 token 前向 FLOPs $\approx 2N$ ，训练总计算量 $C \approx 6ND$ ，参数内存 $= 2N$ bytes（bf16），其中 $N$ 是非 embedding 参数量、 $D$ 是训练处理的 token 总数。推完之后，2.788M GPU-hours 与 14.8T token 就能互相核对——第 9 节会真正对上这笔账。
+DeepSeek-V3 技术报告 Table 1 给出四个数：671B 总参数、每 token 激活 37B、预训练语料 14.8T token、全训练耗 2.788M H800 GPU-hours——拆分为 pre-training 2664K、context extension 119K、post-training 5K（[DeepSeek-AI, 2024](../references.md)，arXiv:2412.19437，[A]；注意这是 GPU-hours 口径，不是货币总成本口径）。这四个数之间是什么关系？本章的答案是三个公式：每 token 前向 FLOPs $\approx 2N$ ，训练总计算量 $C \approx 6ND$ ，参数内存 $= 2N$ bytes（bf16），其中 $N$ 是非 embedding 参数量、 $D$ 是训练处理的 token 总数。推完之后，pre-training 的 2664K GPU-hours 与 14.8T token 就能互相核对——第 9 节会真正对上这笔账。
 
 这套账值得先学的原因不是算术本身，而是它的用法：架构设计的每个决定——加宽 $d_{\mathrm{ff}}$ 、砍 KV head、换 MoE、拉长上下文窗口——在工程上都等价于把数字在参数、FLOPs、激活、KV cache 这几笔账之间搬来搬去。看懂账，config.json 里每个整数的代价就直接可读。
 
@@ -78,7 +78,7 @@ $$
 
 **符号**：$C$ ：训练总计算量（FLOPs）；$D$ ：训练处理的 token 总数，重复数据按通过次数计。这个框架与逐运算的 per-token 分解出自 [Kaplan et al., 2020](../references.md)（arXiv:2001.08361，[B]）的附录。
 
-式 (5) 是本书复用最多的账式：1.3 的 compute-optimal 推导以它为约束条件，4.5 用它换算 MoE 训练成本，Part 5 的案例章用它对账各家技术报告。它也反向使用：给定算力预算 $C$ ，式 (5) 圈定 $ND = C/6$ 的可行集合， $N$ 与 $D$ 怎么分是 1.3 的 compute-optimal 问题。量级直觉：Llama-3.1-8B 规模（ $N = 6.98 \times 10^{9}$ ，第 9 节）每训 1T token 要 $4.2 \times 10^{22}$ FLOPs。再反过来：一个 1024 卡集群、每卡持续 $3.3 \times 10^{14}$ FLOPS（第 9 节从 DeepSeek-V3 报告推出的量级），跑 30 天提供 $8.8 \times 10^{23}$ FLOPs——够 8B 规模训约 21T token，或 70B 规模训约 2T token；预算固定时「模型大一档」与「数据多一档」不可兼得，这就是 scaling law 要回答的分配问题（1.3）。
+式 (5) 是本书复用最多的账式：1.3 的 compute-optimal 推导以它为约束条件，4.5 用它换算 MoE 训练成本，Part 5 的案例章用它对账各家技术报告。它也反向使用：给定算力预算 $C$ ，式 (5) 圈定 $ND = C/6$ 的可行集合， $N$ 与 $D$ 怎么分是 1.3 的 compute-optimal 问题。量级直觉：Llama-3.1-8B 规模（ $N = 6.98 \times 10^{9}$ ，第 9 节）每训 1T token 要 $4.2 \times 10^{22}$ FLOPs。再反过来：一个 1024 卡集群、每卡持续 $3.4 \times 10^{14}$ FLOPS（第 9 节从 DeepSeek-V3 报告推出的量级），跑 30 天提供 $9.0 \times 10^{23}$ FLOPs——够 8B 规模训约 22T token，或 70B 规模训约 2.1T token；预算固定时「模型大一档」与「数据多一档」不可兼得，这就是 scaling law 要回答的分配问题（1.3）。
 
 复用前先看清五条适用条件，每条对应一个被忽略的项：
 
@@ -221,7 +221,7 @@ $$
 
 **符号**：$N_{\mathrm{act}}$ ：MoE 每 token 实际激活的参数量，替代式 (5) 中的 $N$ 。
 
-对账分三步。第一步，训练每 token $6 N_{\mathrm{act}} = 2.22 \times 10^{11}$ FLOPs（222 G），前向 $7.4 \times 10^{10}$ （74 G）。第二步， $2.788 \times 10^{6}$ GPU-hours（paper Table 1 的 pre-training 口径）乘 3600 秒得 $1.00 \times 10^{10}$ GPU-秒，与式 (9) 相除得每卡平均持续 $3.3 \times 10^{14}$ FLOPS。第三步交叉验证：14.8T token 摊到 2.788M GPU-hour 是每卡每小时 $5.3 \times 10^{6}$ token、每秒约 1474 token；用每 token 222 G 反乘回去， $1474 \times 2.22 \times 10^{11} = 3.3 \times 10^{14}$ FLOPS，与第二步一致。这个派生量本身模型无关；它对应多高的算力利用率（MFU，model FLOPs utilization）取决于 H800 的峰值口径，属 gpu 与 training 维度（练习 3 请读者自己查峰值并算出 MFU）。此处能下的结论是：14.8T token、37B 激活、2.788M GPU-hours 三个论文数字与 6ND 框架互相自洽。
+对账分三步，关键在第二步的口径对齐。第一步，训练每 token $6 N_{\mathrm{act}} = 2.22 \times 10^{11}$ FLOPs（222 G），前向 $7.4 \times 10^{10}$ （74 G）。第二步：式 (9) 的 $D$ = 14.8T 是 pre-training 语料，对应的工时也必须取 Table 1 拆分中的 pre-training 部分 $2.664 \times 10^{6}$ GPU-hours（全训练 2.788M = pre 2664K + context extension 119K + post-training 5K，extension 与 post 的 12.4 万卡时对应另一批 token 与 FLOPs），乘 3600 秒得 $9.59 \times 10^{9}$ GPU-秒，与式 (9) 相除得每卡平均持续 $3.43 \times 10^{14}$ FLOPS。第三步交叉验证：14.8T token 摊到 2.664M GPU-hour 是每卡每小时 $5.6 \times 10^{6}$ token、每秒约 1543 token；用每 token 222 G 反乘回去， $1543 \times 2.22 \times 10^{11} = 3.43 \times 10^{14}$ FLOPS，与第二步一致。若误用全训练 2.788M 小时数去除 pre-training 的 FLOPs，得到 $3.27 \times 10^{14}$ ——只差 5%，但口径已经混了。这个派生量本身模型无关；它对应多高的算力利用率（MFU，model FLOPs utilization）取决于 H800 的峰值口径，属 gpu 与 training 维度（练习 3 请读者自己查峰值并算出 MFU）。此处能下的结论是：14.8T token、37B 激活、2.664M pre-training GPU-hours 三个论文数字与 6ND 框架互相自洽。
 
 两个锚点的四笔账并排：
 
@@ -261,13 +261,13 @@ KV cache 的存在性也写在这个框架里：decode 生成第 $t$ 个 token �
 ## 练习
 
 1.（计算）GQA 的账：设 Llama-3.1-8B 改用 MHA（ $H_{kv} = H_q = 32$ ），重算 QKV 投影的每层参数与 per-token FLOPs，给出它使层参数总量与总参数各增加多少；再问：为什么 GQA 对 KV cache 的削减比例（4 倍）大于对 QKV 投影 FLOPs 的削减比例（2 倍）？
-2.（计算）一个 1024 卡集群，每卡有效吞吐取第 9 节推出的 $3.3 \times 10^{14}$ FLOPS：用式 (5) 估算训练 Llama-3.1-8B 规模模型（ $N = 6.98 \times 10^{9}$ ）2T token 需要多少天；若把 $T$ 从 4096 提到 131072 且不做任何重算，先估算激活显存（第 8 节账二）会发生什么，再说训练时间按式 (6) 会如何变化。
-3.（计算）查 H800 SXM 的 BF16 稠密峰值 FLOPS，由式 (9) 与 2.788M GPU-hours 反推 DeepSeek-V3 pre-training 的有效 MFU 区间；列出使 MFU 低于 100% 的机制性因素（通信、流水线气泡、重计算、激活/梯度内存墙），各自归哪个维度讨论。
+2.（计算）一个 1024 卡集群，每卡有效吞吐取第 9 节推出的 $3.4 \times 10^{14}$ FLOPS：用式 (5) 估算训练 Llama-3.1-8B 规模模型（ $N = 6.98 \times 10^{9}$ ）2T token 需要多少天；若把 $T$ 从 4096 提到 131072 且不做任何重算，先估算激活显存（第 8 节账二）会发生什么，再说训练时间按式 (6) 会如何变化。
+3.（计算）查 H800 SXM 的 BF16 稠密峰值 FLOPS，由式 (9) 与 2.664M pre-training GPU-hours 反推 DeepSeek-V3 pre-training 的有效 MFU 区间；列出使 MFU 低于 100% 的机制性因素（通信、流水线气泡、重计算、激活/梯度内存墙），各自归哪个维度讨论。
 4.（推导）证明梯度检查点全开时 $C \approx 8ND$ ：指出反向时多付的那次前向发生在哪一步、省下了哪笔内存；再说明选择性重算（只重算 attention 块内部）为什么通常比全开更划算——用第 8 节账二表中 $16T$ 项回答。
 
 ## 参考
 
 - [Kaplan et al., 2020](../references.md)：Scaling Laws for Neural Language Models，arXiv:2001.08361，[B]（key: kaplan）——2N / 6ND 框架与逐运算分解出自其附录
-- [DeepSeek-AI, 2024](../references.md)：DeepSeek-V3 Technical Report，arXiv:2412.19437，[A]（key: deepseekv3）——671B / 37B / 14.8T token / 2.788M H800 GPU-hours（Table 1，pre-training 口径）
+- [DeepSeek-AI, 2024](../references.md)：DeepSeek-V3 Technical Report，arXiv:2412.19437，[A]（key: deepseekv3）——671B / 37B / 14.8T token / 2.788M H800 GPU-hours（Table 1，全训练口径：pre 2664K + context extension 119K + post 5K）
 - [Meta, Llama-3.1-8B config.json](../references.md)：[A]（key: llama-3.1-8b-config）
 - [DeepSeek-AI, DeepSeek-V3 config.json](../references.md)：[A]（key: deepseek-v3-config）

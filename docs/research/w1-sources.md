@@ -17,7 +17,7 @@
 
 **Llama-3.1-70B**（spec 审查）：hidden 8192，80 层，64 Q heads，8 KV heads。来源：`llama-3.1-70b-config`。
 
-**DeepSeek-V3**（spec 审查 + 本轮 config 复核一致）：61 层，n_routed_experts=256 + n_shared_experts=1，num_experts_per_tok=8，first_k_dense_replace=3（前 3 层 dense），kv_lora_rank=512，qk_rope_head_dim=64，qk_nope_head_dim=128，vocab_size=129280，max_position_embeddings=163840，rope_theta=10000；671B 总参数 / 37B 激活；14.8T tokens 预训练；2.788M H800 GPU-hours（**仅为 paper Table 1 的 pre-training 口径，不含前期研究与 post-training**）。rope_scaling = `{type: yarn, factor: 40, beta_fast: 32, beta_slow: 1, mscale: 1.0, mscale_all_dim: 1.0, original_max_position_embeddings: 4096}`（本轮 hf-mirror 实测，DeepSeek-V3 config 即 YaRN 字段的标准实例）。来源：`deepseekv3`（arXiv:2412.19437）+ `deepseek-v3-config`。
+**DeepSeek-V3**（spec 审查 + 本轮 config 复核一致）：61 层，n_routed_experts=256 + n_shared_experts=1，num_experts_per_tok=8，first_k_dense_replace=3（前 3 层 dense），kv_lora_rank=512，qk_rope_head_dim=64，qk_nope_head_dim=128，vocab_size=129280，max_position_embeddings=163840，rope_theta=10000；671B 总参数 / 37B 激活；14.8T tokens 预训练；2.788M H800 GPU-hours 为 **paper Table 1 的全训练口径**：pre-training 2664K + context extension 119K + post-training 5K = 2788K（GPU-hours 口径，非货币总成本。2026-11-11 修正：此前误记为 pre-training-only，系 T7 之误，由 1.2 章波末审查 S1 抓到）。rope_scaling = `{type: yarn, factor: 40, beta_fast: 32, beta_slow: 1, mscale: 1.0, mscale_all_dim: 1.0, original_max_position_embeddings: 4096}`（本轮 hf-mirror 实测，DeepSeek-V3 config 即 YaRN 字段的标准实例）。来源：`deepseekv3`（arXiv:2412.19437）+ `deepseek-v3-config`。
 
 **Qwen3-8B**（本轮 hf-mirror 实测 config.json）：vocab_size=151936，hidden_size=4096，num_hidden_layers=36，num_attention_heads=32，num_key_value_heads=8，head_dim=128，intermediate_size=12288，rope_theta=1000000，max_position_embeddings=40960，rms_norm_eps=1e-6，attention_bias=false，tie_word_embeddings=false。来源：`qwen3-8b-config`。
 
@@ -38,7 +38,7 @@
 
 - 可用数值：Llama-3.1-8B 全套 config（上表）；DeepSeek-V3 671B 总 / 37B 激活 / 61 层 / 14.8T tokens；attention 二次项单算时的 head 数与 head_dim=128。
 - per-token 前向 FLOPs ≈ 2N（N=非 embedding 参数）的算例用 Llama-3.1-8B：非 embedding 参数可课堂推导（12Ld² 分解 → 2.1），embedding 128256×4096×2（untied）单算。
-- 成本数字口径：2.788M H800 GPU-hours 是 DeepSeek-V3 paper Table 1 的 pre-training 口径；正文引用时必须带此限定，勿写成「总训练成本」。
+- 成本数字口径：2.788M H800 GPU-hours 是 DeepSeek-V3 paper Table 1 的全训练口径（pre-training 2664K + context extension 119K + post-training 5K）；与 6ND 的 pre-training FLOPs（D = 14.8T）对账时应取 pre-training 的 2664K 小时数（1.2 正文即按此口径，派生 3.43e14 FLOPS/卡）。
 - 来源：kaplan（附录 FLOPs 账框架）、deepseekv3、llama-3.1-8b-config、deepseek-v3-config。
 
 ## 1.3 Scaling Laws
