@@ -38,7 +38,7 @@ $$
 \mathrm{FLOPs}_{\mathrm{fwd}} \approx \sum_{W} 2 \, |W| = 2N \qquad (2)
 $$
 
-**符号**：$N$ ：参与 matmul 的参数量；$|W|$ ：矩阵 $W$ 的元素个数。口径约定：输入 embedding 矩阵查表不耗 FLOPs，不计入 $N$ ；tie_word_embeddings = false 时输出头是独立矩阵且做 matmul，应计入 $N$ 。两者常被一起混淆：它们 shape 相同（都是 $V \times d$ ）、在内存账里各占一份 $Vd$ ，但 FLOPs 账里一个是查表（0）、一个是完整的 $2Vd$ ——Llama-3.1-8B 的输出头每 token $1.05 \times 10^{9}$ FLOPs，约占前向的 7%，不可忽略。RMSNorm、SiLU、residual add 等 elementwise 运算每层每 token 只有 $O(d)$ 次，相对 $2N$ 低约一个 $d$ 因子，忽略。
+**符号**：$N$ ：参与 matmul 的参数量；$|W|$ ：矩阵 $W$ 的元素个数。口径约定：输入 embedding 矩阵查表不耗 FLOPs，不计入 $N$ ；tie_word_embeddings = false 时输出头是独立矩阵且做 matmul，应计入 $N$ ——这是式 (2) 的全量口径；第 9 节实例为逐项对账改用层参数口径、输出头单列，两种口径的换算关系在该节开头给出。两者常被一起混淆：它们 shape 相同（都是 $V \times d$ ）、在内存账里各占一份 $Vd$ ，但 FLOPs 账里一个是查表（0）、一个是完整的 $2Vd$ ——Llama-3.1-8B 的输出头每 token $1.05 \times 10^{9}$ FLOPs，约占前向的 7%，不可忽略。RMSNorm、SiLU、residual add 等 elementwise 运算每层每 token 只有 $O(d)$ 次，相对 $2N$ 低约一个 $d$ 因子，忽略。
 
 看个具体形状。Llama-3.1-8B 的 FFN up 投影是 $[1, 4096] \times [4096, 14336]$ ：由式 (1) 得 $2 \times 4096 \times 14336 = 1.17 \times 10^{8}$ FLOPs，而该矩阵有 $5.87 \times 10^{7}$ 个参数——恰好 2 倍。QKV 投影 $[1, 4096] \times [4096, 6144]$ 同理得 $5.03 \times 10^{7}$ 。每个线性层都满足这个 2 倍关系，求和即式 (2)。
 
@@ -88,7 +88,7 @@ $$
 4. **只计 matmul**：elementwise、通信、IO 不计；后两者归 cluster 维度。
 5. **optimizer step 摊薄**：AdamW 的参数更新是 $O(N)$ 逐元素运算，摊到一个 step 的 $B_{\mathrm{tok}}$ 个 token 上每 token 只有 $O(N / B_{\mathrm{tok}})$ ，相对 $6N$ 可忽略。
 
-## 6. attention 的二次项：2LT²d 单算
+## 6. attention 的二次项：$2LT^{2}d$ 单算
 
 位置 $t$ 的 query 对 $t$ 个可见 key 各做一次长度 $d_{\mathrm{head}}$ 的内积（ $QK^{\top}$ ），再对 $t$ 个 value 做加权和（ $PV$ ）：每个 head 每个位置 $4 \, t \, d_{\mathrm{head}}$ FLOPs。乘 $H_q$ 个 head（ $H_q \, d_{\mathrm{head}} = d$ ），对位置求和，乘 $L$ 层：
 
@@ -98,7 +98,7 @@ $$
 
 **符号**：$C_{\mathrm{attn}}$ ：一条长度 $T$ 序列一次前向的 attention matmul FLOPs。causal mask 使位置 $t$ 只见 $t$ 个 key（1.1 式 (8) 的下三角 $M$ ）， $\sum_{t} t = T(T+1)/2$ 把系数从 4 压到 2；$T$ 上千时 $T(T+1) \approx T^{2}$ ，近似误差小于 0.1%。不打 causal mask 的双向场景（encoder 类，见 3.2）系数回到 4。
 
-平均每 token $2LTd$ ——对 $T$ 线性，对全序列就是 $T^{2}$ 。注意这笔账按 $H_q$ 计： $PV$ 的输出有 $H_q$ 个头，GQA 共享 K、V 削减的是 K/V 投影参数与 KV cache（第 7、8 节），不削减打分与加权和本身——所以即使 GQA 模型，式 (6) 里的 $d$ 仍是 $H_q d_{\mathrm{head}} = 4096$ 。它什么时候追平参数账 $2N$ ？令两者相等解出 $T^{*} = N/(Ld)$ 。代入 Llama-3.1-8B（ $N \approx 6.98 \times 10^{9}$ ，第 9 节逐项加出）： $T^{*} = 6.98 \times 10^{9} / (32 \times 4096) \approx 5.3 \times 10^{4}$ 。三个 $T$ 值下 attention 项占每 token 前向（ $2N$ + 输出头 $\approx 1.50 \times 10^{10}$ ）的比例：
+平均每 token $2LTd$ ——对 $T$ 线性，对全序列就是 $T^{2}$ 。注意这笔账按 $H_q$ 计： $PV$ 的输出有 $H_q$ 个头，GQA 共享 K、V 削减的是 K/V 投影参数与 KV cache（第 7、8 节），不削减打分与加权和本身——所以即使 GQA 模型，式 (6) 里的 $d$ 仍是 $H_q d_{\mathrm{head}} = 4096$ 。它什么时候追平参数账 $2N$ ？令两者相等解出 $T^{*} = N/(Ld)$ 。代入 Llama-3.1-8B（ $N \approx 6.98 \times 10^{9}$ ，层参数口径，第 9 节开头声明并逐项加出；换全量口径 $T^{*}$ 差不到 8%，结论不变）： $T^{*} = 6.98 \times 10^{9} / (32 \times 4096) \approx 5.3 \times 10^{4}$ 。三个 $T$ 值下 attention 项占每 token 前向（ $2N$ + 输出头 $\approx 1.50 \times 10^{10}$ ）的比例：
 
 | $T$ | $2LTd$ /token | 占前向比例 |
 | --- | --- | --- |
@@ -178,7 +178,7 @@ $$
 \mathrm{Mem}_{\mathrm{KV}} = 2 \, L \, H_{kv} \, d_{\mathrm{head}} \, T \, B \, b \text{ bytes}
 $$
 
-**符号**：$b$ = 每元素字节数（bf16 = 2）；系数 2 来自 K、V 两份。代入 Llama-3.1-8B（ $H_{kv}=8$ 、 $d_{\mathrm{head}}=128$ 、满窗 $T=131072$ 、 $B=1$ 、bf16）得 16 GiB——与权重本身一样大，长上下文推理的第一大户。压缩它（MQA / GQA / MLA）是 4.1 的主题。
+**符号**：$b$ = 每元素字节数（bf16 = 2）；系数 2 来自 K、V 两份。代入 Llama-3.1-8B（ $H_{kv}=8$ 、 $d_{\mathrm{head}}=128$ 、满窗 $T=131072$ 、 $B=1$ 、bf16）得 16 GiB——与权重本身同量级（cache 16 GiB 对权重约 15 GiB），长上下文推理的第一大户。压缩它（MQA / GQA / MLA）是 4.1 的主题。
 
 这笔账还连着第 10 节的算术强度：decode 每生成一个 token，都要把整个 cache 读一遍（当前 query 与全部历史 K、V 做 attention），即满窗时每 token 额外搬动 16 GiB，与读权重的 16 GB 同量级——长上下文服务的带宽预算里，cache 读取与权重读取是并列的两大项，这是 2.4 与 inference 维度展开的话题。
 
@@ -200,11 +200,11 @@ Llama-3.1-8B 的训练态权重相关账（bf16 工作权重 + bf16 梯度 + 优
 | 矩估计 $2cN$ | 64 GB | 16 GB |
 | 合计 | 128 GB | 80 GB |
 
-单卡放不下，分片（ZeRO 族把这三类状态切到多卡）属 training 维度；本章只要记住数量级：训练一个模型的权重相关显存约 $16N$ bytes，是推理权重账的 8 倍。
+单卡放不下，分片（ZeRO 族把这三类状态切到多卡）属 training 维度；本章只要记住数量级：训练一个模型的权重相关显存约 $16N$ bytes（fp32 矩估计口径， $c=4$ ），是推理权重账的 8 倍。
 
 ## 9. 实例演算：Llama-3.1-8B 与 DeepSeek-V3
 
-**Llama-3.1-8B 参数逐项**（config 数值乘出来，config 字段见 [Llama-3.1-8B config](../references.md)，[A]）：
+**Llama-3.1-8B 参数逐项**（config 数值乘出来，config 字段见 [Llama-3.1-8B config](../references.md)，[A]）。先固定口径：本节实例中的 $N$ 取层参数口径，即下面逐项加出的 $6.98 \times 10^{9}$ ，untied 输出头作为单列加项；式 (2) 符号表的 $N$ 是全量口径（含输出头， $7.51 \times 10^{9}$ ）。两种口径的换算只有一行： $N_{\mathrm{full}} = N + Vd$ ，于是前向 $2N_{\mathrm{full}} = 2N + 2Vd$ ——下文「前向 $2N$ + 输出头 $2Vd$ 」的写法即按此展开， $T^{*}$ 与训练账同此口径。
 
 - 每层 attention：Q 投影 $d^{2}$ = 16777216，K、V 投影 $2 \times d \times H_{kv} d_{\mathrm{head}} = 2 \times 4096 \times 1024$ = 8388608，out 投影 $d^{2}$ = 16777216，小计 41943040；
 - 每层 FFN： $3 d \, d_{\mathrm{ff}} = 3 \times 4096 \times 14336$ = 176160768；
