@@ -24,27 +24,40 @@
 - GitHub 原生 LaTeX：行内 `$...$`，独立 `$$...$$`。
 - 每个公式后跟符号表；推导不跳关键步；重要公式编号（章内 `(1)(2)...`）便于交叉引用。
 - 张量 shape 统一 `[B, T, H, D]` 记法，关键运算处标注 shape。
-- W1 首章完成后做 GitHub 渲染测试（align / cases / 矩阵环境），据测试结果锁定 §3.1 白名单。
+- GitHub 渲染探测：§3.1 白名单已按官方文档保守锁定（T6，2026-11-10）；因锁定时仓库无远端，首次推送 GitHub 后用 `docs/math-render-probe.md` 逐项人工复核，失败项从白名单移除并回改受影响章节。
 
-#### 3.1 公式语法白名单（T6 探测后锁定）
+#### 3.1 公式语法白名单（已锁定 · T6 · 2026-11-10）
 
-**状态：候选集，T6（GitHub 渲染探测）完成后锁定。锁定前章节写作只允许使用下列候选语法；T6 探测失败的项从白名单删除并回改本节。**
+**状态：已锁定。** 依据为 GitHub 官方文档与 MathJax 官方文档（证据见本节末 [G1]-[G3] / [M1]-[M2]）。锁定时仓库尚无远端、无法直接观测渲染，故只取文档证据支持的最保守子集；`docs/math-render-probe.md` 为下表每项构造备有最小用例（P1-P12），首次推送 GitHub 后人工核对，失败项从本表删除并回改受影响章节。
 
-候选集：
+全书公式只允许使用下表语法：
 
-| 类别 | 语法 |
-| --- | --- |
-| display math | `$$...$$` 独立公式块 |
-| 对齐环境 | `aligned` |
-| 分段环境 | `cases` |
-| 矩阵环境 | `bmatrix` / `pmatrix` |
-| 上下标 | `x_{i}^{2}`、`\sum_{i=1}^{n}` |
-| 数集 / 算子字体 | `\mathbb{}`、`\mathrm{}` |
-| 均值 / 共轭记号 | `\bar{}` |
-| 范数 | `\lVert \cdot \rVert` |
-| 内积 | `\langle ... \rangle` |
+| 类别 | 语法 | 证据 |
+| --- | --- | --- |
+| 行内公式 | `$...$`；`$` 内侧不留空格；与中文相邻时两侧加空格，仍不渲染改用 `` $`...`$ `` | [G1] |
+| display 公式 | `$$...$$` 独立成块，前后空行 | [G1][G2] |
+| 对齐环境 | `\begin{aligned} ... \end{aligned}`（仅在 `$$` 块内使用） | [M1] |
+| 分段环境 | `\begin{cases} ... \end{cases}` | [M1] |
+| 矩阵环境 | `\begin{bmatrix} ... \end{bmatrix}`、`\begin{pmatrix} ... \end{pmatrix}` | [M1] |
+| 上下标 / 求和连乘 | `x_{i}^{2}`、`\sum_{i=1}^{n}`、`\prod_{s=1}^{t}` | [G1][M2] |
+| 分式 / 根式 | `\frac{a}{b}`、`\sqrt{d_k}` | [G1][M2] |
+| 数集 / 算子字体 | `\mathbb{R}`、`\mathrm{softmax}` | [M2] |
+| 均值记号 | `\bar\alpha` | [M2] |
+| 范数 | `\lVert x \rVert`、`\|x\|` | [M1][M2] |
+| 内积 | `\langle q, k \rangle` | [M2] |
+| 公式内文字 | `\text{...}`（内放中文为探测项 P7b，未复核前只放 ASCII） | [M2] |
 
-白名单之外的 LaTeX 语法（如 `align*`、`equation` 环境）锁定前一律不用；锁定后不在白名单的一律不用。
+**禁止**（不在白名单，一律不用）：`align` / `align*` / `equation` / `gather` / `split` / `multline` 等带编号或顶层多行环境（对齐需求由 `aligned` 覆盖）；`\newcommand` / `\DeclareMathOperator` 等宏定义；`\boxed`、`\color` 等装饰命令；`math` 围栏代码块（全书统一用 `$$`，避免两套写法并存）。
+
+**证据**（访问日期均为 2026-11-10）：
+
+- [G1] GitHub Docs, "Writing mathematical expressions"：<https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/writing-mathematical-expressions>。要点：渲染引擎为 MathJax；行内 `$...$` 与 `` $`...`$ `` 两种定界；块级 `$$...$$`；数学内 `\$`、数学外 `<span>$</span>` 转义美元符号；Issues / Discussions / PR / wikis / Markdown 文件均渲染；官方示例含 `\sqrt{}`、`\sum_{k=1}^n`、上下标、`\leq`。
+- [G2] GitHub Blog, "Math support in Markdown"（2022-05-19 发布，2024-05-21 更新）：<https://github.blog/news-insights/product-news/math-support-in-markdown/>。`$` / `$$` 定界符原生支持，MathJax 渲染。
+- [G3] GitHub Changelog（2022-06-28）`math` 围栏代码块：<https://github.blog/changelog/2022-06-28-fenced-block-syntax-for-mathematical-expressions/>。
+- [M1] MathJax Docs, "ams" 扩展：<https://docs.mathjax.org/en/latest/input/tex/extensions/ams.html>。ams 扩展在所有含 TeX 输入 jax 的默认组合中已加载；环境清单明确含 `aligned`、`cases`、`bmatrix`、`pmatrix`；宏清单含 `\lVert`、`\rVert`。
+- [M2] MathJax Docs, "Supported TeX/LaTeX commands"：<https://docs.mathjax.org/en/latest/input/tex/macros/index.html>。base 宏含 `\text`、`\mathbb`、`\mathrm`、`\sqrt`、`\langle`、`\rangle`、`\bar`、`\vert`、`\Vert`、`\frac`、`\sum`、`\prod`。
+
+**已知边界**（官方文档未覆盖，列为探测项，首次推送后复核）：行内 `$...$` 紧贴中文字符或中文标点的解析行为（探测项 P12）——写作规则定为「行内公式与中文之间一律加空格」；`\text{}` 内放中文（探测项 P7b）。
 
 ### 4. 代码
 
