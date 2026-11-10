@@ -31,7 +31,7 @@
 
 - 可用数值：Llama-3.1-8B vocab 128256 / ctx 131072；Qwen3-8B vocab 151936 / max_position_embeddings 40960；GPT-2 vocab 50257 / ctx 1024——vocab × ctx 的真实对照算例。
 - perplexity 跨 tokenizer 不可比的算例素材：同一文本在 50257 vs 128256 vs 151936 vocab 下 token 数不同 → CE/token 与 PPL 不可直接比。
-- 来源：kaplan（arXiv:2001.08361）、gpt3（arXiv:2005.14165）、gpt2（[W]，URL 条目）。
+- 来源：kaplan（arXiv:2001.08361）、gpt3（arXiv:2005.14165）、gpt2（[W]，URL 条目）、softmax-bottleneck（arXiv:1711.03953——详拆在 §2.2（spec 的承接分工），1.1 只做一小节引入：perplexity/vocab 讨论顺带点名输出头 rank 限制）。
 - 注意：GPT-2 无 arXiv，正文引用格式 `[Radford et al., 2019]` 链到 references.md `gpt2` 条目，证据等级标 [W]；不要给 GPT-2 编 arXiv ID。
 
 ## 1.2 参数、计算、内存的账
@@ -118,7 +118,7 @@
 - 教学参照：nanogpt（https://github.com/karpathy/nanoGPT，repo 已核实存在；GPT-2 配方：Post-LN + learned abs pos + bias=True + tied——与现代配方逐项对照的好素材，配合 gpt2 config 数值）。
 - parallel block（PaLM/GPT-J/Falcon 变体）：h ← h + Attn(LN(x)) + FFN(LN(x))——本章只给公式与梯度/吞吐含义，无单独引用条目（PaLM 论文属后续波次）。
 - 常见误解清单素材：head_dim≠hidden/heads 反例（DeepSeek-V3 192）；bias 有无（Llama/Qwen3/OLMo-2 全 false vs GPT-2 true）；tied vs untied（Llama-3.1-8B/Qwen3-8B/OLMo-2-7B 均 false，GPT-2 true）。
-- 来源：transformer、llama3、olmo2、nanogpt、llama-3.1-8b-config、olmo-2-7b-config。
+- 来源：transformer、llama3、olmo2、nanogpt、llama-3.1-8b-config、olmo-2-7b-config、gpt2（GPT-2 老配方对照数值）。
 
 ## 附录：W2+ 提前锁定的数值（spec 审查已核实，本波仅登记不用）
 
