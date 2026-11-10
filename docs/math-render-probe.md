@@ -1,6 +1,6 @@
 # GitHub MathJax 渲染探测（math-render-probe）
 
-> **用途**：本仓库暂无远端，GitHub 的 MathJax 渲染效果无法直接观测。本文件为 `STYLE_GUIDE.md` §3.1 公式语法白名单中的每一项构造提供一个最小用例（P1-P12）。
+> **用途**：本仓库暂无远端，GitHub 的 MathJax 渲染效果无法直接观测。本文件为 `STYLE_GUIDE.md` §3.1 公式语法白名单中的每一项构造提供一个最小用例（P1-P13）。
 > **首次推送 GitHub 后，必须以渲染视图打开本文件、逐项人工核对一次**；任一用例渲染失败，将对应构造从 `STYLE_GUIDE.md` §3.1 白名单移除，并回改已使用它的章节。核对结果填入文末「核对记录」表。
 
 ## 证据来源（访问日期均为 2026-11-10）
@@ -21,7 +21,7 @@
    - `math` 围栏代码块语法可用（本仓库白名单仍统一用 `$$`，见 STYLE_GUIDE §3.1 禁止项说明）。
 4. **[M1] MathJax Docs《ams》扩展**
    <https://docs.mathjax.org/en/latest/input/tex/extensions/ams.html>
-   - "The ams extension implements AMS math environments and macros … This extension is already loaded in all the components that include the TeX input jax"。
+   - "The ams extension implements AMS math environments and macros … This extension is already loaded in all the components that include the TeX input jax, other than `input/tex-base`"。
    - 环境清单明确含：`aligned`、`cases`、`bmatrix`、`pmatrix`（另含 align、equation、gather、split 等，未收入白名单）。
    - 宏清单含：`\lVert`、`\rVert`、`\operatorname`、`\boxed` 等。
 5. **[M2] MathJax Docs《Supported TeX/LaTeX commands》**
@@ -223,6 +223,37 @@ $$
 - P12d 中文标点相邻。源码：`归一化权重为$\alpha_{ij}$，对$v_j$加权求和。`
   实时渲染：归一化权重为$\alpha_{ij}$，对$v_j$加权求和。
   预期结果：**未知**。若 `，` 与 `$` 相邻导致不渲染，写作规则追加「行内公式不得紧贴中文标点」。
+- P12e 定界符内侧空格（`$` 内侧不留空格规则的对照）。源码：`$ \sqrt{d_k} $`
+  实时渲染：$ \sqrt{d_k} $
+  预期结果：**未知**（社区惯例为不渲染；官方文档未明文）。若不渲染，确认写作规则「`$` 内侧不留空格」不可违反。
+
+### P13 · 其余基础函数 / 关系与运算符
+
+说明：`\exp`、`\log`、`\top`、`\le`、`\infty`、`\ge`、`\quad`、`\in` 已由 P1/P3/P4/P7/P8 覆盖；本用例覆盖白名单其余基础宏（`\ln`、`\sin`、`\cos`、`\tanh`、`\min`、`\max`、`\sup`、`\inf`、`\neq`、`\pm`、`\cdot`、`\odot`、`\otimes`、`\qquad`）。全部为 [M2] 直接列出的 base 宏（2026-11-10 逐项核对存在）。
+
+源码：
+
+```tex
+$$
+\ln x, \quad \sin x, \quad \cos x, \quad \tanh x, \quad \min_{i} a_i, \quad \max_{i} a_i, \quad \sup_{i} a_i, \quad \inf_{i} a_i
+$$
+
+$$
+a \neq b, \quad \pm 1, \quad a \cdot b, \quad A \odot B, \quad A \otimes B, \quad x \qquad y
+$$
+```
+
+实时渲染：
+
+$$
+\ln x, \quad \sin x, \quad \cos x, \quad \tanh x, \quad \min_{i} a_i, \quad \max_{i} a_i, \quad \sup_{i} a_i, \quad \inf_{i} a_i
+$$
+
+$$
+a \neq b, \quad \pm 1, \quad a \cdot b, \quad A \odot B, \quad A \otimes B, \quad x \qquad y
+$$
+
+预期结果：两行均正常渲染；`\min`/`\max`/`\sup`/`\inf` 在 display 模式下下标移到正下方；`\odot`/`\otimes` 显示为带圈点乘 / 叉乘。MathJax 遇未知命令会红色报错，逐项目检即可定位失败宏。
 
 ## 核对清单
 
@@ -240,7 +271,8 @@ $$
 | P9 | `\bar\alpha`；`\prod_{s=1}^{t}` | 渲染 | 待首次推送后填写 |
 | P10 | `\langle q, k \rangle` | 渲染 | 待首次推送后填写 |
 | P11 | `\lVert x \rVert`；`\|x\|` | 渲染 | 待首次推送后填写 |
-| P12a-d | 行内 `$...$` 与中文/中文标点相邻（边界） | a/d 未知，b/c 渲染 | 待首次推送后填写 |
+| P12a-e | 行内 `$...$` 与中文/中文标点相邻、`$` 内侧空格（边界） | a/d/e 未知，b/c 渲染 | 待首次推送后填写 |
+| P13 | 基础函数/关系与运算符：`\ln`、`\sin`、`\cos`、`\tanh`、`\min`、`\max`、`\sup`、`\inf`、`\neq`、`\pm`、`\cdot`、`\odot`、`\otimes`、`\qquad` | 渲染 | 待首次推送后填写 |
 
 ## 核对记录
 

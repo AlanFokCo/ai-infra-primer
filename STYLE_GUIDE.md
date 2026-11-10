@@ -28,19 +28,20 @@
 
 #### 3.1 公式语法白名单（已锁定 · T6 · 2026-11-10）
 
-**状态：已锁定。** 依据为 GitHub 官方文档与 MathJax 官方文档（证据见本节末 [G1]-[G3] / [M1]-[M2]）。锁定时仓库尚无远端、无法直接观测渲染，故只取文档证据支持的最保守子集；`docs/math-render-probe.md` 为下表每项构造备有最小用例（P1-P12），首次推送 GitHub 后人工核对，失败项从本表删除并回改受影响章节。
+**状态：已锁定。** 依据为 GitHub 官方文档与 MathJax 官方文档（证据见本节末 [G1]-[G3] / [M1]-[M2]）。锁定时仓库尚无远端、无法直接观测渲染，故只取文档证据支持的最保守子集；`docs/math-render-probe.md` 为下表每项构造备有最小用例（P1-P13），首次推送 GitHub 后人工核对，失败项从本表删除并回改受影响章节。
 
 全书公式只允许使用下表语法：
 
 | 类别 | 语法 | 证据 |
 | --- | --- | --- |
-| 行内公式 | `$...$`；`$` 内侧不留空格；与中文相邻时两侧加空格，仍不渲染改用 `` $`...`$ `` | [G1] |
+| 行内公式 | `$...$`；`$` 内侧不留空格（社区惯例，[G1] 未明文，待 P12 探测复核）；与中文相邻时两侧加空格，仍不渲染改用 `` $`...`$ `` | [G1] |
 | display 公式 | `$$...$$` 独立成块，前后空行 | [G1][G2] |
 | 对齐环境 | `\begin{aligned} ... \end{aligned}`（仅在 `$$` 块内使用） | [M1] |
 | 分段环境 | `\begin{cases} ... \end{cases}` | [M1] |
 | 矩阵环境 | `\begin{bmatrix} ... \end{bmatrix}`、`\begin{pmatrix} ... \end{pmatrix}` | [M1] |
 | 上下标 / 求和连乘 | `x_{i}^{2}`、`\sum_{i=1}^{n}`、`\prod_{s=1}^{t}` | [G1][M2] |
 | 分式 / 根式 | `\frac{a}{b}`、`\sqrt{d_k}` | [G1][M2] |
+| 基础函数 / 关系与运算 | `\exp`、`\log`、`\ln`、`\sin`、`\cos`、`\tanh`、`\min`、`\max`、`\sup`、`\inf`、`\top`、`\in`、`\le`、`\ge`、`\neq`、`\infty`、`\pm`、`\cdot`、`\odot`、`\otimes`、`\quad`、`\qquad` | [M2] |
 | 数集 / 算子字体 | `\mathbb{R}`、`\mathrm{softmax}` | [M2] |
 | 均值记号 | `\bar\alpha` | [M2] |
 | 范数 | `\lVert x \rVert`、`\|x\|` | [M1][M2] |
@@ -54,8 +55,8 @@
 - [G1] GitHub Docs, "Writing mathematical expressions"：<https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/writing-mathematical-expressions>。要点：渲染引擎为 MathJax；行内 `$...$` 与 `` $`...`$ `` 两种定界；块级 `$$...$$`；数学内 `\$`、数学外 `<span>$</span>` 转义美元符号；Issues / Discussions / PR / wikis / Markdown 文件均渲染；官方示例含 `\sqrt{}`、`\sum_{k=1}^n`、上下标、`\leq`。
 - [G2] GitHub Blog, "Math support in Markdown"（2022-05-19 发布，2024-05-21 更新）：<https://github.blog/news-insights/product-news/math-support-in-markdown/>。`$` / `$$` 定界符原生支持，MathJax 渲染。
 - [G3] GitHub Changelog（2022-06-28）`math` 围栏代码块：<https://github.blog/changelog/2022-06-28-fenced-block-syntax-for-mathematical-expressions/>。
-- [M1] MathJax Docs, "ams" 扩展：<https://docs.mathjax.org/en/latest/input/tex/extensions/ams.html>。ams 扩展在所有含 TeX 输入 jax 的默认组合中已加载；环境清单明确含 `aligned`、`cases`、`bmatrix`、`pmatrix`；宏清单含 `\lVert`、`\rVert`。
-- [M2] MathJax Docs, "Supported TeX/LaTeX commands"：<https://docs.mathjax.org/en/latest/input/tex/macros/index.html>。base 宏含 `\text`、`\mathbb`、`\mathrm`、`\sqrt`、`\langle`、`\rangle`、`\bar`、`\vert`、`\Vert`、`\frac`、`\sum`、`\prod`。
+- [M1] MathJax Docs, "ams" 扩展：<https://docs.mathjax.org/en/latest/input/tex/extensions/ams.html>。原文："This extension is already loaded in all the components that include the TeX input jax, other than `input/tex-base`"；环境清单明确含 `aligned`、`cases`、`bmatrix`、`pmatrix`；宏清单含 `\lVert`、`\rVert`。
+- [M2] MathJax Docs, "Supported TeX/LaTeX commands"：<https://docs.mathjax.org/en/latest/input/tex/macros/index.html>。base 宏含 `\text`、`\mathbb`、`\mathrm`、`\sqrt`、`\langle`、`\rangle`、`\bar`、`\vert`、`\Vert`、`\frac`、`\sum`、`\prod`，及基础函数 / 关系与运算符 `\exp`、`\log`、`\ln`、`\sin`、`\cos`、`\tanh`、`\min`、`\max`、`\sup`、`\inf`、`\top`、`\in`、`\le`、`\ge`、`\neq`、`\infty`、`\pm`、`\cdot`、`\odot`、`\otimes`、`\quad`、`\qquad`（2026-11-10 逐项核对存在）。
 
 **已知边界**（官方文档未覆盖，列为探测项，首次推送后复核）：行内 `$...$` 紧贴中文字符或中文标点的解析行为（探测项 P12）——写作规则定为「行内公式与中文之间一律加空格」；`\text{}` 内放中文（探测项 P7b）。
 
