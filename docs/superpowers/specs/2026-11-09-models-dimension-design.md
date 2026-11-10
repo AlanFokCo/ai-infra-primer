@@ -188,7 +188,7 @@ STYLE_GUIDE.md 是写作 agent 与 evaluator agent 的共同唯一标准，必�
 #### 2.5 `05-positional-encoding.md` — 位置编码全谱系
 - **内容**：必要性 = 2.3 permutation equivariance 推论；**sinusoidal**：$PE(pos,2i)=\sin(pos/10000^{2i/d})$，频率几何级数 $\omega_i=10000^{-2i/d}$，相对位移性质 PE(pos+k)=R_k·PE(pos)（旋转矩阵表示，推导）；learned absolute：参数表、外推 = 未定义；**相对位置族**：T5 bias（log 分桶公式）、ALiBi（score − m_h·|i−j|，slope $m_h=2^{-8h/H}$ 几何级数、长度外推机制分析）；**RoPE 完整推导**：2D 旋转 R(mθ) → d 维块对角 diag(R(mθ_1),…,R(mθ_{d/2})) → 复数视角 q_m = q·e^{imθ} → **核心定理 ⟨R_m q, R_n k⟩ 只依赖 (m−n) 的完整证明** → 频率 schedule θ_j = base^{−2j/d} → 波长 λ_j = 2π·base^{2j/d} 与频率覆盖 → 远程衰减性质 → partial RoPE（只旋转前 d_r 维：DeepSeek-V3 64/192、Qwen 用法，账）；两种等价实现代码（half-split / interleave）；**NoPE**：causal mask 本身提供隐式位置信号（机制论证 + 文献证据）；RoPE 外推失败模式预告（→ P4.6）
 - **关键推导**：sinusoidal 相对位移；RoPE 内积不变性；波长账
-- **锚点**：Llama-3.1（rope_theta=500000 真实 config）、DeepSeek-V3（partial RoPE 64/192）、Qwen2.5（YaRN 字段）[A]
+- **锚点**：Llama-3.1（rope_theta=500000 真实 config）、DeepSeek-V3（partial RoPE 64/192 + rope_scaling 块——2026-11-10 核实：Qwen2.5 config 无 YaRN 字段，勿用作锚点）[A]
 - **Sources**：RoFormer [arXiv:2104.09864]、ALiBi [arXiv:2108.12409]、T5 [arXiv:1910.10683]、NoPE [arXiv:2305.19466]
 
 #### 2.6 `06-ffn.md` — FFN 与非线性
@@ -198,7 +198,7 @@ STYLE_GUIDE.md 是写作 agent 与 evaluator agent 的共同唯一标准，必�
 - **Sources**：GLU variants [arXiv:2002.05202]、GELU [arXiv:1606.08415]、FFN memory [arXiv:2012.14913]
 
 #### 2.7 `07-norm-and-residual.md` — Normalization 与 Residual
-- **内容**：LayerNorm 公式（特征维 μ,σ²，γ/β）与 scale/shift invariance；为什么 NLP 不用 BatchNorm（变长序列 / inference 统计漂移 / 时间维独立性，三条数学原因）；RMSNorm：y = γx/RMS(x)，去掉 re-centering 后数学上丢了什么（re-scaling only 的论证）；**Pre-LN vs Post-LN 梯度分析**（Xiong et al.：Post-LN 浅层梯度随深度爆炸、Pre-LN 各层梯度衰减 O(√(ln d/l))⟨verify：原文定理精确形式⟩ 的推导骨架 → warmup 的数学必然性）；QK-Norm：对 q,k 归一化（解决 attention logits 爆炸 → softmax 饱和，Gemma-2 / ViT-22B 采用）；residual：梯度流 $\partial L/\partial x_l = \partial L/\partial x_L\,(1+\partial/\partial x_l \sum f_i)$，identity 项保证梯度传输；zero-centered norm（RMSNorm−1 变体：Gemma / Qwen3-Next，公式与动机）；DeepNorm 残差缩放系数（深层稳定性）；logit soft-capping（Gemma-2：c·tanh(z/c) 公式，动机）
+- **内容**：LayerNorm 公式（特征维 μ,σ²，γ/β）与 scale/shift invariance；为什么 NLP 不用 BatchNorm（变长序列 / inference 统计漂移 / 时间维独立性，三条数学原因）；RMSNorm：y = γx/RMS(x)，去掉 re-centering 后数学上丢了什么（re-scaling only 的论证）；**Pre-LN vs Post-LN 梯度分析**（Xiong et al. 2002.04745 定理精确形式——2026-11-10 research pass 核实：Theorem 1 覆盖初始化时最后 FFN 层参数梯度：Post-LN $O(d\sqrt{\ln d})$ 与深度 L 无关、Pre-LN $O(d\sqrt{\ln d / L})$ 随深度衰减；且 Post-LN 梯度**靠近输出端大、向输入端衰减**——推导骨架 → warmup 的数学必然性。注意：勿写成「Post-LN 浅层梯度爆炸」，方向相反）；QK-Norm：对 q,k 归一化（解决 attention logits 爆炸 → softmax 饱和，Gemma-2 / ViT-22B 采用）；residual：梯度流 $\partial L/\partial x_l = \partial L/\partial x_L\,(1+\partial/\partial x_l \sum f_i)$，identity 项保证梯度传输；zero-centered norm（RMSNorm−1 变体：Gemma / Qwen3-Next，公式与动机）；DeepNorm 残差缩放系数（深层稳定性）；logit soft-capping（Gemma-2：c·tanh(z/c) 公式，动机）
 - **关键推导**：梯度流 identity 项；Pre/Post-LN 梯度尺度
 - **锚点**：Gemma 3（QK-norm——Gemma 3 以 QK-norm 取代 Gemma 2 的 soft-capping；pre+post RMSNorm 真实 config）[A]、Gemma 2（logit soft-capping 出处）[A]、Llama-3.1（RMSNorm + Pre-LN）[A]、Qwen3-Next（zero-centered）[A]
 - **Sources**：LayerNorm [arXiv:1607.06450]、RMSNorm [arXiv:1910.07467]、Pre-LN [arXiv:2002.04745]、DeepNorm [arXiv:2203.00555]、Gemma 2 [arXiv:2408.00118]、Gemma 3 ⟨verify⟩ [arXiv:2503.19786]、QK-norm ⟨verify⟩ [arXiv:2010.04245]

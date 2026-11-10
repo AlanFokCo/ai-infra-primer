@@ -275,7 +275,7 @@ exit $fail
 - Consumes: 2.3（permutation equivariance 推论）
 - Produces: RoPE 数学（4.1 MLA decoupled RoPE、4.6 缩放族、8.2 M-RoPE、9.2 时空 RoPE 全部依赖）
 
-**内容要求（spec §5-2.5 全量）**：必要性 = 2.3 推论；**sinusoidal**（$PE(pos,2i)=\sin(pos/10000^{2i/d})$、频率几何级数、相对位移性质 PE(pos+k)=R_k·PE(pos) 推导）；learned absolute（外推=未定义）；**相对位置族**：T5 bias（log 分桶）、ALiBi（score − m_h·|i−j|、slope $2^{-8h/H}$、外推机制分析）；**RoPE 完整推导**（2D 旋转 → 块对角 → 复数视角 → **⟨R_m q, R_n k⟩ 只依赖 (m−n) 完整证明** → 频率 schedule θ_j=base^{−2j/d} → 波长 λ_j=2π·base^{2j/d} → 远程衰减性质 → partial RoPE：DeepSeek-V3 64/192、Qwen 用法的账）；两种等价实现代码（half-split/interleave）；**NoPE**（causal mask 隐式位置信号，机制论证+文献）；RoPE 外推失败预告（→ P4.6）。锚点：Llama-3.1（θ=500000）、DeepSeek-V3（qk_rope_head_dim=64/qk_nope=128）、Qwen2.5（YaRN 字段）。Sources：2104.09864、2108.12409、1910.10683、2305.19466
+**内容要求（spec §5-2.5 全量）**：必要性 = 2.3 推论；**sinusoidal**（$PE(pos,2i)=\sin(pos/10000^{2i/d})$、频率几何级数、相对位移性质 PE(pos+k)=R_k·PE(pos) 推导）；learned absolute（外推=未定义）；**相对位置族**：T5 bias（log 分桶）、ALiBi（score − m_h·|i−j|、slope $2^{-8h/H}$、外推机制分析）；**RoPE 完整推导**（2D 旋转 → 块对角 → 复数视角 → **⟨R_m q, R_n k⟩ 只依赖 (m−n) 完整证明** → 频率 schedule θ_j=base^{−2j/d} → 波长 λ_j=2π·base^{2j/d} → 远程衰减性质 → partial RoPE：DeepSeek-V3 64/192、Qwen 用法的账）；两种等价实现代码（half-split/interleave）；**NoPE**（causal mask 隐式位置信号，机制论证+文献）；RoPE 外推失败预告（→ P4.6）。锚点：Llama-3.1（θ=500000）、DeepSeek-V3（qk_rope_head_dim=64/qk_nope=128 + rope_scaling 块）。⚠️ 2026-11-10 research pass 修正：Qwen2.5 config 无 YaRN 字段，不得用作 YaRN 锚点。Sources：2104.09864、2108.12409、1910.10683、2305.19466
 
 - [ ] **Step 1-5：同 Task 8 结构**（6000-9000 字）→ `git commit -m "content(2.5): positional encoding"`
 
