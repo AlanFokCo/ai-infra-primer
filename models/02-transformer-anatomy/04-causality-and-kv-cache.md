@@ -199,7 +199,7 @@ $$
 | Llama-3.1-8B | 32 | 8 | 128 | 131072 | 128 KiB | 16 GiB |
 | Llama-3.1-70B | 80 | 8 | 128 | 131072 | 320 KiB | 40 GiB |
 | 8B 反事实 MHA（ $H_{kv}$ = 32） | 32 | 32 | 128 | 131072 | 512 KiB | 64 GiB |
-| OLMo-2-7B（MHA 锚点） | 32 | 32 | 128 | 4096 | 512 KiB | 4 GiB |
+| OLMo-2-7B（MHA 锚点） | 32 | 32 | 128 | 4096 | 512 KiB | 2 GiB |
 
 （[Llama-3.1-8B config](../references.md)、[Llama-3.1-70B config](../references.md)、[OLMo-2-7B config](../references.md)，均 [A]。）全是 2 的幂次的账：8B 一行为 $2 \times 2^{5} \times 2^{3} \times 2^{7} \times 2^{17} \times 2 = 2^{34}$ bytes = 16 GiB。反事实行直接读出 GQA 的收益：同一台 8B 机器若用 MHA，cache 从 16 GiB 涨到 64 GiB——4:1 的 head 分组在 cache 上是精确的 4 倍削减（对照：QKV 投影参数只减 2 倍，不对称性的账见 1.2 练习 1；GQA 机制本身在 4.1）。MQA 再推到底： $H_{kv}$ = 1 时 8B 形态只剩 2 GiB。
 
