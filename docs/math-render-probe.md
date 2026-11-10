@@ -1,6 +1,6 @@
 # GitHub MathJax 渲染探测（math-render-probe）
 
-> **用途**：本仓库暂无远端，GitHub 的 MathJax 渲染效果无法直接观测。本文件为 `STYLE_GUIDE.md` §3.1 公式语法白名单中的每一项构造提供一个最小用例（P1-P13）。
+> **用途**：本仓库暂无远端，GitHub 的 MathJax 渲染效果无法直接观测。本文件为 `STYLE_GUIDE.md` §3.1 公式语法白名单中的每一项构造提供一个最小用例（P1-P15）。
 > **首次推送 GitHub 后，必须以渲染视图打开本文件、逐项人工核对一次**；任一用例渲染失败，将对应构造从 `STYLE_GUIDE.md` §3.1 白名单移除，并回改已使用它的章节。核对结果填入文末「核对记录」表。
 
 ## 证据来源（访问日期均为 2026-11-10）
@@ -27,6 +27,8 @@
 5. **[M2] MathJax Docs《Supported TeX/LaTeX commands》**
    <https://docs.mathjax.org/en/latest/input/tex/macros/index.html>
    - base 宏含：`\text`、`\mathbb`、`\mathrm`、`\sqrt`、`\langle`、`\rangle`、`\bar`、`\vert`、`\Vert`、`\frac`、`\sum`、`\prod` 等。
+   - 2026-11-10 逐项核对同页存在（提取该页全部 1536 个命令 token 逐一比对）：希腊字母小写全套（`\alpha`-`\omega` 含 `\varepsilon`/`\vartheta`/`\varphi`/`\iota`/`\upsilon`）与大写 `\Gamma`/`\Delta`/`\Theta`/`\Lambda`/`\Pi`/`\Sigma`/`\Phi`/`\Psi`/`\Omega`；`\to`/`\rightarrow`/`\mapsto`/`\approx`/`\sim`/`\simeq`/`\propto`/`\equiv`/`\ll`/`\gg`/`\subset`/`\subseteq`/`\supset`/`\supseteq`；`\dfrac`/`\tfrac`/`\int`/`\oint`/`\bigcup`/`\bigcap`；`\partial`/`\nabla`/`\hat`/`\tilde`/`\vec`/`\dot`/`\ddot`/`\overline`/`\underline`/`\widehat`/`\widetilde`；`\left`/`\right`；`\mathcal`/`\operatorname`/`\stackrel`/`\underbrace`/`\overbrace`；`\times`/`\setminus`/`\forall`/`\exists`/`\oplus`/`\oslash`；`\ldots`/`\cdots`/`\vdots`/`\ddots`；薄空格 `\,`。
+   - 注：`\operatorname*`（星号变体，limits 式）未在该页与 ams 页单列，列为 P15 重点复核项。
 
 **官方文档未覆盖、需本文件实测确认的边界**：
 
@@ -201,13 +203,13 @@ $$
 
 预期结果：尖括号内积符号正确（不是小于/大于号）。
 
-### P11 · 范数 `\lVert x \rVert` 与 `\|x\|`
+### P11 · 范数与竖线（`\lVert \rVert`、`\|`、`\vert`、`\Vert`、`\mid`）
 
-源码：`残差分支要求 $\lVert x \rVert_2$ 有界；简写 $\|x\|_2$ 等价。`
+源码：`残差分支要求 $\lVert x \rVert_2$ 有界；简写 $\|x\|_2$ 等价；条件概率 $p(y \mid x)$ 用关系竖线；单竖线 $\vert x \vert$、双竖线 $\Vert x \Vert$ 亦直接书写。`
 
-实时渲染：残差分支要求 $\lVert x \rVert_2$ 有界；简写 $\|x\|_2$ 等价。
+实时渲染：残差分支要求 $\lVert x \rVert_2$ 有界；简写 $\|x\|_2$ 等价；条件概率 $p(y \mid x)$ 用关系竖线；单竖线 $\vert x \vert$、双竖线 $\Vert x \Vert$ 亦直接书写。
 
-预期结果：两种写法都显示为双竖线范数，下标 2 就位。
+预期结果：两种范数写法显示为双竖线、下标 2 就位；`\mid` 两侧带关系间距；`\vert`/`\Vert` 显示为单 / 双竖线。
 
 ### P12 · 行内 `$...$` 与中文相邻的边界（官方文档未说明，重点核对）
 
@@ -255,6 +257,82 @@ $$
 
 预期结果：两行均正常渲染；`\min`/`\max`/`\sup`/`\inf` 在 display 模式下下标移到正下方；`\odot`/`\otimes` 显示为带圈点乘 / 叉乘。MathJax 遇未知命令会红色报错，逐项目检即可定位失败宏。
 
+### P14 · 希腊字母（基础命令，[M2] 直接证据）
+
+源码：
+
+```tex
+$$
+\alpha, \beta, \gamma, \delta, \epsilon, \varepsilon, \zeta, \eta, \theta, \vartheta, \iota, \kappa, \lambda, \mu, \nu, \xi, \pi, \rho, \sigma, \tau, \upsilon, \phi, \varphi, \chi, \psi, \omega
+$$
+
+$$
+\Gamma, \Delta, \Theta, \Lambda, \Pi, \Sigma, \Phi, \Psi, \Omega
+$$
+```
+
+实时渲染：
+
+$$
+\alpha, \beta, \gamma, \delta, \epsilon, \varepsilon, \zeta, \eta, \theta, \vartheta, \iota, \kappa, \lambda, \mu, \nu, \xi, \pi, \rho, \sigma, \tau, \upsilon, \phi, \varphi, \chi, \psi, \omega
+$$
+
+$$
+\Gamma, \Delta, \Theta, \Lambda, \Pi, \Sigma, \Phi, \Psi, \Omega
+$$
+
+预期结果：小写 26 个、大写 9 个希腊字形全部显示；未知命令红色报错，逐项目检定位。
+
+### P15 · 关系/箭头/积分/微分/修饰/伸缩定界符/其他（基础命令，[M2] 直接证据；`\operatorname*` 为重点复核项）
+
+源码：
+
+```tex
+$$
+x \approx y, \quad x \sim y, \quad x \simeq y, \quad x \propto y, \quad x \equiv y, \quad a \ll b, \quad a \gg b, \quad A \subset B, \quad A \subseteq B, \quad A \supset B, \quad A \supseteq B
+$$
+
+$$
+x \to y, \quad x \rightarrow y, \quad x \mapsto y, \quad \int_0^1 f, \quad \oint_C f, \quad \bigcup_{i} A_i, \quad \bigcap_{i} A_i, \quad \dfrac{a}{b}, \quad \tfrac{a}{b}
+$$
+
+$$
+\partial_i f, \quad \nabla f, \quad \hat{x}, \quad \tilde{x}, \quad \vec{x}, \quad \dot{x}, \quad \ddot{x}, \quad \overline{x}, \quad \underline{x}, \quad \widehat{x}, \quad \widetilde{x}
+$$
+
+$$
+\left( \frac{a}{b} \right), \quad \left[ x \right], \quad \left\{ x \right\}, \quad \left| x \right|, \quad \left\| x \right\|, \quad \left\langle q, k \right\rangle, \quad \left. \frac{\partial f}{\partial x} \right|_{x=0}
+$$
+
+$$
+\mathcal{L}(\theta), \quad \operatorname*{arg\,min}_{\theta} \mathcal{L}(\theta), \quad x \stackrel{\mathrm{def}}{=} y, \quad \underbrace{\frac{1}{n} \sum_{i=1}^{n} L_i}_{\text{mean}}, \quad \overbrace{x_1 + \cdots + x_n}^{n}, \quad A \times B, \quad A \setminus B, \quad A \oplus B, \quad A \oslash B, \quad \forall x, \quad \exists y, \quad x_1, \ldots, x_n, \quad \vdots, \quad \ddots
+$$
+```
+
+实时渲染：
+
+$$
+x \approx y, \quad x \sim y, \quad x \simeq y, \quad x \propto y, \quad x \equiv y, \quad a \ll b, \quad a \gg b, \quad A \subset B, \quad A \subseteq B, \quad A \supset B, \quad A \supseteq B
+$$
+
+$$
+x \to y, \quad x \rightarrow y, \quad x \mapsto y, \quad \int_0^1 f, \quad \oint_C f, \quad \bigcup_{i} A_i, \quad \bigcap_{i} A_i, \quad \dfrac{a}{b}, \quad \tfrac{a}{b}
+$$
+
+$$
+\partial_i f, \quad \nabla f, \quad \hat{x}, \quad \tilde{x}, \quad \vec{x}, \quad \dot{x}, \quad \ddot{x}, \quad \overline{x}, \quad \underline{x}, \quad \widehat{x}, \quad \widetilde{x}
+$$
+
+$$
+\left( \frac{a}{b} \right), \quad \left[ x \right], \quad \left\{ x \right\}, \quad \left| x \right|, \quad \left\| x \right\|, \quad \left\langle q, k \right\rangle, \quad \left. \frac{\partial f}{\partial x} \right|_{x=0}
+$$
+
+$$
+\mathcal{L}(\theta), \quad \operatorname*{arg\,min}_{\theta} \mathcal{L}(\theta), \quad x \stackrel{\mathrm{def}}{=} y, \quad \underbrace{\frac{1}{n} \sum_{i=1}^{n} L_i}_{\text{mean}}, \quad \overbrace{x_1 + \cdots + x_n}^{n}, \quad A \times B, \quad A \setminus B, \quad A \oplus B, \quad A \oslash B, \quad \forall x, \quad \exists y, \quad x_1, \ldots, x_n, \quad \vdots, \quad \ddots
+$$
+
+预期结果：五行全部渲染；`\left...\right` 定界符随内容伸缩，`\left. \right|` 只显示右竖线；`\underbrace`/`\overbrace` 带上下标注；`\dfrac` 大分式、`\tfrac` 小分式；`\operatorname*{arg\,min}` 的 `\theta` 在 display 模式位于正下方——**若 `\operatorname*` 红色报错，白名单该行退化为 `\operatorname`（不带星）**。
+
 ## 核对清单
 
 | 用例 | 覆盖的白名单构造 | 预期 | 核对结果 |
@@ -270,9 +348,11 @@ $$
 | P8 | `\mathbb{R}` | 渲染 | 待首次推送后填写 |
 | P9 | `\bar\alpha`；`\prod_{s=1}^{t}` | 渲染 | 待首次推送后填写 |
 | P10 | `\langle q, k \rangle` | 渲染 | 待首次推送后填写 |
-| P11 | `\lVert x \rVert`；`\|x\|` | 渲染 | 待首次推送后填写 |
+| P11 | `\lVert x \rVert`；`\&#124;x\&#124;`（源码即 `\|x\|`）；`\vert`；`\Vert`；`\mid` | 渲染 | 待首次推送后填写 |
 | P12a-e | 行内 `$...$` 与中文/中文标点相邻、`$` 内侧空格（边界） | a/d/e 未知，b/c 渲染 | 待首次推送后填写 |
 | P13 | 基础函数/关系与运算符：`\ln`、`\sin`、`\cos`、`\tanh`、`\min`、`\max`、`\sup`、`\inf`、`\neq`、`\pm`、`\cdot`、`\odot`、`\otimes`、`\qquad` | 渲染 | 待首次推送后填写 |
+| P14 | 希腊字母小写全套 + 大写 9 个（基础命令，[M2] 直接证据） | 渲染 | 待首次推送后填写 |
+| P15 | 关系/箭头/近似；`\dfrac`/`\tfrac`/`\int`/`\oint`/`\bigcup`/`\bigcap`；`\partial`/`\nabla`/修饰符号；`\left...\right` 伸缩定界符；`\mathcal`/`\operatorname*`/`\stackrel`/`\underbrace`/`\overbrace`/`\times`/`\setminus`/`\forall`/`\exists`/`\oplus`/`\oslash`/省略号/`\,`（基础命令，[M2] 直接证据） | 渲染；`\operatorname*` 重点复核 | 待首次推送后填写 |
 
 ## 核对记录
 

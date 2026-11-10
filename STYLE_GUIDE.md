@@ -28,7 +28,7 @@
 
 #### 3.1 公式语法白名单（已锁定 · T6 · 2026-11-10）
 
-**状态：已锁定。** 依据为 GitHub 官方文档与 MathJax 官方文档（证据见本节末 [G1]-[G3] / [M1]-[M2]）。锁定时仓库尚无远端、无法直接观测渲染，故只取文档证据支持的最保守子集；`docs/math-render-probe.md` 为下表每项构造备有最小用例（P1-P13），首次推送 GitHub 后人工核对，失败项从本表删除并回改受影响章节。
+**状态：已锁定。** 依据为 GitHub 官方文档与 MathJax 官方文档（证据见本节末 [G1]-[G3] / [M1]-[M2]）。锁定时仓库尚无远端、无法直接观测渲染，故只取文档证据支持的最保守子集；`docs/math-render-probe.md` 为下表每项构造备有最小用例（P1-P15），首次推送 GitHub 后人工核对，失败项从本表删除并回改受影响章节。
 
 全书公式只允许使用下表语法：
 
@@ -42,9 +42,15 @@
 | 上下标 / 求和连乘 | `x_{i}^{2}`、`\sum_{i=1}^{n}`、`\prod_{s=1}^{t}` | [G1][M2] |
 | 分式 / 根式 | `\frac{a}{b}`、`\sqrt{d_k}` | [G1][M2] |
 | 基础函数 / 关系与运算 | `\exp`、`\log`、`\ln`、`\sin`、`\cos`、`\tanh`、`\min`、`\max`、`\sup`、`\inf`、`\top`、`\in`、`\le`、`\ge`、`\neq`、`\infty`、`\pm`、`\cdot`、`\odot`、`\otimes`、`\quad`、`\qquad` | [M2] |
+| 希腊字母 | 小写全套 `\alpha`、`\beta`、`\gamma`、`\delta`、`\epsilon`、`\varepsilon`、`\zeta`、`\eta`、`\theta`、`\vartheta`、`\iota`、`\kappa`、`\lambda`、`\mu`、`\nu`、`\xi`、`\pi`、`\rho`、`\sigma`、`\tau`、`\upsilon`、`\phi`、`\varphi`、`\chi`、`\psi`、`\omega`；大写 `\Gamma`、`\Delta`、`\Theta`、`\Lambda`、`\Pi`、`\Sigma`、`\Phi`、`\Psi`、`\Omega` | [M2] |
+| 关系 / 箭头 / 近似 | `\to`、`\rightarrow`、`\mapsto`、`\approx`、`\sim`、`\simeq`、`\propto`、`\equiv`、`\ll`、`\gg`、`\subset`、`\subseteq`、`\supset`、`\supseteq` | [M2] |
+| 分式变体 / 积分 / 大型运算 | `\dfrac`、`\tfrac`、`\int`、`\oint`、`\bigcup`、`\bigcap` | [M2] |
+| 微分 / 修饰符号 | `\partial`、`\nabla`、`\hat{}`、`\tilde{}`、`\vec{}`、`\dot{}`、`\ddot{}`、`\overline{}`、`\underline{}`、`\widehat{}`、`\widetilde{}` | [M2] |
+| 伸缩定界符 | `\left( \right)`、`\left[ \right]`、`\left\{ \right\}`、`\left\&#124; \right\&#124;`、`\left\langle \right\rangle`、`\left. ... \right&#124;`（`.` 为空占位；源码即 `\right|`） | [G1][M2] |
+| 其他 | `\mathcal{}`、`\operatorname{}`、`\operatorname*{}`（星号变体 [M1]/[M2] 未单列，P15 重点复核，复核前优先用不带星形式）、`\,`、`\stackrel{}{}`、`\underbrace{}_{}`、`\overbrace{}^{}`、`\times`、`\setminus`、`\forall`、`\exists`、`\oplus`、`\oslash`、`\ldots`、`\cdots`、`\vdots`、`\ddots` | [M2]（`\operatorname` 亦见 [M1]） |
 | 数集 / 算子字体 | `\mathbb{R}`、`\mathrm{softmax}` | [M2] |
 | 均值记号 | `\bar\alpha` | [M2] |
-| 范数 | `\lVert x \rVert`、`\|x\|` | [M1][M2] |
+| 范数 / 竖线 | `\lVert x \rVert`、`\&#124;x\&#124;`（源码即 `\|x\|`）、`\vert`、`\Vert`、`\mid`（不走 `\left\right` 的单独竖线：条件概率 `p(y \mid x)`、集合构造、表格单元格场景） | [M1][M2] |
 | 内积 | `\langle q, k \rangle` | [M2] |
 | 公式内文字 | `\text{...}`（内放中文为探测项 P7b，未复核前只放 ASCII） | [M2] |
 
@@ -56,9 +62,9 @@
 - [G2] GitHub Blog, "Math support in Markdown"（2022-05-19 发布，2024-05-21 更新）：<https://github.blog/news-insights/product-news/math-support-in-markdown/>。`$` / `$$` 定界符原生支持，MathJax 渲染。
 - [G3] GitHub Changelog（2022-06-28）`math` 围栏代码块：<https://github.blog/changelog/2022-06-28-fenced-block-syntax-for-mathematical-expressions/>。
 - [M1] MathJax Docs, "ams" 扩展：<https://docs.mathjax.org/en/latest/input/tex/extensions/ams.html>。原文："This extension is already loaded in all the components that include the TeX input jax, other than `input/tex-base`"；环境清单明确含 `aligned`、`cases`、`bmatrix`、`pmatrix`；宏清单含 `\lVert`、`\rVert`。
-- [M2] MathJax Docs, "Supported TeX/LaTeX commands"：<https://docs.mathjax.org/en/latest/input/tex/macros/index.html>。base 宏含 `\text`、`\mathbb`、`\mathrm`、`\sqrt`、`\langle`、`\rangle`、`\bar`、`\vert`、`\Vert`、`\frac`、`\sum`、`\prod`，及基础函数 / 关系与运算符 `\exp`、`\log`、`\ln`、`\sin`、`\cos`、`\tanh`、`\min`、`\max`、`\sup`、`\inf`、`\top`、`\in`、`\le`、`\ge`、`\neq`、`\infty`、`\pm`、`\cdot`、`\odot`、`\otimes`、`\quad`、`\qquad`（2026-11-10 逐项核对存在）。
+- [M2] MathJax Docs, "Supported TeX/LaTeX commands"：<https://docs.mathjax.org/en/latest/input/tex/macros/index.html>。base 宏含 `\text`、`\mathbb`、`\mathrm`、`\sqrt`、`\langle`、`\rangle`、`\bar`、`\vert`、`\Vert`、`\mid`、`\frac`、`\sum`、`\prod`，及基础函数 / 关系与运算符 `\exp`、`\log`、`\ln`、`\sin`、`\cos`、`\tanh`、`\min`、`\max`、`\sup`、`\inf`、`\top`、`\in`、`\le`、`\ge`、`\neq`、`\infty`、`\pm`、`\cdot`、`\odot`、`\otimes`、`\quad`、`\qquad`（2026-11-10 逐项核对存在）；希腊字母小写全套与常用大写、关系/箭头/近似符、`\dfrac`/`\tfrac`/`\int`/`\oint`/`\bigcup`/`\bigcap`、`\partial`/`\nabla`/修饰符号（`\hat`/`\tilde`/`\vec`/`\dot`/`\ddot`/`\overline`/`\underline`/`\widehat`/`\widetilde`）、`\left`/`\right` 伸缩定界符（[G1] 官方示例亦用 `\left( \right)`）、`\mathcal`/`\operatorname`/`\stackrel`/`\underbrace`/`\overbrace`、`\times`/`\setminus`/`\forall`/`\exists`/`\oplus`/`\oslash`、`\ldots`/`\cdots`/`\vdots`/`\ddots`、薄空格 `\,` 同页逐项核对存在（2026-11-10）。
 
-**已知边界**（官方文档未覆盖，列为探测项，首次推送后复核）：行内 `$...$` 紧贴中文字符或中文标点的解析行为（探测项 P12）——写作规则定为「行内公式与中文之间一律加空格」；`\text{}` 内放中文（探测项 P7b）。
+**已知边界**（官方文档未覆盖，列为探测项，首次推送后复核）：行内 `$...$` 紧贴中文字符或中文标点的解析行为（探测项 P12）——写作规则定为「行内公式与中文之间一律加空格」；`\text{}` 内放中文（探测项 P7b）；`\operatorname*` 星号变体未在 [M1]/[M2] 单列（探测项 P15，复核前优先用 `\operatorname`）。
 
 ### 4. 代码
 
