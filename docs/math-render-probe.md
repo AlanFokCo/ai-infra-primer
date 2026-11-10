@@ -1,6 +1,6 @@
 # GitHub MathJax 渲染探测（math-render-probe）
 
-> **用途**：本仓库暂无远端，GitHub 的 MathJax 渲染效果无法直接观测。本文件为 `STYLE_GUIDE.md` §3.1 公式语法白名单中的每一项构造提供一个最小用例（P1-P15）。
+> **用途**：本仓库暂无远端，GitHub 的 MathJax 渲染效果无法直接观测。本文件为 `STYLE_GUIDE.md` §3.1 公式语法白名单中的每一项构造提供一个最小用例（P1-P16）。
 > **首次推送 GitHub 后，必须以渲染视图打开本文件、逐项人工核对一次**；任一用例渲染失败，将对应构造从 `STYLE_GUIDE.md` §3.1 白名单移除，并回改已使用它的章节。核对结果填入文末「核对记录」表。
 
 ## 证据来源（访问日期均为 2026-11-10）
@@ -27,7 +27,7 @@
 5. **[M2] MathJax Docs《Supported TeX/LaTeX commands》**
    <https://docs.mathjax.org/en/latest/input/tex/macros/index.html>
    - base 宏含：`\text`、`\mathbb`、`\mathrm`、`\sqrt`、`\langle`、`\rangle`、`\bar`、`\vert`、`\Vert`、`\frac`、`\sum`、`\prod` 等。
-   - 2026-11-10 逐项核对同页存在（提取该页全部 1536 个命令 token 逐一比对）：希腊字母小写常用集（`\alpha`-`\omega` 含 `\varepsilon`/`\vartheta`/`\varphi`/`\iota`/`\upsilon`；变体 `\varsigma`/`\varpi`/`\varrho`/`\varkappa` 存在但未收）与大写 `\Gamma`/`\Delta`/`\Theta`/`\Lambda`/`\Pi`/`\Sigma`/`\Phi`/`\Psi`/`\Omega`；`\to`/`\rightarrow`/`\mapsto`/`\approx`/`\sim`/`\simeq`/`\propto`/`\equiv`/`\ll`/`\gg`/`\subset`/`\subseteq`/`\supset`/`\supseteq`；`\dfrac`/`\tfrac`/`\int`/`\oint`/`\bigcup`/`\bigcap`；`\partial`/`\nabla`/`\hat`/`\tilde`/`\vec`/`\dot`/`\ddot`/`\overline`/`\underline`/`\widehat`/`\widetilde`；`\left`/`\right`；`\mathcal`/`\operatorname`/`\stackrel`/`\underbrace`/`\overbrace`；`\times`/`\setminus`/`\forall`/`\exists`/`\oplus`/`\oslash`；`\ldots`/`\cdots`/`\vdots`/`\ddots`；薄空格 `\,`；`\{`、`\}` 与裸竖线符号（该页符号表）。
+   - 2026-11-10 逐项核对同页存在（提取该页全部 1536 个命令 token 逐一比对）：希腊字母小写常用集（`\alpha`-`\omega` 含 `\varepsilon`/`\vartheta`/`\varphi`/`\iota`/`\upsilon`；变体 `\varsigma`/`\varpi`/`\varrho`/`\varkappa` 存在但未收）与大写 `\Gamma`/`\Delta`/`\Theta`/`\Lambda`/`\Pi`/`\Sigma`/`\Phi`/`\Psi`/`\Omega`；`\to`/`\rightarrow`/`\mapsto`/`\approx`/`\sim`/`\simeq`/`\propto`/`\equiv`/`\ll`/`\gg`/`\subset`/`\subseteq`/`\supset`/`\supseteq`；`\dfrac`/`\tfrac`/`\int`/`\oint`/`\bigcup`/`\bigcap`；`\partial`/`\nabla`/`\hat`/`\tilde`/`\vec`/`\dot`/`\ddot`/`\overline`/`\underline`/`\widehat`/`\widetilde`；`\left`/`\right`；`\mathcal`/`\operatorname`/`\stackrel`/`\underbrace`/`\overbrace`；`\times`/`\setminus`/`\forall`/`\exists`/`\oplus`/`\oslash`；`\ldots`/`\cdots`/`\vdots`/`\ddots`；薄空格 `\,`；`\{`、`\}` 与裸竖线符号（该页符号表）；大写箭头 `\Rightarrow`/`\Longrightarrow`/`\Leftarrow`/`\Leftrightarrow`/`\Longleftrightarrow`、间距 `\;`/`\:`/`\!`、`\Pr`、`\binom`/`\dbinom`/`\tbinom`（后三者亦见 [M1]）。
    - 注：`\operatorname*`（星号变体，limits 式）未在该页与 ams 页单列，列为 P15 重点复核项。
 
 **官方文档未覆盖、需本文件实测确认的边界**：
@@ -333,6 +333,40 @@ $$
 
 预期结果：五行全部渲染；`\left...\right` 定界符随内容伸缩，`\left. \right|` 只显示右竖线；`\underbrace`/`\overbrace` 带上下标注；`\dfrac` 大分式、`\tfrac` 小分式；`\operatorname*{arg\,min}` 的 `\theta` 在 display 模式位于正下方——**若 `\operatorname*` 红色报错，白名单该行退化为 `\operatorname`（不带星）**。
 
+### P16 · 大写箭头 / 间距 / 二项式 / `\Pr`（基础命令，[M2] 直接证据；`\binom` 族亦见 [M1]）
+
+源码：
+
+```tex
+$$
+a = b \Rightarrow c = d, \quad a = b \Longrightarrow c = d, \quad P \Leftarrow Q, \quad P \Leftrightarrow Q, \quad P \Longleftrightarrow Q
+$$
+
+$$
+x\,y, \quad x\:y, \quad x\;y, \quad x\!y
+$$
+
+$$
+\binom{n}{k} = \frac{n!}{k!(n-k)!}, \quad \dbinom{n}{k}, \quad \tbinom{n}{k}, \quad \Pr(A \mid B) = \frac{\Pr(A \cap B)}{\Pr(B)}
+$$
+```
+
+实时渲染：
+
+$$
+a = b \Rightarrow c = d, \quad a = b \Longrightarrow c = d, \quad P \Leftarrow Q, \quad P \Leftrightarrow Q, \quad P \Longleftrightarrow Q
+$$
+
+$$
+x\,y, \quad x\:y, \quad x\;y, \quad x\!y
+$$
+
+$$
+\binom{n}{k} = \frac{n!}{k!(n-k)!}, \quad \dbinom{n}{k}, \quad \tbinom{n}{k}, \quad \Pr(A \mid B) = \frac{\Pr(A \cap B)}{\Pr(B)}
+$$
+
+预期结果：三行全部渲染；间距行四处间距宽窄可辨（`\!` 最窄、`\;` 最宽）；`\binom` 带括号上下堆叠，`\dbinom` 大字号、`\tbinom` 小字号；`\Pr` 正体算子、`\mid` 条件竖线间距正确。
+
 ## 核对清单
 
 | 用例 | 覆盖的白名单构造 | 预期 | 核对结果 |
@@ -353,6 +387,7 @@ $$
 | P13 | 基础函数/关系与运算符：`\ln`、`\sin`、`\cos`、`\tanh`、`\min`、`\max`、`\sup`、`\inf`、`\neq`、`\pm`、`\cdot`、`\odot`、`\otimes`、`\qquad` | 渲染 | 待首次推送后填写 |
 | P14 | 希腊字母小写常用集 26 个 + 大写 9 个（基础命令，[M2] 直接证据） | 渲染 | 待首次推送后填写 |
 | P15 | 关系/箭头/近似；`\dfrac`/`\tfrac`/`\int`/`\oint`/`\bigcup`/`\bigcap`；`\partial`/`\nabla`/修饰符号；`\left...\right` 伸缩定界符；`\mathcal`/`\operatorname*`/`\stackrel`/`\underbrace`/`\overbrace`/`\times`/`\setminus`/`\forall`/`\exists`/`\oplus`/`\oslash`/省略号/`\,`（基础命令，[M2] 直接证据） | 渲染；`\operatorname*` 重点复核 | 待首次推送后填写 |
+| P16 | 大写箭头（`\Rightarrow` 等 5 个）；间距 `\:`、`\;`、`\!`（`\,` 见 P15）；`\binom`/`\dbinom`/`\tbinom`；`\Pr`（基础命令，[M2] 直接证据） | 渲染 | 待首次推送后填写 |
 
 注：本表 code span 内的 `\|` 是 GFM 表格转义写法，渲染后显示为单个竖线字符（反斜杠不显示）；真实 LaTeX 源码以 P11 源码区为准。
 
