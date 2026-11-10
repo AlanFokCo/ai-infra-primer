@@ -107,10 +107,10 @@ shape 注记：步 5–6 的 scores 习惯写作 $[B, H_q, T, T]$ ——head 维
 合计每层 $12d^{2}$ ，乘 $L$ 层：
 
 $$
-N \approx 12Ld^{2}, \qquad \text{分解为} \; \underbrace{4d^{2}}_{\text{attn}} + \underbrace{8d^{2}}_{\text{FFN}} \; \text{每层} \qquad (3)
+N \approx L \left( \underbrace{4d^{2}}_{\text{attn}} + \underbrace{8d^{2}}_{\text{FFN}} \right) = 12Ld^{2} \qquad (3)
 $$
 
-embedding 单算（查表不进 FLOPs 账，参数账单列，口径同 1.2 第 2 节）：输入 embedding $Vd$ ；untied 时输出头是独立的第二份 $Vd$ 。总参数
+embedding 单算（查表不进 FLOPs 账，参数账单列，口径同 1.2 第 3 节）：输入 embedding $Vd$ ；untied 时输出头是独立的第二份 $Vd$ 。总参数
 
 $$
 N_{\mathrm{total}} \approx 12Ld^{2} + 2Vd \quad (\text{untied}) \qquad (4)
@@ -148,7 +148,7 @@ Transformer 原文用三个指标给序列建模层打分（[Vaswani et al., 201
 | 串行操作数（sequential operations） | $O(1)$ | $O(T)$ |
 | 任意两位置的最大路径长度 | $O(1)$ | $O(T)$ |
 
-原文 Table 1 还有两行值得登记：self-attention (restricted)——每位置只 attend 半径 $r$ 的窗口——每层计算量降为 $O(rTd)$ 、路径长度升为 $O(T/r)$ ；卷积层（kernel 宽 $k$ ）为 $O(kTd^{2})$ 、串行 $O(1)$ 、路径 $O(\log_k T)$ 。这两行是 Part 4 的预告：稀疏 attention（4.2）就是把 restricted 行做实做细；所有替代架构都可以读作在这三个指标的张量上重新选点。
+原文 Table 1 还有两行值得登记：self-attention (restricted)——每位置只 attend 半径 $r$ 的窗口——每层计算量降为 $O(rTd)$ 、串行操作数仍为 $O(1)$ 、路径长度升为 $O(T/r)$ ；卷积层（kernel 宽 $k$ ）为 $O(kTd^{2})$ 、串行 $O(1)$ 、路径 $O(\log_k T)$ 。这两行是 Part 4 的预告：稀疏 attention（4.2）就是把 restricted 行做实做细；所有替代架构都可以读作在这三个指标的张量上重新选点。
 
 逐行读主表。
 
