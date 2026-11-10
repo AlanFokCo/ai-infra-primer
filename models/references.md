@@ -156,7 +156,7 @@
 | layer normalization (LayerNorm) | 层归一化（LayerNorm） | 2.7 |
 | batch normalization (BatchNorm) | 批归一化（BatchNorm） | 2.7 |
 | RMSNorm | 保留英文（RMSNorm） | 2.7 |
-| re-centering / re-scaling | 重定中（re-centering）/ 重缩放（re-scaling） | 2.7 |
+| re-centering / re-scaling | 保留英文（re-centering / re-scaling） | 2.7 |
 | warmup | 学习率预热（warmup） | 2.7 |
 | QK-Norm | 保留英文（QK-Norm） | 2.7 |
 | zero-centered norm | zero-centered 增益（增益存成相对恒等的偏差） | 2.7 |
