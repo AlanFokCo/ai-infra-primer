@@ -15,7 +15,7 @@ $$
 为什么用加法而不是直接把权重置零：softmax 的输入是 logit，「权重为零」在 logit 侧的对应物就是 $-\infty$ ；在 logit 上加 $-\infty$ 与「把该列从归一化集合里删除」是同一操作的两种写法。展开成可见集形式看得最清楚。记位置 $i$ 的可见集 $V(i) = \{j : M_{ij} = 0\}$ ，则 $j \notin V(i)$ 时 $\exp(s_{ij} + M_{ij}) = \exp(-\infty) = 0$ ，分母只剩可见列：
 
 $$
-\alpha_{ij} = \begin{cases} \dfrac{\exp(s_{ij})}{\sum_{l \in V(i)} \exp(s_{il})}, & j \in V(i) \\[6pt] 0, & j \notin V(i) \end{cases} \qquad (2)
+\alpha_{ij} = \begin{cases} \dfrac{\exp(s_{ij})}{\sum_{l \in V(i)} \exp(s_{il})}, & j \in V(i) \\ 0, & j \notin V(i) \end{cases} \qquad (2)
 $$
 
 mask 的语义因此是「重新划定 softmax 的归一化域」，不是「给 score 打折」：被屏蔽位置退出竞争，可见位置之间的相对结构与无 mask 时逐对相同——任意 $j, k \in V(i)$ 有 $\alpha_{ij} / \alpha_{ik} = \exp(s_{ij} - s_{ik})$ ，与 $M$ 无关。
@@ -28,7 +28,7 @@ $$
 
 即 $V(i) = \{1, \ldots, i\}$ ：位置 $i$ 恰好看见自己与自己的过去。这就是 1.1 式 (3) 的自回归分解在 attention 层的落实方式——2.1 §1 的二分法说过，attention 是唯一跨位置混合信息的算子，所以「不许看未来」只需要、也只能在这里落实；RMSNorm、FFN、残差加逐位置，天然不跨时间。这个 mask 形态出自 Transformer 原文的 decoder self-attention（[Vaswani et al., 2017](../references.md)，arXiv:1706.03762，[A]，§3.2.3：把 softmax 输入中非法连接对应的位置置为 $-\infty$ ）。
 
-**极限语义与实现**。$-\infty$ 是数学写法，实现里是两种等价物：真正的 `float("-inf")`（IEEE 语义下 $-\infty$ 减有限数仍是 $-\infty$ ， $\exp(-\infty) = 0$ 精确成立），或一个足够大的负哨兵（dtype 最小值、 $-10^{9}$ 量级均可）。哨兵方案下 $s_{ij} + M_{ij}$ 仍是约 $-10^{9}$ 的有限数，经 2.3 式 (10) 的 max 减法后 $\exp$ 下溢到精确的 0——bf16 下 $\exp(-100)$ 已是机器 0，哨兵与真 $-\infty$ 在浮点输出上不可区分。max 减法本身与 mask 兼容：行最大值只可能出现在可见列（可见列有限、被掩列为 $-\infty$ ），减去它不改变任何被掩列的零值。真正的边界条件只有一个：若某行可见集为空，分母为 0、max 为 $-\infty$ ，整行产出 NaN。causal mask 的对角线恒可见（ $M_{ii} = 0$ ），每行至少看见自己，空集不会出现；2.3 §8 教学代码里 `torch.triu(..., diagonal=1)` 的偏移量 1 就是「保留下三角含对角线」的含义，偏移写错一格——对角线也被屏蔽或向右多放一格——分别对应 NaN 与泄漏（第 7 节）。
+**极限语义与实现**。$-\infty$ 是数学写法，实现里是两种等价物：真正的 `float("-inf")`（IEEE 语义下 $-\infty$ 减有限数仍是 $-\infty$ ， $\exp(-\infty) = 0$ 精确成立），或一个足够大的负哨兵（ $-10^{9}$ 量级，或 dtype 最小值）。哨兵方案下 $s_{ij} + M_{ij}$ 仍是约 $-10^{9}$ 的有限数，经 2.3 式 (10) 的 max 减法后 $\exp$ 下溢到精确的 0——bf16 下 $\exp(-100)$ 已是机器 0，哨兵与真 $-\infty$ 在浮点输出上不可区分。哨兵取 dtype 最小值（bf16 / fp32 约 $-3.4 \times 10^{38}$ 、fp16 为 $-65504$ ）结论相同：有限 score 加上它仍在 $-10^{38}$ 量级，max 减法后照旧下溢为 0；与真 $-\infty$ 唯一的行为差异在全掩行——哨兵方案不产 NaN 而是静默退化为均匀分布，因此更依赖对角线恒可见来防呆。max 减法本身与 mask 兼容：行最大值只可能出现在可见列（可见列有限、被掩列为 $-\infty$ ），减去它不改变任何被掩列的零值。真正的边界条件只有一个：若某行可见集为空，分母为 0、max 为 $-\infty$ ，整行产出 NaN。causal mask 的对角线恒可见（ $M_{ii} = 0$ ），每行至少看见自己，空集不会出现；2.3 §8 教学代码里 `torch.triu(..., diagonal=1)` 的偏移量 1 就是「保留下三角含对角线」的含义，偏移写错一格——对角线也被屏蔽或向右多放一格——分别对应 NaN 与泄漏（第 7 节）。
 
 ## 2. 三种 mask ↔ 三种 objective
 
@@ -113,7 +113,7 @@ $$
 
 ### 4.3 为什么 $q$ 不缓存：依赖结构论证
 
-对称地问： $q_s$ 是否也值得存？看 $q_s$ 的消费方。 $q_s$ 只出现在 score 矩阵的第 $s$ 行—— $s_{s,j} = \langle q_s, k_j \rangle$ ， $j \le s$ 。第 $s$ 行只在第 $s$ 步被需要（计算 $p_{s,\cdot}$ 与 $o_s$ ）；之后的第 $\tau > s$ 步用的是第 $\tau$ 行，query 是 $q_\tau$ 。causal mask 下 score 矩阵只有下三角被使用，而 $q_s$ 恰好只服务第 $s$ 行的下三角段——一次性消费品。反过来 $k_s, v_s$ 服务第 $s$ 列，被所有未来行 $\tau \ge s$ 反复读取。**列被未来读、行只被自己读**：这就是「存 K/V、弃 Q」的依赖结构根源，不是工程习惯。代价也记一笔：若误存 Q，按 GQA 4:1（ $H_q = 4 H_{kv}$ ）算是式 (9) 的 4 倍字节、零次复用。
+对称地问： $q_s$ 是否也值得存？看 $q_s$ 的消费方。 $q_s$ 只出现在 score 矩阵的第 $s$ 行—— $s_{s,j} = \langle q_s, k_j \rangle$ ， $j \le s$ 。第 $s$ 行只在第 $s$ 步被需要（计算 $p_{s,\cdot}$ 与 $o_s$ ）；之后的第 $\tau > s$ 步用的是第 $\tau$ 行，query 是 $q_\tau$ 。causal mask 下 score 矩阵只有下三角被使用，而 $q_s$ 恰好只服务第 $s$ 行的下三角段——一次性消费品。反过来 $k_s, v_s$ 服务第 $s$ 列，被所有未来行 $\tau \ge s$ 反复读取。**列被未来读、行只被自己读**：这就是「存 K/V、弃 Q」的依赖结构根源，不是工程习惯。代价也记一笔：若误存 Q，其体量是 $L H_q d_{\mathrm{head}} T B b$ ——式 (9) 的因子 2 已含 K、V 两份，故在 GQA 4:1（ $H_q = 4 H_{kv}$ ）下光 Q 一份就是式 (9) 的 2 倍字节、连 K/V 总量变 3 倍，且零次复用。
 
 ### 4.4 有 cache 的 decode：读写模式与 FLOPs
 
@@ -179,7 +179,7 @@ mask 的偏移量值得看一眼：带 cache 的 prefill 块（chunked prefill�
 把 §4.4 的缓存形态数成字节。每层的 K、V 各是 $[B, H_{kv}, T, D]$ 个元素，共 $L$ 层，每元素 $b$ 字节：
 
 $$
-\mathrm{Mem}_{\mathrm{KV}} = 2 \cdot L \cdot H_{kv} \cdot d_{\mathrm{head}} \cdot T \cdot B \cdot b \ \mathrm{bytes} \qquad (9)
+\mathrm{Mem}_{\mathrm{KV}} = 2 \cdot L \cdot H_{kv} \cdot d_{\mathrm{head}} \cdot T \cdot B \cdot b \text{ bytes} \qquad (9)
 $$
 
 逐项（1.2 §8 账三登记的就是这条公式，此处是它的推导落点）：
@@ -207,7 +207,7 @@ $$
 
 ## 6. prefill vs decode：算术强度分野与 roofline 入口
 
-1.2 §10 已把「每 token 前向 $2N$ FLOPs、权重读一遍 $2N$ bytes」放在一起；本节把它接到 prefill / decode 两阶段上，并补上 cache 项。算术强度（arithmetic intensity）$I$ = FLOPs ÷ 访存字节数；roofline 模型的吞吐上限 = $\min($ 峰值算力 $,\ I \times$ 带宽 $)$ ，分界线（ridge point）= 峰值算力 ÷ 带宽，现代加速器的取值在 $10^{2}$ FLOP/byte 量级（逐卡数字与测量方法归 gpu 维度）。
+1.2 §10 已把「每 token 前向 $2N$ FLOPs、权重读一遍 $2N$ bytes」放在一起；本节把它接到 prefill / decode 两阶段上，并补上 cache 项。算术强度（arithmetic intensity）$I$ = FLOPs ÷ 访存字节数；屋顶线模型（roofline model）给出的吞吐上限 = $\min($ 峰值算力 $,\ I \times$ 带宽 $)$ ，分界线（ridge point）= 峰值算力 ÷ 带宽，现代加速器的取值在 $10^{2}$ FLOP/byte 量级（逐卡数字与测量方法归 gpu 维度）。
 
 **prefill**： $T_p$ 个 token 一次前向，FLOPs = $2NT_p + 2LT_p^{2}d$ ；权重只从显存读一遍（ $2N$ bytes），激活读写随 $T_p$ 线性、在长 prompt 下被 matmul 摊销：
 
@@ -225,7 +225,7 @@ $$
 
 **符号**：分子分母同为「每生成一个 token」口径；$t$ 为当前已缓存长度。
 
-两个极限。短上下文端 $t \to 0$ ： $I \to 1$ FLOP/byte（分子分母同为 $2N$ ）——1.2 §10 的「decode 强度约等于 1」就是它。长上下文端代入 Llama-3.1-8B、 $t$ = 131072：分子 $1.50 \times 10^{10} + 6.87 \times 10^{10} = 8.4 \times 10^{10}$ FLOPs（attention 项在 $t = N / (2Ld) \approx 2.7 \times 10^{4}$ 处反超参数项，恰为 1.2 §6 交叉点 $T^{*}$ 的一半）；分母 $1.61 \times 10^{10} + 1.72 \times 10^{10} = 3.3 \times 10^{10}$ bytes（权重 16 GB 与 cache 16 GiB 各半）； $I \approx 2.5$ 。cache 把强度从 1 抬到 2.5，离 $10^{2}$ 量级的 ridge 仍差近两个数量级：**memory-bound 的结论在整个窗口内成立**，只是「读什么」从纯权重变成权重与 cache 各半。
+两个极限。短上下文端 $t \to 0$ ： $I \to 1$ FLOP/byte（分子分母同为 $2N$ ）——1.2 §10 的「decode 强度约等于 1」就是它。长上下文端代入 Llama-3.1-8B、 $t$ = 131072：分子 $1.50 \times 10^{10} + 6.87 \times 10^{10} = 8.4 \times 10^{10}$ FLOPs（参数项 $2N$ 取含输出头的全量口径，同 1.2 §9；attention 项在 $t = N / (2Ld) \approx 2.7 \times 10^{4}$ 处反超层参数项，此处 $N$ 为层参数口径 $6.98 \times 10^{9}$ ，与 1.2 §6 的交叉点 $T^{*}$ 同口径、恰为其一半）；分母 $1.61 \times 10^{10} + 1.72 \times 10^{10} = 3.3 \times 10^{10}$ bytes（权重 16 GB 与 cache 16 GiB 各半）； $I \approx 2.5$ 。cache 把强度从 1 抬到 2.5，离 $10^{2}$ 量级的 ridge 仍差近两个数量级：**memory-bound 的结论在整个窗口内成立**，只是「读什么」从纯权重变成权重与 cache 各半。
 
 **batch 的作用与边界**。 $B$ 条序列合成一个 batch：FLOPs 变 $B(2N + 4Ltd)$ ；权重仍只读一遍，cache 逐序列独立故读 $B$ 份：
 
