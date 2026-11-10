@@ -301,7 +301,7 @@ exit $fail
 - Consumes: 2.1（residual stream）、2.3（softmax 饱和）
 - Produces: Pre/Post-LN 结论（P5 各章引用）；QK-norm（4.4/8.5 复用）
 
-**内容要求（spec §5-2.7 全量）**：LayerNorm 公式与 scale/shift invariance；为什么 NLP 不用 BatchNorm（三条数学原因）；RMSNorm（去掉 re-centering 丢了什么的论证）；**Pre-LN vs Post-LN 梯度分析**（Xiong et al. 推导骨架 → warmup 的数学必然性——定理精确形式以 T7 核实为准）；QK-Norm（解决 attention logits 爆炸，Gemma-2/ViT-22B）；residual 梯度流 $\partial L/\partial x_l=\partial L/\partial x_L(1+\partial/\partial x_l\sum f_i)$ identity 项；zero-centered norm（Gemma/Qwen3-Next）；DeepNorm 缩放系数；**logit soft-capping（仅 Gemma 2：attn 50.0/final 30.0；Gemma 3 已弃用——勿张冠李戴）**。锚点：Gemma 3（QK-norm、pre+post RMSNorm）、Gemma 2（soft-capping 出处）、Llama-3.1、Qwen3-Next。Sources：1607.06450、1910.07467、2002.04745、2203.00555、2408.00118、2503.19786（T7 核实）、2010.04245（T7 核实）
+**内容要求（spec §5-2.7 全量）**：LayerNorm 公式与 scale/shift invariance；为什么 NLP 不用 BatchNorm（三条数学原因）；RMSNorm（去掉 re-centering 丢了什么的论证）；**Pre-LN vs Post-LN 梯度分析**（Xiong et al. 推导骨架 → warmup 的数学必然性——定理精确形式以 T7 核实为准）；QK-Norm（解决 attention logits 爆炸，Henry et al. 2020 / ViT-22B / Gemma 3；Gemma 2 用 soft-capping）；residual 梯度流 $\partial L/\partial x_l=\partial L/\partial x_L(1+\partial/\partial x_l\sum f_i)$ identity 项；zero-centered norm（Gemma/Qwen3-Next）；DeepNorm 缩放系数；**logit soft-capping（仅 Gemma 2：attn 50.0/final 30.0；Gemma 3 已弃用——勿张冠李戴）**。锚点：Gemma 3（QK-norm、pre+post RMSNorm）、Gemma 2（soft-capping 出处）、Llama-3.1、Qwen3-Next。Sources：1607.06450、1910.07467、2002.04745、2203.00555、2408.00118、2503.19786（T7 核实）、2010.04245（T7 核实）
 
 - [ ] **Step 1-5：同 Task 8 结构**（6000-9000 字）→ `git commit -m "content(2.7): normalization and residual"`
 
