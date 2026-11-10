@@ -10,9 +10,9 @@ $$
 L(N) = \left(\frac{N_c}{N}\right)^{\alpha_N}, \qquad L(D) = \left(\frac{D_c}{D}\right)^{\alpha_D}, \qquad L(C) = \left(\frac{C_c}{C}\right)^{\alpha_C} \qquad (1)
 $$
 
-**符号**：$L$ ：held-out test 集上的 per-token CE（nats，1.1 式 (4) 的口径，全程固定 tokenizer 与测试集）；$N$ ：非 embedding 参数量（与 1.2 式 (2) 的 FLOPs 口径一致）；$D$ ：训练 token 总数；$C$ ：训练算力，原论文以 PF-days（ $10^{15}$ FLOPS $\times$ 86400 s $= 8.64 \times 10^{19}$ FLOPs）为单位；$N_c, D_c, C_c$ ：量纲常数；$\alpha_N, \alpha_D, \alpha_C$ ：幂律指数。
+**符号**：$L$ ：held-out test 集上的 per-token CE（nats，1.1 式 (4) 的口径，全程固定 tokenizer 与测试集）；$N$ ：非 embedding 参数量（与 1.2 式 (2) 的 FLOPs 口径一致）；$D$ ：训练 token 总数；$C$ ：训练算力，原论文以 PF-days（ $10^{15}$ FLOPS $\times$ 86400 s $= 8.64 \times 10^{19}$ FLOPs）为单位；$N_c, D_c, C_c$ ：量纲常数；$\alpha_N, \alpha_D, \alpha_C$ ：幂律指数。口径注：$L(C)$ 的 $C$ 是 $C_{\min}$ （compute-optimal 口径，即每个模型按最优分配训练所耗的最小算力），$\alpha_C = 0.050$ 属于该口径；raw-C 律（不约束分配、按实际消耗算力计）的指数是 0.057，两个数不要混用。
 
-论文拟合值： $\alpha_N \approx 0.076$ 、 $N_c \approx 8.8 \times 10^{13}$ ； $\alpha_D \approx 0.095$ 、 $D_c \approx 5.4 \times 10^{13}$ ； $\alpha_C \approx 0.050$ 、 $C_c \approx 3.1 \times 10^{8}$ PF-days（ $\approx 2.7 \times 10^{28}$ FLOPs）。测量条件是三条律的适用前提，必须写清： $L(N)$ 曲线在「数据充足」下测得， $L(D)$ 曲线在「模型足够大」下测得，两者都取 early stopping 的最优点——各自假设另两个变量不构成瓶颈。
+论文拟合值： $\alpha_N \approx 0.076$ 、 $N_c \approx 8.8 \times 10^{13}$ ； $\alpha_D \approx 0.095$ 、 $D_c \approx 5.4 \times 10^{13}$ ； $\alpha_C \approx 0.050$ 、 $C_c \approx 3.1 \times 10^{8}$ PF-days（ $\approx 2.7 \times 10^{28}$ FLOPs）。测量条件是三条律的适用前提，必须写清： $L(N)$ 曲线在数据充足下训练到收敛测得， $L(D)$ 曲线在模型足够大下取 early stopping 最优点测得——各自假设另两个变量不构成瓶颈。
 
 幂律的工程含义取对数后可见： $\log L = \alpha (\log x_c - \log x)$ ，log-log 坐标下是斜率 $-\alpha$ 的直线。每 10 倍投入换来固定比例的 loss 下降：代入 $\alpha_N = 0.076$ ，参数 10 倍、loss 乘 $10^{-0.076} \approx 0.84$ ；代入 $\alpha_C = 0.050$ ，算力 10 倍、loss 只乘 $10^{-0.050} \approx 0.89$ 。直线上没有拐点、没有饱和段——这是「规模即收益」的定量内容；反过来它也说明收益递减是幂律式的：10 倍算力换不到 11% 的 loss 下降。
 
@@ -124,9 +124,9 @@ $$
 a = \frac{0.28}{0.62} \approx 0.45, \qquad b = \frac{0.34}{0.62} \approx 0.55, \qquad G = \left(\frac{0.34 \times 406.4}{0.28 \times 410.7}\right)^{1/0.62} \approx 1.34 \qquad (6)
 $$
 
-**数值注**：$a$ 由舍入到两位小数的指数算得 0.4516；论文 Table 3 用未舍入的拟合参数报告 0.46，下同。
+**数值注**：$a$ 由舍入到两位小数的指数算得 0.4516；论文 Table 2 用未舍入的拟合参数报告 0.46，下同。
 
-论文 Table 3 汇总三种方法： $a$ 在 $0.46 \sim 0.50$ 、 $b$ 在 $0.50 \sim 0.54$ 之间（Approach 1/2 接近对称的 $0.5$ ，Approach 3 参数拟合给出 $a$ 略小）——方法间的弥散本身就是测量精度的一部分。结论表述：预算 $C$ 增长时，compute-optimal 的模型与数据**近似各按** $\sqrt{C}$ **增长**，而不是 Kaplan 律的「大头给模型」（第 4 节）。
+论文 Table 2 汇总三种方法： $a$ 在 $0.46 \sim 0.50$ 、 $b$ 在 $0.50 \sim 0.54$ 之间（Approach 1/2 接近对称的 $0.5$ ，Approach 3 参数拟合给出 $a$ 略小）——方法间的弥散本身就是测量精度的一部分。结论表述：预算 $C$ 增长时，compute-optimal 的模型与数据**近似各按** $\sqrt{C}$ **增长**，而不是 Kaplan 律的「大头给模型」（第 4 节）。
 
 两个直接推论。第一，最优前沿上的 loss：把式 (5) 代回式 (2)，注意 $a\alpha = b\beta = \alpha\beta/(\alpha+\beta)$ ，两项同阶：
 
@@ -147,7 +147,7 @@ $$
 1. **学习率 schedule 未按训练长度退火**。Kaplan 的各规模模型用固定形状的 schedule，cosine 衰减不随实际训练的 $D$ 调整到零；训练在 schedule 中途停止的点上，loss 系统性高于充分退火后的值。Chinchilla 的 Approach 1/2 对每条曲线、每个 $(N, D)$ 点都把 schedule 调到匹配长度。小模型、多数据的点被旧 protocol 高估得最多，拟合出的前沿就被推向「大模型」一侧。
 2. **单变量律拼不出联合优化**。Kaplan 的 $L(N)$ 在数据充足下测得、 $L(D)$ 在模型充足下测得，两者的测量条件互斥；从它们组装固定 $C$ 的最优点，与在 $(N, D)$ 网格上直接测联合曲面不是一回事。事实上把 Kaplan 自己的联合形式代入第 3 节的推导，得到的指数是 $\alpha_D / (\alpha_N + \alpha_D) \approx 0.56$ 而非 0.73（练习 1）——论文内部的单变量系数与其分配结论之间存在张力。
 
-后果用一对真实配置看：Gopher 的 280B 参数 × 300B token（ $D/N \approx 1.1$ ）接近 Kaplan 律的选型；同一预算按 Chinchilla 三法预测的最优模型只有其约四分之一大（Table 3 对 Gopher 量级预算给出 40B–67B 的区间），实际训练取 70B × 1.4T token（ $D/N = 20$ ）并报告了更低的 loss（[Hoffmann et al., 2022](../references.md)，[B]）。「同等算力、更小模型、更多数据」从拟合方法修正变成了可执行的工程结论。
+后果用一对真实配置看：Gopher 的 280B 参数 × 300B token（ $D/N \approx 1.1$ ）接近 Kaplan 律的选型；同一预算按 Chinchilla 三法预测的最优模型只有其约四分之一大——Approach 1 在论文 Table 3（1 个 Gopher 预算行）给出 67B，Approach 3 参数拟合在 §3.3 正文给出 40B，区间即 40B–67B；实际训练取 70B × 1.4T token（ $D/N = 20$ ）并报告了更低的 loss（[Hoffmann et al., 2022](../references.md)，[B]）。「同等算力、更小模型、更多数据」从拟合方法修正变成了可执行的工程结论。
 
 ## 5. inference-aware 的修正：训练最优 ≠ 部署最优
 
@@ -228,7 +228,7 @@ $$
 | --- | --- | --- |
 | Kaplan 单变量律 | $L(N) = (N_c/N)^{\alpha_N}$ 等，式 (1) | $\alpha_N \approx 0.076$ 、 $\alpha_D \approx 0.095$ 、 $\alpha_C \approx 0.050$ ；log-log 直线，测量条件互斥 |
 | Chinchilla 联合形式 | $L = E + A/N^{\alpha} + B/D^{\beta}$ ，式 (2) | $E = 1.69, A = 406.4, \alpha = 0.34, B = 410.7, \beta = 0.28$ ；$E$ 是语言熵地板 |
-| compute-optimal 分配 | $N_{\mathrm{opt}} = G(C/6)^{a}$ ， $D_{\mathrm{opt}} = G^{-1}(C/6)^{b}$ ，式 (5) | $a = \beta/(\alpha+\beta) \approx 0.45$ ， $b = \alpha/(\alpha+\beta) \approx 0.55$ ；Table 3 三法 $a \in [0.46, 0.50]$ |
+| compute-optimal 分配 | $N_{\mathrm{opt}} = G(C/6)^{a}$ ， $D_{\mathrm{opt}} = G^{-1}(C/6)^{b}$ ，式 (5) | $a = \beta/(\alpha+\beta) \approx 0.45$ ， $b = \alpha/(\alpha+\beta) \approx 0.55$ ；Table 2 三法 $a \in [0.46, 0.50]$ |
 | 最优前沿 loss | $L^{*} - E \propto C^{-\alpha\beta/(\alpha+\beta)}$ ，式 (7) | 指数 $\approx 0.154$ ；10× 算力换 $L - E$ 乘 0.70 |
 | Kaplan vs Chinchilla | $C^{0.73}$ 对 $C^{\approx 0.5}$ | 根源在拟合协议：LR schedule 未按 $D$ 退火；单变量律拼不出联合优化 |
 | 全生命周期成本 | $\mathrm{TC} = 6ND + 2NQ$ ，式 (8) | $Q$ 大则最优 $N$ 向小偏移；Llama-3.1-8B × 15T 的打平 $Q^{*} \approx 3 \times 10^{13}$ token |
@@ -245,7 +245,7 @@ $$
 ## 参考
 
 - [Kaplan et al., 2020](../references.md)：Scaling Laws for Neural Language Models，arXiv:2001.08361，[B]（key: kaplan）——三条单变量幂律与 $N_{\mathrm{opt}} \propto C^{0.73}$
-- [Hoffmann et al., 2022](../references.md)：Training Compute-Optimal Large Language Models，arXiv:2203.15556，[B]（key: chinchilla）——联合形式式 (2) 与常数（Eq. 10）、三法分配指数（Table 3）、与 Kaplan 分歧的拟合方法分析
+- [Hoffmann et al., 2022](../references.md)：Training Compute-Optimal Large Language Models，arXiv:2203.15556，[B]（key: chinchilla）——联合形式式 (2) 与常数（Eq. 10）、三法分配指数（Table 2；Gopher 预算的 67B 预测见 Table 3，40B 见 §3.3 正文）、与 Kaplan 分歧的拟合方法分析
 - [Grattafiori et al., 2024](../references.md)：The Llama 3 Herd of Models，arXiv:2407.21783，[A]（key: llama3）——Llama-3.1-8B 预训练 15T token
 - [Dai et al., 2024](../references.md)：DeepSeekMoE，arXiv:2401.06066，[A]（key: deepseekmoe）——MoE IsoFLOPs 曲线与 16B vs LLaMA2-7B 的 40% 计算量对照
 - [Wei et al., 2022](../references.md)：Emergent Abilities of Large Language Models，arXiv:2206.07682，[B]（key: emergent-abilities）——emergence 定义与两类分类
