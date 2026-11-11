@@ -165,15 +165,35 @@ $$
 
 ### 2.5 dual-chunk attention：不动频率，重编号位置
 
-§2.1–2.4 全部在频率轴上做文章。dual-chunk attention（双块注意力；Qwen2.5-1M 报告采用，[Yang et al., 2025](../references.md)，arXiv:2501.15383，[A]）走正交的一维：RoPE 频率原样，改的是喂给它的位置编号。把序列切成宽 $w$ 的块，位置 $i$ 分解为块号 $c_i = \operatorname{floor}(i / w)$ 与块内偏移 $r_i = i\ \mathrm{mod}\ w$；query $i$ 对 key $j$ 的相对编号分三段：
+§2.1–2.4 全部在频率轴上做文章。dual-chunk attention（双块注意力，DCA；Qwen2.5-1M 报告采用并复述其三段结构，原始出处为 An et al. 的同名工作；[Yang et al., 2025](../references.md)，arXiv:2501.15383，[A]）走正交的一维：RoPE 频率原样，改的是喂给它的位置编号——目标是任意长序列的相对编号永不超出预训练窗 $W$。记 chunk 宽 $S$（$S < W$）、位置 $i$ 的块号 $c_i = \operatorname{floor}(i / S)$、块内偏移 $r_i = i\ \mathrm{mod}\ S$。
+
+key 侧编号逐块循环：
 
 $$
-\Delta(i, j) = \begin{cases} r_i - r_j, & c_j = c_i \quad \text{(intra-chunk)} \\ r_i + w - r_j, & c_j = c_i - 1 \quad \text{(successive)} \\ w - 1 + (c_i - c_j), & c_j \le c_i - 2 \quad \text{(inter-chunk)} \end{cases} \qquad (16)
+P_k[j] = j\ \mathrm{mod}\ S \qquad (16)
 $$
 
-三段读法：intra-chunk 段是同块真距离；successive 段是相邻块真距离，与前一段在块边界上连续；inter-chunk 段把同一块内所有 key 压到同一个编号——块内顺序信息丢弃，块间顺序保留。第一、二段合起来是精确相对距离 $i - j$，取值域 $[0, 2w - 1]$；第三段取值域到 $w - 1 + T/w$ 封顶。编号上界：$\max(2w - 1,\ w - 1 + T/w)$。代入 $T$ = $10^{6}$、$w$ = 4096：intra / successive 段上界 8191，inter 段 $4095 + 244 \approx 4339$——全部万级，任何训练窗覆盖 $2w$ 的模型都不会出域。
+**符号**：$P_k[j]$：key $j$ 的位置编号。块身份被抹掉——编号只保块内顺序（块内越靠后编号越大），不保「第几块」；KV cache 里存的旋转后 key 因此与块号无关，可复用。
 
-机制读法：近期历史保 token 级位置分辨，远期历史只保块间顺序——用「位置分辨率的空间分配」换「编号不出域」，与 §2 的频率操作正交、可叠加。Qwen2.5-1M 的落地正是组合形态：rope_theta 抬到 $10^{7}$（base 路线）+ dual-chunk（重编号路线），config 无 rope_scaling 字段、max_position_embeddings = 1010000（W1 实测，[A]）——抬 base 加三段重编号，不用 YaRN。
+query 侧按块间距离备三张编号表：intra（同块）用 $P_q^{\mathrm{intra}}[i] = r_i$；inter（相隔两块及以上）用常数 $P_q^{\mathrm{inter}}[i] = W - 1$——钉在预训练窗末尾，保证 query 编号大于一切 key 编号（左到右的序不破）；successive（相邻块）在局部窗 $w$ 内抬升、窗外回落：
+
+$$
+P_q^{\mathrm{succ}}[i] = \begin{cases} S + r_i, & r_i < w \\ W - 1, & r_i \ge w \end{cases} \qquad (17)
+$$
+
+**符号**：$w$：局部窗宽（本节记号；与 §3.1 的 SWA 窗宽含义各自独立）。取 $w = W - S$ 时 successive 段编号在 $r_i = w$ 处与 inter 值相接：$S + (w - 1) = W - 1$，过渡连续。
+
+三段合成相对编号（query $i$ 对 key $j$，$j \le i$）：
+
+$$
+\Delta(i, j) = \begin{cases} r_i - r_j, & c_j = c_i \quad \text{(intra-chunk)} \\ P_q^{\mathrm{succ}}[i] - r_j, & c_j = c_i - 1 \quad \text{(successive)} \\ (W - 1) - r_j, & c_j \le c_i - 2 \quad \text{(inter-chunk)} \end{cases} \qquad (18)
+$$
+
+三段读法。intra 段：$r_i - r_j = i - j$，真距离。successive 段：$r_i < w$ 时 $\Delta = S + r_i - r_j = i - j$ 也是真距离——跨块边界的近邻不被错标；$r_i \ge w$ 时回落 inter 映射。inter 段：$\Delta = (W - 1) - r_j \in [W - S,\ W - 1]$——**塌缩块身份、保留块内顺序**：「目标在第几块」不可见，「目标在块内多靠后」可见（$r_j$ 越大距离越小，近者优先）；且取值落在预训练窗内的常数区间——编号上界是常数 $W - 1$，与序列总长 $T$ 无关。这就是 DCA 免训练外推的机制核心：位置编号永不超出训练分布，$T$ 可以任意大。
+
+设计取向值得点破：inter 段的选择是「块内顺序优先于块间顺序」——远期上下文里，块内的局部语序（哪句跟哪句）比「这是第 37 块还是第 52 块」携带更多可用信号，而常数上界换来任意 $T$ 的合法性。代价同样写在结构里：两个不同的远块在位置侧完全不可区分，远程区分只能靠内容 score 自己拉开——回到 §1.3 的 $\Delta$ 预算。
+
+Qwen2.5-1M 的落地组合（[A]）：rope_theta 抬到 $10^{7}$（base 路线，config 无 rope_scaling 字段，W1 实测——频率缩放侧确实不走 YaRN ramp）+ DCA 重编号 + **YaRN 温度修正**：报告原文明确推理侧始终叠加式 (14) 的 attention scaling 与 DCA 配合使用。三件工具各付各的账：base 付频率轴、DCA 付编号、YaRN 温度付熵漂移（§1.3）。
 
 ## 3. 架构手段：移动墙一与墙二
 
@@ -219,9 +239,9 @@ SWA 与 §2 缩放族有一层交互值得点破：Gemma 3 给 local 层配 rope
 
 位置编码修好后（§2），权重还要在目标长度上见过数据。两份公开配方把结构讲清楚了。
 
-**staged extension（分阶段扩窗）**。不直接上目标窗，分阶段抬：Llama-3.1 从 8K 出发分六个阶段扩到 128K，全程约 800B token 的扩窗预算（[Grattafiori et al., 2024](../references.md)，arXiv:2407.21783，[A]，论文口径）；DeepSeek-V3 报告两阶段扩窗、YaRN 落点 $4096 \times 40 = 163840$（[A]，论文口径；扩窗训练占 119K H800 GPU-hours，paper Table 1 的全训练口径内）。每阶段的公共结构：抬窗（配 §2 的缩放）→ 在长文档上采样后的混合数据上续训 → 双校验——长程能力（needle 类）与短上下文回归（防扩窗掉短任务点）同时达标才进下一阶段。为什么分阶段而不一步到位，可以用墙一算定量账：设阶段窗长按公比 $q$ 几何增长（$W, qW, q^{2}W, \ldots, sW$），每阶段投入相近的 token 预算 $B_k$——注意到 token 数预算下 attention FLOPs $\propto B_k \cdot W_k$（每 token 的 attention 成本正比于窗长），几何级数窗长下总开销 $\propto \sum_k B_k q^{k}$，被末阶段主导；若把全部预算直接砸在末窗 $sW$ 上，等 token 量下开销相同，但模型从未在中等长度上被校验过——阶段化买的不是 FLOPs 节省（两者同阶），而是「逐段可校验」的过程控制：每个阶段末都能用 needle 类测试确认当前窗已吸收，失败时回退的成本只有一个阶段。同时，前几阶段用较短窗训练，墙一的 $T^{2}$ 项在浅阶段尚小，等价的 token 预算能买更多参数更新步数——浅阶段学内容与短程结构，深阶段只补长程适配，任务难度与序列长度同步爬坡。
+**staged extension（分阶段扩窗）**。不直接上目标窗，分阶段抬：Llama-3.1 从 8K 出发分六个阶段扩到 128K，全程约 800B token 的扩窗预算（[Grattafiori et al., 2024](../references.md)，arXiv:2407.21783，[A]，论文口径——该预算数字为旗舰 405B 模型的配方口径，较小模型沿用同一 schedule 结构）；DeepSeek-V3 报告两阶段扩窗、YaRN 落点 $4096 \times 40 = 163840$（[A]，论文口径；扩窗训练占 119K H800 GPU-hours，paper Table 1 的全训练口径内）。每阶段的公共结构：抬窗（配 §2 的缩放）→ 在长文档上采样后的混合数据上续训 → 双校验——长程能力（needle 类）与短上下文回归（防扩窗掉短任务点）同时达标才进下一阶段。为什么分阶段而不一步到位，可以用墙一算定量账：设阶段窗长按公比 $q$ 几何增长（$W, qW, q^{2}W, \ldots, sW$），每阶段投入相近的 token 预算 $B_k$——注意到 token 数预算下 attention FLOPs $\propto B_k \cdot W_k$（每 token 的 attention 成本正比于窗长），几何级数窗长下总开销 $\propto \sum_k B_k q^{k}$，被末阶段主导；若把全部预算直接砸在末窗 $sW$ 上，等 token 量下开销相同，但模型从未在中等长度上被校验过——阶段化买的不是 FLOPs 节省（两者同阶），而是「逐段可校验」的过程控制：每个阶段末都能用 needle 类测试确认当前窗已吸收，失败时回退的成本只有一个阶段。同时，前几阶段用较短窗训练，墙一的 $T^{2}$ 项在浅阶段尚小，等价的 token 预算能买更多参数更新步数——浅阶段学内容与短程结构，深阶段只补长程适配，任务难度与序列长度同步爬坡。
 
-**长文档上采样（long-document upsampling）**。机制必要性：预训练语料的长度分布重尾，$\ge$ 128K 的连续文档占比极小——直接训长窗，长程位置的梯度信号稀薄（与 2.5 §2.3 的 learned absolute「大行号行训练信号稀薄」同构）。做法：按长度桶重加权，提高长文档的采样份额（Llama-3.1 与 Qwen2.5-1M 报告均采用，[A]）。边界注记：上采样同时改变领域分布——长文档集中来自书籍 / 代码 / 长报告——配方要在「长程信号密度」与「领域分布漂移」之间权衡；各家的精确配比属未公开细节，本书只登记结构。Qwen2.5-1M 的组合是这条线的完整实例：分阶段续训 + 长文档上采样 + rope_theta $10^{7}$ + dual-chunk 推理侧扩展到 1M（[Yang et al., 2025](../references.md)，arXiv:2501.15383，[A]）。
+**长文档上采样（long-document upsampling）**。机制必要性：预训练语料的长度分布重尾，$\ge$ 128K 的连续文档占比极小——直接训长窗，长程位置的梯度信号稀薄（与 2.5 §2.3 的 learned absolute「大行号行训练信号稀薄」同构）。做法：按长度桶重加权，提高长文档的采样份额（Llama-3.1 与 Qwen2.5-1M 报告均采用，[A]）。边界注记：上采样同时改变领域分布——长文档集中来自书籍 / 代码 / 长报告——配方要在「长程信号密度」与「领域分布漂移」之间权衡；各家的精确配比属未公开细节，本书只登记结构。Qwen2.5-1M 的组合是这条线的完整实例：分阶段续训 + 长文档上采样 + rope_theta $10^{7}$ + dual-chunk 与 YaRN attention scaling 的推理侧组合扩展到 1M（[Yang et al., 2025](../references.md)，arXiv:2501.15383，[A]；§2.5 末的口径）。
 
 ## 5. 评测方法论：claimed 与 effective 之间
 
@@ -235,7 +255,7 @@ SWA 与 §2 缩放族有一层交互值得点破：Gemma 3 给 local 层配 rope
 | --- | --- | --- | --- |
 | Llama-3.1-8B | 131072 | 六阶段扩训，rope_theta $5 \times 10^{5}$ | config [A] + herd paper [A] |
 | DeepSeek-V3 | 163840 | YaRN ×40 on 4096，两阶段扩训 | config [A] + 报告 [A] |
-| Qwen2.5-1M | 1010000 | rope_theta $10^{7}$ + dual-chunk | config [A] + 报告 [A] |
+| Qwen2.5-1M | 1010000 | rope_theta $10^{7}$ + DCA + YaRN 温度（频率侧无 rope_scaling） | config [A] + 报告 [A] |
 | Kimi-Linear-48B | 1048576 | KDA hybrid（3:1 交错） | config [A] + 论文 [A] |
 | Qwen3-Next-80B | 262144（原生；官方称可扩到 1010000） | GDN hybrid + rope_theta $10^{7}$ | config / model card [W] |
 | MiniMax-Text-01 | 10240000 | lightning hybrid（论文摘要口径：训练 1M、推理外推 4M） | config [A] + 论文 [A] |
@@ -255,7 +275,7 @@ effective 侧只有行为测量能填。读法收束全章：claimed 回答的�
 | NTK-aware | $base \to base \cdot s^{d/(d-2)}$，$\eta_j = s^{2j/(d-2)}$，式 (9)(10) | 端点 $\eta_0$ = 1、$\eta_{d/2-1}$ = $s$；纯频率重参数化 |
 | YaRN | $r_j = W / \lambda_j$ 三段 ramp 式 (12)(13)；温度 $\sqrt{1/t} = 0.1 \ln s + 1$ 式 (14) | DeepSeek-V3：$W$ = 4096、$s$ = 40、$\alpha$ = 1、$\beta$ = 32 → 9 通道全压、11 通道不动、12 通道 ramp；$1/t \approx 1.87$ |
 | LongRoPE | $\operatorname{arg\,min}_{\eta} \mathrm{PPL}_{sW}$，约束 $\eta_0$ = 1 且单调不减，式 (15) | 逐维搜索；[B] 证据边界 |
-| dual-chunk | 三段重编号式 (16) | 编号上界 $\max(2w-1,\ w-1+T/w)$；Qwen2.5-1M：base $10^{7}$ + DCA，不用 YaRN |
+| dual-chunk | key 编号 $j\ \mathrm{mod}\ S$ + query 三张表，式 (16)–(18) | 塌缩块身份、保块内顺序；编号上界为常数 $W - 1$（与 $T$ 无关）；Qwen2.5-1M：base $10^{7}$ + DCA + YaRN 温度 |
 | Ring Attention | 序列维 $P$ 段环流 + online softmax | 数学逐点不变；通信实现归 cluster 维度 |
 | 训练配方 | staged extension + 长文档上采样 | Llama-3.1：六阶段 8K→128K、约 800B token（论文口径）；V3：两阶段，扩窗 119K H800 GPU-hours |
 | 评测 | needle 只测单针单跳；RULER 13 任务 4 类定义 effective context | claimed（config）≠ effective（行为测量）；四堵墙付清才重合 |
@@ -272,7 +292,7 @@ effective 侧只有行为测量能填。读法收束全章：claimed 回答的�
 - [Chen et al., 2023](../references.md)：Extending Context Window of Large Language Models via Positional Interpolation，arXiv:2306.15595，[B]（key: pi）——PI 的 $m \to m/s$ 与续训校准
 - [Peng et al., 2023](../references.md)：YaRN: Efficient Context Window Extension of Large Language Models，arXiv:2309.00071，[A]（key: yarn）——三段 ramp、温度修正式 (14)、NTK-aware 的综述口径；官方 repo jquesnelle/yarn
 - [Ding et al., 2024](../references.md)：LongRoPE: Extending LLM Context Window Beyond 2 Million Tokens，arXiv:2402.13753，[B]（key: longrope）——逐维搜索目标式 (15)
-- [Yang et al., 2025](../references.md)：Qwen2.5-1M Technical Report，arXiv:2501.15383，[A]（key: qwen2.5-1m）——dual-chunk attention 式 (16)、1M 训练配方
+- [Yang et al., 2025](../references.md)：Qwen2.5-1M Technical Report，arXiv:2501.15383，[A]（key: qwen2.5-1m）——dual-chunk attention 式 (16)–(18)（报告复述 An et al. 同名工作的三段结构）、1M 训练配方、YaRN attention scaling 与 DCA 的配合口径
 - [Hsieh et al., 2024](../references.md)：RULER: What's the Real Context Size of Your Long-Context Language Models?，arXiv:2404.06654，[A]（key: ruler）——13 任务 4 类、effective context 定义、needle 局限；官方 repo NVIDIA/RULER
 - [Grattafiori et al., 2024](../references.md)：The Llama 3 Herd of Models，arXiv:2407.21783，[A]（key: llama3）——128K 六阶段扩窗配方
 - [DeepSeek-AI, 2024](../references.md)：DeepSeek-V3 Technical Report，arXiv:2412.19437，[A]（key: deepseekv3）——两阶段扩窗与 YaRN 温度实现
