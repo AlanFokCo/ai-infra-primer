@@ -53,6 +53,8 @@ $$
 L_{\mathrm{CLM}} = - \frac{1}{T} \sum_{t=1}^{T} \log q_\theta(x_t \mid x_{<t}) \qquad (2)
 $$
 
+**符号**： $T$ ：序列长度； $q_\theta(x_t \mid x_{<t})$ ：以真实前缀为条件的下一 token 分布（1.1 式 (1)–(3) 的记号）。
+
 GPT 家族（[Radford et al., 2019](../references.md)，[W]）的全部性质已由该取值固定：一条序列一次前向产出 $T$ 个分类问题（1.1 §4 的 teacher forcing），生成语义是精确的祖先采样（1.1 §8）。它在下文的作用是对照列——每个非 CLM 目标都按「改了 $(C, M, \ell)$ 的哪几项、换来什么、付出什么」来定位。
 
 ## 3. MLM：15% 选中与 80/10/10
@@ -65,7 +67,7 @@ $$
 x'_t = \begin{cases} \text{[MASK]}, & \text{w.p. } 0.8 \\ u, \quad u \sim \mathrm{Unif}(V), & \text{w.p. } 0.1 \\ x_t, & \text{w.p. } 0.1 \end{cases} \qquad t \in S \qquad (3)
 $$
 
-（w.p. = with probability，以概率。） $M \equiv 0$ （双向全可见）， $\ell_t = 1 \iff t \in S$ ：
+（w.p. = with probability，以概率。） $M \equiv 0$ （双向全可见）， $\ell_t = 1 \Longleftrightarrow t \in S$ ：
 
 $$
 L_{\mathrm{MLM}} = - \frac{1}{|S|} \sum_{t \in S} \log q_\theta(x_t \mid x') \qquad (4)
@@ -89,7 +91,7 @@ $$
 - **rand 支**： $u$ 与 $x_t$ 独立，同样只能靠上下文，地板同为 $H(x_t \mid \mathrm{ctx})$ ；
 - **keep 支**： $x'_t = x_t$ 即答案本身，地板 0。
 
-混合地板 = $0.9\, H(x_t \mid \mathrm{ctx})$ ：一个已达最优的模型，其 MLM 损失读数天然比「纯 mask」目标低 10%。这个偏移与模型质量无关，是比较任何 MLM 系损失数字之前要先剥掉的常数（§8 回收）。
+混合地板 = $0.9\, H(x_t \mid \mathrm{ctx})$ ——这是**分支可知口径的下界**： [MASK] 支的分支身份可从输入确知，而 keep / rand 两支从显示 token 上不可区分（§3.3 的后验分析），真实地板略高于 $0.9\, H$ ；作为下界它已足够支撑后面的比较论证。结论：一个已达最优的模型，其 MLM 损失读数天然比「纯 mask」目标低约 10%。这个偏移与模型质量无关，是比较任何 MLM 系损失数字之前要先剥掉的常数（§8 回收）。
 
 ### 3.3 80/10/10 的分布 mismatch：定量形式
 
@@ -114,7 +116,7 @@ google-research/bert 的预训练数据脚本 `create_pretraining_data.py`（[Go
 1. 候选下标 = 全部非特殊 token 位置（ [CLS] / [SEP] 除外），洗牌；
 2. `num_to_predict = min(max_predictions_per_seq, max(1, round(len(tokens) * masked_lm_prob)))` ——15% 在此落地， `max(1, ·)` 给短序列保底；
 3. 按洗牌序取前 `num_to_predict` 个候选位，每位独立掷一次： $< 0.8$ → 替换为 `[MASK]` ； $< 0.9$ → 词表均匀随机词；否则保留原 token；
-4. 整词掩码（whole-word masking）变体把候选按 WordPiece 词分组（ `##` 续片归入同组），同组同选、同策略替换。
+4. 整词掩码（whole-word masking）变体把候选按 WordPiece 词分组（ `##` 续片归入同组）：同组同选（整组进出选中集），但组内逐 token 独立掷 80/10/10——同一词的各续片可以落进不同分支。
 
 教学用复刻（非优化实现；与官方的差异：官方用 `covered_indexes` 集合支持整词分组、超出配额即中断，逐位 80/10/10 的分布语义相同）：
 
@@ -167,7 +169,7 @@ $$
 
 **符号**： $s_{i,\, j}$ ：第 $i$ 条 span 的第 $j$ 个 token； $s_{\pi(<i)}$ ：排列 $\pi$ 下先于它的全部 span； $s_{\pi(i),\, <j}$ ：本 span 内前 $j - 1$ 个 token；损失按 span 总 token 数归一。
 
-结构读法（对应 $M(\omega)$ 的分块）：Part A 内部双向（A-A 块全 0）；Part B 的每个位置能看见全部 Part A、排列序上先于本 span 的其他 span、以及本 span 内自己的左侧（span 内因果），未来 span 不可见； $\ell$ 只落 Part B。对 $\pi$ 取期望使「先填哪个空」不构成偏置；mask 随每次抽样变化，是 $M(\omega)$ 依赖 $\omega$ 的实例。原文在同一机制上还定义了更长跨度的变体（整句级 span；文档级单 span，长度取原文的 50%–100%，以 [gMASK] 标记），把填空连续推向长文生成（同篇，[A]）。
+结构读法（对应 $M(\omega)$ 的分块）：Part A 内部双向（A-A 块全 0）；Part B 的每个位置能看见全部 Part A、排列序上先于本 span 的其他 span、以及本 span 内自己的左侧（span 内因果），未来 span 不可见； $\ell$ 只落 Part B。对 $\pi$ 取期望使「先填哪个空」不构成偏置；mask 随每次抽样变化，是 $M(\omega)$ 依赖 $\omega$ 的实例。原文在同一机制上还定义了更长跨度的变体（整句级 span；文档级单 span，长度取原文的 50%–100%），把填空连续推向长文生成（同篇，[A]）；该文档级长 blank 变体在 GLM-130B 中记为 [gMASK] token（[Zeng et al., 2022](../references.md)，arXiv:2210.02414，[A]）。
 
 ### 4.3 2D 位置编码：两维寻址的必要性
 
@@ -239,13 +241,13 @@ def build_glm_example(tokens, spans, rng, MASK="[MASK]", SOP="[s]"):
     return ids, pos1, pos2, loss
 ```
 
-与官方实现的差异：官方管线还处理长文档变体（ [gMASK] ）、多任务混合与批次内 padding；二维位置 id 与分块 mask 的构造语义相同。
+与官方实现的差异：官方管线还处理长文档变体（文档级长 blank，GLM-130B 起记为 [gMASK] token）、多任务混合与批次内 padding；二维位置 id 与分块 mask 的构造语义相同。
 
 ## 5. span corruption：T5 的 sentinel 方案
 
 ### 5.1 sentinel 替换与 target 构造
 
-T5（[Raffel et al., 2019](../references.md)，arXiv:1910.10683，[A]）的片段腐蚀（span corruption）把「被掩内容」从输入里物理移除：选中若干连续 span，每条在 encoder 输入中替换为一个哨兵 token（sentinel token：词表中专留的 extra_id 位，T5 词表 32100 中的保留段），被移除的内容按序移入 decoder 的 target，同样以 sentinel 分隔、并以一个收尾 sentinel 结束：
+T5（[Raffel et al., 2019](../references.md)，arXiv:1910.10683，[A]）的片段腐蚀（span corruption）把「被掩内容」从输入里物理移除：选中若干连续 span，每条在 encoder 输入中替换为一个哨兵 token（sentinel token：词表中专留的 extra_id 位——论文口径词表 32000；发布的 checkpoint / config 口径为 32000 + 100 个 sentinel 保留位 = 32100），被移除的内容按序移入 decoder 的 target，同样以 sentinel 分隔、并以一个收尾 sentinel 结束：
 
 ```
 原序列    :  the  cat  sat  on  the  mat  and  slept
@@ -369,13 +371,17 @@ $$
 H(x_t \mid x_{\setminus t}) \;\le\; H(x_t \mid x_{<t}), \qquad H(x_t \mid x_{\setminus t}) \;\le\; H(x_t \mid x') \;\le\; H(x_t) \qquad (17)
 $$
 
-第一条： $x_{\setminus t}$ 比 $x_{<t}$ 多出未来位置，条件化更多变量不增熵——全量双向地板不高于 CLM 地板。第二条：左半是数据处理不等式的条件形式（ $x' = g(x_{\setminus t}, \omega)$ 是腐蚀函数， $H(x_t \mid g(x_{\setminus t}, \omega)) \ge H(x_t \mid x_{\setminus t})$ ），右半是条件化不增熵。MLM 的地板落在中间区间；腐蚀只动 15% 的位置， $x'$ 保留了包括未来在内的 85% 真值，其地板一般远低于 CLM 的 $H(x_t \mid x_{<t})$ ——两个目标的地板之差是任务难度差，与模型质量无关；keep 支再把 MLM 侧地板压到 0.9 倍（§3.2）。两边没有可对齐的零点。
+**符号**： $H(\cdot \mid \cdot)$ ：条件熵； $x_{\setminus t}$ ：除位置 $t$ 之外的完整真值序列； $x'$ ：腐蚀后输入； $g$ ：腐蚀映射（含其内部随机性 $\omega$ ）。
+
+第一条： $x_{\setminus t}$ 比 $x_{<t}$ 多出未来位置，条件化更多变量不增熵——全量双向地板不高于 CLM 地板。第二条：左半是数据处理不等式的条件形式（ $x' = g(x_{\setminus t}, \omega)$ 是腐蚀函数， $H(x_t \mid g(x_{\setminus t}, \omega)) \ge H(x_t \mid x_{\setminus t})$ ），右半是条件化不增熵。MLM 的地板落在中间区间；腐蚀只动 15% 的位置， $x'$ 保留了包括未来在内的 85% 真值，其地板一般远低于 CLM 的 $H(x_t \mid x_{<t})$ ——两个目标的地板之差是任务难度差，与模型质量无关；keep 支再把 MLM 侧地板压到约 0.9 倍（§3.2 的分支可知下界口径）。两边没有可对齐的零点。
 
 **障碍三：pseudo-PPL 不是 perplexity。** MLM 评估实践里的「perplexity」通常是伪困惑度（pseudo-perplexity）：逐位置留一重掩、其余位置给真值，
 
 $$
 \text{pseudo-PPL} = \exp\left( - \frac{1}{T} \sum_{t=1}^{T} \log q_\theta(x_t \mid x_{\setminus t}) \right) \qquad (18)
 $$
+
+**符号**： $q_\theta(x_t \mid x_{\setminus t})$ ：留一重掩评估下的位置 $t$ 条件分布——位置 $t$ 单独换 [MASK]、其余位置给真值； $P(x_{1:T})$ ：序列的联合概率。
 
 其连乘不满足链式嵌套（同 §7），不等于 $\exp\big( - T^{-1} \log P(x_{1:T}) \big)$ ——对任何联合分布都不成立（条件独立的退化情形除外）。它不具备 1.1 §6 的「等效均匀分支因子」语义，与 CLM 的 PPL 不是同一泛函的两个取值。
 
@@ -387,7 +393,7 @@ $$
 | --- | --- | --- |
 | 统一框架 | 式 (1)： $C \times M(\omega) \times \ell(\omega)$ | objective = 腐蚀 × mask × loss mask；enc-dec 为其二元组写法 |
 | CLM | 式 (2) | 零腐蚀参照行；监督密度 100% |
-| MLM | 式 (3)(4)：15% 选中 + 80/10/10 | 混合地板 0.9·H（式 (5)）；copy 后验式 (6)；[MASK] 输入率 12% vs 下游 0；监督密度 15% |
+| MLM | 式 (3)(4)：15% 选中 + 80/10/10 | 混合地板 0.9·H（式 (5)，分支可知口径的下界）；copy 后验式 (6)；[MASK] 输入率 12% vs 下游 0；监督密度 15% |
 | GLM | 式 (8)–(11)：blank infilling + 2D 位置 | span 塌缩成单 [MASK] + 乱序拼接； $(p^{(1)}, p^{(2)})$ = 空白地址 × 空内偏移；prefix-LM 为其特例 |
 | T5 span corruption | 式 (12)–(14)：sentinel 方案 | 定总量均匀切分； $\ell$ 渐近 Geometric(1/μ)（μ = 3、r = 0.15）； $T$ = 512 时 target 仅 104 位 |
 | UL2 | 式 (15)：mixture-of-denoisers | R / S / X 三族 + mode-switch token；[B] 无官方实现 |
@@ -407,6 +413,7 @@ $$
 - [Google, BERT 官方 repo](../references.md)：[A]（key: bert-repo）——`create_pretraining_data.py` / `create_masked_lm_predictions`
 - [Du et al., 2021](../references.md)：GLM: General Language Model Pretraining with Autoregressive Blank Infilling，arXiv:2103.10360，[A]（key: glm）——blank infilling、2D 位置编码、Poisson span 长度
 - [THUDM, GLM 官方 repo](../references.md)：[A]（key: glm-repo）——infilling 实现（zai-org/GLM 非 2021 论文代码）
+- [Zeng et al., 2022](../references.md)：GLM-130B: An Open Bilingual Pre-trained Model，arXiv:2210.02414，[A]（key: glm-130b）——[gMASK] token 记法的出处
 - [Raffel et al., 2019](../references.md)：Exploring the Limits of Transfer Learning with a Unified Text-to-Text Transformer，arXiv:1910.10683，[A]（key: t5）——span corruption；实现侧 google-research/text-to-text-transfer-transformer 的 `t5/data/preprocessors.py::span_corruption`
 - [Tay et al., 2022](../references.md)：UL2: Unifying Language Learning Paradigms，arXiv:2205.05131，[B]（key: ul2）——mixture-of-denoisers；无官方开源实现，公式按论文拆
 - [Warner et al., 2024](../references.md)：Smarter, Better, Faster, Longer（ModernBERT），arXiv:2412.13663，[A]（key: modernbert）——MLM 目标的现代延续

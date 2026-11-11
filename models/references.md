@@ -103,6 +103,7 @@
 | ul2 | UL2: Unifying Language Learning Paradigms | Tay et al. | arXiv:2205.05131 | [B] | 2026-11-11 | 3.1 |
 | glm | GLM: General Language Model Pretraining with Autoregressive Blank Infilling | Du et al. | arXiv:2103.10360 | [A] | 2026-11-11 | 3.1 |
 | glm-repo | GLM 官方 repo（blank infilling 实现；注意 zai-org/GLM 不存在，2021 代码在 THUDM/GLM） | THUDM | https://github.com/THUDM/GLM | [A] | 2026-11-11 | 3.1 |
+| glm-130b | GLM-130B: An Open Bilingual Pre-trained Model | Zeng et al. | arXiv:2210.02414 | [A] | 2026-11-11 | 3.1 |
 | modernbert | Smarter, Better, Faster, Longer: A Modern Bidirectional Encoder for Fast, Memory Efficient, and Long Context Finetuning and Inference | Warner et al. | arXiv:2412.13663 | [A] | 2026-11-11 | 3.1, 3.2 |
 | modernbert-config | ModernBERT-base / ModernBERT-large config.json（HF）+ 官方 repo | Answer.AI | https://huggingface.co/answerdotai/ModernBERT-base/blob/main/config.json ; https://github.com/answerdotai/ModernBERT | [A] | 2026-11-11 | 3.2 |
 | whisper | Robust Speech Recognition via Large-Scale Weak Supervision | Radford et al. | arXiv:2212.04356 ; https://github.com/openai/whisper | [A] | 2026-11-11 | 3.2 |
