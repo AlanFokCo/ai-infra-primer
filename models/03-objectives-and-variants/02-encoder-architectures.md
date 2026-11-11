@@ -86,7 +86,7 @@ $$
 
 失败机制是任务混淆：IsNext/NotNext 的分类面上纠缠着两个信号——主题相关性（topic）与连贯性（coherence）。随机负样本几乎必然主题跳变，于是「主题是否匹配」单独就够把分类准确率推高：模型走低阻路径，$h_{[\mathrm{CLS}]}$ 学成主题检测器，连贯性信号几乎不进梯度。代理任务过易，目标信号被替代信号吸干。
 
-证据是消融而不是论证：RoBERTa（[Liu et al., 2019](../references.md)，arXiv:1907.11692，[A]）把输入格式与 NSP 分四档对照——SEGMENT-PAIR 与 SENTENCE-PAIR 保留 NSP，FULL-SENTENCES（可跨文档边界的长序列块）与 DOC-SENTENCES（单文档内的完整句子块，不跨文档）去掉 NSP——论文结论口径为去掉 NSP 后下游整体持平或略升；逐指标看并非单调，例如 SENTENCE-PAIR 换到 DOC-SENTENCES 时 SQuAD1.1 从 90.4 降到 88.7，账面提升主要来自输入格式的更换而非 NSP 的移除本身。结论：NSP 的净贡献为零或负，BERT 预训练的收益全部在 MLM 一侧，RoBERTa 因此只训 MLM。
+证据是消融而不是论证：RoBERTa（[Liu et al., 2019](../references.md)，arXiv:1907.11692，[A]）把输入格式与 NSP 分四档对照——SEGMENT-PAIR 与 SENTENCE-PAIR 保留 NSP，FULL-SENTENCES（可跨文档边界的长序列块）与 DOC-SENTENCES（单文档内的完整句子块，不跨文档）去掉 NSP——论文结论口径为去掉 NSP 后下游整体持平或略升；逐指标看并非单调，例如 SEGMENT-PAIR 换到 SENTENCE-PAIR 时 SQuAD1.1 从 90.4 降到 88.7（这两档都保留 NSP），账面提升主要来自输入格式的更换而非 NSP 的移除本身。结论：NSP 的净贡献为零或负，BERT 预训练的收益全部在 MLM 一侧，RoBERTa 因此只训 MLM。
 
 机制修正的反面构造来自 ALBERT：把负样本换成「同一文档中连续两句交换顺序」（sentence-order prediction, SOP）——主题一致性由构造保证，分类面上只剩连贯性信号（[Lan et al., 2019](../references.md)，arXiv:1909.11942，[A]）。SOP 的存在本身就是对「任务混淆」诊断的确认：把易信号从负样本里剔除，任务才迫使模型学目标信号。在 3.1 的 $(x', M, \ell)$ 框架里 NSP 是第四个对象——它不动三元组中的任何一个，是挂在读出接口上的辅助 loss；RoBERTa 的消融说明辅助 loss 不是免费的，设计错了会污染表示。
 
