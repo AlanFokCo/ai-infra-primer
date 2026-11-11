@@ -4,7 +4,7 @@
 
 ## 1. Encoder-only：M ≡ 0 的形态定义
 
-BERT 的全部 12 层里没有一处 mask：attention mask 恒为全零矩阵（[Devlin et al., 2019](../references.md)，arXiv:1810.04805，[A]）。用 2.4 §1 的记号写出来：
+BERT 的全部 12 层里没有一处 mask：attention mask 恒为全零矩阵（[Devlin et al., 2018](../references.md)，arXiv:1810.04805，[A]）。用 2.4 §1 的记号写出来：
 
 $$
 M_{ij} = 0 \quad \forall i, j \qquad \Longleftrightarrow \qquad V(i) = \{1, \ldots, T\} \qquad (1)
@@ -86,19 +86,21 @@ $$
 
 失败机制是任务混淆：IsNext/NotNext 的分类面上纠缠着两个信号——主题相关性（topic）与连贯性（coherence）。随机负样本几乎必然主题跳变，于是「主题是否匹配」单独就够把分类准确率推高：模型走低阻路径，$h_{[\mathrm{CLS}]}$ 学成主题检测器，连贯性信号几乎不进梯度。代理任务过易，目标信号被替代信号吸干。
 
-证据是消融而不是论证：RoBERTa（[Liu et al., 2019](../references.md)，arXiv:1907.11692，[A]）逐档移除——SEGMENT-PAIR（保留 NSP）→ SENTENCE-PAIR → FULL-SENTENCES / DOC-SENTENCES（去掉 NSP、用跨文档边界的长序列）——下游分数在去 NSP 的档位不降反升。结论：NSP 的净贡献为零或负，BERT 预训练的收益全部在 MLM 一侧，RoBERTa 因此只训 MLM。
+证据是消融而不是论证：RoBERTa（[Liu et al., 2019](../references.md)，arXiv:1907.11692，[A]）把输入格式与 NSP 分四档对照——SEGMENT-PAIR 与 SENTENCE-PAIR 保留 NSP，FULL-SENTENCES（可跨文档边界的长序列块）与 DOC-SENTENCES（单文档内的完整句子块，不跨文档）去掉 NSP——论文结论口径为去掉 NSP 后下游整体持平或略升；逐指标看并非单调，例如 SENTENCE-PAIR 换到 DOC-SENTENCES 时 SQuAD1.1 从 90.4 降到 88.7，账面提升主要来自输入格式的更换而非 NSP 的移除本身。结论：NSP 的净贡献为零或负，BERT 预训练的收益全部在 MLM 一侧，RoBERTa 因此只训 MLM。
 
-机制修正的反面构造来自 ALBERT：把负样本换成「同一文档中连续两句交换顺序」（sentence-order prediction, SOP）——主题一致性由构造保证，分类面上只剩连贯性信号（[Lan et al., 2020](../references.md)，arXiv:1909.11942，[A]）。SOP 的存在本身就是对「任务混淆」诊断的确认：把易信号从负样本里剔除，任务才迫使模型学目标信号。在 3.1 的 $(x', M, \ell)$ 框架里 NSP 是第四个对象——它不动三元组中的任何一个，是挂在读出接口上的辅助 loss；RoBERTa 的消融说明辅助 loss 不是免费的，设计错了会污染表示。
+机制修正的反面构造来自 ALBERT：把负样本换成「同一文档中连续两句交换顺序」（sentence-order prediction, SOP）——主题一致性由构造保证，分类面上只剩连贯性信号（[Lan et al., 2019](../references.md)，arXiv:1909.11942，[A]）。SOP 的存在本身就是对「任务混淆」诊断的确认：把易信号从负样本里剔除，任务才迫使模型学目标信号。在 3.1 的 $(x', M, \ell)$ 框架里 NSP 是第四个对象——它不动三元组中的任何一个，是挂在读出接口上的辅助 loss；RoBERTa 的消融说明辅助 loss 不是免费的，设计错了会污染表示。
 
 ## 5. ALBERT：参数效率的两个杠杆
 
-ALBERT（[Lan et al., 2020](../references.md)，arXiv:1909.11942，[A]）不动 mask、不动 objective 类型（MLM + SOP），动的是参数布局。两个杠杆都可以用 BERT-base 字段（$V$ = 30522、$d$ = 768、$L$ = 12、$d_{\mathrm{ff}}$ = 3072 = $4d$）把账算到底；以下数字是按字段直算的演算例。
+ALBERT（[Lan et al., 2019](../references.md)，arXiv:1909.11942，[A]）不动 mask、不动 objective 类型（MLM + SOP），动的是参数布局。两个杠杆都可以用 BERT-base 字段（$V$ = 30522、$d$ = 768、$L$ = 12、$d_{\mathrm{ff}}$ = 3072 = $4d$）把账算到底；以下数字是按字段直算的演算例。
 
 **杠杆一：embedding 分解（factorized embedding）。** BERT 把词表直接映到隐藏维：$E \in \mathbb{R}^{V \times d}$，查表 $h_t^{(0)} = E[x_t]$。ALBERT 插入瓶颈维 $e \ll d$：
 
 $$
 E = E_1 E_2, \qquad E_1 \in \mathbb{R}^{V \times e}, \quad E_2 \in \mathbb{R}^{e \times d} \qquad (8)
 $$
+
+**符号**：$E$：完整 embedding 矩阵；$E_1$：词表到瓶颈维的投影；$E_2$：瓶颈维到隐藏维的投影；$e$：瓶颈维（$e \ll d$）；查表变为 $h_t^{(0)} = (E_1[x_t]) E_2$。
 
 参数量从 $Vd$ 变 $Ve + ed$。代入 $e$ = 128：$Vd \approx 23.4 \times 10^{6}$，$Ve + ed \approx 3.91 \times 10^{6} + 0.098 \times 10^{6} \approx 4.0 \times 10^{6}$——单项削减约 83%。机制理由：one-hot 查表是「身份 $\to$ 词义」的一次映射，中间没有上下文混合，rank 需求远低于 $d$（对照 1.1 §9 的 rank 视角）；分解把「上下文无关的词义空间」（$e$ 维）与「上下文混合的表示空间」（$d$ 维）解耦，各定各的容量。
 
@@ -170,7 +172,7 @@ y_{<t} ── causal self-attn（KV cache，2.4）──► u_t ──W^Q──�
 2. **cross-attention 无 mask。** $x$ 整个是给定条件，可见集恒为 $\{1, \ldots, S\}$；本章唯一活着的 mask 是 decoder self-attention 的下三角。与 2.4 §2 对照：enc-dec 的可见性拼合恰是 prefix-LM 的块状结构——encoder 侧全可见对应 prefix 块、decoder 侧下三角对应续写区。二者是同一可见性结构的两种参数化：prefix-LM 用一个栈一份参数兼任两区，enc-dec 给 prefix 区独立的参数与深度。
 3. **逐层交叉。** decoder 每层有独立的 $W^{K}, W^{V}$ 作用于同一个 $H^{\mathrm{enc}}$——每层以自己的 query 视角重读输入，浅层与深层的读法可以分化（表面对齐与语义对齐分层）。
 
-T5（[Raffel et al., 2020](../references.md)，arXiv:1910.10683，[A]）是这个形态的标准参照：enc/dec 对称各 12 层（base 口径，总参约 2.2 亿），翻译、摘要、分类、回归全部统一成 text-to-text 的条件生成；它的预训练 objective（span corruption）在 3.1。
+T5（[Raffel et al., 2019](../references.md)，arXiv:1910.10683，[A]）是这个形态的标准参照：enc/dec 对称各 12 层（base 口径，总参约 2.2 亿），翻译、摘要、分类、回归全部统一成 text-to-text 的条件生成；它的预训练 objective（span corruption）在 3.1。
 
 ## 8. 参数分配与 token 效率的账
 
@@ -196,18 +198,18 @@ Whisper（[Radford et al., 2022](../references.md)，arXiv:2212.04356，[A]；�
 
 BERT 的架构字段停在 2018 年的零件上（可学绝对位置 embedding、每层全 global attention、padding 批处理）。ModernBERT（[Warner et al., 2024](../references.md)，arXiv:2412.13663，[A]）保持 encoder-only 形态与 MLM objective 不变，把零件全部换成 Part 2 的现代件。以下字段取自 config（[ModernBERT-base/large config 与官方 repo](../references.md)，[A]，hf-mirror 实测 2026-11-11）：base 为 22 层、hidden 768、12 heads、intermediate 1152、vocab 50368、ctx 8192、`tie_word_embeddings=true`、`attention_bias=false`；large 为 28 层、hidden 1024、16 heads、intermediate 2624。三个机制逐一看。
 
-**(1) RoPE 双 base。** config 里 `position_embedding_type="absolute"` 是残留字段——实际位置编码是 RoPE（`rope_theta` 字段为证），读 config 勿被误导。且 global 层与 local 层配不同 base：`global_rope_theta=160000`、`local_rope_theta=10000`。按 2.5 的波长账：base 越大、低频分量的波长越长、远程相对位置的相位差越缓——要服务 8192 全程依赖的 global 层配大 base，窗口 $\pm 128$ 的 local 层用小 base 保高频分辨。同一模型内位置编码按层职责分配，这是 2.5 的零件在 encoder 侧的精细化用法。
+**(1) RoPE 双 base。** config 里 `position_embedding_type="absolute"` 是残留字段——实际位置编码是 RoPE（`rope_theta` 字段为证），读 config 勿被误导。且 global 层与 local 层配不同 base：`global_rope_theta=160000`、`local_rope_theta=10000`。按 2.5 的波长账：base 越大、低频分量的波长越长、远程相对位置的相位差越缓——要服务 8192 全程依赖的 global 层配大 base，总窗宽 128（每侧 64）的 local 层用小 base 保高频分辨。同一模型内位置编码按层职责分配，这是 2.5 的零件在 encoder 侧的精细化用法。
 
-**(2) local/global 交替。** `global_attn_every_n_layers=3`：每 3 层一个 full attention（式 (1) 全可见），其余层为滑窗 local（`local_attention=128`，每位置见 $\pm 128$）。BERT 时代每层都付 $O(T^{2})$ 的 global 账；ctx 拉到 8192 后 attention 项 $2LT^{2}d$（1.2 式 (6)）不再可忽略。交替结构是 sparse attention 谱系（4.2）在 encoder 侧的实例——SWA 堆叠感受野 $L \cdot w$ 的推导同样适用，global 层周期性把局部信息混回全局；与 decoder 侧 Gemma 3 的 5:1 local:global（4.2）同族，比例不同。
+**(2) local/global 交替。** `global_attn_every_n_layers=3`：每 3 层一个 full attention（式 (1) 全可见），其余层为滑窗 local（`local_attention=128`，口径为总窗宽 128 token——论文原文 "a 128 token, local sliding window attention"；HF `modeling_modernbert.py` 中 `sliding_window = local_attention // 2`，即每位置见左右各 64）。BERT 时代每层都付 $O(T^{2})$ 的 global 账；ctx 拉到 8192 后 attention 项 $2LT^{2}d$（1.2 式 (6)）不再可忽略。交替结构是 sparse attention 谱系（4.2）在 encoder 侧的实例——SWA 堆叠感受野 $L \cdot w$ 的推导同样适用，global 层周期性把局部信息混回全局；与 decoder 侧 Gemma 3 的 5:1 local:global（4.2）同族，比例不同。
 
-**(3) unpadding。** 变长序列批处理的旧方案是 pad 到 batch 最大长度、attention mask 屏蔽 padding 位——padding 位置照样吃 FLOPs。unpadding（反填充）把 batch 内全部序列首尾拼接成单条长序列（shape $[\sum_i T_i, d]$），用边界标记（cu_seqlens / position ids 复位）让 attention 只在各序列内部发生（FlashAttention 的 varlen 接口，4.1）。attention 项从 $B \cdot T_{\max}^{2}$ 降到 $\sum_i T_i^{2}$，序列长度方差大的批（检索、分类流量）收益直接；逐 token 的参数项不变。对 encoder 的主战场（嵌入服务、rerank——吞吐敏感、长度参差），它与交替 attention 的组合是实测提速的主要来源。
+**(3) 反填充（unpadding）。** 变长序列批处理的旧方案是 pad 到 batch 最大长度、attention mask 屏蔽 padding 位——padding 位置照样吃 FLOPs。unpadding 把 batch 内全部序列首尾拼接成单条长序列（shape $[\sum_i T_i, d]$），用边界标记（cu_seqlens / position ids 复位）让 attention 只在各序列内部发生（FlashAttention 的 varlen 接口，4.1）。attention 项从 $B \cdot T_{\max}^{2}$ 降到 $\sum_i T_i^{2}$，序列长度方差大的批（检索、分类流量）收益直接；逐 token 的参数项不变。对 encoder 的主战场（嵌入服务、rerank——吞吐敏感、长度参差），它与交替 attention 的组合是实测提速的主要来源。
 
 ```
 ModernBERT-base 结构一瞥（22 层，global 周期 3，示意）
 ┌─────────────────────────────────────────────────┐
 │ layer 0   global attn（M≡0，RoPE θ=1.6×10⁵）    │ ← 全序列混合
-│ layer 1   local  attn（±128，RoPE θ=10⁴）       │
-│ layer 2   local  attn（±128，RoPE θ=10⁴）       │
+│ layer 1   local  attn（总窗 128，RoPE θ=10⁴）   │
+│ layer 2   local  attn（总窗 128，RoPE θ=10⁴）   │
 │ layer 3   global attn                            │   …周期重复
 │  ...                                              │
 │ layer 21  global attn                            │
@@ -231,7 +233,7 @@ ModernBERT-base 结构一瞥（22 层，global 周期 3，示意）
 | cross-attention | 式 (11)–(13) | K/V 来自 encoder、一次计算全程复用：定长 cache；无 mask |
 | 参数/token 账 | decoder 层 $16d^{2}$ vs self-only 层 $12d^{2}$ | decode 参数项 ≈ 0.57×；理解侧暴露量 ×2 |
 | 占优场景 | 翻译 / 摘要 / ASR（Whisper，10.2 详读） | 输入完整已知、与输出不同链 |
-| ModernBERT | RoPE 双 $\theta$（$1.6 \times 10^{5}$ / $10^{4}$）、3:1 local（$\pm 128$）/global、unpadding | 形态不变零件全换；8192 ctx；config 的 absolute 字段是残留 |
+| ModernBERT | RoPE 双 $\theta$（$1.6 \times 10^{5}$ / $10^{4}$）、3:1 local（总窗宽 128，每侧 64）/global、unpadding | 形态不变零件全换；8192 ctx；config 的 absolute 字段是残留 |
 
 ## 练习
 
@@ -242,12 +244,12 @@ ModernBERT-base 结构一瞥（22 层，global 周期 3，示意）
 
 ## 参考
 
-- [Devlin et al., 2019](../references.md)：BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding，arXiv:1810.04805，[A]（key: bert）——$M \equiv 0$ 形态、MLM + NSP 原始定义、[CLS]/[SEP] 输入模板
+- [Devlin et al., 2018](../references.md)：BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding，arXiv:1810.04805，[A]（key: bert）——$M \equiv 0$ 形态、MLM + NSP 原始定义、[CLS]/[SEP] 输入模板
 - [Liu et al., 2019](../references.md)：RoBERTa: A Robustly Optimized BERT Pretraining Approach，arXiv:1907.11692，[A]（key: roberta）——NSP 移除消融的出处
-- [Lan et al., 2020](../references.md)：ALBERT: A Lite BERT for Self-supervised Learning of Language Representations，arXiv:1909.11942，[A]（key: albert）——embedding 分解、跨层参数共享、SOP
+- [Lan et al., 2019](../references.md)：ALBERT: A Lite BERT for Self-supervised Learning of Language Representations，arXiv:1909.11942，[A]（key: albert）——embedding 分解、跨层参数共享、SOP
 - [Clark et al., 2020](../references.md)：ELECTRA: Pre-training Text Encoders as Discriminators Rather Than Generators，arXiv:2003.10555，[A]（key: electra）——RTD 目标、$\lambda$ = 50、同算力样本效率对照
 - [Google, ELECTRA 官方 repo](../references.md)：[A]（key: electra-repo）——RTD generator/discriminator 实现
-- [Raffel et al., 2020](../references.md)：Exploring the Limits of Transfer Learning with a Unified Text-to-Text Transformer，arXiv:1910.10683，[A]（key: t5）——enc-dec 标准参照、text-to-text 统一
+- [Raffel et al., 2019](../references.md)：Exploring the Limits of Transfer Learning with a Unified Text-to-Text Transformer，arXiv:1910.10683，[A]（key: t5）——enc-dec 标准参照、text-to-text 统一
 - [Radford et al., 2022](../references.md)：Robust Speech Recognition via Large-Scale Weak Supervision，arXiv:2212.04356，[A]（key: whisper）——ASR 的 enc-dec 活例（10.2 详读）
 - [Warner et al., 2024](../references.md)：Smarter, Better, Faster, Longer: A Modern Bidirectional Encoder（ModernBERT），arXiv:2412.13663，[A]（key: modernbert）
 - [Answer.AI, ModernBERT-base/large config 与官方 repo](../references.md)：[A]（key: modernbert-config）——config 字段实测口径（2026-11-11）
