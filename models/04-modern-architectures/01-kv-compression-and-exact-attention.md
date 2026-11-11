@@ -15,20 +15,20 @@
 MHA 标准形每头一对 K/V 投影（2.3 式 (11)）。MQA（multi-query attention，[Shazeer, 2019](../references.md)，arXiv:1911.02150，[B]）把它推到底：全部 $H_q$ 个 query 头共享同一对 K/V：
 
 $$
-q_{t,h} = u_t W_h^{Q}, \qquad k_t = u_t W^{K}, \qquad v_t = u_t W^{V} \qquad (1)
+q_{t,h} = W_h^{Q} u_t, \qquad k_t = W^{K} u_t, \qquad v_t = W^{V} u_t \qquad (1)
 $$
 
 $$
 o_{t,h} = \sum_{s=1}^{t} p_{t,s,h} \, v_s, \qquad p_{t,s,h} = \frac{\exp\left(\langle q_{t,h}, k_s \rangle / \sqrt{d_{\mathrm{head}}}\right)}{\sum_{j=1}^{t} \exp\left(\langle q_{t,h}, k_j \rangle / \sqrt{d_{\mathrm{head}}}\right)} \qquad (2)
 $$
 
-**符号**：$u_t \in \mathbb{R}^{d}$：层输入的归一化后 stream（2.4 式 (6) 记法）；$W_h^{Q} \in \mathbb{R}^{d \times d_{\mathrm{head}}}$：第 $h$ 个 query 头的投影，共 $H_q$ 块；$W^{K}, W^{V} \in \mathbb{R}^{d \times d_{\mathrm{head}}}$：**全局各一块**——MHA 里的逐头 $W_h^{K}, W_h^{V}$ 被合并成单份，K/V 投影参数从各 $d \times d$ 缩到各 $d \times d_{\mathrm{head}}$（8B 形态缩 32 倍）；$k_t, v_t \in \mathbb{R}^{d_{\mathrm{head}}}$ 被全部头共享。
+**符号**：$u_t \in \mathbb{R}^{d}$：层输入的归一化后 stream（2.4 式 (6) 的量；2.4 用行向量约定 $u W$，本章起统一列向量约定 $W u$，两者转置等价）；$W_h^{Q} \in \mathbb{R}^{d_{\mathrm{head}} \times d}$：第 $h$ 个 query 头的投影，共 $H_q$ 块；$W^{K}, W^{V} \in \mathbb{R}^{d_{\mathrm{head}} \times d}$：**全局各一块**——MHA 里的逐头 $W_h^{K}, W_h^{V}$ 被合并成单份，K/V 投影参数从各 $d^{2}$ 缩到各 $d \cdot d_{\mathrm{head}}$（8B 形态缩 32 倍）；$k_t, v_t \in \mathbb{R}^{d_{\mathrm{head}}}$ 被全部头共享。
 
 cache 账直接代公式：$H_{kv} = 1$ 进 2.4 式 (9)，每 token 每层 $2 d_{\mathrm{head}} b$ 字节，与 $H_q$ 无关。Llama-3.1-8B 形态（$L$ = 32、$d_{\mathrm{head}}$ = 128、bf16）每 token 增量从 GQA 的 128 KiB 降到 16 KiB（8 倍）、满窗 cache 从 16 GiB 降到 2 GiB；对照该章的反事实 MHA 行（512 KiB / 64 GiB）是 32 倍。
 
 decode 侧还有一笔账。2.4 式 (12) 的分母 = 权重读一遍 + 每序列一份 cache 读取；$H_{kv}$ = 1 把 cache 项压到 GQA-8 的 1/8、MHA 的 1/32。代数字走一遍（8B 形态、$t$ = 131072）：单序列 cache 2 GiB，$B$ = 32 时 batch 的 cache 读取 64 GiB 对权重 16 GB——cache 项仍在分母里，但 batch 饱和强度上界（2.4 §6 对 GQA-8 算出的约 4.9）外推 8 倍。饱和点仍低于 ridge（$10^{2}$ 量级），memory-bound 不变，但「凑 batch 还有用」的区间被拉长了同一个倍数。MQA 的原始动机正是这个服务侧数字——论文标题就是「one write-head」（[Shazeer, 2019](../references.md)，[B]）；质量是后账。
 
-代价写在机制里。2.3 §2：score 经 rank-$d_k$ 双线性型 $A_h = W_h^{Q} W_h^{K \top}$ 读 stream，MHA 是 $H$ 个独立低秩透镜并排。MQA 不是减少透镜个数，而是强制全部透镜共用同一片 K 侧玻璃：$A_h^{MQA} = W_h^{Q} W^{K \top}$，$H_q$ 个头的 key 侧行空间被钉在同一组基上——检索分辨率塌缩到一份。value 侧同样：整条序列只有一条 $d_{\mathrm{head}}$ 维的交付通道，$H_q$ 个头各自加权求和的是同一些 $v_s$——交付带宽也塌缩到一份。MQA 论文报告的质量差距（[B]，无官方代码，按论文口径引）就是这两处塌缩的代价；§3 的 GQA 是「塌缩程度可调」的修复。
+代价写在机制里。2.3 §2：score 经 rank-$d_k$ 双线性型读 stream（列向量约定下 $A_h = (W_h^{Q})^{\top} W_h^{K} \in \mathbb{R}^{d \times d}$，rank ≤ $d_{\mathrm{head}}$），MHA 是 $H$ 个独立低秩透镜并排。MQA 不是减少透镜个数，而是强制全部透镜共用同一片 K 侧玻璃：$A_h^{MQA} = (W_h^{Q})^{\top} W^{K}$，$H_q$ 个头的 key 侧行空间被钉在同一组基上——检索分辨率塌缩到一份。value 侧同样：整条序列只有一条 $d_{\mathrm{head}}$ 维的交付通道，$H_q$ 个头各自加权求和的是同一些 $v_s$——交付带宽也塌缩到一份。MQA 论文报告的质量差距（[B]，无官方代码，按论文口径引）就是这两处塌缩的代价；§3 的 GQA 是「塌缩程度可调」的修复。
 
 一个对照注记为 §4 铺垫：MQA 与 GQA 同 RoPE 无冲突——压缩的是头数，每个幸存的 K/V 头仍逐位置物化、照常旋转（2.5 §4.3 的应用位置不变，cache 里存的是已旋转的共享 $k_n$）。冲突只在「压缩每个 token 的 KV 内容本身」时出现——那是 MLA 要面对的，§4.1 的推导就从这里开始。
 
@@ -51,19 +51,19 @@ V  v1  v2  v3  v4        V      v1         v2   ...    V        v1（独一份�
 H_kv = 32                H_kv = 8                    H_kv = 1
 ```
 
-cache 账：式 (3) 进 2.4 式 (9)，$\mathrm{bytes} = 2 L (H_q / g) d_{\mathrm{head}} T B b$——GQA-4 对 8B 形态就是 2.4 §5 的实例行（16 GiB 满窗）。参数账则不对称：K/V 两块投影缩 $g$ 倍，Q 与 O 不动（Llama-3.1-8B 的 attention 参数 $2.5 d^{2}$ vs MHA 标准形 $4 d^{2}$，1.2 §5 的口径）——GQA 省的几乎只有 cache 与其带宽，不是参数、也不是训练 FLOPs。这也是为什么它的质量损失远小于 MQA：$H_{kv}$ = 8 时 K 侧行空间从 1 份回到 8 份，检索分辨率只比 MHA 少 4 倍而不是 32 倍。
+cache 账：式 (3) 进 2.4 式 (9)，$\mathrm{bytes} = 2 L (H_q / g) d_{\mathrm{head}} T B b$——GQA-4 对 8B 形态就是 2.4 §5 的实例行（16 GiB 满窗）。参数账则不对称：K/V 两块投影缩 $g$ 倍，Q 与 O 不动（Llama-3.1-8B 的 attention 参数 $2.5 d^{2}$ vs MHA 标准形 $4 d^{2}$，2.1 §4 的口径）——GQA 省的几乎只有 cache 与其带宽，不是参数、也不是训练 FLOPs。这也是为什么它的质量损失远小于 MQA：$H_{kv}$ = 8 时 K 侧行空间从 1 份回到 8 份，检索分辨率只比 MHA 少 4 倍而不是 32 倍。
 
 实现侧一句：cache 只按 $H_{kv}$ 份存储与回读，组内广播发生在打分前的视图层——K/V 从 $[B, H_{kv}, t, D]$ 扩视到 $[B, H_q, t, D]$，扩视不产生新字节；eager 路径显式 repeat，SDPA / FlashAttention 路径在 kernel 内广播（Llama modeling 代码的 K/V 复用即此形，[HuggingFace, modeling_llama.py](../references.md)，[A]）。广播同样出现在 2.4 §4.4 的 shape 走读里（$s_t$ 是 $[B, 32, 1, t]$ 对 cache $[B, 8, t, 128]$ 的组内匹配）。注意广播不改账：省的是存储与带宽，打分 FLOPs 仍按 $H_q$ 个 query 头全付。
 
-**uptraining**。GQA 论文给的迁移配方（[B]，按论文引）：从已训好的 MHA checkpoint 出发，把每组内各头的 $W_h^{K}$（同理 $W_h^{V}$）做 mean pooling 得到该组共享 K/V 投影的初始化，再用约原预训练算力 5% 的预算继续训练。初始化为什么取 mean 而不是任选一头：论文对照过两种取法，mean pooling 更好（[B]）；机制直观是各头的 $W_h^{K}$ 行空间方向不同，任取一头等于把组内其余头的检索结构硬对齐到该头，而 mean 保持组内方向的质心——零阶扰动最小。随后 5% 预算的继续训练把 pooled 权重与网络其余部分重新校准。这条路径的意义是 GQA 可以 retro-fit 到存量 MHA checkpoint 上，不必从头训。
+**uptraining**。GQA 论文给的迁移配方（[B]，按论文引）：从已训好的 MHA checkpoint 出发，把每组内各头的 $W_h^{K}$（同理 $W_h^{V}$）做 mean pooling 得到该组共享 K/V 投影的初始化，再用约原预训练算力 5% 的预算继续训练。初始化为什么取 mean：论文对照过三种取法——组内 mean pooling、取组内第一头、随机初始化——mean pooling 最优（[B]）；机制直观是各头的 $W_h^{K}$ 行空间方向不同，任取一头等于把组内其余头的检索结构硬对齐到该头，而 mean 保持组内方向的质心——零阶扰动最小。随后 5% 预算的继续训练把 pooled 权重与网络其余部分重新校准。这条路径的意义是 GQA 可以 retro-fit 到存量 MHA checkpoint 上，不必从头训。
 
-**Pareto 数据形态**（论文在 T5 族各规模上的 uptraining 对照，[B]）：MQA 的 decode 最快、质量可见下降；GQA-8（8 KV 头）质量与 MHA 基线几乎重合，decode 速度接近 MQA。cache-质量坐标系里，前沿在 $H_{kv} \approx 8$ 附近出现拐点：再向左（4、2、1）质量快速下滑，再向右 cache 收益递减。拐点的账侧解释：decode 每步的 cache 读取正比于 $H_{kv}$（2.4 式 (11) 的分母），从 8 压到 1 只再省 8 倍读取，而质量从「与 MHA 几乎重合」跳到「可见下降」——读取收益是线性的、质量代价是非线性的，前沿自然在读取已省 4–8 倍、质量尚未塌方处拐弯。落地坐标与拐点重合：Llama-3.1-8B（$H_q$ = 32、$H_{kv}$ = 8，$g$ = 4）与 Llama-3.1-70B（$H_q$ = 64、$H_{kv}$ = 8，$g$ = 8）（[Meta, Llama-3.1-8B config](../references.md)、[Meta, Llama-3.1-70B config](../references.md)，均 [A]）——两家都把旋钮停在 $H_{kv}$ = 8。
+**Pareto 数据形态**（论文在 T5 族各规模上的 uptraining 对照，[B]）：MQA 的 decode 最快、质量可见下降；GQA-8（8 KV 头）质量与 MHA 基线几乎重合，decode 速度接近 MQA——论文的速度-质量对照（Fig 6）据此把 GQA-8 作为中间点选择。注意证据边界：论文逐点给的是 MHA / GQA-8 / MQA 三个臂，「再向左（4、2、1）质量快速下滑」的悬崖形状是本书按 §2 塌缩机制做的外推标注，非论文数据。账侧读法：decode 每步的 cache 读取正比于 $H_{kv}$（2.4 式 (11) 的分母），从 8 压到 1 只再省 8 倍读取，而质量从「与 MHA 几乎重合」跳到「可见下降」（MQA 臂，论文口径）——读取收益线性、质量代价非线性，中间点因此合理。落地坐标与之一致：Llama-3.1-8B（$H_q$ = 32、$H_{kv}$ = 8，$g$ = 4）与 Llama-3.1-70B（$H_q$ = 64、$H_{kv}$ = 8，$g$ = 8）（[Meta, Llama-3.1-8B config](../references.md)、[Meta, Llama-3.1-70B config](../references.md)，均 [A]）——两家都把旋钮停在 $H_{kv}$ = 8。
 
 ## 4. MLA：低秩 latent + decoupled RoPE 的完整推导
 
 ### 4.1 动机：RoPE 与低秩压缩的数学冲突
 
-GQA 压缩的是头数，每个被保留的 K/V 头仍是全尺寸 $d_{\mathrm{head}}$ 维。头数压缩有一块地板：$H_{kv}$ 是不小于 1 的整数，且 §3 的 Pareto 拐点显示 $H_{kv}$ = 8 再向左质量塌方——这条路线在「8 倍削减」附近已经走到尽头，要再压一个数量级只能压内容本身：不存 $k_s, v_s$（合计 $2 H_{kv} d_{\mathrm{head}}$ 元素），存一个低秩 latent $c_s \in \mathbb{R}^{d_c}$、$d_c \ll 2 H_{kv} d_{\mathrm{head}}$，用的时候经上投影 $k_s = W^{UK} c_s$、$v_s = W^{UV} c_s$ 展开。没有位置编码时这条路畅通——§4.4 会看到全部上投影都能被吸收，cache 只有 $d_c$。撞上 RoPE 就断了。
+GQA 压缩的是头数，每个被保留的 K/V 头仍是全尺寸 $d_{\mathrm{head}}$ 维。头数压缩有一块地板：$H_{kv}$ 是不小于 1 的整数，且 §3 的现实坐标是各家停在 $H_{kv}$ = 8——更左的 MQA 端点有可见质量代价（论文口径）——这条路线在「8 倍削减」附近已经走到尽头，要再压一个数量级只能压内容本身：不存 $k_s, v_s$（合计 $2 H_{kv} d_{\mathrm{head}}$ 元素），存一个低秩 latent $c_s \in \mathbb{R}^{d_c}$、$d_c \ll 2 H_{kv} d_{\mathrm{head}}$，用的时候经上投影 $k_s = W^{UK} c_s$、$v_s = W^{UV} c_s$ 展开。没有位置编码时这条路畅通——§4.4 会看到全部上投影都能被吸收，cache 只有 $d_c$。撞上 RoPE 就断了。
 
 2.5 §4.3 的应用接缝：$k_n$ 在写 cache 之前按绝对位置旋转，score 为 $\langle R_m q_m, R_n k_n \rangle$。若 cache 只存压缩态 $c_n$，则 decode 第 $t$ 步需要的对象是
 
@@ -173,7 +173,7 @@ $$
 s_{t,s,h} = \frac{\left\langle \tilde{q}_{t,h},\, c_s^{KV} \right\rangle + \left\langle q_{t,h}^{R},\, k_s^{R} \right\rangle}{\sqrt{d_h + d_R}} \qquad (12)
 $$
 
-$k^{C}$ 从计算图中消失：score 直接打在 cached latent $c_s^{KV}$ 上。decode 每步每 token 每层读的就是 576 元素，而不是展开后的 $H d_h + d_R$ = 128 × 128 + 64 = 16448 元素——读取削减 28.5 倍。2.4 §6 的口径下（decode $I \approx 1$–2.5、ridge $10^{2}$ 量级，memory-bound），这笔账直接换算成墙钟。
+$k^{C}$ 从计算图中消失：score 直接打在 cached latent $c_s^{KV}$ 上。decode 每步每 token 每层读的就是 576 元素，而不是展开后的全量 KV——$2 H d_h + d_R$ = 2 × 128 × 128 + 64 = 32832 元素（$H$ 份 $k^{C}$、$H$ 份 $v^{C}$ 与共享 $k^{R}$）——读取削减 57 倍。2.4 §6 的口径下（decode $I \approx 1$–2.5、ridge $10^{2}$ 量级，memory-bound），这笔账直接换算成墙钟。
 
 合并算子还有一个结构注记：$\tilde{W}_h = (W_h^{UQ})^{\top} W_h^{UK} \in \mathbb{R}^{d_c' \times d_c}$ 的秩 ≤ $d_h$ = 128——吸收形下每头对 latent 的 score 仍是一个 rank-128 双线性型，与 2.3 §2「score 经 rank-$d_k$ 透镜读 stream」逐项对应；变化只是透镜的观测对象从逐头独立的 $k_s$ 换成了共享 latent $c_s^{KV}$。检索分辨率不因吸收而变——吸收是执行层变换，数学对象（式 (11) 两端）逐点相等。
 
@@ -197,10 +197,10 @@ $\widehat{W}_h$ 同样离线预计算——$W_h^{UV}$ 被吸进 $W^{O}$。两笔
 | --- | --- | --- |
 | K / V | 物化 $k^{C}$、$v^{C}$（每头 128 维） | 不物化，score 直接打在 $c_s^{KV}$ 上 |
 | score 内维 | $d_h + d_R$ = 192 | $d_c + d_R$ = 576 |
-| 每 token 每层 KV 读取 | $H d_h + d_R$ = 16448 元素 | $d_c + d_R$ = 576 元素 |
-| regime | compute-bound，大 matmul 友好 | memory-bound，读取 28.5× 削减 |
+| 每 token 每层 KV 读取 | $2 H d_h + d_R$ = 32832 元素 | $d_c + d_R$ = 576 元素 |
+| regime | compute-bound，大 matmul 友好 | memory-bound，读取 57× 削减 |
 
-**代价与边界**（诚实账三笔）。(a) 吸收后 query 有效维数从 $d_h + d_R$ = 192 涨到 $d_c + d_R$ = 576：score 的逐对 FLOPs 涨 3 倍。decode 是 memory-bound，多付 FLOPs 换 28.5 倍读取削减是净赚；这笔交换在 compute-bound 侧不成立。(b) 因此 prefill 与训练用**非吸收形**——先把 $K^{C}, V^{C}$ 展开成 192 / 128 维再正常算（大 batch matmul、$d_c$ 不进 $QK^{\top}$ 的内维），decode 用吸收形；同一份权重、两张执行图。部署侧的落法是逐阶段切换：$\tilde{W}_h$ 与 $\widehat{W}_h$ 在加载时一次性预计算，prefill 走展开形、首个 decode 步起切吸收形，切换本身零成本。(c) 吸收只覆盖 nope 部分；$k^{R}$ 仍逐位置旋转、原样缓存——若当初选择全维旋转，式 (11) 里 $R_n$ 会卡在 $\tilde{W}_h$ 与 $c_s^{KV}$ 之间（§4.1 式 (4)），吸收当场死亡。顺带一句 MLA 与 §5 的关系：kernel 层完全不感知 MLA——展开形下它就是普通 attention（head 维 192），FlashAttention 原样可用；吸收形的 kernel 化是推理框架的事，归 inference 维度。DeepSeek 官方推理实现即按吸收形落地（[DeepSeek-AI, 2024](../references.md)，arXiv:2412.19437，[A]）；Kimi-Linear 的 full-attn 层给出同一结构的 NoPE 变体（无旋转则无需 decoupled），归 4.4。
+**代价与边界**（诚实账三笔）。(a) 吸收后 query 有效维数从 $d_h + d_R$ = 192 涨到 $d_c + d_R$ = 576：score 的逐对 FLOPs 涨 3 倍。decode 是 memory-bound，多付 FLOPs 换 57 倍读取削减是净赚；这笔交换在 compute-bound 侧不成立。(b) 因此 prefill 与训练用**非吸收形**——先把 $K^{C}, V^{C}$ 展开成 192 / 128 维再正常算（大 batch matmul、$d_c$ 不进 $QK^{\top}$ 的内维），decode 用吸收形；同一份权重、两张执行图。部署侧的落法是逐阶段切换：$\tilde{W}_h$ 与 $\widehat{W}_h$ 在加载时一次性预计算，prefill 走展开形、首个 decode 步起切吸收形，切换本身零成本。(c) 吸收只覆盖 nope 部分；$k^{R}$ 仍逐位置旋转、原样缓存——若当初选择全维旋转，式 (11) 里 $R_n$ 会卡在 $\tilde{W}_h$ 与 $c_s^{KV}$ 之间（§4.1 式 (4)），吸收当场死亡。顺带一句 MLA 与 §5 的关系：kernel 层完全不感知 MLA——展开形下它就是普通 attention（head 维 192），FlashAttention 原样可用；吸收形的 kernel 化是推理框架的事，归 inference 维度。DeepSeek 官方推理实现即按吸收形落地（[DeepSeek-AI, 2024](../references.md)，arXiv:2412.19437，[A]）；Kimi-Linear 的 full-attn 层给出同一结构的 NoPE 变体（无旋转则无需 decoupled），归 4.4。
 
 ## 5. FlashAttention：不物化 scores 的精确 attention
 
@@ -294,19 +294,19 @@ FA2 与 FA3 各一句话：FA2（[Dao, 2023](../references.md)，arXiv:2307.0869
 | 概念 | 公式 / 数值 | 要点 |
 | --- | --- | --- |
 | MQA | 式 (1)(2)；$H_{kv}$ = 1 | 8B 形态 cache 16 KiB/token、满窗 2 GiB；K 侧行空间与 V 通道同时塌缩 → 质量损失 |
-| GQA | $H_{kv} = H_q / g$，式 (3) | uptraining：组内 mean-pool 初始化 + 约 5% 预训练算力；Pareto 拐点 $H_{kv} \approx 8$（Llama-3.1 8B / 70B 均取 8） |
+| GQA | $H_{kv} = H_q / g$，式 (3) | uptraining：组内 mean-pool 初始化（三臂对照最优）+ 约 5% 预训练算力；GQA-8 为论文 Fig 6 的中间点选择，Llama-3.1 8B / 70B 均取 $H_{kv}$ = 8 |
 | RoPE×低秩冲突 | 式 (4) | $R_{n-t}$ 卡在 $W^{UK}$ 与 $c$ 之间；$R_\Delta C \neq C R_\Delta$（全换位 ⟺ 频率块不混合 ⟺ 非压缩） |
 | MLA 构造 | 式 (5)–(10) | $c^{KV}$ = $W^{DKV} u$（512）+ decoupled $k^{R}$（64，旋转后缓存、全头共享）；query 侧同低秩（1536） |
 | MLA cache 账 | 576 元素 / token / 层 | vs MHA-32 反事实 8192（14.2×）；V3 满窗 163840：10.7 GiB vs MHA 反事实 610 GiB（56.9×） |
-| W_UK / W_UV absorption | 式 (11)(12) / (13)(14) | $\tilde{W}_h = (W_h^{UQ})^{\top} W_h^{UK}$、$\widehat{W}_h = W_h^{O} W_h^{UV}$ 离线预计算；decode 吸收形（读 576 而非 16448 元素）/ prefill 展开形 |
+| W_UK / W_UV absorption | 式 (11)(12) / (13)(14) | $\tilde{W}_h = (W_h^{UQ})^{\top} W_h^{UK}$、$\widehat{W}_h = W_h^{O} W_h^{UV}$ 离线预计算；decode 吸收形（读 576 而非 32832 元素，57×）/ prefill 展开形 |
 | online softmax | 式 (15)(16) | running max / sum，重缩放因子 $e^{m_{old} - m_{new}}$ 只换基准；归纳不变量 ⟹ 逐点精确 |
 | FlashAttention | tiling 图；式 (17) | 精确等价非近似；HBM 流量 $O(T^{2} d^{2} / M)$ vs naive $\Theta(T^{2})$；反向重算，前向内存 $O(T)$ |
 | FA2 / FA3 | 同一数学 | FA2 改并行划分（约一倍）；FA3 面向 Hopper 异步；细节归 gpu |
 
 ## 练习
 
-1.（推导）MQA 的透镜账。2.3 §2：MHA 第 $h$ 头经 $A_h = W_h^{Q} W_h^{K \top}$（rank ≤ $d_k$）读 stream。(a) 写出 MQA 下第 $h$ 头的等价双线性型 $A_h^{MQA}$，说明 $H_q$ 个 $A_h^{MQA}$ 的「K 侧行空间」为什么被钉在同一组基上；(b) 设 $v_s$ 全头共享，证明对任意 attention 权重分配，每头输出 $o_{t,h} \in \mathrm{span}\{v_s\}_{s \le t}$，即全部头的读出共享同一条维数 ≤ $d_{\mathrm{head}}$ 的 value 通道——与 MHA 的 $H_q$ 份独立 $\{v_{s,h}\}$ 对照，说明「value 交付带宽与 $H_q$ 无关」的准确含义。
-2.（推导）MLA absorption 的形状与账。设 $d_c$ = 512、$d_c'$ = 1536、$d_h$ = $d_v$ = 128、$d_R$ = 64、$H$ = 128。(a) 写出 $W_h^{UQ}, W_h^{UK}, \tilde{W}_h, \widehat{W}_h$ 的全部 shape 并验证式 (11)(14) 的矩阵乘法合法；(b) decode 第 $t$ 步，分别计算吸收形（score 对 $c$ 打）与非吸收形（先展开 $K^C$ 再打）的逐头 score FLOPs 与每 token 每层 KV 读取字节，验证「FLOPs 3 倍、读取 28.5 倍」的交换比；(c) prefill 长度 $T_p$ 时两形态的 $QK^{\top}$ FLOPs 各是多少？由此说明 prefill 用展开形的理由。
+1.（推导）MQA 的透镜账。2.3 §2：MHA 第 $h$ 头经 rank-$d_k$ 双线性型 $A_h = (W_h^{Q})^{\top} W_h^{K}$ 读 stream。(a) 写出 MQA 下第 $h$ 头的等价双线性型 $A_h^{MQA}$，说明 $H_q$ 个 $A_h^{MQA}$ 的「K 侧行空间」为什么被钉在同一组基上；(b) 设 $v_s$ 全头共享，证明对任意 attention 权重分配，每头输出 $o_{t,h} \in \mathrm{span}\{v_s\}_{s \le t}$，即全部头的读出共享同一条维数 ≤ $d_{\mathrm{head}}$ 的 value 通道——与 MHA 的 $H_q$ 份独立 $\{v_{s,h}\}$ 对照，说明「value 交付带宽与 $H_q$ 无关」的准确含义。
+2.（推导）MLA absorption 的形状与账。设 $d_c$ = 512、$d_c'$ = 1536、$d_h$ = $d_v$ = 128、$d_R$ = 64、$H$ = 128。(a) 写出 $W_h^{UQ}, W_h^{UK}, \tilde{W}_h, \widehat{W}_h$ 的全部 shape 并验证式 (11)(14) 的矩阵乘法合法；(b) decode 第 $t$ 步，分别计算吸收形（score 对 $c$ 打）与非吸收形（先展开 $K^C, V^C$ 再算）的逐头 score FLOPs 与每 token 每层 KV 读取字节，验证「FLOPs 3 倍、读取 57 倍」的交换比；(c) prefill 长度 $T_p$ 时两形态的 $QK^{\top}$ FLOPs 各是多少？由此说明 prefill 用展开形的理由。
 3.（计算）DeepSeek-V3 满窗账：61 层、每 token 每层 576 元素、bf16、$T$ = 163840。(a) 单序列 cache 总量（GiB）；(b) 同窗口反事实 MHA（$H$ = 128、$d_{\mathrm{head}}$ = 128）与反事实 GQA-8（$H_{kv}$ = 8）各多少；(c) $B$ = 16 并发下三者的 cache 总量；设权重 671B 参数以 fp8（1 字节）驻留约 671 GB，指出 cache 与权重在显存预算中的相对位置随 $B$ 的变化。
 4.（代码）教学实现 online softmax forward（教学用，非优化实现）：随机 $Q, K, V$（$T$ = 1024、$d$ = 64、fp32），按式 (15)(16) 以块大小 $B_c$ = 128 实现 causal attention forward，与 `F.scaled_dot_product_attention(is_causal=True)` 断言 allclose（容差 $10^{-5}$）。扫 $B_c \in \{32, 64, 128, 256\}$：(a) 验证输出不随块大小改变（精确性的可执行形式）；(b) 记录峰值显存，对照 2.3 §7 教学版在同一 $T$ 下的物化账。
 
@@ -319,6 +319,7 @@ FA2 与 FA3 各一句话：FA2（[Dao, 2023](../references.md)，arXiv:2307.0869
 - [DeepSeek-AI, DeepSeek-V3 config.json](../references.md)：[A]（key: deepseek-v3-config）——kv_lora_rank = 512、qk_rope_head_dim = 64、qk_nope_head_dim = 128、v_head_dim = 128、q_lora_rank = 1536、num_attention_heads = 128、61 层、窗口 163840
 - [Meta, Llama-3.1-8B config.json](../references.md)：[A]（key: llama-3.1-8b-config）——GQA：$H_q$ = 32、$H_{kv}$ = 8
 - [Meta, Llama-3.1-70B config.json](../references.md)：[A]（key: llama-3.1-70b-config）——GQA：$H_q$ = 64、$H_{kv}$ = 8
+- [HuggingFace, transformers repo Llama modeling 代码](../references.md)：[A]（key: llama-modeling）——GQA 的 K/V 组内广播实现
 - [Dao et al., 2022](../references.md)：FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness，arXiv:2205.14135，[A]（key: flashattention）——online softmax、tiling、IO 复杂度 $O(T^{2} d^{2} / M)$、SRAM / HBM 硬件口径
 - [Dao, 2023](../references.md)：FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning，arXiv:2307.08691，[A]（key: fa2）
 - [Dao-AILab, flash-attention repo](../references.md)：[A]（key: flash-attention-repo）——官方 kernel 实现
