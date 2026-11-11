@@ -301,7 +301,7 @@ STYLE_GUIDE.md 是写作 agent 与 evaluator agent 的共同唯一标准，必�
 - **Sources**：GLM [arXiv:2103.10360]、GLM-130B [arXiv:2210.02414]、GLM-4.5 text report [arXiv:2508.06471]、GLM-4.5V [arXiv:2507.01006]
 
 #### 5.5 `05-kimi-moonshot.md` — Kimi / Moonshot
-- **内容**：谱系：长上下文服务时代（128K→200K，工程为主）→ **Moonlight**（MoE 架构论文：Muon optimizer 训练侧交叉链接；架构要点：shared expert、sigmoid routing ⟨verify⟩、SwiGLU、**upcycling**：dense→MoE 权重初始化技术公式）→ K1.5（RL 交叉链接 training）→ **K2**（1T/A32B；**MuonClip：Muon + QK-clip**——qk-logit 超阈值时缩放 γ 的公式：模型层稳定性技术，详拆；agentic 导向设计）→ **Kimi-Linear/KDA**（recap → P4.3/4.4）→ **K3**（2.8T、LatentMoE、Attention Residuals、native multimodal——⟨verify⟩ research pass 锁定 report 与证据等级）
+- **内容**：谱系：长上下文服务时代（128K→200K，工程为主）→ **Moonlight**（MoE 架构论文：Muon optimizer 训练侧交叉链接；架构要点：shared expert、sigmoid routing ⟨verify⟩、SwiGLU、**upcycling**：dense→MoE 权重初始化技术公式——2026-11-12 research pass 核实：该技术出处在 Qwen2 report，非 Moonlight，写作时交叉引用 5.3）→ K1.5（RL 交叉链接 training）→ **K2**（1T/A32B；**MuonClip：Muon + QK-clip**——qk-logit 超阈值时缩放 γ 的公式：模型层稳定性技术，详拆；agentic 导向设计；K2 有论文 arXiv:2507.20534 [A]）→ **Kimi-Linear/KDA**（recap → P4.3/4.4）→ **K3**（2.8T、LatentMoE、Attention Residuals、native multimodal——⟨verify⟩ research pass 锁定 report 与证据等级）
 - **锚点**：MoonshotAI/Kimi-K2、MoonshotAI/Kimi-Linear、MoonshotAI/Moonlight ⟨verify⟩ [A]
 - **Sources**：Moonlight/Muon [arXiv:2502.16982]（Muon 原始出处为 Keller Jordan 博客，无 arXiv）、KDA [arXiv:2510.26692]、K1.5 [arXiv:2501.12599]、K2 model card ⟨verify⟩、K3 report ⟨verify⟩
 
