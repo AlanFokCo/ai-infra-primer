@@ -43,7 +43,7 @@ causal 情形下左序只需下三角、约减半为 $T^{2}(d_r+d_v)$（2.3 §7 
 
 两个代价注记。其一，特征化本身要钱：Performer 型 $\phi$ 含一次 $d_k \times d_r$ 投影（§2），逐 token $2d_kd_r$，与右序主项同阶、不改结论。其二，右序的训练形态不是把递推跑 $T$ 步——那是串行灾难；可并行形态是 chunkwise，连同 delta-rule 族的版本在 §8 统一处理。
 
-补一条视角注记：式 (4) 右序的 $\Phi(K)^{\top}V$ 不是普通中间矩阵——按前缀看，它正是 §3 式 (7) 的状态 $S_t$。结合律重排因此同时产出两个对象：训练的矩阵算法与推理的递推状态；本章全部推导都从这一等式长出。左序没有这种递推对应物：$T \times T$ 核矩阵的第 $t$ 行依赖全部 $t$ 个 key，是天然的并行对象，也天然背着 $O(T^{2})$ 内存。
+补一条视角注记：式 (4) 右序的 $\Phi(K)^{\top}V$ 不是普通中间矩阵——按前缀看，它正是 §3 式 (7) 的状态 $S_t$（布局注记：此处 $\Phi(K)^{\top}V \in \mathbb{R}^{d_r \times d_v}$ 是 key×value 布局，与 §3 起全书统一的状态约定 $S \in \mathbb{R}^{d_v \times d_r}$ 互为转置；§1-2 保留 attention 文献习惯的矩阵写法，§3 起一律用约定布局）。结合律重排因此同时产出两个对象：训练的矩阵算法与推理的递推状态；本章全部推导都从这一等式长出。左序没有这种递推对应物：$T \times T$ 核矩阵的第 $t$ 行依赖全部 $t$ 个 key，是天然的并行对象，也天然背着 $O(T^{2})$ 内存。
 
 ## 2. FAVOR+：用随机特征无偏逼近 softmax 核
 
@@ -193,7 +193,7 @@ $$
 
 一般 $\beta_t \in (0,1)$（输入依赖、可学）插值于「不改」与「覆写」之间。同一「对联想集做 GD」的结构在 3.3 §5 作为 ICL 解释 (a) 出现过：那里是 linear attention 层模拟一步 GD，这里是 GD 直接定义状态更新。DeltaNet 论文的另一半贡献是把这条递推并行化到序列维——§8 的 WY 表示。
 
-为什么只做一步、不做全量最小二乘：对全部历史 $\{(k_s, v_s)\}_{s \le t}$ 的 ridge 解要维护 $K^{\top}K$ 的逆（3.3 §5 式 (5) 的那条路线），每步代价 $O(t^{2})$ 起；一步在线 GD 压到 $O(d_vd_k)$，代价是只拟合当前对、旧对被渐进挤出——§10 的容量界正是以这种形式显形。残差 $v_t - S_{t-1}k_t$ 另有一层读法：它是当前状态对 $k_t$ 的**预测误差**，delta rule 只把预测错的部分写进状态——已经记住的旧内容不重复写入，这是对加性状态「重复累加」病灶的直接修复。
+为什么只做一步、不做全量最小二乘：对全部历史 $\{(k_s, v_s)\}_{s \le t}$ 的 ridge 解（3.3 §5 式 (5) 的那条路线）要解 $\sum_s k_sk_s^{\top} + \lambda I$ 的正规方程——从头重解每步 $O(td_k^{2} + d_k^{3})$（构造 $d_k \times d_k$ 矩阵再求逆），增量维护逆矩阵（Sherman-Morrison 秩一更新）每步 $O(d_k^{2})$；一步在线 GD 只要 $O(d_vd_k)$，且常数小、无矩阵求逆的数值脆弱性。更本质的差别在目标而不在成本：全量解同等拟合所有历史对（无遗忘、干扰随 $t$ 累积），一步 GD 只对当前对负责、旧对被渐进挤出——§10 的容量界正是以这种形式显形。残差 $v_t - S_{t-1}k_t$ 另有一层读法：它是当前状态对 $k_t$ 的**预测误差**，delta rule 只把预测错的部分写进状态——已经记住的旧内容不重复写入，这是对加性状态「重复累加」病灶的直接修复。
 
 ## 6. GDN 与 GDN-2：遗忘门与 erase/write 解耦
 
@@ -210,33 +210,41 @@ $$
 - $\beta_t v_t k_t^{\top}$：**写入**；
 - 次序：擦除作用于旧状态、写入在其后相加——当前步写入不被自己的擦除与遗忘衰减，$o_t = S_tq_t$ 含完整的 $\beta_t(k_t^{\top}q_t)v_t$ 项。
 
-退化链把 §4-5 收口：$\alpha_t = 1$ 回 DeltaNet；$\beta_t = 0$ 成纯遗忘累加（$\alpha$ 常数化即 RetNet 档）；$\beta_t = 1$、$\alpha_t = \gamma$ 是「RetNet $+$ 定点覆写」。遗忘与擦除正交：一个管「多久以前的内容整体淡出」，一个管「这个 key 方向的内容精确替换」。
+退化链把 §4-5 收口：$\alpha_t = 1$ 回 DeltaNet；$\beta_t = 1$、$\alpha_t = \gamma$ 是「RetNet $+$ 定点覆写」。注意缺口：$\beta_t = 0$ 时写入项同步归零，$S_t = \alpha_t S_{t-1}$ 只是纯衰减到零——耦合的 $\beta$ 表达不了「关擦除、留写入」，精确的 RetNet（$\gamma$ 衰减 $+$ 无擦除写入）在式 (14) 里取不到，需要擦除与写入各自独立（式 (15) 的动机）。遗忘与擦除正交：一个管「多久以前的内容整体淡出」，一个管「这个 key 方向的内容精确替换」。
 
 代入一组数值走一遍式 (14)：$\lVert k_t \rVert = 1$、$\beta_t$ = 0.5、$\alpha_t$ = 0.9，取读出方向 $q_t = k_t$——旧内容沿 $k_t$ 方向被缩到 $0.9 \times (1 - 0.5) = 0.45$ 倍，新写入项贡献 $0.5\, v_t$；三个旋钮的乘法语义直接可见。
 
 数值读法：$\alpha_t$ = 0.99 时遗忘窗口约百步（§4 的半衰期账），$\alpha_t \to 1$ 时退为「只定点修改、不整体遗忘」；$\beta_t$ 控制写入侵略性。两个门都由当前输入算出（输入依赖是标题「Gated」的所指），模型于是能按内容选择「记什么、忘多快」——相对 RetNet 的固定 $\gamma$，这是从「设计好的时间尺度」到「学出来的时间尺度」的一步。
 
-GDN-2（[Hatamizadeh et al., 2026](../references.md)，arXiv:2605.22791，[A]；NVlabs/GatedDeltaNet-2）针对式 (14) 中 $\beta_t$ 的**双重身份**：同一标量同时控制 key 侧擦除强度与 value 侧写入强度。GDN-2 把两个角色解耦（摘要口径）：
+GDN-2（[Hatamizadeh et al., 2026](../references.md)，arXiv:2605.22791，[A]；NVlabs/GatedDeltaNet-2）针对式 (14)(16) 中 $\beta_t$ 的**双重身份**：同一标量同时控制 key 侧擦除强度与 value 侧写入强度。论文的观察是这两个角色作用在状态的不同轴上——擦除是 key 侧操作（决定旧读出的哪些坐标被移除），写入是 value 侧操作（决定新 value 的哪些坐标被提交）——于是一并继承 KDA 的逐通道衰减、把两个角色拆成两个逐通道门（Gated Delta Rule-2，论文式 (10) 转置到本书约定布局）：
 
 $$
-S_t = \alpha_t\, S_{t-1} \left( I - \beta_t^{e} k_t k_t^{\top} \right) + \beta_t^{w} v_t k_t^{\top} \qquad (15)
+S_t = S_{t-1}\, \mathrm{diag}(\alpha_t) \left( I - (b_t \odot k_t)\, k_t^{\top} \right) + (w_t \odot v_t)\, k_t^{\top} \qquad (15)
 $$
 
-**符号**：$\beta_t^{e}$：擦除门；$\beta_t^{w}$：写入门。$\beta^{e} = \beta^{w}$ 退化回式 (14)；论文自称该形式泛化 GDN 与 KDA。解耦买到的自由度可以直接读出：强写入弱擦除（新值叠加进旧方向）或强擦除弱写入（清空一个方向而不填新值）——耦合形式迫使两者同步。
+**符号**：$b_t \in [0,1]^{d_k}$：擦除门（key 侧逐 channel）；$w_t \in [0,1]^{d_v}$：写入门（value 侧逐 channel）；$\mathrm{diag}(\alpha_t)$：KDA 式逐通道衰减（key 侧，见 §7）。等价的残差写法：
+
+$$
+S_t = \underbrace{S_{t-1}\, \mathrm{diag}(\alpha_t)}_{\text{decay}} + \big( \underbrace{w_t \odot v_t}_{\text{write}} - \underbrace{S_{t-1}\, \mathrm{diag}(\alpha_t)\, (b_t \odot k_t)}_{\text{gated read}} \big)\, k_t^{\top}
+$$
+
+与式 (13) 对照：读出方向的 $k_t$ 换成门控后的 $b_t \odot k_t$（擦哪些 key 坐标可选），被写入的 $v_t$ 换成 $w_t \odot v_t$（提交哪些 value 坐标可选），写入方向的 $k_t$ 保持不动（保住 delta rule 的寻址结构）。
+
+退化链（逐档可验）：$b_t = \beta_t \mathbf{1}$、$w_t = \beta_t \mathbf{1}$ 精确回 KDA 式 (16)；再令 $\alpha_t = \alpha_t \mathbf{1}$ 回 GDN 式 (14)；$b_t = 0$、$w_t = \mathbf{1}$、$\alpha_t = \gamma \mathbf{1}$ 得精确 RetNet 式 (10)——最后一档在耦合形式里不可表达（GDN 的 $\beta = 0$ 会同时关掉写入），正是解耦的动机。论文另支持负特征值变体（擦除门放宽到 $[0,2]^{d_k}$）；chunkwise 实现把逐通道衰减吸收进非对称 erase 因子，保持与 KDA 同款的 WY 结构（§8）。实证口径（1.3B 参数、100B FineWeb-Edu tokens）：对 Mamba-2 / GDN / KDA / Mamba-3 变体总体占优，优势在 multi-key 检索任务上最大。
 
 另注意式 (14)(15) 的读出都是 $o_t = S_tq_t$、无式 (8) 的 $z_t$ 分母：kernel 形式里分母防权重和爆炸，门控形式里这一职责改由谱性质承担——$\lVert k_t \rVert = 1$、$\beta \in (0,1)$ 时 $(I - \beta k_tk_t^{\top})$ 的特征值落在 $(0,1]$，$\alpha_t < 1$ 再加一重收缩，状态范数有界；尺度校准交给输出侧的归一化层。
 
 ## 7. KDA：逐通道遗忘（对角门）
 
-GDN 的 $\alpha_t$ 是标量：整层状态同一遗忘速率。KDA（Kimi Delta Attention；[Kimi Team, 2025](../references.md)，arXiv:2510.26692，[A]；MoonshotAI/Kimi-Linear）把它换成 channel-wise 对角门 $\mathrm{diag}(\alpha_t)$，$\alpha_t \in \mathbb{R}^{d_v}$：
+GDN 的 $\alpha_t$ 是标量：整层状态同一遗忘速率。KDA（Kimi Delta Attention；[Kimi Team, 2025](../references.md)，arXiv:2510.26692，[A]；MoonshotAI/Kimi-Linear）把它换成 channel-wise 对角门 $\mathrm{diag}(\alpha_t)$，$\alpha_t \in (0,1)^{d_k}$：
 
 $$
-S_t = \mathrm{diag}(\alpha_t)\, S_{t-1} \left( I - \beta_t k_t k_t^{\top} \right) + \beta_t v_t k_t^{\top} \qquad (16)
+S_t = S_{t-1}\, \mathrm{diag}(\alpha_t) \left( I - \beta_t k_t k_t^{\top} \right) + \beta_t v_t k_t^{\top} \qquad (16)
 $$
 
-逐行（逐 value channel）读：$(S_t)_{m,:} = \alpha_{t,m}\, (S_{t-1})_{m,:} \left( I - \beta_t k_t k_t^{\top} \right) + \beta_t v_{t,m} k_t^{\top}$——第 $m$ 个 channel 有自己的遗忘速率，由输入决定：一部分通道配到近 1（长记忆槽位），一部分近 0（即写即弃）。标量 $\alpha$ 是 $\mathrm{diag}(\alpha) = \alpha I$ 的特例，KDA 的遗忘结构严格包含 GDN。逐通道门的意义在时间尺度的配额：$d_v$ 个 channel 各自独立衰减，一层之内可同时容纳「$\alpha \approx 1$ 的长期档案槽」与「$\alpha \approx 0$ 的即抛工作区」，且配额随输入动态划分；GDN 的标量门在每个时刻只能给全层选一个时间尺度。
+（论文原式布局为 $S \in \mathbb{R}^{d_k \times d_v}$、更新写作 $(I - \beta_t k_tk_t^{\top})\, \mathrm{Diag}(\alpha_t)\, S_{t-1} + \beta_t k_tv_t^{\top}$，转置到本书约定布局即式 (16)；衰减门的 channel 轴是 key 侧——论文 chunkwise 记号的 $\Gamma \in \mathbb{R}^{C \times d_k}$ 可证。）逐列（逐 key channel）读：$(S_t)_{:,j} = \alpha_{t,j}\, \left( S_{t-1}(I - \beta_t k_t k_t^{\top}) \right)_{:,j} + \beta_t v_t k_{t,j}$——状态第 $j$ 列（key 坐标 $j$ 的记忆迹）有自己的遗忘速率，由输入决定：一部分列配到近 1（长记忆槽位），一部分近 0（即写即弃）。标量 $\alpha$ 是 $\mathrm{diag}(\alpha \cdot \mathbf{1})$ 的特例，KDA 的遗忘结构严格包含 GDN。逐通道门的意义在时间尺度的配额：$d_k$ 个 key channel 各自独立衰减，一层之内可同时容纳「$\alpha \approx 1$ 的长期档案槽」与「$\alpha \approx 0$ 的即抛工作区」，且配额随输入动态划分；GDN 的标量门在每个时刻只能给全层选一个时间尺度。
 
-结构观察：转移 $X \mapsto \mathrm{diag}(\alpha_t)\, X \left( I - \beta_t k_t k_t^{\top} \right)$ 是「对角缩放 $+$ 秩一修正」的复合——DPLR（diagonal-plus-low-rank）形态；KDA 的 chunkwise kernel 用 DPLR 转移矩阵的特化变体（摘要口径）。同一「逐通道输入依赖衰减」在 §9 的 S6 里以对角 $A$ 出现：两谱系的状态方程是同一族对象，差别在 key 方向的定点擦除。与 Mamba-2 的关系一并登记：KDA 可看作把 Mamba-2 式的标量头衰减细化为逐 channel、再叠加 DeltaNet 的定点擦除——§9 式 (19) 的 $\bar{a}_{t,i}$ 与本节 $\alpha_{t,m}$ 是同一对象在两个谱系里的名字。Kimi Linear 的账目数字（KV cache 最多 $-75\%$、1M ctx decode 吞吐摘要口径 up to 6×、精确值 6.3× 见论文 Fig 1(b)）属于其 3:1 hybrid 形态，细账在 4.4。
+结构观察：转移 $X \mapsto X\, \mathrm{diag}(\alpha_t) \left( I - \beta_t k_t k_t^{\top} \right)$ 是「key 侧对角缩放 $+$ 秩一修正」的复合——DPLR（diagonal-plus-low-rank）形态；KDA 的 chunkwise kernel 用 DPLR 转移矩阵的特化变体（摘要口径）。同一「逐通道输入依赖衰减」在 §9 的 S6 里以对角 $A$ 出现：两谱系的状态方程是同一族对象，差别在 key 方向的定点擦除。与 Mamba-2 的关系一并登记：KDA 可看作把 Mamba-2 式的标量头衰减细化为逐 channel、再叠加 DeltaNet 的定点擦除——§9 式 (19) 的 $\bar{a}_{t,i}$ 与本节 $\alpha_{t,j}$ 是同一对象在两个谱系里的名字。Kimi Linear 的账目数字（KV cache 最多 $-75\%$、1M ctx decode 吞吐摘要口径 up to 6×、精确值 6.3× 见论文 Fig 1(b)）属于其 3:1 hybrid 形态，细账在 4.4。
 
 ## 8. Chunkwise 并行：WY 表示与 kernel 锚点
 
@@ -284,7 +292,7 @@ $$
 \Delta_t = \mathrm{softplus}\left( w_{\Delta}^{\top} x_t + b_{\Delta} \right), \qquad B_t = W_B x_t, \qquad C_t = W_C x_t \qquad (20)
 $$
 
-**符号**：$\Delta_t$：逐 channel 标量步长；$W_B, W_C$：输入到 $B$ / $C$ 的线性读出。后果链：时变系统 $\Rightarrow$ 卷积核不存在（滤波器系数依赖输入本身）$\Rightarrow$ 训练走并行 scan。scan 的账：递推 $h_t = \bar{A}_t h_{t-1} + \bar{B}_t x_t$ 总功 $O(TN)$、关键路径 $O(T)$，用 Blelloch 式前缀扫描把深度压到 $O(\log T)$——相邻二元合成 $(A_2, b_2) \circ (A_1, b_1) = (A_2A_1,\ A_2b_1 + b_2)$ 可结合，这是「线性递推皆可扫描」的代数根据；Mamba 的官方 kernel 再把状态常驻 SRAM、避免物化 $[T, N]$ 中间量（state-spaces/mamba）。与 §8 对照：同一类递推的两种并行化——scan 沿时间维做结合律树，chunkwise 沿块做矩阵化。逐 channel 递推 $h_{t,i} = \bar{a}_{t,i} h_{t-1,i} + b_{t,i} x_{t,i}$——$\bar{a}_{t,i} \in (0,1)$ 正是 KDA $\alpha_{t,m}$ 的同款对象（§7）。$\Delta_t$ 的角色值得单独读：由式 (19)，$\bar{a}_{t,i} = e^{\Delta_{t,i} a_i}$ 随 $\Delta$ 单调降——$\Delta_t$ 大则旧状态快衰减、新输入权重大（关注当前），$\Delta_t$ 小则状态近似冻结（忽略当前输入）。selectivity 因此等价于「逐 channel、逐时刻的读写门」，与 §6-7 的 $(\alpha_t, \beta_t)$ 同构；差别在 S6 没有 key 方向的擦除结构，$B_tx_t$ 的写入在各 channel 内独立。Mamba-2 的 SSD 框架（[Dao & Gu, 2024](../references.md)，arXiv:2405.21060，[A]）把这座桥搭死：带衰减的 linear attention 核 $\gamma^{\,t-s}\langle q_t, k_s\rangle = (\gamma^{t} q_t)^{\top}(\gamma^{-s} k_s)$ 恰是半可分（semiseparable）矩阵 $M_{ts} = C_t^{\top} A_{t:s} B_s$ 的标量态特例——SSM 与 linear attention 是同一线性递推的两种参数化，训练算法（scan 与 chunkwise matmul）也因此可以互译。
+**符号**：$\Delta_t$：逐 channel 标量步长（式 (20) 为示意标量形式，省略论文的 low-rank broadcast 细节——实际由一个标量投影广播到各 channel、加偏置后过 softplus）；$W_B, W_C$：输入到 $B$ / $C$ 的线性读出。后果链：时变系统 $\Rightarrow$ 卷积核不存在（滤波器系数依赖输入本身）$\Rightarrow$ 训练走并行 scan。scan 的账：递推 $h_t = \bar{A}_t h_{t-1} + \bar{B}_t x_t$ 总功 $O(TN)$、关键路径 $O(T)$，用 Blelloch 式前缀扫描把深度压到 $O(\log T)$——相邻二元合成 $(A_2, b_2) \circ (A_1, b_1) = (A_2A_1,\ A_2b_1 + b_2)$ 可结合，这是「线性递推皆可扫描」的代数根据；Mamba 的官方 kernel 再把状态常驻 SRAM、避免物化 $[T, N]$ 中间量（state-spaces/mamba）。与 §8 对照：同一类递推的两种并行化——scan 沿时间维做结合律树，chunkwise 沿块做矩阵化。逐 channel 递推 $h_{t,i} = \bar{a}_{t,i} h_{t-1,i} + b_{t,i} x_{t,i}$——$\bar{a}_{t,i} \in (0,1)$ 正是 KDA $\alpha_{t,m}$ 的同款对象（§7）。$\Delta_t$ 的角色值得单独读：由式 (19)，$\bar{a}_{t,i} = e^{\Delta_{t,i} a_i}$ 随 $\Delta$ 单调降——$\Delta_t$ 大则旧状态快衰减、新输入权重大（关注当前），$\Delta_t$ 小则状态近似冻结（忽略当前输入）。selectivity 因此等价于「逐 channel、逐时刻的读写门」，与 §6-7 的 $(\alpha_t, \beta_t)$ 同构；差别在 S6 没有 key 方向的擦除结构，$B_tx_t$ 的写入在各 channel 内独立。把 S6 的衰减接回 §4 的时间常数账：$\ln \bar{a}_{t,i} = \Delta_{t,i}\, a_i$，半衰期 $n_{1/2} = \ln 2 \,/\, (\Delta_t |a_i|)$——$\Delta_t$ 就是 SSM 侧的可学时间常数旋钮，与 RetNet 的 $\gamma$、GDN/KDA 的 $\alpha$ 算的是同一份账，三家只是把这个旋钮放在不同的轴上（标量 / 逐 channel）与不同的参数化里（固定 / 输入依赖）。Mamba-2 的 SSD 框架（[Dao & Gu, 2024](../references.md)，arXiv:2405.21060，[A]）把这座桥搭死：带衰减的 linear attention 核 $\gamma^{\,t-s}\langle q_t, k_s\rangle = (\gamma^{t} q_t)^{\top}(\gamma^{-s} k_s)$ 恰是半可分（semiseparable）矩阵 $M_{ts} = C_t^{\top} A_{t:s} B_s$ 的标量态特例——SSM 与 linear attention 是同一线性递推的两种参数化，训练算法（scan 与 chunkwise matmul）也因此可以互译。
 
 ## 10. 对照表与理论边界：固定状态的 associative recall 上界
 
@@ -304,11 +312,13 @@ $$
 
 **证明**。(ii) $\Rightarrow$ (i)：$K = [k_1 \cdots k_n]$ 列满秩时 $K^{\top}K$ 可逆，取 $S = V(K^{\top}K)^{-1}K^{\top}$，则 $SK = V$。(i) $\Rightarrow$ (ii)：若 $\sum_i c_i k_i = 0$ 有非零系数，则任何 $S$ 的读出满足 $\sum_i c_i (Sk_i) = 0$；取 $v_j = u \neq 0$（$j$ 为 $c_j \neq 0$ 的任一下标）、其余 $v_i = 0$，则 $\sum_i c_i v_i = c_j u \neq 0$，矛盾。$\square$
 
+把这条界放进更大的图景：KV cache 是「数据库」极端——逐对原样存储、查询零失真、内存随 $n$ 付账；linear state 是「充分统计量」极端——把任意长前缀压成固定维矩阵、内存一口价。统计学里的经典结论（Pitman–Koopman 型）是：固定维的充分统计量只对受限分布族存在；任意键值联想的精确回忆恰是非参数极端，不存在固定维无损压缩。上面的命题把这句直觉落成矩阵状态下的秩条件——$d_k$ 就是这份「充分统计量」能承载的独立联想数。
+
 读法：上界 $d_k$ 与已写 token 数无关——第 $10^{6}$ 步写入的内容与第 1 步竞争同一份 $d_v \times d_k$。KV cache 无此界：每对 $(k_s, v_s)$ 原样驻留、内存随 $n$ 涨（2.4 式 (9)）——「固定状态 vs 增长 cache」的得失全从这条 rank 条件长出。
 
 代入刻度：$d_k$ = 128 的单头，精确联想预算 128 对；$H$ 头并列为 $Hd_k$，但头间不互济——每个头仍各自受这条 rank 界约束。对照同层 KV cache 在 $t$ = 131072 时驻留 $t$ 对原样键值。注意界的前提是「任意 $v$」：自然数据的 $v$ 住在低维结构里，实际可用容量高于 worst case，但随 $n$ 的标度不变——$n \gg d_k$ 后误差必然显形，差别只在什么任务上先显形。
 
-近似版（加性状态的干扰账）：读出 $\hat{o}_i = Sk_i = v_i\lVert k_i \rVert^{2} + \sum_{j \ne i} v_j\, k_j^{\top}k_i$；单位球面随机键的交叉内积 $\sim \mathcal{N}(0, 1/d_k)$，干扰能量 $\sim (n-1)/d_k$，信噪比 $\sim d_k / (n-1)$——可靠读出要求 $n = O(d_k)$，与 rank 界同刻度。擦除（§5）削「同方向残留」、遗忘（§6-7）削「远期累积」、衰减另加有效窗口 $\sim 1/(1-\gamma)$（$\gamma^{n} = e^{-1}$ 解出 $n \approx 1/(1-\gamma)$）：三件工具都在与这条界周旋，都不能取消它。
+近似版（加性状态的干扰账）：读出 $\hat{o}_i = Sk_i = v_i\lVert k_i \rVert^{2} + \sum_{j \ne i} v_j\, k_j^{\top}k_i$；单位球面随机键的交叉内积 $\sim \mathcal{N}(0, 1/d_k)$，干扰能量 $\sim (n-1)/d_k$，信噪比 $\sim d_k / (n-1)$——可靠读出要求 $n = O(d_k)$，与 rank 界同刻度。代入数字：$d_k$ = 128、$n$ = 1024 时 SNR $\approx 128/1023 \approx 0.125$（约 $-9$ dB），精确回忆早已失效；$n$ 回到 128 档才回到 0 dB 附近。擦除（§5）削「同方向残留」、遗忘（§6-7）削「远期累积」、衰减另加有效窗口 $\sim 1/(1-\gamma)$（$\gamma^{n} = e^{-1}$ 解出 $n \approx 1/(1-\gamma)$）。用 rank 语言重述擦除的作用：不擦除时每次写入永久占用一份 residual 容量，定点擦除把 $k_t$ 方向上的旧占用清空再写入——容量可复用，但不扩容。三件工具都在与这条界周旋，都不能取消它。
 
 这条界不说的东西同样要写清：它约束的是**任意值的精确回忆**；语言建模所需的长程统计多为低秩、可压缩结构，fixed-state 模型在 PPL 类指标上逼近 full attention 与这条界不冲突——冲突集中在逐 bit 复制与精确检索的任务族。界的另一面是 cache 的代价：精确回忆能力用随 $T$ 线性增长的内存换来，服务侧这笔账 2.4 已结。
 
@@ -325,8 +335,8 @@ $$
 | RetNet | 式 (9)(10)(11) | $\gamma$ 固定标量；chunkwise 是训练形态；泛化模板 |
 | DeltaNet | 式 (12)(13) | $\min_S \lVert Sk_t - v_t \rVert^{2}$ 一步 GD；$\beta = 1$ 精确写入、正交不动 |
 | GDN | 式 (14) | $\alpha$ 遗忘 $+$ $(I - \beta kk^{\top})$ 擦除 $+$ $vk^{\top}$ 写入 |
-| GDN-2 | 式 (15) | erase/write 解耦 $\beta^{e} / \beta^{w}$（摘要口径） |
-| KDA | 式 (16) | $\mathrm{diag}(\alpha_t)$ 逐通道遗忘；DPLR 转移 |
+| GDN-2 | 式 (15) | channel-wise erase $b_t$（key 侧）/ write $w_t$（value 侧）解耦；回退链 KDA → GDN → RetNet |
+| KDA | 式 (16) | $\mathrm{diag}(\alpha_t)$ key 侧逐通道遗忘（$\alpha_t \in \mathbb{R}^{d_k}$）；DPLR 转移 |
 | chunkwise | 式 (17) | WY：$C$ 个秩一 downdate $=$ 秩-$C$ 修正；fla kernel 锚点 |
 | S6 | 式 (18)(19)(20) | ZOH：$\bar{A} = e^{\Delta A}$、$\bar{B} \approx \Delta B$；selectivity 使卷积形失效 |
 | SSD 对偶 | $\gamma^{\,t-s}\langle q_t, k_s\rangle$ 半可分 | SSM $=$ linear attention 的另一参数化 |
