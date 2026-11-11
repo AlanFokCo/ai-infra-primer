@@ -177,7 +177,7 @@ $$
 s_{i,t} = \sigma\big(x_t^{\top} e_i\big) \qquad (16)
 $$
 
-**符号**：$e_i \in \mathbb{R}^{d}$：router 的第 $i$ 个 expert 嵌入。softmax 把全部 expert 放进逐 token 的归一化竞争；sigmoid 让各 expert 分数相互独立，归一化推迟到 top-k 之后、只在选中集合内进行（V2 起的路由函数选择，[DeepSeek-AI, 2024](../references.md)，arXiv:2405.04434，[A]）。
+**符号**：$e_i \in \mathbb{R}^{d}$：router 的第 $i$ 个 expert 嵌入。softmax 把全部 expert 放进逐 token 的归一化竞争；sigmoid 让各 expert 分数相互独立，归一化推迟到 top-k 之后、只在选中集合内进行。这是 V3 相对 V2 的改动：V2 的亲和度用 softmax，V3 论文明文改用 sigmoid（[DeepSeek-AI, 2024](../references.md)，arXiv:2412.19437，[A]，§2.1.2）。
 
 选择用加偏置的分数、权重用原始分数：
 
@@ -203,7 +203,7 @@ $$
 
 **seq-mask balancing（序列级兜底）**。控制器保证的是 batch 级均衡，单条序列内仍可能极端集中。V3 补一个序列级辅助损失——式 (6) 的 $f_i$、$P_i$ 改在单序列内统计（sigmoid 路由下 $P_i$ 按归一化的 sigmoid 分数计），系数取极小（论文口径：extremely small），只兜底不主导。
 
-**node-limited routing（组限定分发）**。256 个 expert 分 8 组，先按组内亲和度之和选 top-4 组、再在选中组内取 top-8（V2 的 group-limited 路由沿用，[A]；config 字段 n_group = 8、topk_group = 4）。每 token 的分发目标节点数 $\le 4$——这条规则的收益不在模型侧，在 §7 的通信账。
+**node-limited routing（组限定分发）**。256 个 expert 分 8 组，先按组内 top-2 亲和度之和选 top-4 组、再在选中组内取 top-8（V2 的 group-limited 路由沿用，[DeepSeek-AI, 2024](../references.md)，arXiv:2405.04434，[A]；config 字段 n_group = 8、topk_group = 4；官方代码对应行 `scores.topk(2, dim=-1)[0].sum(-1)`）。每 token 的分发目标节点数 $\le 4$——这条规则的收益不在模型侧，在 §7 的通信账。
 
 ### 3.3 官方代码走读：DeepSeek-V3 inference/model.py 的 Gate
 
@@ -252,11 +252,11 @@ MoE 特有的失效全部围绕 router 的反馈回路（素材分散于 Switch 
 DeepSeek-V3 的多 token 预测（multi-token prediction，MTP）模块（[A]，论文 §2.2）：主模型之外挂 $D$ 个顺序模块（V3 取 $D = 1$，预测「下一个的下一个」token）。第 $k$ 个模块：
 
 $$
-h_i^{\prime k} = M_k \left[ \mathrm{RMSNorm}\big(h_i^{k-1}\big);\ \mathrm{RMSNorm}\big(\mathrm{Emb}(t_{i+k})\big) \right] \qquad (19)
+h_i'^k = M_k \left[ \mathrm{RMSNorm}\big(h_i^{k-1}\big);\ \mathrm{RMSNorm}\big(\mathrm{Emb}(t_{i+k})\big) \right] \qquad (19)
 $$
 
 $$
-h^{k} = \mathrm{TRM}_k\big(h^{\prime k}\big), \qquad P_{i+k+1}^{k} = \mathrm{OutHead}\big(h_i^{k}\big) \qquad (20)
+h^{k} = \mathrm{TRM}_k\big(h'^k\big), \qquad P_{i+k+1}^{k} = \mathrm{OutHead}\big(h_i^{k}\big) \qquad (20)
 $$
 
 **符号**：$h_i^{k-1}$：上一层（$k = 1$ 时是主模型 backbone）位置 $i$ 的表示；$\mathrm{Emb}$ 与 $\mathrm{OutHead}$：与主模型共享的 embedding 与输出头；$[;\;]$：特征轴拼接；$M_k \in \mathbb{R}^{d \times 2d}$：拼接投影；$\mathrm{TRM}_k$：一个完整 transformer block；$P^{k}$：模块 $k$ 对位置 $i+k+1$ 的预测分布。链式结构的关键：模块 $k$ 吃模块 $k-1$ 的表示与真实 token $t_{i+k}$ 的嵌入——预测条件始终是真实前缀，因果链完整。
@@ -345,7 +345,7 @@ MoE 的稀疏激活把 dense 层换成跨设备分发问题：expert 分片到�
 - [Zoph et al., 2022](../references.md)：ST-MoE，arXiv:2202.08906，[B]（key: stmoe）——式 (12) z-loss 与稳定性消融
 - [Zhou et al., 2022](../references.md)：Mixture-of-Experts with Expert Choice Routing，arXiv:2202.09368，[B]（key: expert-choice）——式 (13) 与 AR 不适配分析
 - [Dai et al., 2024](../references.md)：DeepSeekMoE，arXiv:2401.06066，[A]（key: deepseekmoe）——式 (14)(15) 与 16B/2.8B 锚点
-- [DeepSeek-AI, 2024](../references.md)：DeepSeek-V2，arXiv:2405.04434，[A]（key: deepseekv2）——sigmoid 亲和与 group-limited 路由
+- [DeepSeek-AI, 2024](../references.md)：DeepSeek-V2，arXiv:2405.04434，[A]（key: deepseekv2）——group-limited 路由（V3 沿用）
 - [DeepSeek-AI, 2024](../references.md)：DeepSeek-V3 Technical Report，arXiv:2412.19437，[A]（key: deepseekv3）——式 (16)–(21)、$\gamma$ = 0.001、seq 级兜底、MTP 接受率 85–90% 与 1.8× TPS（§2.1.2/2.2）
 - [DeepSeek-AI, DeepSeek-V3 config.json](../references.md)：[A]（key: deepseek-v3-config）——n_routed_experts = 256、num_experts_per_tok = 8、first_k_dense_replace = 3、routed_scaling_factor = 2.5、61 层
 - [deepseek-ai/DeepSeek-V3 官方推理代码](https://github.com/deepseek-ai/DeepSeek-V3/blob/main/inference/model.py)：[A]——`Gate` / `MoE` 类，§3.3 走读对象
