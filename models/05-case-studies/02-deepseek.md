@@ -8,12 +8,12 @@
 
 | 模型 | total/active | layers | hidden | heads Q/KV | head_dim | attention | MoE | norm | vocab | ctx（max_position_embeddings） | rope_theta | 证据 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| DeepSeek-V2 | 236B/21B | 60 | 5120 | 128/128（名义） | 128+64 | MLA | 160+2 top-6，首 1 层 dense | RMSNorm（pre-norm） | 102400 | 128K（摘要口径） | $10^{4}$ | [A] deepseekv2 |
+| DeepSeek-V2 | 236B/21B | 60 | 5120 | 128/128（名义） | 128+64 | MLA | 160+2 top-6，首 1 层 dense | RMSNorm（pre-norm） | 102400（HF config 口径） | 128K（摘要口径） | $10^{4}$ | [A] deepseekv2 |
 | DeepSeek-V3 | 671B/37B | 61 | 7168 | 128/128（名义） | 128+64 | MLA | 256+1 top-8，首 3 层 dense | RMSNorm（pre-norm） | 129280 | 163840（YaRN f40，工作窗 128K） | $10^{4}$ | [A] deepseekv3 + deepseek-v3-config |
 | DeepSeek-V3.1-Terminus | 同 V3 | 61 | 7168 | 同 | 同 | MLA | 同 V3 | 同 | 同 | 128K（续训起点） | $10^{4}$ | [A] deepseek-v3.2（起点口径） |
 | DeepSeek-V3.2-Exp | 同 V3 | 61 | 7168 | 同（+indexer） | 同 | MLA + DSA | 同 V3 | 同 | 同 | 128K | $10^{4}$ | [A] deepseek-v3.2 |
 
-脚注三条。其一，MLA 行的 heads Q/KV 写「名义」：MLA 不逐头存 KV，cache 是一份共享 latent（4.1 §4），config 里 num_key_value_heads = 128 只是与 num_attention_heads 同值的占位。其二，head_dim 列写 score 内维 128 + 64 = 192（qk_nope + qk_rope），v 侧 128 另计——2.8 §8「head_dim $\neq$ hidden/heads」的反例本尊：7168 / 128 = 56，与 192 彻底脱钩。其三，V2 行全部数字（236B/21B、60 层、5120、160+2 top-6、102400、128K、8.1T token）出自 V2 论文摘要与架构节（[A]），其 config 未纳入本书实测序列；V3.1-Terminus 与 V3.2-Exp 行的「同 V3」断言出自 V3.2 论文所述的续训起点关系（[A]），非独立 config 实测。
+脚注三条。其一，MLA 行的 heads Q/KV 写「名义」：MLA 不逐头存 KV，cache 是一份共享 latent（4.1 §4），config 里 num_key_value_heads = 128 只是与 num_attention_heads 同值的占位。其二，head_dim 列写 score 内维 128 + 64 = 192（qk_nope + qk_rope），v 侧 128 另计——2.8 §8「head_dim $\neq$ hidden/heads」的反例本尊：7168 / 128 = 56，与 192 彻底脱钩。其三，V2 行数字分两级：236B/21B、60 层、5120、160+2 top-6、128K、8.1T token 出自 V2 论文摘要与架构节（[A]）；vocab 102400 为 HF config 精度口径（论文 §3.1.1 只写 100K 量级）——V2 config 未纳入本书实测序列，该字段按 config 口径单独标注；V3.1-Terminus 与 V3.2-Exp 行的「同 V3」断言出自 V3.2 论文所述的续训起点关系（[A]），非独立 config 实测。
 
 读表三件事。（1）主线是沿同一架构轴加宽、加稀疏、加长窗，不是换架构：V2 → V3 层数 60 → 61 几乎不动，参数约 2.8 倍的增量来自 hidden（5120 → 7168）与 MoE 规模（160+2 → 256+1，MoE 层数 59 → 58 基本持平）的乘积。（2）V3.1-Terminus 与 V3.2-Exp 在架构字段上与 V3 同构——V3.2 的全部架构增量是一个 lightning indexer 模块加一套续训配方，这是「稀疏化可以 retro-fit 到存量 dense checkpoint」的谱系级证据（§4）。（3）激活比单调走低：V2 的 21 / 236 ≈ 8.9%、V3 的 37 / 671 ≈ 5.5%，MoE 层内口径 9 / 257 ≈ 3.5%——与 4.5 §1 的稀疏度谱同向。
 
@@ -23,7 +23,7 @@ V2（[DeepSeek-AI, 2024](../references.md)，arXiv:2405.04434，[A]）一次推�
 
 **MLA（multi-head latent attention）首秀**。完整推导在 4.1 §4：RoPE 与低秩 KV 压缩的数学冲突（$R_{n-t}$ 卡在 $W^{UK}$ 与 $c$ 之间、交换子不相容）→ decoupled 解法（内容部分走低秩 latent、位置部分走独立 64 维 $k^{R}$ 旋转后缓存）→ cache 每 token 每层 $d_c + d_R$ = 512 + 64 = 576 元素。V2 定下的维度家族——kv_lora_rank 512、qk_nope_head_dim 128、qk_rope_head_dim 64、q_lora_rank 1536、v_head_dim 128——原样进入 V3（§6 逐字段对账）。质量口径按论文：V2 报告 MLA 与同规模 MHA 相当或更强（[A]）——「cache 压缩必损检索分辨率」的直觉不成立，机制解释见 4.1 §4.2 末（512 维共享 latent 对 $H$ 份高相关 KV 副本的显式低秩利用）。
 
-**DeepSeekMoE 首秀**。细粒度切分 + 常驻 shared expert（公式为 4.5 式 (14)(15)，[Dai et al., 2024](../references.md)，arXiv:2401.06066，[A]）：expert 数乘 $m$、中间维除 $m$、top-k 乘 $m$，参数与 per-token FLOPs 两笔账不变，收益全部来自组合自由度 $\binom{m N_e}{m k} \gg \binom{N_e}{k}$。V2 的落点：160 routed + 2 shared、top-6，外加组限定路由（V3 沿用并把组数配额放宽到 4，4.5 §3.2）。数据预算 8.1T token（论文摘要口径）——14.8T 是 V3 代的数字，两代口径不要混。
+**DeepSeekMoE 的旗舰线首秀**。结构出自专论（[Dai et al., 2024](../references.md)，arXiv:2401.06066，[A]），V2 是它首次进入旗舰权重：细粒度切分 + 常驻 shared expert（公式为 4.5 式 (14)(15)）：expert 数乘 $m$、中间维除 $m$、top-k 乘 $m$，参数与 per-token FLOPs 两笔账不变，收益全部来自组合自由度 $\binom{m N_e}{m k} \gg \binom{N_e}{k}$。V2 的落点：160 routed + 2 shared、top-6，外加组限定路由（V2 论文口径 M = 3，即 8 组中限发 3 组对应节点；V3 放宽为 4 组，4.5 §3.2 只覆盖 V3 侧的 n_group = 8 / topk_group = 4）。数据预算 8.1T token（论文摘要口径）——14.8T 是 V3 代的数字，两代口径不要混。
 
 **路由均衡的代际更替**也登记在此。V2 走常规辅助损失路线——expert 级、device 级、communication 级三路平衡损失叠加在主损失上、系数调低以护主任务（V2 论文口径，[A]）；V3 把它们整体替换为 §3.1 的偏置控制器。这条替换路线的理论注脚在 4.5 §2.2 的诚实边界：aux loss 的全局最小本就不在均匀点，可用性来自均值回复的梯度方向——既然起作用的是方向而不是损失值，同向的控制回路就能做到不进损失函数，把「均衡」从优化目标里彻底拿掉。
 
@@ -40,7 +40,7 @@ V2（[DeepSeek-AI, 2024](../references.md)，arXiv:2405.04434，[A]）一次推�
 | 路由打分 | softmax | sigmoid | 归一化竞争推迟到 top-k 之后（4.5 式 (16)） |
 | 负载均衡 | 三路 aux loss | aux-loss-free 偏置 | §2 末的代际更替 |
 | MTP | 无 | $D = 1$ | 监督加密 + 推理草稿（4.5 §6） |
-| vocab | 102400 | 129280 | 词表加宽（tokenizer 侧账归 2.2） |
+| vocab | 102400（HF config 口径） | 129280 | 词表加宽（tokenizer 侧账归 2.2） |
 | 数据 | 8.1T token | 14.8T token | 约 1.8 倍（摘要口径） |
 | ctx | 128K（摘要口径） | 163840（YaRN f40 on 4096） | 扩窗配方见 §3.6 |
 
@@ -104,7 +104,7 @@ V3 论文完整披露了 671B 规模的 FP8 混精训练配方（[A]，论文 §
 
 ### 3.6 YaRN 128K（recap → 4.6 §2.3）
 
-config 的 rope_scaling 是 YaRN 字段的标准实例（W1 实测）：factor 40、original_max_position_embeddings 4096，$4096 \times 40 = 163840$ 恰为 max_position_embeddings；beta_fast 32 / beta_slow 1 的三段 ramp 在 32 个旋转通道上数出「11 个最快通道不动、12 个走 ramp、9 个最慢通道全压 40 倍」（4.6 §2.3 的逐通道走读）；mscale 字段对应 YaRN 温度修正（4.6 式 (14)，$s = 40$ 时 logits 放大 $(0.1 \ln 40 + 1)^{2} \approx 1.87$ 倍）。训练侧为两阶段扩窗（4K → 32K → 128K，论文口径），扩窗占 119K H800 GPU-hours——即 Table 1 全训练口径里的 extension 项，与 §3.4 的切分互为印证。预算比例顺手一记：119K 对 pre-training 2664K ≈ 4.5%，这就是 4.6 §3「staged extension 买的是逐段可校验的过程控制」在 V3 口径下的成本量级。
+config 的 rope_scaling 是 YaRN 字段的标准实例（W1 实测）：factor 40、original_max_position_embeddings 4096，$4096 \times 40 = 163840$ 恰为 max_position_embeddings；beta_fast 32 / beta_slow 1 的三段 ramp 在 32 个旋转通道上数出「11 个最快通道不动、12 个走 ramp、9 个最慢通道全压 40 倍」（4.6 §2.3 的逐通道走读）；mscale 字段对应 YaRN 温度修正（4.6 式 (14)，$s = 40$ 时 logits 放大 $(0.1 \ln 40 + 1)^{2} \approx 1.87$ 倍）。训练侧为两阶段扩窗（4K → 32K → 128K，论文口径），扩窗占 119K H800 GPU-hours——即 Table 1 全训练口径里的 extension 项，与 §3.4 的切分互为印证。预算比例顺手一记：119K 对 pre-training 2664K ≈ 4.5%，这就是 4.6 §4「staged extension 买的是逐段可校验的过程控制」在 V3 口径下的成本量级。
 
 ## 4. V3.1-Terminus → V3.2：DSA 与 sparse-from-dense（recap → 4.2 §6）
 
@@ -120,7 +120,7 @@ V3.2-Exp（[DeepSeek-AI, 2025](../references.md)，arXiv:2512.02556，[A]；官�
 
 ## 5. R1：一句话与去向
 
-R1 是 V3-Base 之上的大规模强化学习推理模型（GRPO 族配方），架构字段与谱系表 V3 行逐项相同——差异全部在训练侧，归 training 维度，本章不展开。
+R1 是 V3-Base 之上的大规模强化学习推理模型（GRPO 族配方），架构字段与谱系表 V3 行逐项相同——差异全部在训练侧，归 training 维度，本章不展开。同一边界适用于 V3.2 线：V3.2 正式版相对 V3.2-Exp 的增量是 reasoning 能力的整合（发布侧口径），其机制与 R1 同属训练侧，一并归 training 维度。
 
 ## 6. 旗舰 config 精读：deepseek-ai/DeepSeek-V3 config.json 逐字段
 
