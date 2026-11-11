@@ -117,6 +117,42 @@
 - 走读锚点：`autoencoderkl`（diffusers src/diffusers/models/autoencoders/autoencoder_kl.py，200）；`vector-quantize-pytorch`（lucidrains，200，**教学参照**——VQ/RVQ/LFQ 代码对照用，勿当官方实现）。
 - RVQ 递推与 bitrate 账：公式出处 = vq-vae/magvit-v2（LFQ 特例）；bitrate = n_q·log2K·fps 的实例账 P10 直接复用（本章给出公式即可）。
 
+## P5 旗舰 config 速查表（本轮实测值，5.6 对照表直接取用）
+
+| 模型 | layers | hidden | Q/KV heads | head_dim | MoE | vocab | max_pos | rope_theta | 实测日期 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Llama-4 Scout | 48 | 5120 | 40/8 | 128 | 16 top-1（层层） | 202048 | 10,485,760 | 5e5（+llama3 式 factor16） | 2026-11-12 |
+| Llama-4 Maverick | 48 | 5120 | 40/8 | 128 | 128 top-1（隔层） | 202048 | 1,048,576 | 5e5 | 2026-11-12 |
+| DeepSeek-V3 | 61 | 7168 | 128/—（MLA） | — | 256+1 top-8，first 3 dense | 129280 | 163840（YaRN f40） | 1e4 | W1 已锁定 |
+| Qwen3-235B-A22B（2507） | 94 | 4096 | 64/4 | 128 | 128 top-8 | 151936 | 262144 | 5e6 | 2026-11-12 |
+| Qwen3-Next-80B-A3B | 48（36 GDN+12 full） | 2048 | 16/2 | 256 | 512+1 top-10 | 151936 | 262144 | 1e7 | W2 已锁定 |
+| GLM-4.5 / 4.6 / 4.7 | 92 | 5120 | 96/8 | 128 | 160+1 top-8，first 3 dense | 151552 | 131072 / 202752 / 202752 | 1e6 | 2026-11-12 |
+| Kimi-K2 | 61 | 7168 | 64（MLA） | — | 384+1 top-8，first 1 dense | 163840 | 131072（YaRN f32） | 5e4 | 2026-11-12 |
+| Kimi-Linear-48B-A3B | 27（20 KDA+7 full） | 2304 | 32/— | 72/128 | 256+1 top-8，first 1 dense | 163840 | 1048576 | 1e4 | W2 已锁定 |
+| MiniMax-Text-01 | 80（70 linear+10 full） | 6144 | 64/8 | 128 | 32 top-2 | 200064 | 10,240,000 | 1e7 | W2 已锁定 |
+
+total/active 参数（出处均为论文摘要或官方 blog，非 config）：DeepSeek-V3 671B/37B；Qwen3-235B 235B/22B；Qwen3-Next 80B/3B（非 embedding 79B）；GLM-4.5/4.6 355B/32B；K2 1T/32B；Kimi-Linear 48B/3B；MiniMax-01 456B/45.9B；Llama-4 Scout 109B/17B（blog）、Maverick 400B/17B（blog）；K3 2.8T/104B；Moonlight 16B/3B。
+
+## spec P5/P6 Sources 清单核对结果（Step 5 自检，2026-11-12）
+
+- 5.1：Llama-1 2302.13971 ✓ / Llama-2 2307.09288 ✓ / herd 2407.21783 ✓ / Llama-4 [W] = `llama-4` ✓（+`llama-models-repo`、`llama-3.1-8b-config`）
+- 5.2：V2 2405.04434 ✓ / V3 2412.19437 ✓ / V3.2 2512.02556 ✓（+`deepseek-v3-config`）
+- 5.3：Qwen2 2407.10671 ✓ / Qwen2.5 2412.15115 ✓ / Qwen3 2505.09388 ✓ / Qwen3-Next [W] ✓（本轮补充 `qwen1`、`qwen1.5` [W]、`qwen3-max` [C]）
+- 5.4：GLM 2103.10360 ✓ / GLM-130B 2210.02414 ✓ / GLM-4.5 2508.06471 ✓ / GLM-4.5V 2507.01006 ✓（本轮补充 `glm-4` 2406.12793、`glm-4.6`/`glm-4.7` [W]、`glm-4-repo`、`glm-4.5-repo`）
+- 5.5：Moonlight/Muon 2502.16982 ✓ / Muon 博客 `muon-blog` [W] ✓ / KDA 2510.26692 ✓ / K1.5 2501.12599 ✓ / **K2 = arXiv:2507.20534 论文存在（[A]，非 model card）** ✓ / K3 2607.24653 ✓
+- 5.6：recap 章，无新源。
+- 6.1：ViT 2010.11929 ✓ / SigLIP 2303.15343 ✓ / SigLIP 2 2502.14786 ✓ / NaViT 2307.06304 ✓ / Swin 2103.14030 ✓（+`vision-transformer-repo`、`big-vision`；HF SigLIP2 权重由写作时引用 google/siglip2-* model card，本章不新增条目）
+- 6.2：CLIP 2103.00020 ✓ / alignment-uniformity 2005.10242 ✓（+`clip-repo`、`open-clip` loss.py 走读锚点）
+- 6.3：VAE 1312.6114 ✓ / VQ-VAE 1711.00937 ✓ / VQGAN 2012.09841 ✓ / MAGVIT-v2 2310.05737 ✓ / DC-AE 2410.10733 ✓（+`taming-transformers-repo`、`efficientvit-repo`、`autoencoderkl`、`vector-quantize-pytorch` 教学参照）
+- 全部 32 个 arXiv ID + 23 个非 arXiv 锚点 grep references.md 命中（2026-11-12 机械核对）。
+
+## references.md 本轮变更清单（2026-11-12）
+
+- Part 5 新增 22 条：`llama-1`、`llama-2`、`llama-4` [W]、`llama-models-repo`、`qwen1`、`qwen1.5` [W]、`qwen2`、`qwen3-max` [C]、`glm-4`、`glm-4.5`、`glm-4.5v`、`glm-4.6` [W]、`glm-4.7` [W]、`glm-4-repo`、`glm-4.5-repo`、`moonlight`、`muon-blog` [W]、`moonlight-repo`、`kimi-k1.5`、`kimi-k2`、`kimi-k2-config`、`kimi-k2-repo`。
+- Part 6 新增 20 条：`vit`、`swin`、`navit`、`siglip`、`siglip2`、`clip`、`alignment-uniformity`、`vae`、`vq-vae`、`vqgan`、`magvit-v2`、`dc-ae`、`vision-transformer-repo`、`big-vision`、`clip-repo`、`open-clip`、`taming-transformers-repo`、`efficientvit-repo`、`autoencoderkl`、`vector-quantize-pytorch`。
+- 既有条目「被引章节」回写 11 处：llama3、llama-3.1-8b-config（+5.1）；deepseekv2、deepseekv3、deepseek-v3-config、deepseek-v3.2（+5.2）；qwen3-next（+5.3）；glm、glm-130b（+5.4）；kimi-linear、kimi-k3（+5.5）。
+- spec ⟨verify⟩/⟨需定位⟩项全部结案：GLM-4 = 2406.12793 ✓；QK-Norm 替代 QKV bias ✓（Qwen3）；Qwen3-Next = [W] 维持；Qwen3-Max = [C]（API-only）；GLM-4.7 = 存在、[W]、架构同 4.6；K2 = 有 arXiv（2507.20534）；K3 = `kimi-k3` [A] 维持（W2 已锁）；sigmoid routing（Moonlight）✓；SigLIP 2 多目标（sigmoid+LocCa+self-distillation）✓；AIMv2 = 2411.14402（选读，未收录 references.md——若 6.1 引用需补收录）。
+
 ## 通用注意事项（写作 agent 必读）
 
 1. **先收录后引用**：正文只能引用 references.md 已收录条目；本轮新增条目核实日期统一 2026-11-12。
