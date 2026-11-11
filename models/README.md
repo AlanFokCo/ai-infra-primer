@@ -141,7 +141,7 @@ graph LR
 
 | 章节 | 文件 | 状态 |
 | --- | --- | --- |
-| 3.1 Objective 与 Mask 的统一形式化 | [01-objectives-and-masks.md](03-objectives-and-variants/01-objectives-and-masks.md) | 未开始 |
+| 3.1 Objective 与 Mask 的统一形式化 | [01-objectives-and-masks.md](03-objectives-and-variants/01-objectives-and-masks.md) | 已写 |
 | 3.2 Encoder-only 与 Encoder-Decoder | [02-encoder-architectures.md](03-objectives-and-variants/02-encoder-architectures.md) | 未开始 |
 | 3.3 Decoder-only 与 In-Context Learning | [03-decoder-only-and-icl.md](03-objectives-and-variants/03-decoder-only-and-icl.md) | 未开始 |
 
