@@ -4,7 +4,7 @@
 
 ## 1. 配置谱系总表
 
-四代 13 个型号摆成一张表，先看不动的四件：RMSNorm + Pre-LN、SwiGLU、无 bias、non-tied embedding 从 Llama-1 到 Llama-4 逐代保留——2.8 式 (1) 的「归一化读、加法写」骨架八年未动，动的全部在组件层。变的只有四个轴：attention 的 KV 头数、词表、上下文与 RoPE 频率、FFN 的 dense/MoE 形态。
+四代 12 个型号摆成一张表，先看不动的四件：RMSNorm + Pre-LN、SwiGLU、无 bias、non-tied embedding 从 Llama-1 到 Llama-4 逐代保留——2.8 式 (1) 的「归一化读、加法写」骨架逐代原样保留，动的全部在组件层。变的只有四个轴：attention 的 KV 头数、词表、上下文与 RoPE 频率、FFN 的 dense/MoE 形态。
 
 | model | total/active 参数 | layers | hidden | heads Q/KV | head_dim | attention 方案 | MoE（experts/top-k/shared） | norm | vocab | ctx（max_position_embeddings） | rope_theta | 证据 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -100,7 +100,7 @@ $$
 
 **符号**：$V$：词表；$d$：hidden 宽。代入：8B 档 $2 \times 128256 \times 4096 = 1.05\times10^{9}$，占 8.03B 总参数的 13.1%；若停留在 32K 词表则为 $2.62\times10^{8}$，改动净增约 $7.9\times10^{8}$ 参数。同一改动在 405B 档：$2 \times 128256 \times 16384 = 4.2\times10^{9}$，占 405B 的 1.0%。**词表升级的参数代价是相对小模型 10 倍于旗舰的**——$2Vd$ 与层参数 $O(Ld^{2})$ 的比值随 $Ld$ 反比下降。
 
-**token 数账**。herd paper 给出同族对照：Llama-3 的 128K tokenizer 压缩率 3.94 chars/token，Llama-2 的为 3.17（[Grattafiori et al., 2024](../references.md)，[A]；2.2 §6 已引）。同一文本的 token 数反比于压缩率：
+**token 数账**。herd paper 给出同族对照：Llama-3 的 128K tokenizer 压缩率 3.94 chars/token，Llama-2 的为 3.17（[Grattafiori et al., 2024](../references.md)，[A]；2.2 §7 已引）。同一文本的 token 数反比于压缩率：
 
 $$
 T' = T \cdot \frac{3.17}{3.94} \approx 0.805 \, T \qquad (3)
@@ -184,7 +184,7 @@ $$
 
 **符号**：$t$：query 位置；$\operatorname{floor}(t / T_c)$：chunk 序号。在 Scout 满窗 $t \approx 1.05\times10^{7}$ 处，$m \approx 1 + 0.1 \ln(1281) \approx 1.72$。score 整体放大 $m$ 倍，等效于把可用的 $\Delta$ 预算放大同一倍数——对 $\ln T$ 稀释的一阶补偿。乘性温度不是加性 nat 的精确等价（它同时放大全部 score 差，峰值与噪声一起锐化），这是它的机制边界。诚实声明：3:1 比例、chunk 尺寸、$\alpha = 0.1$ 三个超参均无公开 ablation，式 (8) 与上文的机制读法是与 2.5/4.6 机制一致的重构，不是论文结论（[W]）。
 
-Scout 另有 `rope_scaling = {rope_type: llama3, factor: 16, original_max_position_embeddings: 8192}`：即 4.6 §2 统一压缩率曲线 $\eta_j$ 的 llama3 参数化（慢通道压缩、快通道不动的分段 ramp），把 RoPE 层的基窗标定到 $8192 \times 16 = 131072$——恰与 3.1 的窗口对齐。Maverick 的 rope_scaling 为 null。两者差异的官方解释缺失，与 10M / 1M 窗的定位差异联动（§7 开放问题 6）。10M 这个数字本身按 4.6 §5 的方法论只能算 claimed context：无第三方 RULER 类评测复核，effective context 存疑（§7 开放问题 5）。
+Scout 另有 `rope_scaling = {rope_type: llama3, factor: 16, original_max_position_embeddings: 8192}`：llama3 型压缩——慢通道压缩、快通道不动，属 4.6 §2 统一压缩率曲线 $\eta_j$ 所收四族（PI / NTK-aware / YaRN / LongRoPE）之外的另一条参数化——把 RoPE 层的基窗标定到 $8192 \times 16 = 131072$，恰与 3.1 的窗口对齐。Maverick 的 rope_scaling 为 null。两者差异的官方解释缺失，与 10M / 1M 窗的定位差异联动（§7 开放问题 6）。10M 这个数字本身按 4.6 §5 的方法论只能算 claimed context：无第三方 RULER 类评测复核，effective context 存疑（§7 开放问题 5）。
 
 ### 5.3 early fusion 多模态
 
@@ -219,8 +219,10 @@ projector ──► 与文本 token 同一 embedding 空间 ──► 同一条 
 | num_experts_per_tok | 1 | top-1；式 (5) 的 cases 塌成单项（注意：是 top-1，不是 top-2） |
 | interleave_moe_layer_step | 1 | 层层 MoE；Maverick 为 2（隔层） |
 | no_rope_layers | [1,1,1,0,...] | iRoPE 3:1；式 (7)(8) 的层型分工 |
-| attention_chunk_size | 8192 | RoPE 层 chunk 宽；式 (7) 的域界、式 (8) 的 $T_c$ |
+| attention_chunk_size | 8192 | RoPE 层 chunk 宽；式 (7) 的域界 |
 | attn_temperature_tuning / attn_scale | true / 0.1 | 式 (8) 的开关与 $\alpha$ |
+| floor_scale | 8192 | 式 (8) 的 $T_c$：对数温度的 chunk 粒度除数 |
+| use_qk_norm | true（Scout；Maverick 无） | q/k 投影后各过一次 RMSNorm（2.7 §7 的 QK-Norm 变体）；Maverick 未启用 |
 | rope_theta | 500000 | RoPE base；式 (4) 的 $\lambda_{\max} \approx 2.6\times10^{6}$ |
 | rope_scaling | llama3 式，factor 16，original 8192 | 4.6 §2 的 $\eta_j$ 曲线；基窗 $8192 \times 16 = 131072$ |
 | max_position_embeddings | 10485760 | claimed ctx；effective 存疑（§7 问题 5） |
