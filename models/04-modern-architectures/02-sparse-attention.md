@@ -220,18 +220,20 @@ $$
 
 **符号**：$K$ = 2048 为 sparse 训练阶段每 query 的选中数（论文原文口径）。主路即 4.1 式 (9)(10) 的 MLA，求和域从 $\{1..t\}$ 换成 $\mathcal{S}_t$。
 
-**账**。训练 / prefill：主 attention 从 $O(T^{2})$ 降到 $O(T \cdot K)$，indexer 打分 $O(T^{2} d_I)$ 但常数小、可 FP8。decode（61 层 MLA、$t$ = 131072）：每步主路 cache 读取从全量 131072 行降到 2048 行——1.5625%；字节数 $61 \times 2048 \times 576 \times 2$ B ≈ 144 MB / 步，全量对照 $61 \times 131072 \times 576 \times 2$ B ≈ 9.2 GB / 步。**cache 总量不变**（全量 576 元素 / token 仍驻留，选中是每步的运行时行为），减的是带宽与 FLOPs——正是 2.4 式 (11) 分母里 cache 项的削减。论文报告长上下文场景综合算力约削减一半（[A]，按论文口径）。
+**账**。训练 / prefill：主 attention 从 $O(T^{2})$ 降到 $O(T \cdot K)$，indexer 打分 $O(T^{2} d_I)$ 但常数小、可 FP8。decode（61 层 MLA、$t$ = 131072）：每步主路 cache 读取从全量 131072 行降到 2048 行——1.5625%；字节数 $61 \times 2048 \times 576 \times 2$ B ≈ 144 MB / 步，全量对照 $61 \times 131072 \times 576 \times 2$ B ≈ 9.2 GB / 步。**cache 总量不变**（全量 576 元素 / token 仍驻留，选中是每步的运行时行为），减的是带宽与 FLOPs——正是 2.4 式 (11) 分母里 cache 项的削减。论文报告长上下文场景端到端显著加速（[A]；论文正文为定性表述加逐长度成本曲线，按 Fig 3 曲线读数约削减一半）。
 
 **sparse-from-dense 训练配方**（从 DeepSeek-V3.1-Terminus 的 128K dense checkpoint 出发，[A]，论文口径）。起点选型本身就是设计：V3.1-Terminus 已是 128K 上下文就绪的 dense MLA 模型，sparse 化只动「读哪些」、不动「怎么存」——MLA cache 格式（576 元素 / token / 层）全程不变，续训路线因此不必触碰 4.1 的压缩结构。两阶段：
 
-1. **Dense warm-up**：冻结主模型全部参数，只训 indexer。目标是让 indexer 的分布逼近主 attention 的分布：对主模型每个 attention 头 $h$、每个 query $t$，取其历史位置上的注意力权重行 $p^{(h)}_{t,\cdot}$，indexer 侧 $p^{I}_{t,\cdot} = \mathrm{softmax}(I_{t,\cdot})$，loss 为逐头逐位置 KL 之和
+1. **Dense warm-up**：冻结主模型全部参数，只训 indexer。目标是让 indexer 的分布逼近主 attention 的分布（论文口径）：对每个 query $t$，把主模型全部 attention 头在历史位置上的注意力分数跨头求和聚合，再 L1 归一化成全模型共享的单一目标分布 $p_{t,:}$；indexer 侧取 $\mathrm{softmax}(I_{t,:})$，loss 为逐位置 KL
 
 $$
-\mathcal{L}_{\mathrm{warm}} = \sum_{t} \sum_{h} D_{KL}\left( p^{(h)}_{t,\cdot} \,\|\, p^{I}_{t,\cdot} \right) \qquad (14)
+p_{t,s} = \frac{\sum_{h} A^{(h)}_{t,s}}{\sum_{s'}\, \sum_{h} A^{(h)}_{t,s'}}, \qquad \mathcal{L}_{\mathrm{warm}} = \sum_{t} D_{KL}\left( p_{t,:} \,\|\, \mathrm{softmax}(I_{t,:}) \right) \qquad (14)
 $$
+
+**符号**：$A^{(h)}_{t,s}$：主模型第 $h$ 头在位置对 $(t, s)$ 上的注意力分数；先跨头求和、再对历史位置 L1 归一化。注意聚合次序不可换：KL 对第一参数非线性，「先头聚合再取 KL」与「逐头 KL 再求和」不等价——论文取前者，target 是全模型一份的 $p_{t,:}$ 而不是逐头一份。
 
 主模型不动 ⇒ dense 行为零扰动，indexer 学会「主模型会看哪里」——稀疏化的信息瓶颈被打分器蒸馏预先填平。
-2. **Sparse 训练**：解冻全模型、top-K 生效，端到端语言建模继续训：lr 7.3e-6、15000 步、每步 480 条 128K 序列。顺手一记规模账：$480 \times 131072 \approx 6.3 \times 10^{7}$ token / 步，15000 步合计约 $9.4 \times 10^{11}$ token——sparse 化改造的数据预算接近一万亿 token，「免训练」在这条路线上不成立。indexer 在这一阶段的监督也未断流：top-K 选择本身不可微，语言建模 loss 的梯度到不了打分器——indexer 继续吃式 (14) 同形的 KL 对齐（对选中集截断后的主分布），始终被锚在「主模型真实在看哪里」上，而不是随主模型漂移。
+2. **Sparse 训练**：解冻全模型、top-K 生效，端到端语言建模继续训：lr 7.3e-6、15000 步、每步 480 条 128K 序列。顺手一记规模账：$480 \times 131072 \approx 6.3 \times 10^{7}$ token / 步，15000 步合计约 $9.4 \times 10^{11}$ token——sparse 化改造的数据预算接近一万亿 token，「免训练」在这条路线上不成立。indexer 在这一阶段的监督也未断流：top-K 选择本身不可微，语言建模 loss 的梯度到不了打分器——indexer 继续吃式 (14) 同形的 KL 对齐（target 同为头聚合分布，截断到选中集），始终被锚在「主模型真实在看哪里」上，而不是随主模型漂移。
 
 实现勘误一条（官方 repo README 公告，2025-11-17）：indexer 的 RoPE 输入用 non-interleaved 布局，MLA 主路用 interleaved——2.5 的两种维度配对约定在同一模型里并存，写 kernel 时混用即错。
 
