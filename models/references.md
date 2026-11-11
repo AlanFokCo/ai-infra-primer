@@ -44,17 +44,17 @@
 | key | 标题 | 作者 | arXiv ID / URL | 证据等级 | 核实日期 | 被引章节 |
 | --- | --- | --- | --- | --- | --- | --- |
 | kaplan | Scaling Laws for Neural Language Models | Kaplan et al. | arXiv:2001.08361 | [B] | 2026-11-10 | 1.1, 1.2, 1.3 |
-| gpt3 | Language Models are Few-Shot Learners | Brown et al. | arXiv:2005.14165 | [B] | 2026-11-10 | 1.1 |
+| gpt3 | Language Models are Few-Shot Learners | Brown et al. | arXiv:2005.14165 | [B] | 2026-11-10 | 1.1, 3.3 |
 | gpt2 | Language Models are Unsupervised Multitask Learners | Radford et al. | https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf ; https://huggingface.co/openai-community/gpt2 | [W] | 2026-11-10 | 1.1, 2.1, 2.2, 2.5, 2.6, 2.7, 2.8 |
 | chinchilla | Training Compute-Optimal Large Language Models | Hoffmann et al. | arXiv:2203.15556 | [B] | 2026-11-10 | 1.3 |
 | emergent-abilities | Emergent Abilities of Large Language Models | Wei et al. | arXiv:2206.07682 | [B] | 2026-11-10 | 1.3 |
 | emergence-mirage | Are Emergent Abilities of Large Language Models a Mirage? | Schaeffer et al. | arXiv:2304.15004 | [B] | 2026-11-10 | 1.3 |
-| deepseekmoe | DeepSeekMoE: Towards Ultimate Expert Specialization in Mixture-of-Experts Language Models | Dai et al. | arXiv:2401.06066 | [A] | 2026-11-10 | 1.3 |
-| deepseekv3 | DeepSeek-V3 Technical Report | DeepSeek-AI | arXiv:2412.19437 | [A] | 2026-11-10 | 1.2, 2.5, 2.6 |
-| pythia | Pythia: A Suite for Analyzing Large Language Models Across Training and Scaling | Biderman et al. | arXiv:2304.01373 | [A] | 2026-11-10 | 1.3 |
+| deepseekmoe | DeepSeekMoE: Towards Ultimate Expert Specialization in Mixture-of-Experts Language Models | Dai et al. | arXiv:2401.06066 | [A] | 2026-11-10 | 1.3, 4.5 |
+| deepseekv3 | DeepSeek-V3 Technical Report | DeepSeek-AI | arXiv:2412.19437 | [A] | 2026-11-10 | 1.2, 2.5, 2.6, 4.1, 4.5 |
+| pythia | Pythia: A Suite for Analyzing Large Language Models Across Training and Scaling | Biderman et al. | arXiv:2304.01373 | [A] | 2026-11-10 | 1.3, 3.3, 4.7 |
 | llama-3.1-8b-config | Llama-3.1-8B config.json（HF，gated repo） | Meta | https://huggingface.co/meta-llama/Llama-3.1-8B/blob/main/config.json | [A] | 2026-11-10 | 1.1, 1.2, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8 |
 | qwen3-8b-config | Qwen3-8B config.json 与 tokenizer 文件（HF） | Qwen | https://huggingface.co/Qwen/Qwen3-8B/blob/main/config.json | [A] | 2026-11-10 | 1.1, 2.2, 2.5, 2.6, 2.7, 2.8 |
-| deepseek-v3-config | DeepSeek-V3 config.json（HF） | DeepSeek-AI | https://huggingface.co/deepseek-ai/DeepSeek-V3/blob/main/config.json | [A] | 2026-11-10 | 1.2, 2.3, 2.5, 2.6, 2.8 |
+| deepseek-v3-config | DeepSeek-V3 config.json（HF） | DeepSeek-AI | https://huggingface.co/deepseek-ai/DeepSeek-V3/blob/main/config.json | [A] | 2026-11-10 | 1.2, 2.3, 2.5, 2.6, 2.8, 4.1, 4.6 |
 
 ### Part 2 · Transformer Anatomy
 
@@ -72,11 +72,11 @@
 | weight-tying | Using the Output Embedding to Improve Language Models | Press & Wolf | arXiv:1608.05859 | [B] | 2026-11-10 | 2.2 |
 | softmax-bottleneck | Breaking the Softmax Bottleneck: A High-Rank RNN Language Model | Yang et al. | arXiv:1711.03953 | [A] | 2026-11-10 | 1.1, 2.2 |
 | blt | Byte Latent Transformer: Patches Scale Better Than Tokens | Pagnoni et al. | arXiv:2412.09871 | [A] | 2026-11-10 | 2.2 |
-| mqa | Fast Transformer Decoding: One Write-Head is All You Need | Shazeer | arXiv:1911.02150 | [B] | 2026-11-10 | 2.4 |
+| mqa | Fast Transformer Decoding: One Write-Head is All You Need | Shazeer | arXiv:1911.02150 | [B] | 2026-11-10 | 2.4, 4.1 |
 | llama-3.1-70b-config | Llama-3.1-70B config.json（HF，gated repo） | Meta | https://huggingface.co/meta-llama/Llama-3.1-70B/blob/main/config.json | [A] | 2026-11-10 | 2.4 |
 | rope | RoFormer: Enhanced Transformer with Rotary Position Embedding | Su et al. | arXiv:2104.09864 | [A] | 2026-11-10 | 2.5 |
 | alibi | Train Short, Test Long: Attention with Linear Biases Enables Input Length Extrapolation | Press et al. | arXiv:2108.12409 | [A] | 2026-11-10 | 2.5 |
-| t5 | Exploring the Limits of Transfer Learning with a Unified Text-to-Text Transformer | Raffel et al. | arXiv:1910.10683 | [A] | 2026-11-10 | 2.5 |
+| t5 | Exploring the Limits of Transfer Learning with a Unified Text-to-Text Transformer | Raffel et al. | arXiv:1910.10683 | [A] | 2026-11-10 | 2.5, 3.1, 3.2 |
 | nope | The Impact of Positional Encoding on Length Generalization in Transformers | Kazemnejad et al. | arXiv:2305.19466 | [B] | 2026-11-10 | 2.5 |
 | glu-variants | GLU Variants Improve Transformer | Shazeer | arXiv:2002.05202 | [B] | 2026-11-10 | 2.1, 2.6 |
 | gelu | Gaussian Error Linear Units (GELUs) | Hendrycks & Gimpel | arXiv:1606.08415 | [B] | 2026-11-10 | 2.6 |
@@ -86,7 +86,7 @@
 | pre-ln | On Layer Normalization in the Transformer Architecture | Xiong et al. | arXiv:2002.04745 | [B] | 2026-11-10 | 2.7 |
 | deepnorm | DeepNet: Scaling Transformers to 1,000 Layers | Wang et al. | arXiv:2203.00555 | [A] | 2026-11-10 | 2.7 |
 | gemma2 | Gemma 2: Improving Open Language Models at a Practical Size | Gemma Team | arXiv:2408.00118 | [A] | 2026-11-10 | 2.2, 2.7 |
-| gemma3 | Gemma 3 Technical Report | Gemma Team | arXiv:2503.19786 | [A] | 2026-11-10 | 2.2, 2.7 |
+| gemma3 | Gemma 3 Technical Report | Gemma Team | arXiv:2503.19786 | [A] | 2026-11-10 | 2.2, 2.7, 4.2 |
 | qk-norm | Query-Key Normalization for Transformers | Henry et al. | arXiv:2010.04245 | [B] | 2026-11-10 | 2.7 |
 | nanogpt | nanoGPT（教学实现 repo） | Karpathy | https://github.com/karpathy/nanoGPT | 教学参照 | 2026-11-10 | 2.8 |
 
@@ -94,18 +94,84 @@
 
 | key | 标题 | 作者 | arXiv ID / URL | 证据等级 | 核实日期 | 被引章节 |
 | --- | --- | --- | --- | --- | --- | --- |
+| bert | BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding | Devlin et al. | arXiv:1810.04805 | [A] | 2026-11-11 | 3.1, 3.2 |
+| bert-repo | BERT 官方 repo（create_pretraining_data.py：15% / 80-10-10 masking 实现） | Google | https://github.com/google-research/bert | [A] | 2026-11-11 | 3.1 |
+| roberta | RoBERTa: A Robustly Optimized BERT Pretraining Approach | Liu et al. | arXiv:1907.11692 | [A] | 2026-11-11 | 3.2 |
+| albert | ALBERT: A Lite BERT for Self-supervised Learning of Language Representations | Lan et al. | arXiv:1909.11942 | [A] | 2026-11-11 | 3.2 |
+| electra | ELECTRA: Pre-training Text Encoders as Discriminators Rather Than Generators | Clark et al. | arXiv:2003.10555 | [A] | 2026-11-11 | 3.2 |
+| electra-repo | ELECTRA 官方 repo（RTD generator/discriminator 实现） | Google | https://github.com/google-research/electra | [A] | 2026-11-11 | 3.2 |
+| ul2 | UL2: Unifying Language Learning Paradigms | Tay et al. | arXiv:2205.05131 | [B] | 2026-11-11 | 3.1 |
+| glm | GLM: General Language Model Pretraining with Autoregressive Blank Infilling | Du et al. | arXiv:2103.10360 | [A] | 2026-11-11 | 3.1 |
+| glm-repo | GLM 官方 repo（blank infilling 实现；注意 zai-org/GLM 不存在，2021 代码在 THUDM/GLM） | THUDM | https://github.com/THUDM/GLM | [A] | 2026-11-11 | 3.1 |
+| modernbert | Smarter, Better, Faster, Longer: A Modern Bidirectional Encoder for Fast, Memory Efficient, and Long Context Finetuning and Inference | Warner et al. | arXiv:2412.13663 | [A] | 2026-11-11 | 3.1, 3.2 |
+| modernbert-config | ModernBERT-base / ModernBERT-large config.json（HF）+ 官方 repo | Answer.AI | https://huggingface.co/answerdotai/ModernBERT-base/blob/main/config.json ; https://github.com/answerdotai/ModernBERT | [A] | 2026-11-11 | 3.2 |
+| whisper | Robust Speech Recognition via Large-Scale Weak Supervision | Radford et al. | arXiv:2212.04356 ; https://github.com/openai/whisper | [A] | 2026-11-11 | 3.2 |
+| von-oswald | Transformers Learn In-Context by Gradient Descent | von Oswald et al. | arXiv:2212.07677 | [B] | 2026-11-11 | 3.3 |
+| akyurek | What Learning Algorithm Is In-Context Learning? Investigations with Linear Models | Akyürek et al. | arXiv:2211.15661 | [B] | 2026-11-11 | 3.3 |
+| dai-icl | Why Can GPT Learn In-Context? Language Models Implicitly Perform Gradient Descent as Meta-Optimizers | Dai et al. | arXiv:2212.10559 | [B] | 2026-11-11 | 3.3 |
+| min-icl | Rethinking the Role of Demonstrations: What Makes In-Context Learning Work? | Min et al. | arXiv:2202.12837 | [B] | 2026-11-11 | 3.3 |
+| induction-heads | In-context Learning and Induction Heads（transformer-circuits.pub，无 arXiv） | Olsson et al. | https://transformer-circuits.pub/2022/in-context-learning-and-induction-heads/index.html | [B] | 2026-11-11 | 3.3, 4.7 |
+| transformerlens | TransformerLens（回路测量工具 repo；IOI/induction head 实验基础） | Nanda & Bloom | https://github.com/TransformerLensOrg/TransformerLens | [A] | 2026-11-11 | 3.3, 4.7 |
 
 ### Part 4 · Modern Architectures
 
 | key | 标题 | 作者 | arXiv ID / URL | 证据等级 | 核实日期 | 被引章节 |
 | --- | --- | --- | --- | --- | --- | --- |
 | mistral-7b | Mistral 7B | Jiang et al. | arXiv:2310.06825 | [A] | 2026-11-10 | 4.2 |
+| gqa | GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints | Ainslie et al. | arXiv:2305.13245 | [B] | 2026-11-11 | 4.1 |
+| deepseekv2 | DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model | DeepSeek-AI | arXiv:2405.04434 | [A] | 2026-11-11 | 4.1, 4.5 |
+| flashattention | FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness | Dao et al. | arXiv:2205.14135 | [A] | 2026-11-11 | 4.1 |
+| fa2 | FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning | Dao | arXiv:2307.08691 | [A] | 2026-11-11 | 4.1 |
+| flash-attention-repo | FlashAttention 官方 repo（kernel 走读锚点） | Dao-AILab | https://github.com/Dao-AILab/flash-attention | [A] | 2026-11-11 | 4.1 |
+| nsa | Native Sparse Attention: Hardware-Aligned and Natively Trainable Sparse Attention | Yuan et al. | arXiv:2502.11089 | [B] | 2026-11-11 | 4.2 |
+| deepseek-v3.2 | DeepSeek-V3.2: Pushing the Frontier of Open Large Language Models（DSA 出处） | DeepSeek-AI | arXiv:2512.02556 ; https://github.com/deepseek-ai/DeepSeek-V3.2-Exp | [A] | 2026-11-11 | 4.2 |
+| moba | MoBA: Mixture of Block Attention for Long-Context LLMs | Lu et al. | arXiv:2502.13189 ; https://github.com/MoonshotAI/MoBA | [A] | 2026-11-11 | 4.2 |
+| streamingllm | Efficient Streaming Language Models with Attention Sinks | Xiao et al. | arXiv:2309.17453 ; https://github.com/mit-han-lab/streaming-llm | [A] | 2026-11-11 | 4.2, 4.6 |
+| longformer | Longformer: The Long-Document Transformer | Beltagy et al. | arXiv:2004.05150 | [A] | 2026-11-11 | 4.2 |
+| katharopoulos | Transformers are RNNs: Fast Autoregressive Transformers with Linear Attention | Katharopoulos et al. | arXiv:2006.16236 ; https://github.com/idiap/fast-transformers | [A] | 2026-11-11 | 4.3 |
+| performer | Rethinking Attention with Performers | Choromanski et al. | arXiv:2009.14794 | [A] | 2026-11-11 | 4.3 |
+| retnet | Retentive Network: A Successor to Transformer for Large Language Models | Sun et al. | arXiv:2307.08621 ; https://github.com/microsoft/unilm | [A] | 2026-11-11 | 4.3 |
+| deltanet | Parallelizing Linear Transformers with the Delta Rule over Sequence Length | Yang et al. | arXiv:2406.06484 | [A] | 2026-11-11 | 4.3 |
+| gdn | Gated Delta Networks: Improving Mamba2 with Delta Rule | Yang et al. | arXiv:2412.06464 ; https://github.com/NVlabs/GatedDeltaNet | [A] | 2026-11-11 | 4.3, 4.4 |
+| gdn2 | Gated DeltaNet-2: Decoupling Erase and Write in Linear Attention | Hatamizadeh et al. | arXiv:2605.22791 ; https://github.com/NVlabs/GatedDeltaNet-2 | [A] | 2026-11-11 | 4.3 |
+| kimi-linear | Kimi Linear: An Expressive, Efficient Attention Architecture（KDA 出处） | Kimi Team | arXiv:2510.26692 ; https://github.com/MoonshotAI/Kimi-Linear | [A] | 2026-11-11 | 4.3, 4.4 |
+| kimi-linear-config | Kimi-Linear-48B-A3B-Instruct config.json（HF：20 KDA + 7 full-attn、mla_use_nope=true） | Moonshot AI | https://huggingface.co/moonshotai/Kimi-Linear-48B-A3B-Instruct/blob/main/config.json | [A] | 2026-11-11 | 4.4 |
+| mamba | Mamba: Linear-Time Sequence Modeling with Selective State Spaces | Gu & Dao | arXiv:2312.00752 ; https://github.com/state-spaces/mamba | [A] | 2026-11-11 | 4.3 |
+| mamba2 | Transformers are SSMs: Generalized Models and Efficient Algorithms Through Structured State Space Duality | Dao & Gu | arXiv:2405.21060 | [A] | 2026-11-11 | 4.3 |
+| fla-repo | flash-linear-attention（fla）官方库：GDN/KDA/DeltaNet chunkwise kernel 走读锚点 | fla-org | https://github.com/fla-org/flash-linear-attention | [A] | 2026-11-11 | 4.3, 4.4 |
+| minimax01 | MiniMax-01: Scaling Foundation Models with Lightning Attention | MiniMax | arXiv:2501.08313 ; https://github.com/MiniMax-AI/MiniMax-01 | [A] | 2026-11-11 | 4.4 |
+| minimax-text-01-config | MiniMaxAI/MiniMax-Text-01 config.json（HF：attn_type_list 70 linear + 10 full） | MiniMax | https://huggingface.co/MiniMaxAI/MiniMax-Text-01/blob/main/config.json | [A] | 2026-11-11 | 4.4 |
+| jamba | Jamba: A Hybrid Transformer-Mamba Language Model | Lieber et al. | arXiv:2403.19887 ; https://huggingface.co/ai21labs/Jamba-v0.1 | [A] | 2026-11-11 | 4.4 |
+| qwen3-next | Qwen3-Next-80B-A3B-Instruct model card + 官方 blog + config.json（**无 arXiv 论文**，证据以官方 config/blog 为准） | Qwen | https://huggingface.co/Qwen/Qwen3-Next-80B-A3B-Instruct ; https://qwen.ai/blog?id=4074cca80393150c248e508aa62983f9cb7d27cd | [W] | 2026-11-11 | 4.4 |
+| kimi-k3 | Kimi K3: Open Frontier Intelligence | Kimi Team | arXiv:2607.24653 ; https://github.com/MoonshotAI/Kimi-K3 | [A] | 2026-11-11 | 4.4 |
+| shazeer-moe | Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer | Shazeer et al. | arXiv:1701.06538 | [B] | 2026-11-11 | 4.5 |
+| switch | Switch Transformers: Scaling to Trillion Parameter Models with Simple and Efficient Sparsity | Fedus et al. | arXiv:2101.03961 ; https://github.com/google-research/t5x | [A] | 2026-11-11 | 4.5 |
+| gshard | GShard: Scaling Giant Models with Conditional Computation and Automatic Sharding | Lepikhin et al. | arXiv:2006.16668 | [B] | 2026-11-11 | 4.5 |
+| expert-choice | Mixture-of-Experts with Expert Choice Routing | Zhou et al. | arXiv:2202.09368 | [B] | 2026-11-11 | 4.5 |
+| stmoe | ST-MoE: Designing Stable and Transferable Sparse Expert Models（z-loss 出处） | Zoph et al. | arXiv:2202.08906 | [B] | 2026-11-11 | 4.5 |
+| mixtral | Mixtral of Experts | Jiang et al. | arXiv:2401.04088 | [A] | 2026-11-11 | 4.5 |
+| medusa | Medusa: Simple LLM Inference Acceleration Framework with Multiple Decoding Heads | Cai et al. | arXiv:2401.10774 ; https://github.com/FasterDecoding/Medusa | [A] | 2026-11-11 | 4.5 |
+| speculative-decoding | Fast Inference from Transformers via Speculative Decoding | Leviathan et al. | arXiv:2211.17192 | [B] | 2026-11-11 | 4.5 |
+| pi | Extending Context Window of Large Language Models via Positional Interpolation | Chen et al. | arXiv:2306.15595 | [B] | 2026-11-11 | 4.6 |
+| yarn | YaRN: Efficient Context Window Extension of Large Language Models | Peng et al. | arXiv:2309.00071 ; https://github.com/jquesnelle/yarn | [A] | 2026-11-11 | 4.6 |
+| longrope | LongRoPE: Extending LLM Context Window Beyond 2 Million Tokens | Ding et al. | arXiv:2402.13753 | [B] | 2026-11-11 | 4.6 |
+| ruler | RULER: What's the Real Context Size of Your Long-Context Language Models? | Hsieh et al. | arXiv:2404.06654 ; https://github.com/NVIDIA/RULER | [A] | 2026-11-11 | 4.6 |
+| qwen2.5-1m | Qwen2.5-1M Technical Report | Yang et al. | arXiv:2501.15383 | [A] | 2026-11-11 | 4.6 |
+| ioi | Interpretability in the Wild: a Circuit for Indirect Object Identification in GPT-2 small | Wang et al. | arXiv:2211.00593 | [A] | 2026-11-11 | 4.7 |
+| gemma-scope | Gemma Scope: Open Sparse Autoencoders Everywhere All At Once on Gemma 2 | Lieberum et al. | arXiv:2408.05147 | [A] | 2026-11-11 | 4.7 |
+| saelens | SAELens（SAE 训练/分析库；Gemma Scope 配套工具） | Bloom et al. | https://github.com/decoderesearch/SAELens | [A] | 2026-11-11 | 4.7 |
+| toy-models | Toy Models of Superposition（transformer-circuits.pub，无 arXiv） | Elhage et al. | https://transformer-circuits.pub/2022/toy_model/index.html | [B] | 2026-11-11 | 4.7 |
+| llada | Large Language Diffusion Models | Nie et al. | arXiv:2502.09992 ; https://github.com/ML-GSAI/LLaDA | [A] | 2026-11-11 | 4.8 |
+| sedd | Discrete Diffusion Modeling by Estimating the Ratios of the Data Distribution | Lou et al. | arXiv:2310.16834 ; https://github.com/louaaron/Score-Entropy-Discrete-Diffusion | [A] | 2026-11-11 | 4.8 |
+| differential-transformer | Differential Transformer | Ye et al. | arXiv:2410.05258 ; https://github.com/microsoft/unilm | [A] | 2026-11-11 | 4.8 |
+| mod | Mixture-of-Depths: Dynamically Allocating Compute in Transformer-Based Language Models | Raposo et al. | arXiv:2404.02258 | [B] | 2026-11-11 | 4.8 |
+| ttt | Learning to (Learn at Test Time): RNNs with Expressive Hidden States | Sun et al. | arXiv:2407.04620 | [B] | 2026-11-11 | 4.8 |
 
 ### Part 5 · Case Studies
 
 | key | 标题 | 作者 | arXiv ID / URL | 证据等级 | 核实日期 | 被引章节 |
 | --- | --- | --- | --- | --- | --- | --- |
-| qwen3 | Qwen3 Technical Report | Yang et al. | arXiv:2505.09388 | [A] | 2026-11-10 | 5.3 |
+| qwen3 | Qwen3 Technical Report | Yang et al. | arXiv:2505.09388 | [A] | 2026-11-10 | 4.5, 5.3 |
 | qwen2.5 | Qwen2.5 Technical Report | Qwen Team | arXiv:2412.15115 | [A] | 2026-11-10 | 5.3 |
 
 ### Part 6 · Vision Representations
