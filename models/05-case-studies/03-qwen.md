@@ -63,10 +63,10 @@ $d_k$ = 128 时全部 logit 落在 $[-11.3, 11.3]$，与位置差 $m - n$ 无关
 Qwen2-57B-A14B 由 Qwen1.5-32B upcycle 初始化——Qwen2 report 全文三处提及 upcycling（ar5iv 取证，[A]）。先校正一处归属：该技术常被记到 Moonlight 名下，Moonlight 论文全文 0 次提及（W3 research pass 逐文核实），公开谱系里的旗舰级实例是 Qwen2 这一例；5.5 章回引本节。公式层面，upcycling 是一次权重空间手术：dense 模型的 SwiGLU FFN 三矩阵被复制成 $N_e$ 份 expert 初始化，router 随机初始化，attention 与 embedding 原样继承：
 
 $$
-W^{(e)}_{i} \leftarrow W^{\mathrm{dense}}_{\mathrm{FFN}}, \quad i = 1, \dots, N_e; \qquad W_g \sim \mathrm{random\ init} \qquad (4)
+W^{(e)}_{i} \leftarrow W^{\mathrm{dense}}_{\mathrm{FFN}}, \quad i = 1, \dots, N_e \qquad (4)
 $$
 
-**符号**：$W^{(e)}_i$：第 $i$ 个 expert 的 FFN 参数；$W_g \in \mathbb{R}^{d \times N_e}$：router 打分投影（4.5 式 (1)）。
+**符号**：$W^{(e)}_i$：第 $i$ 个 expert 的 FFN 参数；router 打分投影 $W_g \in \mathbb{R}^{d \times N_e}$（4.5 式 (1)）不继承任何旧权重，随机初始化。
 
 账：32B dense → 57B total / 14B active。一次手术同时改写两本账——容量方向 $57 > 32$（FFN 参数乘 $N_e$），计算方向 $14 < 32$（每 token 只激活 $k$ 份 expert 加 attention 等公共部分）。对照 4.5 式 (1) 的解耦框架：upcycling 是用已有 dense checkpoint 替 MoE 的 $N_{\mathrm{tot}}$ 维度付掉预训练成本，此后只需对 $N_{\mathrm{act}}$ 口径继续训练。结构性代价是对称性：$N_e$ 份完全相同拷贝在 router 近似均匀打分时收到近乎相同的梯度，专家分化只能靠路由噪声、均衡压力（4.5 §2 的 aux loss 族）与数据差异后验发生——分化所需 token 量、upcycle 与 from-scratch MoE 的质量差，公开材料均无消融（§5）。Qwen3 的 MoE 双档是否沿用这一初始化路径，官方未说明。
 
@@ -170,7 +170,7 @@ rope_theta: 1e7                    所有 full 层共享频率 base；GDN 层不
 | --- | --- | --- |
 | 谱系表 | §1 表（13 列字段约定） | 双轨制：Qwen3 = dense 6 档 + MoE 2 档；Qwen3-Next 起 dense 缺席；Qwen3-Max [C] 无法填表 |
 | GQA 全系化 | 式 (1)；235B 整窗 47 GiB vs MHA 752 GiB | $g$ 逐代收紧（8B 档 4 → 旗舰 16）；262K 窗的前提而非优化 |
-| QK-Norm 替代 QKV bias | 式 (2)(3)：$\lvert z \rvert \le \sqrt{d_k} \approx 11.3$ | 结构性排除饱和区；界与位置、输入幅度无关；消融缺失 |
+| QK-Norm 替代 QKV bias | 式 (2)(3)：$\vert z \vert \le \sqrt{d_k} \approx 11.3$ | 结构性排除饱和区；界与位置、输入幅度无关；消融缺失 |
 | upcycling | 式 (4)；32B dense → 57B-A14B | 归 Qwen2（非 Moonlight）；容量与计算两本账同时改写；对称破缺靠后验分化 |
 | Qwen3-Next 装配 | 48 = 36 GDN + 12 gated attn；512+1 top-10，$\rho \approx 2.1\%$ | 四件套全部出自 P4；创新在装配坐标（3:1、输出门、partial 0.25、zero-centered） |
 | vocab 151936 | 式 (5)；$2Vd$ ≈ 1.24 B | 四代同一 tokenizer；多语言压缩率换 $T$ 与 $D$；参数占比 15%（8B）→ 0.5%（235B） |
