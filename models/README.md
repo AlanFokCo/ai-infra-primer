@@ -141,22 +141,22 @@ graph LR
 
 | 章节 | 文件 | 状态 |
 | --- | --- | --- |
-| 3.1 Objective 与 Mask 的统一形式化 | [01-objectives-and-masks.md](03-objectives-and-variants/01-objectives-and-masks.md) | 已写 |
-| 3.2 Encoder-only 与 Encoder-Decoder | [02-encoder-architectures.md](03-objectives-and-variants/02-encoder-architectures.md) | 未开始 |
-| 3.3 Decoder-only 与 In-Context Learning | [03-decoder-only-and-icl.md](03-objectives-and-variants/03-decoder-only-and-icl.md) | 未开始 |
+| 3.1 Objective 与 Mask 的统一形式化 | [01-objectives-and-masks.md](03-objectives-and-variants/01-objectives-and-masks.md) | 已关闭 |
+| 3.2 Encoder-only 与 Encoder-Decoder | [02-encoder-architectures.md](03-objectives-and-variants/02-encoder-architectures.md) | 已关闭 |
+| 3.3 Decoder-only 与 In-Context Learning | [03-decoder-only-and-icl.md](03-objectives-and-variants/03-decoder-only-and-icl.md) | 已关闭 |
 
 ### Part 4 · Modern Architectures（W2）
 
 | 章节 | 文件 | 状态 |
 | --- | --- | --- |
-| 4.1 KV 压缩与精确 Attention 加速 | [01-kv-compression-and-exact-attention.md](04-modern-architectures/01-kv-compression-and-exact-attention.md) | 未开始 |
-| 4.2 Sparse Attention | [02-sparse-attention.md](04-modern-architectures/02-sparse-attention.md) | 未开始 |
-| 4.3 Linear Attention 与 State-Space Models | [03-linear-attention-and-ssm.md](04-modern-architectures/03-linear-attention-and-ssm.md) | 未开始 |
-| 4.4 Hybrid 架构（linear + full attention 交错） | [04-hybrid-architectures.md](04-modern-architectures/04-hybrid-architectures.md) | 未开始 |
-| 4.5 Mixture-of-Experts 与 MTP | [05-moe.md](04-modern-architectures/05-moe.md) | 未开始 |
-| 4.6 Long Context | [06-long-context.md](04-modern-architectures/06-long-context.md) | 未开始 |
-| 4.7 机制可解释性基础 | [07-interpretability-primer.md](04-modern-architectures/07-interpretability-primer.md) | 未开始 |
-| 4.8 前沿方向（短篇，标注成熟度） | [08-frontier-outlook.md](04-modern-architectures/08-frontier-outlook.md) | 未开始 |
+| 4.1 KV 压缩与精确 Attention 加速 | [01-kv-compression-and-exact-attention.md](04-modern-architectures/01-kv-compression-and-exact-attention.md) | 已关闭 |
+| 4.2 Sparse Attention | [02-sparse-attention.md](04-modern-architectures/02-sparse-attention.md) | 已关闭 |
+| 4.3 Linear Attention 与 State-Space Models | [03-linear-attention-and-ssm.md](04-modern-architectures/03-linear-attention-and-ssm.md) | 已关闭 |
+| 4.4 Hybrid 架构（linear + full attention 交错） | [04-hybrid-architectures.md](04-modern-architectures/04-hybrid-architectures.md) | 已关闭 |
+| 4.5 Mixture-of-Experts 与 MTP | [05-moe.md](04-modern-architectures/05-moe.md) | 已关闭 |
+| 4.6 Long Context | [06-long-context.md](04-modern-architectures/06-long-context.md) | 已关闭 |
+| 4.7 机制可解释性基础 | [07-interpretability-primer.md](04-modern-architectures/07-interpretability-primer.md) | 已关闭 |
+| 4.8 前沿方向（短篇，标注成熟度） | [08-frontier-outlook.md](04-modern-architectures/08-frontier-outlook.md) | 已关闭 |
 
 ### Part 5 · Case Studies（W3）
 
@@ -224,3 +224,4 @@ graph LR
 | 波次 | 日期 | 覆盖章节 | 审查轮次 | S1 | S2 | S3 | 未关闭项 | 结论 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | W1 | 2026-11-11 | P1+P2 共 11 章 | 逐章 evaluator review × 11 + 波末独立对抗审查 1 轮 | 2（全部关闭） | 2（全部关闭） | 5（波末 sweep 全部清零） | 无 | 放行（强制重推导 5 项 pass：Chinchilla Lagrangian / 2.3 √d_k / 2.4 KV cache / 2.5 RoPE / 2.7 Pre-Post-LN 梯度；完整档案见 [w1-review-report.md](../docs/reviews/w1-review-report.md)） |
+| W2 | 2026-11-12 | P3+P4 共 11 章 | 逐章批量审查 × 3 批 + 波末独立对抗审查 1 轮 | 0 | 2（全部关闭） | 9（波末 sweep 全部清零） | 无 | 放行（强制重推导 3 项 pass：4.1 MLA absorption / 4.3 DeltaNet-GDN-KDA 状态更新链 / 4.5 MoE routing；完整档案见 [w2-review-report.md](../docs/reviews/w2-review-report.md)） |

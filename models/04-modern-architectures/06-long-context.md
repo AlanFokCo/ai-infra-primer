@@ -30,14 +30,14 @@ $$
 
 | 形态（锚点） | 每 token 每层 | 层数 | $T = 10^{6}$ 单序列 cache |
 | --- | --- | --- | --- |
-| GQA-8（Llama-3.1-8B，$H_{kv}$ = 8、$d_{\mathrm{head}}$ = 128）[A] | $2 \times 8 \times 128 \times 2$ B = 4 KiB | 32 | 128 GiB |
+| GQA-8（Llama-3.1-8B，$H_{kv}$ = 8、$d_{\mathrm{head}}$ = 128）[A] | $2 \times 8 \times 128 \times 2$ B = 4 KiB | 32 | 122 GiB |
 | MLA（DeepSeek-V3，576 元素 / token / 层，4.1 §4）[A] | $576 \times 2$ B = 1152 B | 61 | $\approx 65.4$ GiB |
 | DSA（DeepSeek-V3.2，主路同 MLA + indexer 小 cache，4.2 §6）[A] | 1152 B（驻留不变） | 61 | $\approx 65.4$ GiB |
 | KDA hybrid（Kimi-Linear，7 层 MLA + 20 层固定状态）[A] | 7 层 $\times$ 1152 B + 20 层 $\times$ 0 | 27 | $\approx 7.5$ GiB + 20 MiB |
 
 KDA 行的两笔：full-attn 层（MLA，576 元素 / token / 层）随 $T$ 线性：$7 \times 576 \times 10^{6} \times 2$ B $\approx 7.5$ GiB；KDA 层的状态是定数——每 head $d_v \times d_k$ = $128 \times 128$ 元素、32 heads、bf16 = 1 MiB / 层，与 $T$ 无关（4.3 §3 的 decode 账），20 层共 20 MiB。同尺度全 MLA 的 27 层反事实是 $27 \times 576 \times 10^{6} \times 2$ B $\approx 29$ GiB——hybrid 结构把线性增长项压到约 26%（论文 headline 数字的口径对照在 4.4，此处只记由 config 推出的账）。
 
-decode 每步读取同构（2.4 式 (11) 分母的 cache 项）：GQA-8 在 1M 处每步要读 128 GiB，按约 3 TB/s 的 HBM 带宽量级下单序列理论下界约 40 ms / token——这是「1M decode 为什么慢」的账源，也是 4.3 / 4.4 的固定状态架构在长窗 decode 上加速的账源。DSA 的读法是另一维：cache 驻留不变，但每步只 gather top-2048 行（4.2 §6 的账），1M 处读取占比约 0.2%。
+decode 每步读取同构（2.4 式 (11) 分母的 cache 项）：GQA-8 在 1M 处每步要读 122 GiB，按约 3 TB/s 的 HBM 带宽量级下单序列理论下界约 40 ms / token——这是「1M decode 为什么慢」的账源，也是 4.3 / 4.4 的固定状态架构在长窗 decode 上加速的账源。DSA 的读法是另一维：cache 驻留不变，但每步只 gather top-2048 行（4.2 §6 的账），1M 处读取占比约 0.2%。
 
 ### 1.3 墙三：softmax 的熵稀释（attention dilution）
 
@@ -228,7 +228,7 @@ SWA 与 §2 缩放族有一层交互值得点破：Gemma 3 给 local 层配 rope
 
 | 形态 | 每 token 每层（bf16） | $T = 10^{6}$ 增量 | 长程检索保证 | 锚点 |
 | --- | --- | --- | --- | --- |
-| GQA-8 | 4 KiB | 128 GiB（32 层） | 精确（全量可见） | Llama-3.1 [A] |
+| GQA-8 | 4 KiB | 122 GiB（32 层） | 精确（全量可见） | Llama-3.1 [A] |
 | MLA | 1152 B | 65.4 GiB（61 层） | 精确 | DeepSeek-V3 [A] |
 | DSA | 1152 B 驻留 | 65.4 GiB（61 层），每步只读 top-2048 行 | 近似（选择器召回率） | DeepSeek-V3.2 [A] |
 | KDA hybrid | 7/27 层 × 1152 B + 20/27 层 × 0 | ≈ 7.5 GiB + 20 MiB 固定状态 | KDA 层为有损压缩 | Kimi-Linear [A] |
@@ -267,7 +267,7 @@ effective 侧只有行为测量能填。读法收束全章：claimed 回答的�
 | 概念 | 公式 / 数值 | 要点 |
 | --- | --- | --- |
 | 墙一：FLOPs | $2T^{2}d$ / 层；交叉点 $T^{*} = N/(dL) \approx 6 \times 10^{4}$（8B 形态），式 (1)(2) | 1M 单序列 attention ≈ $2.6 \times 10^{17}$ FLOPs；FlashAttention 不省 FLOPs |
-| 墙二：KV cache | $2 L H_{kv} d_{\mathrm{head}} T B b$（2.4 式 (9)） | 1M：GQA-8 128 GiB / MLA-61L ≈ 65.4 GiB / KDA hybrid ≈ 7.5 GiB + 20 MiB 固定状态 |
+| 墙二：KV cache | $2 L H_{kv} d_{\mathrm{head}} T B b$（2.4 式 (9)） | 1M：GQA-8 122 GiB / MLA-61L ≈ 65.4 GiB / KDA hybrid ≈ 7.5 GiB + 20 MiB 固定状态 |
 | 墙三：熵稀释 | $H \le \ln T$ 式 (3)；$p^{*} \ge 1/2 \Longleftrightarrow \Delta \ge \ln T + \sigma^{2}/2$ 式 (5) | 所需 logit 优势随 $\ln T$ 增长；attention sink 同源 |
 | 墙四：角度出域 | 慢通道 $\lambda_j > W$ 只见 $[0, W\theta_j]$（2.5 §6） | 分布外失效，非数值失效；修复损伤集中在快通道 |
 | 统一形式 | $\theta_j \to \theta_j / \eta_j$，$\eta_j \in [1, s]$ 一条曲线 | PI / NTK / YaRN / LongRoPE 是同一曲线的四种参数化 |

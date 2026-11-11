@@ -88,7 +88,7 @@ $$
 Kimi K3（arXiv:2607.24653，[A]；权重全量发布）把 4.3-4.4 的 KDA 主线搬进 frontier 规模：2.8T 总参数 / 104B 激活（激活率约 3.7%）、1M 上下文、原生视觉。架构三件套（report 口径；训练与 RL 细节归 training 维度）：
 
 - **KDA 沿用**：mixer 主线不换——§4 的 KDA : full 交错与 NoPE 论证是其直接前身，K3 报告将其作为既定基座继承。
-- **LatentMoE**：896 routed experts、每 token 激活 16（激活率约 1.8%）；对照 Kimi Linear 的 256 / top-8（约 3.1%）与 Qwen3-Next 的 512 / top-10（约 2.0%），稀疏度再上一档。「Latent」前缀的机制细节以 report 正文为准，本书不展开。
+- **LatentMoE**：896 routed experts、每 token 激活 16（激活率约 1.8%，routed 口径）；对照 Kimi Linear 的 256 / top-8 与 Qwen3-Next 的 512 / top-10（两家均含 1 个 shared expert，含 shared 口径激活率约 3.5% 与 2.1%，同 4.5 的 $\rho = (k + K_s)/N_e$ 定义），稀疏度再上一档。「Latent」前缀的机制细节以 report 正文为准，本书不展开。
 - **Attention Residuals**：report 在 KDA / full 主干上引入的残差新件；机制细节同样以 report 正文为准——它属于「交错主干之上再叠结构件」的一层自由度（§8 设计空间）。
 
 ## 6. Jamba 与 MiniMax-01：SSM 谱系与 7:1

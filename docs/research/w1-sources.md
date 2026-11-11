@@ -115,7 +115,7 @@
 
 - 官方实现走读路径（本轮核实存在）：huggingface/transformers repo 内 `src/transformers/models/llama/modeling_llama.py`（LlamaAttention.forward / LlamaMLP / LlamaRMSNorm）。
 - config.json ↔ 公式映射表素材：Llama-3.1-8B 全字段（num_hidden_layers=32 / hidden_size=4096 / num_attention_heads=32 / num_key_value_heads=8 / intermediate_size=14336 / rope_theta=500000 / rms_norm_eps / vocab_size=128256）。
-- 教学参照：nanogpt（https://github.com/karpathy/nanoGPT，repo 已核实存在；GPT-2 配方：Pre-LN + 末尾 final LN + learned abs pos + bias=True + tied（GPT-2 报告 §2.2，同本文件 2.7 节条目）——与现代配方逐项对照的好素材，配合 gpt2 config 数值）。
+- 教学参照：nanogpt（https://github.com/karpathy/nanoGPT，repo 已核实存在；GPT-2 配方：Pre-LN + 末尾 final LN + learned abs pos + bias=True + tied（GPT-2 报告 §2.2，同本文件「通用锚点 config 数值」节 GPT-2 small 条目）——与现代配方逐项对照的好素材，配合 gpt2 config 数值）。
 - parallel block（PaLM/GPT-J/Falcon 变体）：h ← h + Attn(LN(x)) + FFN(LN(x))——本章只给公式与梯度/吞吐含义，无单独引用条目（PaLM 论文属后续波次）。
 - 常见误解清单素材：head_dim≠hidden/heads 反例（DeepSeek-V3 192）；bias 有无（Llama/Qwen3/OLMo-2 全 false vs GPT-2 true）；tied vs untied（Llama-3.1-8B/Qwen3-8B/OLMo-2-7B 均 false，GPT-2 true）。
 - 来源：transformer、llama3、olmo2、nanogpt、llama-3.1-8b-config、olmo-2-7b-config、gpt2（GPT-2 老配方对照数值）。

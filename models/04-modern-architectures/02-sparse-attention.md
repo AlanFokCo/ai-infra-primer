@@ -1,6 +1,6 @@
 # 4.2 Sparse Attention（稀疏注意力）
 
-> 本章把「改可见集」这条省算路线推到底：分类学两轴（静态 pattern vs 动态选择、token 级 vs 块级）；SWA 的窗口账与 $L \cdot w$ 感受野归纳推导（Mistral-7B 实例）；SWA+full 混合层的 Gemma 3 5:1 走读（sliding_window_pattern=6）；attention sink 的 softmax 归一化解释与 StreamingLLM 处方；NSA 的 compression / selection / sliding 三分支公式（[B]：无官方 repo，按论文拆）；DSA 的 lightning indexer → top-2048 → MLA 只在选中位置算的链路，与 sparse-from-dense 训练配方；MoBA 的 query 级块路由与 SWA+MoBA hybrid；以召回类任务的质量风险收尾 | 前置：2.3（softmax 饱和与 Jacobian 式 (8)）、2.4（可见集式 (2)、cache 式 (9)、decode 强度式 (11)(12)）、2.5（RoPE 两种维度配对约定）、4.1（MLA cache 账 576 元素 / token / 层、FlashAttention 不改数学的定位） | 锚点：Mistral-7B（arXiv:2310.06825）[A]、Gemma 3（arXiv:2503.19786，HF gated 挂论文条目）[A]、StreamingLLM（arXiv:2309.17453）[A]、NSA（arXiv:2502.11089）[B]、DeepSeek-V3.2-Exp（arXiv:2512.02556）[A]、MoonshotAI/MoBA（arXiv:2502.13189）[A]、Longformer（arXiv:2004.05150）[A]
+> 本章把「改可见集」这条省算路线推到底：分类学两轴（静态 pattern vs 动态选择、token 级 vs 块级）；SWA 的窗口账与 $L \cdot w$ 感受野归纳推导（Mistral-7B 实例）；SWA+full 混合层的 Gemma 3 5:1 走读（sliding_window_pattern=6）；attention sink 的 softmax 归一化解释与 StreamingLLM 处方；NSA 的 compression / selection / sliding 三分支公式（[B]：无官方 repo，按论文拆）；DSA 的 lightning indexer → top-2048 → MLA 只在选中位置算的链路，与 sparse-from-dense 训练配方；MoBA 的 query 级块路由与 SWA+MoBA hybrid；以召回类任务的质量风险收尾 | 前置：2.3（softmax 饱和与 Jacobian 式 (8)）、2.4（可见集式 (2)、cache 式 (9)、decode 强度式 (11)(12)）、2.5（RoPE 两种维度配对约定）、4.1（MLA cache 账 576 元素 / token / 层、FlashAttention 不改数学的定位） | 锚点：Mistral-7B（arXiv:2310.06825）[A]、Gemma 3（arXiv:2503.19786，HF gated 挂论文条目）[A]、StreamingLLM（arXiv:2309.17453）[A]、NSA（arXiv:2502.11089）[B]、DeepSeek-V3.2-Exp（arXiv:2512.02556）[A]、MoonshotAI/MoBA（arXiv:2502.13189）[B]、Longformer（arXiv:2004.05150）[A]
 
 ## 1. 账的位置：改可见集，不改 softmax
 
@@ -103,7 +103,7 @@ $$
 
 **符号**：$r$：混合层 attention FLOPs 相对全 dense 的比例。代入 $p$ = 6、$w$ = 1024、$T$ = 131072：$r \approx 0.167 + 0.013 \approx 0.18$——六分之一的全局层把长程依赖保住，attention 总算力仍只有全 dense 的约 18%。cache 账同构：local 层按式 (4) 封顶 $w$ = 1024，global 层全量 $T$，cache 由占比 $1/p$ 的 global 层主导。
 
-与 4.4 的对照（本章交付的谱系坐标之一）：Gemma 3 是「softmax 局部 + softmax 全局」，4.4 的 Qwen3-Next / Kimi-Linear 是「linear state 局部 + softmax 全局」——同一条「廉价局部层 + 稀疏全局层」的混合骨架，局部层的核不同；encoder 侧的 ModernBERT 3:1（3.2 章）是同一骨架在双向 mask 下的形态。混合比（5:1 vs 3:1 vs 4.4 的 3:1 linear:full）是各家用质量-算力账定出来的工作点，不是原理约束。
+与 4.4 的对照（本章交付的谱系坐标之一）：Gemma 3 是「softmax 局部 + softmax 全局」，4.4 的 Qwen3-Next / Kimi-Linear 是「linear state 局部 + softmax 全局」——同一条「廉价局部层 + 稀疏全局层」的混合骨架，局部层的核不同；encoder 侧的 ModernBERT 2:1（每 3 层 1 个 global，3.2 章）是同一骨架在双向 mask 下的形态。混合比（5:1 vs 2:1 vs 4.4 的 3:1 linear:full）是各家用质量-算力账定出来的工作点，不是原理约束。
 
 ## 4. Attention sinks：softmax 归一化压力的出口
 
@@ -241,7 +241,7 @@ $$
 
 ## 7. MoBA：query 级块路由
 
-MoBA（[Lu et al., 2025](../references.md)，arXiv:2502.13189，[A]；官方 repo MoonshotAI/MoBA）把 MoE 的路由结构搬进可见集选择：历史分块、块即「专家」、query 对每块打分、top-$k$ 块入选。历史序列按块长 $n_b$ 切块，打分用块内 key 的均值池化向量：
+MoBA（[Lu et al., 2025](../references.md)，arXiv:2502.13189，**[B]：官方 repo MoonshotAI/MoBA 仅代码、无开放权重，本节公式按论文拆**）把 MoE 的路由结构搬进可见集选择：历史分块、块即「专家」、query 对每块打分、top-$k$ 块入选。历史序列按块长 $n_b$ 切块，打分用块内 key 的均值池化向量：
 
 $$
 \bar{k}_i = \frac{1}{n_b} \sum_{k \in \mathrm{block}_i} k, \qquad s_i = \langle q_t,\ \bar{k}_i \rangle, \qquad \mathcal{I}_t = \operatorname{TopK}\left( \{s_i\},\ k \right) \qquad (15)
@@ -267,7 +267,7 @@ $$
 2. **打分器漏选（动态方案的上限）**：needle 所在位置的 indexer 分或块分排不进 top-K，效果等同于被驱逐。动态方案的召回率上限 = 打分器的召回率——DSA 用 KL 蒸馏把主模型行为灌进 indexer（式 (14)）、NSA 直接复用 compression 支路的真实 attention 权重（式 (9)），都是在抬高这个上限；MoBA 的零参数均值打分器最便宜，上限也最依赖「needle 所在块的均值方向与 query 对齐」这一假设。
 3. **保底结构对照**：NSA 的 compression（全局稀释在场）+ sliding（近处硬保证）；MoBA 的当前块恒选 + SWA hybrid；Gemma 3 每 6 层一次感受野重置；StreamingLLM 的显式 sink 位。每家都给「窗口不够 / 打分失败」留了兜底——评估一个稀疏方案，先看它的兜底覆盖哪类失败。
 
-**证据面**（各方案自报，证据等级随行）：NSA 报告与 full attention 基线持平或更好，含长上下文检索任务（[B]，无官方代码，结论按论文口径引）；DeepSeek-V3.2-Exp 报告与 V3.1-Terminus 各基准持平（[A]）；MoBA 报告与 full 基线可比（[A]）。评测口径警告：单针 needle 任务易饱和（模型学会「找异常 token」即满分），区分不了「可见集够大」与「真会检索」；多针、键值追踪等复合检索的系统性讨论与 RULER 数据见 4.6——稀疏方案宣称的「等效上下文长度」应以该类复合任务为准。
+**证据面**（各方案自报，证据等级随行）：NSA 报告与 full attention 基线持平或更好，含长上下文检索任务（[B]，无官方代码，结论按论文口径引）；DeepSeek-V3.2-Exp 报告与 V3.1-Terminus 各基准持平（[A]）；MoBA 报告与 full 基线可比（[B]）。评测口径警告：单针 needle 任务易饱和（模型学会「找异常 token」即满分），区分不了「可见集够大」与「真会检索」；多针、键值追踪等复合检索的系统性讨论与 RULER 数据见 4.6——稀疏方案宣称的「等效上下文长度」应以该类复合任务为准。
 
 最后登记一条部署侧的风险形状：动态方案的打分器在训练分布内召回率很高，分布外（新文体、新语言、工具产出的格式化文本）可能静默退化——稀疏召回缺陷不像显存溢出那样有声，它表现为答案悄悄变差。上线侧的对应做法是保留 dense 对照探针集、周期性复测召回；这已属 deployment 议题，此处只登记风险形状。
 
@@ -282,7 +282,7 @@ $$
 | sink+SWA | 首 4 + 最近 $w$ | 静态 / token | $w$ + 4 | 封顶 | 免训插入 | StreamingLLM [A] |
 | NSA | 压缩+选择+滑窗 | 动态 / 块 | ≈ 9.7K（7.4%） | 不减 | 原生联合训 | arXiv:2502.11089 [B] |
 | DSA | indexer top-2048 | 动态 / token | $K$ = 2048（1.6%） | 不减（读取减 64×） | 从 dense 续训 ≈ 0.94T token | DeepSeek-V3.2-Exp [A] |
-| MoBA | top-$k$ 块（+SWA） | 动态 / 块 | $k \cdot n_b$ | 不减 | 免训插入声明 | MoonshotAI/MoBA [A] |
+| MoBA | top-$k$ 块（+SWA） | 动态 / 块 | $k \cdot n_b$ | 不减 | 免训插入声明 | MoonshotAI/MoBA [B] |
 
 公式清单：SWA 可见集式 (1)；感受野 $\rho_L(t) = t - L(w-1)$ 式 (2)(3)；SWA cache 封顶式 (4)；混合层 FLOPs 比式 (5)；sink 输出分解式 (6) 与驱逐放大式 (7)；NSA 三分支式 (8)–(10) 与门控式 (11)；DSA indexer 打分式 (12)、top-K 式 (13)、KL 蒸馏式 (14)；MoBA 块路由式 (15)(16)。
 
@@ -301,5 +301,5 @@ $$
 - [Xiao et al., 2023](../references.md)：Efficient Streaming Language Models with Attention Sinks，arXiv:2309.17453，[A]（key: streamingllm）——sink 现象、4 sink token、4M 流式稳定
 - [Yuan et al., 2025](../references.md)：Native Sparse Attention，arXiv:2502.11089，[B]（key: nsa）——三分支公式按论文拆，无官方 repo
 - [DeepSeek-AI, 2025](../references.md)：DeepSeek-V3.2（DSA 出处），arXiv:2512.02556，[A]（key: deepseek-v3.2）——indexer 公式、$K$ = 2048、续训配方、RoPE 布局勘误
-- [Lu et al., 2025](../references.md)：MoBA，arXiv:2502.13189，[A]（key: moba）——块路由公式、免训练插入、SWA+MoBA hybrid
+- [Lu et al., 2025](../references.md)：MoBA，arXiv:2502.13189，[B]（key: moba）——块路由公式、免训练插入、SWA+MoBA hybrid
 - [DeepSeek-AI, 2024](../references.md)：DeepSeek-V3 Technical Report，arXiv:2412.19437，[A]（key: deepseekv3）——MLA 576 元素 cache 账与 61 层口径（V3.2 沿用）

@@ -57,7 +57,7 @@ cache 账：式 (3) 进 2.4 式 (9)，$\mathrm{bytes} = 2 L (H_q / g) d_{\mathrm
 
 **uptraining**。GQA 论文给的迁移配方（[B]，按论文引）：从已训好的 MHA checkpoint 出发，把每组内各头的 $W_h^{K}$（同理 $W_h^{V}$）做 mean pooling 得到该组共享 K/V 投影的初始化，再用约原预训练算力 5% 的预算继续训练。初始化为什么取 mean：论文对照过三种取法——组内 mean pooling、取组内第一头、随机初始化——mean pooling 最优（[B]）；机制直观是各头的 $W_h^{K}$ 行空间方向不同，任取一头等于把组内其余头的检索结构硬对齐到该头，而 mean 保持组内方向的质心——零阶扰动最小。随后 5% 预算的继续训练把 pooled 权重与网络其余部分重新校准。这条路径的意义是 GQA 可以 retro-fit 到存量 MHA checkpoint 上，不必从头训。
 
-**Pareto 数据形态**（论文在 T5 族各规模上的 uptraining 对照，[B]）：MQA 的 decode 最快、质量可见下降；GQA-8（8 KV 头）质量与 MHA 基线几乎重合，decode 速度接近 MQA——论文的速度-质量对照（Fig 6）据此把 GQA-8 作为中间点选择。注意证据边界：论文逐点给的是 MHA / GQA-8 / MQA 三个臂，「再向左（4、2、1）质量快速下滑」的悬崖形状是本书按 §2 塌缩机制做的外推标注，非论文数据。账侧读法：decode 每步的 cache 读取正比于 $H_{kv}$（2.4 式 (11) 的分母），从 8 压到 1 只再省 8 倍读取，而质量从「与 MHA 几乎重合」跳到「可见下降」（MQA 臂，论文口径）——读取收益线性、质量代价非线性，中间点因此合理。落地坐标与之一致：Llama-3.1-8B（$H_q$ = 32、$H_{kv}$ = 8，$g$ = 4）与 Llama-3.1-70B（$H_q$ = 64、$H_{kv}$ = 8，$g$ = 8）（[Meta, Llama-3.1-8B config](../references.md)、[Meta, Llama-3.1-70B config](../references.md)，均 [A]）——两家都把旋钮停在 $H_{kv}$ = 8。
+**Pareto 数据形态**（论文在 T5 族各规模上的 uptraining 对照，[B]）：MQA 的 decode 最快、质量可见下降；GQA-8（8 KV 头）质量与 MHA 基线几乎重合，decode 速度接近 MQA——论文据此把 GQA-8 作为中间点选择（质量对照见 Table 1 / Fig 5，速度对照见 Fig 6）。注意证据边界：论文逐点给的是 MHA / GQA-8 / MQA 三个臂，「再向左（4、2、1）质量快速下滑」的悬崖形状是本书按 §2 塌缩机制做的外推标注，非论文数据。账侧读法：decode 每步的 cache 读取正比于 $H_{kv}$（2.4 式 (11) 的分母），从 8 压到 1 只再省 8 倍读取，而质量从「与 MHA 几乎重合」跳到「可见下降」（MQA 臂，论文口径）——读取收益线性、质量代价非线性，中间点因此合理。落地坐标与之一致：Llama-3.1-8B（$H_q$ = 32、$H_{kv}$ = 8，$g$ = 4）与 Llama-3.1-70B（$H_q$ = 64、$H_{kv}$ = 8，$g$ = 8）（[Meta, Llama-3.1-8B config](../references.md)、[Meta, Llama-3.1-70B config](../references.md)，均 [A]）——两家都把旋钮停在 $H_{kv}$ = 8。
 
 ## 4. MLA：低秩 latent + decoupled RoPE 的完整推导
 

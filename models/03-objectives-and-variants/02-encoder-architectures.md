@@ -233,7 +233,7 @@ ModernBERT-base 结构一瞥（22 层，global 周期 3，示意）
 | cross-attention | 式 (11)–(13) | K/V 来自 encoder、一次计算全程复用：定长 cache；无 mask |
 | 参数/token 账 | decoder 层 $16d^{2}$ vs self-only 层 $12d^{2}$ | decode 参数项 ≈ 0.57×；理解侧暴露量 ×2 |
 | 占优场景 | 翻译 / 摘要 / ASR（Whisper，10.2 详读） | 输入完整已知、与输出不同链 |
-| ModernBERT | RoPE 双 $\theta$（$1.6 \times 10^{5}$ / $10^{4}$）、3:1 local（总窗宽 128，每侧 64）/global、unpadding | 形态不变零件全换；8192 ctx；config 的 absolute 字段是残留 |
+| ModernBERT | RoPE 双 $\theta$（$1.6 \times 10^{5}$ / $10^{4}$）、2:1 local:global（每 3 层 1 个 global；local 总窗宽 128，每侧 64）、unpadding | 形态不变零件全换；8192 ctx；config 的 absolute 字段是残留 |
 
 ## 练习
 

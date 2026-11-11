@@ -115,7 +115,7 @@ google-research/bert 的预训练数据脚本 `create_pretraining_data.py`（[Go
 
 1. 候选下标 = 全部非特殊 token 位置（ [CLS] / [SEP] 除外），洗牌；
 2. `num_to_predict = min(max_predictions_per_seq, max(1, round(len(tokens) * masked_lm_prob)))` ——15% 在此落地， `max(1, ·)` 给短序列保底；
-3. 按洗牌序取前 `num_to_predict` 个候选位，每位独立掷一次： $< 0.8$ → 替换为 `[MASK]` ； $< 0.9$ → 词表均匀随机词；否则保留原 token；
+3. 按洗牌序取前 `num_to_predict` 个候选位，每位掷签两次：第一次 $< 0.8$ → 替换为 `[MASK]` ；否则再掷一次， $< 0.5$ → 保留原 token、否则替换为词表均匀随机词（两次掷签的净分布即 80/10/10）；
 4. 整词掩码（whole-word masking）变体把候选按 WordPiece 词分组（ `##` 续片归入同组）：同组同选（整组进出选中集），但组内逐 token 独立掷 80/10/10——同一词的各续片可以落进不同分支。
 
 教学用复刻（非优化实现；与官方的差异：官方用 `covered_indexes` 集合支持整词分组、超出配额即中断，逐位 80/10/10 的分布语义相同）：
@@ -135,12 +135,12 @@ def create_masked_lm_predictions(tokens, masked_lm_prob=0.15,
                          max(1, round(len(tokens) * masked_lm_prob)))
     out, loss_pos = list(tokens), []
     for i in cand[:num_to_predict]:
-        p = rng.random()
-        if p < 0.8:
+        if rng.random() < 0.8:
             out[i] = "[MASK]"
-        elif p < 0.9:
-            out[i] = rng.choice(vocab_words)
-        # 余下 10%：保留原 token（监督目标仍是原 token）
+        elif rng.random() < 0.5:
+            pass  # 保留原 token（监督目标仍是原 token）
+        else:
+            out[i] = rng.choice(vocab_words)  # 词表均匀随机词
         loss_pos.append(i)
     return out, sorted(loss_pos)
 ```
@@ -167,7 +167,7 @@ $$
 L_{\mathrm{GLM}} = - \mathbb{E}_{\pi}\left[ \sum_{i=1}^{m} \sum_{j=1}^{|s_{\pi(i)}|} \log q_\theta\big(s_{\pi(i),\, j} \mid x^{c},\, s_{\pi(<i)},\, s_{\pi(i),\, <j}\big) \right] \qquad (8)
 $$
 
-**符号**： $s_{i,\, j}$ ：第 $i$ 条 span 的第 $j$ 个 token； $s_{\pi(<i)}$ ：排列 $\pi$ 下先于它的全部 span； $s_{\pi(i),\, <j}$ ：本 span 内前 $j - 1$ 个 token；损失按 span 总 token 数归一。
+**符号**： $s_{i,\, j}$ ：第 $i$ 条 span 的第 $j$ 个 token； $s_{\pi(<i)}$ ：排列 $\pi$ 下先于它的全部 span； $s_{\pi(i),\, <j}$ ：本 span 内前 $j - 1$ 个 token。式 (8) 按论文原文为未归一形式（双重求和、不除 token 数）；本章式 (2)(4)(7) 的 $1/\cdot$ 因子是本书加的逐 token 归一约定，式 (1)(8) 保留原文形式——归一只改梯度尺度，不改最优解。
 
 结构读法（对应 $M(\omega)$ 的分块）：Part A 内部双向（A-A 块全 0）；Part B 的每个位置能看见全部 Part A、排列序上先于本 span 的其他 span、以及本 span 内自己的左侧（span 内因果），未来 span 不可见； $\ell$ 只落 Part B。对 $\pi$ 取期望使「先填哪个空」不构成偏置；mask 随每次抽样变化，是 $M(\omega)$ 依赖 $\omega$ 的实例。原文在同一机制上还定义了更长跨度的变体（整句级 span；文档级单 span，长度取原文的 50%–100%），把填空连续推向长文生成（同篇，[A]）；该文档级长 blank 变体在 GLM-130B 中记为 [gMASK] token（[Zeng et al., 2022](../references.md)，arXiv:2210.02414，[A]）。
 
