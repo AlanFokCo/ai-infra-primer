@@ -182,6 +182,18 @@
 | moonlight | Muon is Scalable for LLM Training（Moonlight 模型出处论文） | Liu et al. | arXiv:2502.16982 | [A] | 2026-11-12 | 5.5 |
 | kimi-k1.5 | Kimi k1.5: Scaling Reinforcement Learning with LLMs | Kimi Team | arXiv:2501.12599 | [A] | 2026-11-12 | 5.5 |
 | kimi-k2 | Kimi K2: Open Agentic Intelligence | Kimi Team | arXiv:2507.20534 | [A] | 2026-11-12 | 5.5 |
+| llama-4 | Llama 4 官方 blog（Scout/Maverick 发布）+ Scout/Maverick config.json（HF gated，经 unsloth 镜像实测：16/128 experts、no_rope_layers iRoPE、early-fusion vision tower） | Meta | https://ai.meta.com/blog/llama-4-multimodal-intelligence/ ; https://huggingface.co/meta-llama/Llama-4-Scout-17B-16E-Instruct/blob/main/config.json | [W] | 2026-11-12 | 5.1 |
+| llama-models-repo | meta-llama/llama-models 官方 repo（Llama 1-4 模型定义与 tokenizer） | Meta | https://github.com/meta-llama/llama-models | [A] | 2026-11-12 | 5.1 |
+| qwen1.5 | Qwen1.5 发布博客（**无 arXiv 论文**；谱系定位以博客 + Qwen2 report 回溯为准） | Qwen | https://qwenlm.github.io/blog/qwen1.5/ | [W] | 2026-11-12 | 5.3 |
+| qwen3-max | Qwen3-Max 官方公告（API-only 旗舰；**无 arXiv、无开放权重**——HF Qwen/Qwen3-Max 404 实测 2026-11-12；参数规模为厂商宣称） | Qwen | https://qwen.ai/blog?id=qwen3-max | [C] | 2026-11-12 | 5.3 |
+| glm-4.6 | GLM-4.6 HF config.json + model card（**无独立 tech report**；架构字段实测同 GLM-4.5，ctx 202752） | Z.ai | https://huggingface.co/zai-org/GLM-4.6/blob/main/config.json | [W] | 2026-11-12 | 5.4 |
+| glm-4.7 | GLM-4.7 HF config.json + model card（**无 arXiv**；config 实测架构同 4.6） | Z.ai | https://huggingface.co/zai-org/GLM-4.7/blob/main/config.json | [W] | 2026-11-12 | 5.4 |
+| glm-4-repo | zai-org/GLM-4 官方 repo（GLM-4 系列；**THUDM/GLM-4 已 301 重定向至此**） | Z.ai | https://github.com/zai-org/GLM-4 | [A] | 2026-11-12 | 5.4 |
+| glm-4.5-repo | zai-org/GLM-4.5 官方 GitHub repo | Z.ai | https://github.com/zai-org/GLM-4.5 | [A] | 2026-11-12 | 5.4 |
+| muon-blog | Muon: An optimizer for hidden layers in neural networks（Muon 原始出处，Keller Jordan 博客，无 arXiv） | Keller Jordan | https://kellerjordan.github.io/posts/muon/ | [W] | 2026-11-12 | 5.5 |
+| moonlight-repo | MoonshotAI/Moonlight 官方 repo（Moonlight-16B-A3B 权重 + Muon 分布式实现） | Moonshot AI | https://github.com/MoonshotAI/Moonlight | [A] | 2026-11-12 | 5.5 |
+| kimi-k2-config | Kimi-K2-Instruct config.json（HF：architectures=DeepseekV3ForCausalLM、384 routed+1 shared top-8、MLA q_lora_rank=1536、YaRN factor 32） | Moonshot AI | https://huggingface.co/moonshotai/Kimi-K2-Instruct/blob/main/config.json | [A] | 2026-11-12 | 5.5 |
+| kimi-k2-repo | MoonshotAI/Kimi-K2 官方 repo（K2 model card 与部署说明） | Moonshot AI | https://github.com/MoonshotAI/Kimi-K2 | [A] | 2026-11-12 | 5.5 |
 | qwen3 | Qwen3 Technical Report | Yang et al. | arXiv:2505.09388 | [A] | 2026-11-10 | 4.5, 5.3 |
 | qwen2.5 | Qwen2.5 Technical Report | Qwen Team | arXiv:2412.15115 | [A] | 2026-11-10 | 5.3 |
 
@@ -201,6 +213,14 @@
 | vqgan | Taming Transformers for High-Resolution Image Synthesis | Esser et al. | arXiv:2012.09841 | [A] | 2026-11-12 | 6.3 |
 | magvit-v2 | Language Model Beats Diffusion -- Tokenizer is Key to Visual Generation | Yu et al. | arXiv:2310.05737 | [A] | 2026-11-12 | 6.3 |
 | dc-ae | Deep Compression Autoencoder for Efficient High-Resolution Diffusion Models | Chen et al. | arXiv:2410.10733 | [A] | 2026-11-12 | 6.3 |
+| vision-transformer-repo | google-research/vision_transformer（ViT 官方 JAX 实现；vit_jax/models_vit.py） | Google | https://github.com/google-research/vision_transformer | [A] | 2026-11-12 | 6.1 |
+| big-vision | google-research/big_vision（SigLIP/SigLIP 2/NaViT 官方训练代码；big_vision/models/vit.py） | Google | https://github.com/google-research/big_vision | [A] | 2026-11-12 | 6.1 |
+| clip-repo | openai/CLIP 官方 repo（模型与 zero-shot 协议） | OpenAI | https://github.com/openai/CLIP | [A] | 2026-11-12 | 6.2 |
+| open-clip | mlfoundations/open_clip（开放复现训练；src/open_clip/loss.py 为 InfoNCE/SigLIP loss 走读锚点） | LAION et al. | https://github.com/mlfoundations/open_clip | [A] | 2026-11-12 | 6.2 |
+| taming-transformers-repo | CompVis/taming-transformers（VQGAN 官方实现；taming/models/vqgan.py） | CompVis | https://github.com/CompVis/taming-transformers | [A] | 2026-11-12 | 6.3 |
+| efficientvit-repo | mit-han-lab/efficientvit（DC-AE 官方实现；applications/dc_ae） | MIT Han Lab | https://github.com/mit-han-lab/efficientvit | [A] | 2026-11-12 | 6.3 |
+| autoencoderkl | diffusers AutoencoderKL 实现（SD/SD3/FLUX VAE 走读锚点；src/diffusers/models/autoencoders/autoencoder_kl.py） | HuggingFace | https://github.com/huggingface/diffusers/blob/main/src/diffusers/models/autoencoders/autoencoder_kl.py | [A] | 2026-11-12 | 6.3 |
+| vector-quantize-pytorch | lucidrains/vector-quantize-pytorch（VQ/RVQ/LFQ 教学实现） | lucidrains | https://github.com/lucidrains/vector-quantize-pytorch | 教学参照 | 2026-11-12 | 6.3 |
 
 ### Part 7 · Diffusion & Image Generation
 
