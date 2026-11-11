@@ -50,18 +50,18 @@
 | emergent-abilities | Emergent Abilities of Large Language Models | Wei et al. | arXiv:2206.07682 | [B] | 2026-11-10 | 1.3 |
 | emergence-mirage | Are Emergent Abilities of Large Language Models a Mirage? | Schaeffer et al. | arXiv:2304.15004 | [B] | 2026-11-10 | 1.3 |
 | deepseekmoe | DeepSeekMoE: Towards Ultimate Expert Specialization in Mixture-of-Experts Language Models | Dai et al. | arXiv:2401.06066 | [A] | 2026-11-10 | 1.3, 4.5 |
-| deepseekv3 | DeepSeek-V3 Technical Report | DeepSeek-AI | arXiv:2412.19437 | [A] | 2026-11-10 | 1.2, 2.5, 2.6, 4.1, 4.2, 4.5, 4.6 |
+| deepseekv3 | DeepSeek-V3 Technical Report | DeepSeek-AI | arXiv:2412.19437 | [A] | 2026-11-10 | 1.2, 2.5, 2.6, 4.1, 4.2, 4.5, 4.6, 5.2 |
 | pythia | Pythia: A Suite for Analyzing Large Language Models Across Training and Scaling | Biderman et al. | arXiv:2304.01373 | [A] | 2026-11-10 | 1.3, 3.3, 4.7 |
-| llama-3.1-8b-config | Llama-3.1-8B config.json（HF，gated repo） | Meta | https://huggingface.co/meta-llama/Llama-3.1-8B/blob/main/config.json | [A] | 2026-11-10 | 1.1, 1.2, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 4.1, 4.6 |
+| llama-3.1-8b-config | Llama-3.1-8B config.json（HF，gated repo） | Meta | https://huggingface.co/meta-llama/Llama-3.1-8B/blob/main/config.json | [A] | 2026-11-10 | 1.1, 1.2, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 4.1, 4.6, 5.1 |
 | qwen3-8b-config | Qwen3-8B config.json 与 tokenizer 文件（HF） | Qwen | https://huggingface.co/Qwen/Qwen3-8B/blob/main/config.json | [A] | 2026-11-10 | 1.1, 2.2, 2.5, 2.6, 2.7, 2.8 |
-| deepseek-v3-config | DeepSeek-V3 config.json（HF） | DeepSeek-AI | https://huggingface.co/deepseek-ai/DeepSeek-V3/blob/main/config.json | [A] | 2026-11-10 | 1.2, 2.3, 2.5, 2.6, 2.8, 4.1, 4.5, 4.6 |
+| deepseek-v3-config | DeepSeek-V3 config.json（HF） | DeepSeek-AI | https://huggingface.co/deepseek-ai/DeepSeek-V3/blob/main/config.json | [A] | 2026-11-10 | 1.2, 2.3, 2.5, 2.6, 2.8, 4.1, 4.5, 4.6, 5.2 |
 
 ### Part 2 · Transformer Anatomy
 
 | key | 标题 | 作者 | arXiv ID / URL | 证据等级 | 核实日期 | 被引章节 |
 | --- | --- | --- | --- | --- | --- | --- |
 | transformer | Attention Is All You Need | Vaswani et al. | arXiv:1706.03762 | [A] | 2026-11-10 | 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.8 |
-| llama3 | The Llama 3 Herd of Models | Grattafiori et al. | arXiv:2407.21783 | [A] | 2026-11-10 | 1.3, 2.1, 2.2, 2.7, 2.8, 4.6 |
+| llama3 | The Llama 3 Herd of Models | Grattafiori et al. | arXiv:2407.21783 | [A] | 2026-11-10 | 1.3, 2.1, 2.2, 2.7, 2.8, 4.6, 5.1 |
 | olmo2 | 2 OLMo 2 Furious | Team OLMo et al. | arXiv:2501.00656 | [A] | 2026-11-10 | 1.3, 2.1, 2.3, 2.4, 2.6, 2.7, 2.8 |
 | olmo-2-7b-config | OLMo-2-7B（allenai/OLMo-2-1124-7B）config.json | AllenAI | https://huggingface.co/allenai/OLMo-2-1124-7B/blob/main/config.json | [A] | 2026-11-10 | 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8 |
 | olmo2-modeling | transformers repo：OLMo 2 modeling 代码（modeling_olmo2.py，Olmo2Attention / eager_attention_forward） | HuggingFace | https://github.com/huggingface/transformers/blob/main/src/transformers/models/olmo2/modeling_olmo2.py | [A] | 2026-11-10 | 2.3, 2.4, 2.6, 2.7, 2.8 |
@@ -101,9 +101,9 @@
 | electra | ELECTRA: Pre-training Text Encoders as Discriminators Rather Than Generators | Clark et al. | arXiv:2003.10555 | [A] | 2026-11-11 | 3.2 |
 | electra-repo | ELECTRA 官方 repo（RTD generator/discriminator 实现） | Google | https://github.com/google-research/electra | [A] | 2026-11-11 | 3.2 |
 | ul2 | UL2: Unifying Language Learning Paradigms | Tay et al. | arXiv:2205.05131 | [B] | 2026-11-11 | 3.1 |
-| glm | GLM: General Language Model Pretraining with Autoregressive Blank Infilling | Du et al. | arXiv:2103.10360 | [A] | 2026-11-11 | 3.1 |
+| glm | GLM: General Language Model Pretraining with Autoregressive Blank Infilling | Du et al. | arXiv:2103.10360 | [A] | 2026-11-11 | 3.1, 5.4 |
 | glm-repo | GLM 官方 repo（blank infilling 实现；注意 zai-org/GLM 不存在，2021 代码在 THUDM/GLM） | THUDM | https://github.com/THUDM/GLM | [A] | 2026-11-11 | 3.1 |
-| glm-130b | GLM-130B: An Open Bilingual Pre-trained Model | Zeng et al. | arXiv:2210.02414 | [A] | 2026-11-11 | 3.1 |
+| glm-130b | GLM-130B: An Open Bilingual Pre-trained Model | Zeng et al. | arXiv:2210.02414 | [A] | 2026-11-11 | 3.1, 5.4 |
 | modernbert | Smarter, Better, Faster, Longer: A Modern Bidirectional Encoder for Fast, Memory Efficient, and Long Context Finetuning and Inference | Warner et al. | arXiv:2412.13663 | [A] | 2026-11-11 | 3.1, 3.2 |
 | modernbert-config | ModernBERT-base / ModernBERT-large config.json（HF）+ 官方 repo | Answer.AI | https://huggingface.co/answerdotai/ModernBERT-base/blob/main/config.json ; https://github.com/answerdotai/ModernBERT | [A] | 2026-11-11 | 3.2 |
 | whisper | Robust Speech Recognition via Large-Scale Weak Supervision | Radford et al. | arXiv:2212.04356 ; https://github.com/openai/whisper | [A] | 2026-11-11 | 3.2 |
@@ -120,12 +120,12 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | mistral-7b | Mistral 7B | Jiang et al. | arXiv:2310.06825 | [A] | 2026-11-10 | 4.2 |
 | gqa | GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints | Ainslie et al. | arXiv:2305.13245 | [B] | 2026-11-11 | 4.1 |
-| deepseekv2 | DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model | DeepSeek-AI | arXiv:2405.04434 | [A] | 2026-11-11 | 4.1, 4.5 |
+| deepseekv2 | DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model | DeepSeek-AI | arXiv:2405.04434 | [A] | 2026-11-11 | 4.1, 4.5, 5.2 |
 | flashattention | FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness | Dao et al. | arXiv:2205.14135 | [A] | 2026-11-11 | 4.1 |
 | fa2 | FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning | Dao | arXiv:2307.08691 | [A] | 2026-11-11 | 4.1 |
 | flash-attention-repo | FlashAttention 官方 repo（kernel 走读锚点） | Dao-AILab | https://github.com/Dao-AILab/flash-attention | [A] | 2026-11-11 | 4.1 |
 | nsa | Native Sparse Attention: Hardware-Aligned and Natively Trainable Sparse Attention | Yuan et al. | arXiv:2502.11089 | [B] | 2026-11-11 | 4.2 |
-| deepseek-v3.2 | DeepSeek-V3.2: Pushing the Frontier of Open Large Language Models（DSA 出处） | DeepSeek-AI | arXiv:2512.02556 ; https://github.com/deepseek-ai/DeepSeek-V3.2-Exp | [A] | 2026-11-11 | 4.2, 4.6, 4.8 |
+| deepseek-v3.2 | DeepSeek-V3.2: Pushing the Frontier of Open Large Language Models（DSA 出处） | DeepSeek-AI | arXiv:2512.02556 ; https://github.com/deepseek-ai/DeepSeek-V3.2-Exp | [A] | 2026-11-11 | 4.2, 4.6, 4.8, 5.2 |
 | moba | MoBA: Mixture of Block Attention for Long-Context LLMs（官方 repo 仅代码、无开放权重，2026-11-12 波末审查降为 [B]） | Lu et al. | arXiv:2502.13189 ; https://github.com/MoonshotAI/MoBA | [B] | 2026-11-11 | 4.2 |
 | streamingllm | Efficient Streaming Language Models with Attention Sinks | Xiao et al. | arXiv:2309.17453 ; https://github.com/mit-han-lab/streaming-llm | [A] | 2026-11-11 | 4.2, 4.6 |
 | longformer | Longformer: The Long-Document Transformer | Beltagy et al. | arXiv:2004.05150 | [A] | 2026-11-11 | 4.2 |
@@ -135,7 +135,7 @@
 | deltanet | Parallelizing Linear Transformers with the Delta Rule over Sequence Length | Yang et al. | arXiv:2406.06484 | [A] | 2026-11-11 | 4.3 |
 | gdn | Gated Delta Networks: Improving Mamba2 with Delta Rule | Yang et al. | arXiv:2412.06464 ; https://github.com/NVlabs/GatedDeltaNet | [A] | 2026-11-11 | 4.3, 4.4 |
 | gdn2 | Gated DeltaNet-2: Decoupling Erase and Write in Linear Attention | Hatamizadeh et al. | arXiv:2605.22791 ; https://github.com/NVlabs/GatedDeltaNet-2 | [A] | 2026-11-11 | 4.3 |
-| kimi-linear | Kimi Linear: An Expressive, Efficient Attention Architecture（KDA 出处） | Kimi Team | arXiv:2510.26692 ; https://github.com/MoonshotAI/Kimi-Linear | [A] | 2026-11-11 | 4.3, 4.4, 4.6 |
+| kimi-linear | Kimi Linear: An Expressive, Efficient Attention Architecture（KDA 出处） | Kimi Team | arXiv:2510.26692 ; https://github.com/MoonshotAI/Kimi-Linear | [A] | 2026-11-11 | 4.3, 4.4, 4.6, 5.5 |
 | kimi-linear-config | Kimi-Linear-48B-A3B-Instruct config.json（HF：20 KDA + 7 full-attn、mla_use_nope=true） | Moonshot AI | https://huggingface.co/moonshotai/Kimi-Linear-48B-A3B-Instruct/blob/main/config.json | [A] | 2026-11-11 | 4.4, 4.6 |
 | mamba | Mamba: Linear-Time Sequence Modeling with Selective State Spaces | Gu & Dao | arXiv:2312.00752 ; https://github.com/state-spaces/mamba | [A] | 2026-11-11 | 4.3 |
 | mamba2 | Transformers are SSMs: Generalized Models and Efficient Algorithms Through Structured State Space Duality | Dao & Gu | arXiv:2405.21060 | [A] | 2026-11-11 | 4.3 |
@@ -143,8 +143,8 @@
 | minimax01 | MiniMax-01: Scaling Foundation Models with Lightning Attention | MiniMax | arXiv:2501.08313 ; https://github.com/MiniMax-AI/MiniMax-01 | [A] | 2026-11-11 | 4.4, 4.6 |
 | minimax-text-01-config | MiniMaxAI/MiniMax-Text-01 config.json（HF：attn_type_list 70 linear + 10 full） | MiniMax | https://huggingface.co/MiniMaxAI/MiniMax-Text-01/blob/main/config.json | [A] | 2026-11-11 | 4.4 |
 | jamba | Jamba: A Hybrid Transformer-Mamba Language Model | Lieber et al. | arXiv:2403.19887 ; https://huggingface.co/ai21labs/Jamba-v0.1 | [A] | 2026-11-11 | 4.4 |
-| qwen3-next | Qwen3-Next-80B-A3B-Instruct model card + 官方 blog + config.json（**无 arXiv 论文**，证据以官方 config/blog 为准） | Qwen | https://huggingface.co/Qwen/Qwen3-Next-80B-A3B-Instruct ; https://qwen.ai/blog?id=4074cca80393150c248e508aa62983f9cb7d27cd | [W] | 2026-11-11 | 4.4, 4.5, 4.6 |
-| kimi-k3 | Kimi K3: Open Frontier Intelligence | Kimi Team | arXiv:2607.24653 ; https://github.com/MoonshotAI/Kimi-K3 | [A] | 2026-11-11 | 4.4, 4.8 |
+| qwen3-next | Qwen3-Next-80B-A3B-Instruct model card + 官方 blog + config.json（**无 arXiv 论文**，证据以官方 config/blog 为准） | Qwen | https://huggingface.co/Qwen/Qwen3-Next-80B-A3B-Instruct ; https://qwen.ai/blog?id=4074cca80393150c248e508aa62983f9cb7d27cd | [W] | 2026-11-11 | 4.4, 4.5, 4.6, 5.3 |
+| kimi-k3 | Kimi K3: Open Frontier Intelligence | Kimi Team | arXiv:2607.24653 ; https://github.com/MoonshotAI/Kimi-K3 | [A] | 2026-11-11 | 4.4, 4.8, 5.5 |
 | shazeer-moe | Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer | Shazeer et al. | arXiv:1701.06538 | [B] | 2026-11-11 | 4.5 |
 | switch | Switch Transformers: Scaling to Trillion Parameter Models with Simple and Efficient Sparsity | Fedus et al. | arXiv:2101.03961 ; https://github.com/google-research/t5x | [A] | 2026-11-11 | 4.5 |
 | gshard | GShard: Scaling Giant Models with Conditional Computation and Automatic Sharding | Lepikhin et al. | arXiv:2006.16668 | [B] | 2026-11-11 | 4.5 |
@@ -172,6 +172,16 @@
 
 | key | 标题 | 作者 | arXiv ID / URL | 证据等级 | 核实日期 | 被引章节 |
 | --- | --- | --- | --- | --- | --- | --- |
+| llama-1 | LLaMA: Open and Efficient Foundation Language Models | Touvron et al. | arXiv:2302.13971 | [A] | 2026-11-12 | 5.1 |
+| llama-2 | Llama 2: Open Foundation and Fine-Tuned Chat Models | Touvron et al. | arXiv:2307.09288 | [A] | 2026-11-12 | 5.1 |
+| qwen1 | Qwen Technical Report | Bai et al. | arXiv:2309.16609 | [A] | 2026-11-12 | 5.3 |
+| qwen2 | Qwen2 Technical Report | Yang et al. | arXiv:2407.10671 | [A] | 2026-11-12 | 5.3 |
+| glm-4 | ChatGLM: A Family of Large Language Models from GLM-130B to GLM-4 All Tools | Team GLM | arXiv:2406.12793 | [A] | 2026-11-12 | 5.4 |
+| glm-4.5 | GLM-4.5: Agentic, Reasoning, and Coding (ARC) Foundation Models | GLM-4.5 Team | arXiv:2508.06471 | [A] | 2026-11-12 | 5.4 |
+| glm-4.5v | GLM-4.5V and GLM-4.1V-Thinking: Towards Versatile Multimodal Reasoning with Scalable Reinforcement Learning | GLM-V Team | arXiv:2507.01006 | [A] | 2026-11-12 | 5.4 |
+| moonlight | Muon is Scalable for LLM Training（Moonlight 模型出处论文） | Liu et al. | arXiv:2502.16982 | [A] | 2026-11-12 | 5.5 |
+| kimi-k1.5 | Kimi k1.5: Scaling Reinforcement Learning with LLMs | Kimi Team | arXiv:2501.12599 | [A] | 2026-11-12 | 5.5 |
+| kimi-k2 | Kimi K2: Open Agentic Intelligence | Kimi Team | arXiv:2507.20534 | [A] | 2026-11-12 | 5.5 |
 | qwen3 | Qwen3 Technical Report | Yang et al. | arXiv:2505.09388 | [A] | 2026-11-10 | 4.5, 5.3 |
 | qwen2.5 | Qwen2.5 Technical Report | Qwen Team | arXiv:2412.15115 | [A] | 2026-11-10 | 5.3 |
 
@@ -179,6 +189,18 @@
 
 | key | 标题 | 作者 | arXiv ID / URL | 证据等级 | 核实日期 | 被引章节 |
 | --- | --- | --- | --- | --- | --- | --- |
+| vit | An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale | Dosovitskiy et al. | arXiv:2010.11929 | [A] | 2026-11-12 | 6.1 |
+| siglip | Sigmoid Loss for Language Image Pre-Training | Zhai et al. | arXiv:2303.15343 | [A] | 2026-11-12 | 6.1 |
+| siglip2 | SigLIP 2: Multilingual Vision-Language Encoders with Improved Semantic Understanding, Localization, and Dense Features | Tschannen et al. | arXiv:2502.14786 | [A] | 2026-11-12 | 6.1 |
+| navit | Patch n' Pack: NaViT, a Vision Transformer for any Aspect Ratio and Resolution | Dehghani et al. | arXiv:2307.06304 | [A] | 2026-11-12 | 6.1 |
+| swin | Swin Transformer: Hierarchical Vision Transformer using Shifted Windows | Liu et al. | arXiv:2103.14030 | [A] | 2026-11-12 | 6.1 |
+| clip | Learning Transferable Visual Models From Natural Language Supervision | Radford et al. | arXiv:2103.00020 | [A] | 2026-11-12 | 6.2 |
+| alignment-uniformity | Understanding Contrastive Representation Learning through Alignment and Uniformity on the Hypersphere | Wang & Isola | arXiv:2005.10242 | [A] | 2026-11-12 | 6.2 |
+| vae | Auto-Encoding Variational Bayes | Kingma & Welling | arXiv:1312.6114 | [A] | 2026-11-12 | 6.3 |
+| vq-vae | Neural Discrete Representation Learning | van den Oord et al. | arXiv:1711.00937 | [A] | 2026-11-12 | 6.3 |
+| vqgan | Taming Transformers for High-Resolution Image Synthesis | Esser et al. | arXiv:2012.09841 | [A] | 2026-11-12 | 6.3 |
+| magvit-v2 | Language Model Beats Diffusion -- Tokenizer is Key to Visual Generation | Yu et al. | arXiv:2310.05737 | [A] | 2026-11-12 | 6.3 |
+| dc-ae | Deep Compression Autoencoder for Efficient High-Resolution Diffusion Models | Chen et al. | arXiv:2410.10733 | [A] | 2026-11-12 | 6.3 |
 
 ### Part 7 · Diffusion & Image Generation
 
