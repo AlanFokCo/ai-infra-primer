@@ -78,7 +78,7 @@
 - DeltaNet `deltanet`（2406.06484，Yang）：状态更新 = $\min_S\|Sk_t-v_t\|^2$ 的一步在线 GD。
 - GDN `gdn`（2412.06464，Yang；NVlabs/GatedDeltaNet 200）：$S_t=\alpha_tS_{t-1}(I-\beta_tk_tk_t^{\top})+\beta_tv_tk_t^{\top}$（约定见本文件「W2 数学约定」）。
 - GDN-2 `gdn2`（2605.22791，Hatamizadeh，2026-05；NVlabs/GatedDeltaNet-2 200）：**erase/write 解耦**——摘要原文核实：GDN/KDA 共用「单个标量门同时控制 key 侧擦除与 value 侧写入」，GDN-2 把两个角色拆开；自称泛化 GDN 与 KDA。
-- KDA / Kimi Linear `kimi-linear`（2510.26692，Kimi Team，2025-10-30；MoonshotAI/Kimi-Linear 200）：channel-wise gating（对角 $\alpha_t$）；chunkwise 用 DPLR 转移矩阵的特化变体（摘要原文核实）。**论文数字（ar5iv 摘要核实）：KV cache 最多 −75%；1M ctx decode 吞吐最高 6.3×（spec 写 ~6×，正文用论文原数 6.3×）；KDA:full-attention 名义 3:1 交错**。
+- KDA / Kimi Linear `kimi-linear`（2510.26692，Kimi Team，2025-10-30；MoonshotAI/Kimi-Linear 200）：channel-wise gating（对角 $\alpha_t$）；chunkwise 用 DPLR 转移矩阵的特化变体（摘要原文核实）。**论文数字（ar5iv 取证）：摘要原文为 KV cache 最多 −75%、1M ctx decode 吞吐 "up to 6×"；精确值 6.3× 出自正文 Fig 1(b)（1M decode 长度的 TPOT 对照）——正文引用时写「最高 6.3×（Fig 1(b)）」或按摘要写 6×，勿写成摘要原数 6.3×；KDA:full-attention 名义 3:1 交错**。
 - Mamba `mamba`（2312.00752，Gu & Dao；state-spaces/mamba 200）：S6，selectivity（Δ,B,C 输入依赖）。Mamba-2 `mamba2`（2405.21060，Dao & Gu）：SSD 对偶框架。
 - kernel 走读锚点：`fla-repo`（fla-org/flash-linear-attention，200）——GDN/KDA 的 chunkwise 实现都在此（transformers 的 Qwen3-Next 也直接调 fla 的 `chunk_gated_delta_rule`，本轮读码确认）。
 - 理论边界（associative recall 下界）：论证素材用 RetNet/GDN/KDA 论文的 retrieval ablation + 4.4 hybrid 动机，数学表述自行推导（固定 d×d 状态的信息论上界）。
@@ -94,11 +94,11 @@
 
 **Kimi-Linear-48B-A3B-Instruct**（`kimi-linear-config`，config 本轮实测 2026-11-11）：
 
-- 27 层 = **20 KDA + 7 full-attn**：`kda_layers=[1,2,3,5,6,7,9,10,11,13,14,15,17,18,19,21,22,23,25,26]`、`full_attn_layers=[4,8,12,16,20,24,27]`（注意：名义 3:1 交错 + 最后一层额外 full attention，27 层凑不满整数周期——写「3:1」时须带此注脚）。
+- 27 层 = **20 KDA + 7 full-attn**：`linear_attn_config.kda_layers=[1,2,3,5,6,7,9,10,11,13,14,15,17,18,19,21,22,23,25,26]`、`linear_attn_config.full_attn_layers=[4,8,12,16,20,24,27]`——**两列表嵌套在 config.json 的 `linear_attn_config` 字段下**（同层还有 `head_dim=128 / num_heads=32 / short_conv_kernel_size=4`），写作引用 config 字段时给全路径（注意：名义 3:1 交错 + 最后一层额外 full attention，27 层凑不满整数周期——写「3:1」时须带此注脚）。
 - full-attn 层用 MLA 且 **`mla_use_nope=true`**（RoPE 关闭——NoPE；KDA 层已破位置对称性的论证素材）；kv_lora_rank=512、qk_rope_head_dim=64、qk_nope_head_dim=128、v_head_dim=128（MLA 字段与 DeepSeek 谱系一致）。
 - MoE：256 experts、top-8、1 shared（`num_shared_experts=1`）、`moe_router_activation_func=sigmoid`、`routed_scaling_factor=2.446`、`first_k_dense_replace=1`。
 - 其他：hidden 2304、head_dim 72（=2304/32）、intermediate 9216、moe_intermediate_size 1024、rope_theta=10⁴、model_max_length=1048576（1M）、vocab 163840、tie=false。
-- 论文（`kimi-linear`）数字：48B 总 / 3B 激活、1T tokens 预训练、KV cache −75%、decode 吞吐 ≤6.3×、**首称在公平对照下全面超过 full attention**（摘要原文）。
+- 论文（`kimi-linear`）数字：48B 总 / 3B 激活；**训练 token 量分两档（勿写单一数字）**：公平对照实验用 **1.4T tokens**（Kimi Linear / GDN-H / MLA 三模型共享语料与 recipe，论文 Fig 1 及实验节口径）、**最终发布 checkpoint 用 5.7T tokens**（对齐 Moonlight 预训练 token 量；Kimi Linear@5.7T 与 Moonlight 的对照见论文 Appendix D）；KV cache −75%（摘要口径）、decode 吞吐摘要口径 up to 6×（精确值 6.3× 见 Fig 1(b)）、**首称在公平对照下全面超过 full attention**（摘要原文）。
 
 **MiniMax-Text-01**（`minimax01` 2501.08313 + `minimax-text-01-config`，config 本轮实测）：**HF repo 名是 MiniMaxAI/MiniMax-Text-01（MiniMaxAI/MiniMax-01 不存在，GitHub 侧是 MiniMax-AI/MiniMax-01，200）**。80 层，`attn_type_list` 实测 = 70 linear（lightning）+ 10 full（位置 8,16,…,80，1-indexed）→ **7:1**；456B 总 / 45.9B 激活（论文摘要）；32 experts top-2；hidden 6144、64 Q heads / 8 KV heads、head_dim 128、`rotary_dim=64`（partial RoPE 一半维度）；rope_theta=10⁷、max_position_embeddings=10,240,000；vocab 200064；`postnorm=true` + `layernorm_*_alpha≈3.557 / beta=1.0`（DeepNorm 式残差缩放）；训练 ctx 1M、推理外推 4M（摘要原文）。
 
