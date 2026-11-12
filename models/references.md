@@ -236,13 +236,13 @@
 | edm | Elucidating the Design Space of Diffusion-Based Generative Models | Karras et al. | arXiv:2206.00364 | [A] | 2026-11-12 | 7.3 |
 | vincent-2011 | A Connection Between Score Matching and Denoising Autoencoders（Neural Computation 23(7):1661–1674；**非 JMLR**——spec 7.3 勘误） | Vincent | https://doi.org/10.1162/NECO_a_00142 | [A] | 2026-11-12 | 7.3 |
 | score-sde-repo | yang-song/score_sde_pytorch（score-SDE 官方 PyTorch 实现） | Yang Song | https://github.com/yang-song/score_sde_pytorch | [A] | 2026-11-12 | 7.3 |
-| ddim | Denoising Diffusion Implicit Models | Song et al. | arXiv:2010.02502 | [A] | 2026-11-12 | 7.4 |
+| ddim | Denoising Diffusion Implicit Models | Song et al. | arXiv:2010.02502 | [A] | 2026-11-12 | 7.4, 9.4 |
 | classifier-guidance | Diffusion Models Beat GANs on Image Synthesis（classifier guidance 出处） | Dhariwal & Nichol | arXiv:2105.05233 | [A] | 2026-11-12 | 7.4, 7.6 |
 | cfg | Classifier-Free Diffusion Guidance | Ho & Salimans | arXiv:2207.12598 | [A] | 2026-11-12 | 7.4 |
 | consistency-models | Consistency Models | Song et al. | arXiv:2303.01469 | [A] | 2026-11-12 | 7.4 |
 | lcm | Latent Consistency Models: Synthesizing High-Resolution Images with Few-Step Inference | Luo et al. | arXiv:2310.04378 | [A] | 2026-11-12 | 7.4 |
 | dmd | One-step Diffusion with Distribution Matching Distillation | Yin et al. | arXiv:2311.18828 | [A] | 2026-11-12 | 7.4 |
-| dmd2 | Improved Distribution Matching Distillation for Fast Image Synthesis | Yin et al. | arXiv:2405.14867 | [A] | 2026-11-12 | 7.4 |
+| dmd2 | Improved Distribution Matching Distillation for Fast Image Synthesis | Yin et al. | arXiv:2405.14867 | [A] | 2026-11-12 | 7.4, 9.3 |
 | rectified-flow | Flow Straight and Fast: Learning to Generate and Transfer Data with Rectified Flow | Liu et al. | arXiv:2209.03003 | [A] | 2026-11-12 | 7.4, 7.5 |
 | dpm-solver | DPM-Solver: A Fast ODE Solver for Diffusion Probabilistic Model Sampling in Around 10 Steps | Lu et al. | arXiv:2206.00927 | [A] | 2026-11-12 | 7.4 |
 | progressive-distillation | Progressive Distillation for Fast Sampling of Diffusion Models（**v-prediction 参数化原始出处**；iDDPM 的 v 是方差插值系数，勿混） | Salimans & Ho | arXiv:2202.00512 | [A] | 2026-11-12 | 7.2, 7.4, 7.5 |
@@ -325,6 +325,50 @@
 
 | key | 标题 | 作者 | arXiv ID / URL | 证据等级 | 核实日期 | 被引章节 |
 | --- | --- | --- | --- | --- | --- | --- |
+| cogvideox | CogVideoX: Text-to-Video Diffusion Models with An Expert Transformer（3D causal VAE 8×8×4、expert-adaLN、3D full attention、3D RoPE 出处） | Yang et al. | arXiv:2408.06072 | [A] | 2026-11-13 | 9.1, 9.2 |
+| hunyuanvideo | HunyuanVideo: A Systematic Framework For Large Video Generative Models（13B+、Causal 3D VAE 4/8/16、Dual→Single-stream MMDiT、MLLM 文本编码器+token refiner） | Kong et al. | arXiv:2412.03603 | [A] | 2026-11-13 | 9.1, 9.2 |
+| wan | Wan: Open and Advanced Large-Scale Video Generative Models（Wan-VAE [1+T/4,H/8,W/8] 首帧仅空间压缩、umT5、FM+DiT 出处） | Team Wan | arXiv:2503.20314 | [A] | 2026-11-13 | 9.1, 9.2, 9.4 |
+| wan2.2 | Wan2.2 官方 repo README（SNR-split MoE：high/low-noise 双 expert、27B total/14B active、t_moe=SNR_min/2 阈值切换；Wan2.2-VAE 4×16×16——**无论文，表述引 README 原文**） | Team Wan | https://github.com/Wan-Video/Wan2.2 | [A] | 2026-11-13 | 9.1, 9.2, 9.4 |
+| ltx-video | LTX-Video: Realtime Video Latent Diffusion（1:192 压缩、32×32×8/token、patchify 挪入 VAE、<2B、H100 实时出处） | HaCohen et al. | arXiv:2501.00103 | [A] | 2026-11-13 | 9.1, 9.2 |
+| stepvideo-t2v | Step-Video-T2V Technical Report（30B、Video-VAE 16×16 空间+8×时间、3D full attention + FM、204 帧出处） | Ma et al. | arXiv:2502.10248 | [A] | 2026-11-13 | 9.2 |
+| open-sora-2 | Open-Sora 2.0: Training a Commercial-Level Video Generation Model in $200k（11B、Video DC-AE + MMDiT 出处） | Zheng et al. | arXiv:2503.09642 | [A] | 2026-11-13 | 9.1, 9.2 |
+| open-sora-plan | Open-Sora Plan: Open-Source Large Video Generation Model（v1.3 报告；v1.5 = 高压缩 WFVAE 8×8×8_32dim + SUV sparse DiT） | Lin et al. | arXiv:2412.00131 | [A] | 2026-11-13 | 9.1 |
+| wfvae | WF-VAE: Enhancing Video VAE by Wavelet-Driven Energy Flow for Latent Video Diffusion Model | Li et al. | arXiv:2411.17459 | [A] | 2026-11-13 | 9.1 |
+| mochi | Mochi 1 官方 repo（**无论文——[C] 口径只登记已披露信息**：AsymmDiT 10B、AsymmVAE 因果 8×8×6→12ch、单 T5-XXL；**genmoai/models 已 301 → genmoai/mochi**） | Genmo | https://github.com/genmoai/mochi | [C] | 2026-11-13 | 9.1, 9.2 |
+| moviegen | Movie Gen: A Cast of Media Foundation Models（30B transformer、73K video tokens=16s@16fps、FM；**Meta 未开源代码/权重**） | Polyak et al. | arXiv:2410.13720 | [B] | 2026-11-13 | 9.2, 9.3 |
+| sora | Video generation models as world simulators（OpenAI Sora 技术页，**spacetime patches / diffusion transformer 出处**；curl 403 为全站 JS checkpoint，存在性经 WebFetch+镜像复核） | OpenAI | https://openai.com/index/video-generation-models-as-world-simulators/ | [C] | 2026-11-13 | 9.2 |
+| diffusion-forcing | Diffusion Forcing: Next-token Prediction Meets Full-Sequence Diffusion（per-token 独立噪声水平、统一 teacher forcing 与全序列扩散出处） | Chen et al. | arXiv:2407.01392 ; https://github.com/buoyancy99/diffusion-forcing | [A] | 2026-11-13 | 9.3 |
+| causvid | From Slow Bidirectional to Fast Autoregressive Video Diffusion Models（CausVid：非对称蒸馏 + ODE 初始化 + **无 GAN loss** + KV cache 流式出处；Wan2.1-1.3B 基座 50→4 步） | Yin et al. | arXiv:2412.07772 | [A] | 2026-11-13 | 9.3 |
+| self-forcing | Self Forcing: Bridging the Train-Test Gap in Autoregressive Video Diffusion（训练时自 rollout + KV cache + 视频级分布匹配消 exposure bias 出处） | Huang et al. | arXiv:2506.08009 | [A] | 2026-11-13 | 9.3 |
+| skyreels-v2 | SkyReels-V2: Infinite-length Film Generative Model（MLLM+多阶段预训练+RL+Diffusion Forcing 框架；**勘误：2504.02436 是 SkyReels-A2，勿用**） | Chen et al. | arXiv:2504.13074 | [A] | 2026-11-13 | 9.3 |
+| causal-forcing | Causal Forcing: Autoregressive Diffusion Distillation Done Right for High-Quality Real-Time Interactive Video Generation（Causal ODE 驱动 asymmetric DMD 初始化；2026-02） | Zhu et al. | arXiv:2602.02214 | [A] | 2026-11-13 | 9.3 |
+| causal-forcing-pp | Causal Forcing++ 技术报告（Causal Consistency Distillation 取代 ODE 配对数据；首个 frame-wise 1/2 步模型；2026-05） | Zhu et al. | arXiv:2605.15141 | [A] | 2026-11-13 | 9.3 |
+| rcm | Large Scale Diffusion Distillation via Score-Regularized Continuous-Time Consistency（rCM：sCM+score 正则、FA2 JVP kernel、≤14B 验证、1-4 步、无 GAN；ICLR 2026） | Zheng et al. | arXiv:2510.08431 | [A] | 2026-11-13 | 9.3 |
+| causal-rcm | Causal-rCM: A Unified Teacher-Forcing and Self-Forcing Open Recipe for Autoregressive Diffusion Distillation（teacher-forcing CM 与 self-forcing DMD 统一配方；2026-06） | Zheng et al. | arXiv:2606.25473 | [A] | 2026-11-13 | 9.3 |
+| controlnet | Adding Conditional Control to Text-to-Image Diffusion Models（可训练副本 + zero-conv 出处） | Zhang et al. | arXiv:2302.05543 | [A] | 2026-11-13 | 9.4 |
+| lora | LoRA: Low-Rank Adaptation of Large Language Models（ΔW=(α/r)BA 出处） | Hu et al. | arXiv:2106.09685 ; https://github.com/microsoft/LoRA | [A] | 2026-11-13 | 9.4 |
+| dreambooth | DreamBooth: Fine Tuning Text-to-Image Diffusion Models for Subject-Driven Generation（**[B]：google/dreambooth 仅主题数据集、无官方训练代码**——公式引论文原文） | Ruiz et al. | arXiv:2208.12242 | [B] | 2026-11-13 | 9.4 |
+| null-text-inversion | Null-text Inversion for Editing Real Images using Guided Diffusion Models（官方实现在 google/prompt-to-prompt 的 null_text_w_ptp.ipynb） | Mokady et al. | arXiv:2211.09794 ; https://github.com/google/prompt-to-prompt | [A] | 2026-11-13 | 9.4 |
+| cameractrl | CameraCtrl: Enabling Camera Control for Text-to-Video Generation（**Plücker embedding 出处**——per-pixel 射线条件、plug-and-play 相机模块） | He et al. | arXiv:2404.02101 | [A] | 2026-11-13 | 9.4 |
+| motionctrl | MotionCtrl: A Unified and Flexible Motion Controller for Video Generation（相机+物体运动统一控制） | Wang et al. | arXiv:2312.03641 | [A] | 2026-11-13 | 9.4 |
+| cogvideo-repo | zai-org/CogVideo（**THUDM/CogVideo 已 301 重定向至此**——引用写新地址；sat/ 目录实测） | Z.ai | https://github.com/zai-org/CogVideo | [A] | 2026-11-13 | 9.1, 9.2 |
+| hunyuanvideo-repo | Tencent-Hunyuan/HunyuanVideo 官方 repo（hyvideo/modules/models.py 实测 rope_dim_list [16,56,56]——t/h/w 三轴 RoPE 走读锚点） | Tencent | https://github.com/Tencent-Hunyuan/HunyuanVideo | [A] | 2026-11-13 | 9.1, 9.2, 9.4 |
+| wan2.1-repo | Wan-Video/Wan2.1 官方 repo（wan/modules/model.py 实测：rope_apply 频段切 [c−2⌊c/3⌋,⌊c/3⌋,⌊c/3⌋]、I2V clip_fea 条件注入——走读锚点） | Alibaba | https://github.com/Wan-Video/Wan2.1 | [A] | 2026-11-13 | 9.1, 9.2, 9.4 |
+| open-sora-repo | hpcaitech/Open-Sora 官方 repo（Open-Sora 2.0 代码家） | HPC-AI Tech | https://github.com/hpcaitech/Open-Sora | [A] | 2026-11-13 | 9.2 |
+| open-sora-plan-repo | PKU-YuanGroup/Open-Sora-Plan 官方 repo（WFVAE/SUV 走读锚点） | PKU-YuanGroup | https://github.com/PKU-YuanGroup/Open-Sora-Plan | [A] | 2026-11-13 | 9.1 |
+| ltx-video-repo | Lightricks/LTX-Video 官方 repo | Lightricks | https://github.com/Lightricks/LTX-Video | [A] | 2026-11-13 | 9.1, 9.2 |
+| causvid-repo | tianweiy/CausVid 官方 repo（causvid/ 目录实测；configs/wan_causal_dmd.yaml 为 4 步配置锚点） | Yin et al. | https://github.com/tianweiy/CausVid | [A] | 2026-11-13 | 9.3 |
+| self-forcing-repo | guandeh17/Self-Forcing 官方 repo（建于 CausVid 代码 + Wan2.1 基座） | He et al. | https://github.com/guandeh17/Self-Forcing | [A] | 2026-11-13 | 9.3 |
+| causal-forcing-repo | thu-ml/Causal-Forcing 官方 repo（Causal Forcing/++ 代码与模型发布处） | Tsinghua et al. | https://github.com/thu-ml/Causal-Forcing | [A] | 2026-11-13 | 9.3 |
+| rcm-repo | NVlabs/rcm 官方 repo（rCM/Causal-rCM 官方实现） | NVIDIA | https://github.com/NVlabs/rcm | [A] | 2026-11-13 | 9.3 |
+| controlnet-repo | lllyasviel/ControlNet 官方 repo（ldm/ 目录实测——zero-conv 走读锚点） | Zhang | https://github.com/lllyasviel/ControlNet | [A] | 2026-11-13 | 9.4 |
+| cameractrl-repo | hehao13/CameraCtrl 官方 repo | He et al. | https://github.com/hehao13/CameraCtrl | [A] | 2026-11-13 | 9.4 |
+| skyreels-v2-repo | SkyworkAI/SkyReels-V2 官方 repo | Skywork | https://github.com/SkyworkAI/SkyReels-V2 | [A] | 2026-11-13 | 9.3 |
+| cogvideox-config | zai-org/CogVideoX-5b VAE/transformer config.json（HF 实测：temporal_compression 4、latent 16、scaling 0.7；transformer 42L/48 头/patch 2/text 4096=T5-XXL；**原 THUDM/CogVideoX-5b 已迁**） | Z.ai | https://huggingface.co/zai-org/CogVideoX-5b/blob/main/vae/config.json | [A] | 2026-11-13 | 9.1, 9.2 |
+| hunyuanvideo-vae-config | tencent/HunyuanVideo hunyuan-video-t2v-720p/vae/config.json（HF 实测：AutoencoderKLCausal3D、time_compression 4、latent 16、scaling 0.476986） | Tencent | https://huggingface.co/tencent/HunyuanVideo/blob/main/hunyuan-video-t2v-720p/vae/config.json | [A] | 2026-11-13 | 9.1 |
+| wan21-i2v-config | Wan-AI/Wan2.1-I2V-14B-720P config.json（HF 实测：in_dim 36 = 16 噪声+16 条件 latent+4 mask——I2V latent concat 物证） | Alibaba | https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-720P/blob/main/config.json | [A] | 2026-11-13 | 9.4 |
+| wan2.2-a14b-hf | Wan-AI/Wan2.2-T2V-A14B（HF 实测：**high_noise_model/ + low_noise_model/ 双 expert 目录**——SNR-split MoE 物证；各 expert config = WanModel dim 5120/40L/40H） | Alibaba | https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B | [A] | 2026-11-13 | 9.2 |
+| autoencoderkl-wan | diffusers AutoencoderKLWan 实现（src/diffusers/models/autoencoders/autoencoder_kl_wan.py 实测：WanCausalConv3d 时间维 causal padding + feature caching——3D causal conv 走读锚点） | HuggingFace | https://github.com/huggingface/diffusers/blob/main/src/diffusers/models/autoencoders/autoencoder_kl_wan.py | [A] | 2026-11-13 | 9.1 |
 
 ### Part 10 · Audio & Speech
 
