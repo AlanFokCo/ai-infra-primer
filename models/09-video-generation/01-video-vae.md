@@ -140,17 +140,17 @@ scaling factor 是 VAE 与扩散之间的分布标定接口：$z' = s \cdot z$ �
 1. **通用档 $(4, 8, 8, 16)$ = 48× 是质量与收敛的安全区**（§5 的 CogVideoX ablation 边界），分歧全部发生在「要不要更狠」上。
 2. **深时间压缩的两种付账方式**：WFVAE 把时间压缩翻倍到 $\tau = 8$、代价是通道翻倍到 $c = 32$——数值压缩 $R$ 仍是 48× 不变，但 $N$ 的 $t$ 因子减半、attention 二次项省约 4×。这正是式 (3)(4) 两本账的分离实例：$N$ 按 $\tau s^{2}$ 缩、数值体积按 $3 \tau s^{2} / c$ 缩，$c$ 是兑换旋钮。WF-VAE 的做法是用小波分解组织时间信息流（[Li et al., 2024](../references.md)，arXiv:2411.17459，[A]；Open-Sora-Plan v1.3 报告 [Lin et al., 2024](../references.md)，arXiv:2412.00131，[A]；v1.5.0 配置为 [repo README](../references.md) 口径）。
 3. **LTX 把 patchify 挪进 VAE**：摘要原文「compression ratio of 1:192, with spatiotemporal downscaling of 32×32×8 pixels per token, enabled by relocating the patchifying operation from the transformer's input to the VAE's input」（[HaCohen et al., 2025](../references.md)，arXiv:2501.00103，[A]）——transformer 输入侧不再有独立 patchify，VAE 直接吐出「32×32×8 像素/token」的网格；由 $3 \cdot 8 \cdot 32^{2} / 192 = 128$ 反推 latent 通道。token 网格与通用档相比：$\tau s^{2}$ 从 256 涨到 8192，同一段视频的 $N$ 缩到 $1/32$。这笔交易的结构是：VAE 变深（一次性编解码成本），换 DiT 在每个去噪步上都省的二次项——去噪步数越多，交易越划算。换到的是端到端速度：<2B 参数的 DiT 在 H100 上 2 秒生成 5 秒 768×512@24fps 视频，快于实时（论文摘要口径）。
-4. **StepVideo 把两个旋钮同时拧狠**：$(8, 16, 16)$——空间 $s = 16$ 与 Wan2.2 同档、时间 $\tau = 8$ 与 WFVAE 同档（[Ma et al., 2025](../references.md)，arXiv:2502.10248，[A]；摘要口径，$c$ 未登记）。$\tau s^{2} = 2048$，同段视频的 $N$ 是通用档的 $1/8$；它服务的负载是 30B 主干、最长 204 帧——长时长预算正是从 token 账里省出来的。
+4. **StepVideo 把两个旋钮同时拧狠**：$(8, 16, 16)$——空间 $s = 16$ 与 Wan2.2 同档、时间 $\tau = 8$ 与 WFVAE 同档（[Ma et al., 2025](../references.md)，arXiv:2502.10248，[A]；摘要口径，$c$ 未登记）。$\tau s^{2} = 2048$，同段视频的 $N$ 是通用档的 $1/8$；它服务的负载是 30B 主干、最长 204 帧——长时长预算正是从 token 账里省出来的。注意 $\tau s^{2} = 2048$ 恰与 §5 撞墙的 CogVideoX E 档同密度；摘要口径未披露其 $c$ 与训练配方，该密度下收敛可行的条件本书无从登记。
 5. **Mochi 的口径差**（[Genmo, Mochi 1 repo](../references.md)，[C]）：AsymmVAE 因果压缩 8×8 空间 × 6× 时间 → 12 通道，README 称「总压缩 128×」；按数值体积算得 $6 \cdot 8^{2} \cdot 3 / 12 = 96$ 倍，两处口径之差官方未说明——本书以机制参数 $(6, 8, 8, 12)$ 为准。表中所有「—」同理：事实源未登记的数字不推测、不补全。Open-Sora 2.0 行填的是族名而非参数：Video DC-AE 表明它属于深压缩系（§5），但其 $(\tau, s, s)$ 与 $c$ 未在事实源登记，留空。读这张表时把证据等级一起读：Wan2.2 行是官方 README 一手（无论文），Mochi 行是 [C]——只登记已披露信息。
 
 ## 5. 压缩率的边界：收敛、重建与 DC-AE 式深压缩
 
-压缩率不是免费旋钮。本书事实源收录的同系 VAE 压缩率对照只有 CogVideoX 论文的 ablation 一组：变体 8×8×1 / 8×8×4 / 16×16×8（论文记号 = 空间 × 空间 × 时间，换算本书 $(\tau, s, s)$ 记号为 $(1, 8, 8)$ / $(4, 8, 8)$ / $(8, 16, 16)$，对应 $R$ = 12× / 48× / 384×），结论原文「when spatial-temporal compression is too aggressive (16×16×8)… convergence… extremely difficult」，最终选定 $(4, 8, 8)$（[Yang et al., 2024](../references.md)，arXiv:2408.06072，[A]）。
+压缩率不是免费旋钮。本书事实源收录的同系 VAE 压缩率对照只有 CogVideoX 论文的 ablation 一组（论文 Table 1，记号 = 空间 × 空间 × 时间；此处按本书 $(\tau, s, s, c)$ 记号实列通道）：Baseline $(1, 8, 8, 4)$、A $(4, 8, 8, 8)$、B $(4, 8, 8, 16)$（预训练采用）、C $(4, 8, 8, 32)$、D $(8, 8, 8, 32)$、E $(8, 16, 16, 128)$。逐档代入式 (4)，数值压缩 $R$ = 48 / 96 / 48 / 24 / 48 / 48——通道随压缩率同步加宽，$R$ 始终停在 24–96 区间；真正被推高的是 token 密度 $\tau s^{2}$ = 64 / 256 / 256 / 256 / 512 / 2048。撞墙的是 E 档，原文结论「even if the channel dimensions are correspondingly increased, the convergence of the model also becomes extremely difficult」——128 通道把 $R$ 压回 48×，仍救不回 $\tau s^{2} = 2048$（8 倍于采用的 B 档）带来的收敛崩塌。最终选定 B 档 $(4, 8, 8, 16)$（[Yang et al., 2024](../references.md)，arXiv:2408.06072，[A]）。
 
 机制读法两条：
 
 1. **重建误差是生成质量的天花板**——7.6 §1 的 LDM 压缩率消融结论在视频侧原样适用：decoder 画不回去的细节，DiT 生成得再好也落不了地。时间维的重建误差集中暴露在快速运动与动态纹理上：$\tau$ 帧合 1 意味着帧间差分必须全部塞进 $c$ 个通道，运动越剧烈、每个 latent 位点要携带的信息越多，$c$ 固定时 $\tau$ 的信息瓶颈先于空间维到达。式 (4) 的 $R$ 换个读法就是「每个 latent 数值要还原的像素数值数」：Wan 档 48、Wan2.2 档 64、Mochi 档 96、LTX 档 192——压缩越狠单点信息越稠密，与 §4 的 $c$ 兑换是同一枚硬币。
-2. **深压缩的 latent 本身更难被生成**：每位点信息量上升、位点间统计更尖锐，DiT 的回归目标变难——CogVideoX 说的「convergence extremely difficult」是 DiT 侧收敛困难，不只是 VAE 侧重建变差。压缩率的选择因此是 VAE 重建与 DiT 可学性的联合约束。
+2. **深压缩的 latent 本身更难被生成**：每位点信息量上升、位点间统计更尖锐，DiT 的回归目标变难——E 档把这条钉死：通道加到 128、$R$ 回到 48×，收敛仍然崩，说明撞墙的量是 token 密度 $\tau s^{2}$（决定 $N$ 与每位点信息量）而非数值体积比 $R$；CogVideoX 说的「convergence extremely difficult」是 DiT 侧收敛困难，不只是 VAE 侧重建变差。压缩率的选择因此是 VAE 重建与 DiT 可学性的联合约束。
 
 两条机制各自给出一个可观测预测（机制推理，非收录的实证结论）：VAE 侧撞边界时，重建视频的运动区域发虚、高频动态纹理被抹平——重建误差集中在帧间差分大的区域；DiT 侧撞边界时，训练 loss 停在高位平台——latent 逐位点信息量被拉大后，扩散目标中难回归分量的占比上升。两个症状指向相反的修法（加 $c$ 或降 $\tau$ 救前者，降 $R$ 救后者），排查时先定位再动手。
 
@@ -185,7 +185,7 @@ DC-AE 式回答：把压缩率继续推高同时保住重建，需要专门的�
 | 两本账 | 式 (4)：$R \approx 3 \tau s^{2} / c$ | $N$ 按 $\tau s^{2}$ 缩、数值体积按 $3 \tau s^{2}/c$ 缩；$c$ 是兑换率（WFVAE 例） |
 | 因果 3D conv | 式 (5)：时间维左补 $k_{t} - 1$ | 三机制：图像兼容 / feature caching 流式 / 无未来泄漏 |
 | 通用档 | $(4, 8, 8, 16)$、$R = 48$×；scaling 0.7 / 0.476986 | 三家 config 实测互证 |
-| 深压缩 | Wan2.2 $(4, 16, 16, 48)$ 64×；LTX 1:192（$c = 128$ 反推）；WFVAE $(8, 8, 8, 32)$；Video DC-AE | 边界证据：CogVideoX 384× 档「convergence extremely difficult」 |
+| 深压缩 | Wan2.2 $(4, 16, 16, 48)$ 64×；LTX 1:192（$c = 128$ 反推）；WFVAE $(8, 8, 8, 32)$；Video DC-AE | 边界证据：CogVideoX E 档 16×16×8（128 通道，$\tau s^{2} = 2048$）「convergence extremely difficult」——通道加倍救不回 token 密度 8× |
 | 实例账 | $N = 446{,}400$ → $N^{2}$ ≈ 399 GB；单层 $4N^{2}d$ ≈ 4.1 PFLOPs（$d = 5120$） | $\tau = 4$ 把二次项砍约 15×；VAE 定数量级 |
 
 ## 练习
