@@ -29,7 +29,7 @@ $$q(x_t|x_0) = \mathcal{N}\!\left(\sqrt{\bar\alpha_t}\,x_0,\ (1-\bar\alpha_t)\,I
 
 - **ε-prediction**（DDPM 原始口径，本书默认）：网络 $\varepsilon_\theta(x_t, t)$ 回归噪声 $\varepsilon$；训练目标 $L_{simple} = \mathbb{E}\|\varepsilon - \varepsilon_\theta(x_t,t)\|^2$。
 - **x₀-prediction**：回归数据 $\hat x_0 = (x_t - \sqrt{1-\bar\alpha_t}\,\varepsilon_\theta)/\sqrt{\bar\alpha_t}$。
-- **v-prediction**（iDDPM/SD 系常用）：定义 $v \equiv \sqrt{\bar\alpha_t}\,\varepsilon - \sqrt{1-\bar\alpha_t}\,x_0$。换算（给定 $v_\theta$ 与 $x_t$）：
+- **v-prediction**（Salimans & Ho 提出——`progressive-distillation`，arXiv:2202.00512；SD 2.x 系常用）：定义 $v \equiv \sqrt{\bar\alpha_t}\,\varepsilon - \sqrt{1-\bar\alpha_t}\,x_0$。**注意 iDDPM 的 v 是方差对数插值系数（$\Sigma_\theta=\exp(v\log\beta+(1-v)\log\tilde\beta)$），均值仍走 ε-prediction，与 v-prediction 无关，勿混**。换算（给定 $v_\theta$ 与 $x_t$）：
 $$\hat x_0 = \sqrt{\bar\alpha_t}\,x_t - \sqrt{1-\bar\alpha_t}\,v_\theta,\qquad \hat\varepsilon = \sqrt{1-\bar\alpha_t}\,x_t + \sqrt{\bar\alpha_t}\,v_\theta$$
 - **score ↔ ε**（7.3 桥）：$s_\theta(x_t, t) = \nabla_{x_t}\log p_t(x_t) = -\varepsilon_\theta(x_t, t)/\sqrt{1-\bar\alpha_t}$。
 
@@ -50,7 +50,7 @@ $$x_0^{\text{Lipman}} = \varepsilon\ (\text{本书噪声}),\qquad x_1^{\text{Lip
 
 ### Guidance 与采样约定（7.4）
 
-- CFG：$\tilde\varepsilon = \varepsilon_\theta(x_t, \varnothing) + w\,\big(\varepsilon_\theta(x_t, c) - \varepsilon_\theta(x_t, \varnothing)\big)$，$w=1$ 退化为纯条件；工业典型 $w\in[2, 15]$。
+- CFG：$\tilde\varepsilon = \varepsilon_\theta(x_t, \varnothing) + w\,\big(\varepsilon_\theta(x_t, c) - \varepsilon_\theta(x_t, \varnothing)\big)$，$w=1$ 退化为纯条件；工业典型 $w\in[2, 15]$（经验注记，无单一出处）。
 - logit-normal t 采样（SD3 口径）：$t = \mathrm{sigmoid}(u),\ u\sim\mathcal{N}(m, s^2)$。
 - 「NFE」= network function evaluations（采样步数账的统一单位）。
 
@@ -69,7 +69,7 @@ latent 记号 $z$、压缩率 f8/f32、scale factor 0.18215（LDM yaml 出处）
 ## 7.2 DDPM 完整推导
 
 - **DDPM**（`ddpm`，2006.11239）：前向过程、$L_{simple}$、T=1000、linear schedule 出处（ε-prediction 与 β̃ 方差选择均在本文）。
-- **iDDPM**（`iddpm`，arXiv:2102.09672，Nichol & Dhariwal，本轮核实）：**cosine noise schedule 出处**、learned σ（hybrid objective）、strided sampling——7.2 schedule 对比节与 σ_t 选择的直接来源。
+- **iDDPM**（`iddpm`，arXiv:2102.09672，Nichol & Dhariwal，本轮核实）：**cosine noise schedule 出处**、learned σ（hybrid objective；其 v 是方差对数插值系数 $\Sigma_\theta=\exp(v\log\beta+(1-v)\log\tilde\beta)$，**不是 v-prediction**——后者归 `progressive-distillation`）、strided sampling——7.2 schedule 对比节与 σ_t 选择的直接来源。
 - 锚点：`ddpm-repo`（hojonathanho/diffusion，200；官方 TF 实现在 `diffusion_tf/` 目录，根目录实测）；`ddpm-pytorch`（lucidrains/denoising-diffusion-pytorch，200，**教学参照**——代码对照用，勿当官方实现）。
 - 约定遵循：全书 x₀=数据、t=1=噪声（见约定页）；DDPM 原文离散下标 t∈{1..T}，写作时用「离散↔连续」一句桥接。
 
@@ -92,6 +92,7 @@ latent 记号 $z$、压缩率 f8/f32、scale factor 0.18215（LDM yaml 出处）
 - **DMD2**（`dmd2`，arXiv:2405.14867，Tianwei Yin，本轮核实——spec ⟨verify⟩ 结案：标题 *Improved Distribution Matching Distillation for Fast Image Synthesis*）：+ GAN loss + 免教师真实数据回归的改进版；**GAN 分量属 DMD2 不属 DMD**（spec 9.2 同款口径，勿混淆）。锚点 `dmd2-repo`（tianweiy/DMD2，200）。
 - **rectified flow**（`rectified-flow`，arXiv:2209.03003，Xingchao Liu，本轮核实）：reflow 拉直 + 1-rectified flow 出处；详拆在 7.5，本章只在蒸馏语境引「reflow→few-step」。
 - **DPM-Solver**（`dpm-solver`，arXiv:2206.00927，Cheng Lu，本轮核实）：半线性结构 + 指数积分 + Taylor 展开的高阶 ODE solver 出处（~10 NFE）。
+- **progressive distillation**（`progressive-distillation`，arXiv:2202.00512，Salimans & Ho，fix round 1 补录核实）：T→T/2 迭代减半蒸馏公式出处 + **v-prediction 参数化原始出处**（约定页已挂）。
 - 写作注意：CFG 完整推导是本章关键推导之一（evaluator 强制复推清单含 7.4 CFG）；few-step 现状表的数字（4-step/1-step FID）一律引 DMD/DMD2/LCM 论文原表，标日期。
 
 ## 7.5 Flow Matching
@@ -130,17 +131,17 @@ latent 记号 $z$、压缩率 f8/f32、scale factor 0.18215（LDM yaml 出处）
 - 7.1：VAE 1312.6114 ✓（W3 收录，被引 +7.1）/ GAN 1406.2661 ✓ / Glow 1807.03039 ✓ / DDPM 2006.11239 ✓
 - 7.2：DDPM 2006.11239 ✓ / iDDPM 2102.09672 ✓（+`ddpm-repo`、`ddpm-pytorch` 教学参照）
 - 7.3：score-SDE 2011.13456 ✓ / EDM 2206.00364 ✓ / **Vincent 2011 = Neural Computation 23(7) DOI 10.1162/NECO_a_00142 ✓（spec「JMLR」勘误）**（+`score-sde-repo`）
-- 7.4：DDIM 2010.02502 ✓ / classifier guidance 2105.05233 ✓ / CFG 2207.12598 ✓ / consistency 2303.01469 ✓ / LCM 2310.04378 ✓⟨verify 结案⟩ / DMD 2311.18828 ✓⟨verify⟩ / DMD2 2405.14867 ✓⟨verify⟩ / rectified flow 2209.03003 ✓ / DPM-Solver 2206.00927 ✓（+`ddim-repo`、`consistency-models-repo`、`dmd2-repo`）
+- 7.4：DDIM 2010.02502 ✓ / classifier guidance 2105.05233 ✓ / CFG 2207.12598 ✓ / consistency 2303.01469 ✓ / LCM 2310.04378 ✓⟨verify 结案⟩ / DMD 2311.18828 ✓⟨verify⟩ / DMD2 2405.14867 ✓⟨verify⟩ / rectified flow 2209.03003 ✓ / DPM-Solver 2206.00927 ✓ / progressive distillation 2202.00512 ✓（fix round 1 补录）（+`ddim-repo`、`consistency-models-repo`、`dmd2-repo`）
 - 7.5：FM 2210.02747 ✓ / rectified flow 2209.03003 ✓ / SD3 2403.03206 ✓（+`flow-matching-repo`、`sd3.5-repo`）
 - 7.6：LDM 2112.10752 ✓ / DiT 2212.09748 ✓ / SD3 2403.03206 ✓ / PixArt-α 2310.00426 ✓ / PixArt-Σ 2403.04692 ✓ / SANA 2410.10629 ✓（+`dit-repo`、`latent-diffusion-repo`、`sgm-repo`、`flux-repo` [C]、`sana-repo`⟨verify 结案⟩、`pixart-repo`⟨verify 结案⟩、`dc-ae` 被引 +7.6）
 - 7.7：VAR 2404.02905 ✓ / LlamaGen 2406.06525 ✓⟨verify⟩ / Infinity 2412.04431 ✓⟨verify⟩ / MaskGIT 2202.04200 ✓ / MUSE 2301.00704 ✓ [B]（无官方代码，google-research/muse 404）/ Emu3 2409.18869 ✓ / Imagen 2205.11487 ✓ [B] / SDXL 2307.01952 ✓⟨verify⟩（+`var-repo`、`llamagen-repo`、`infinity-repo`、`emu3-repo`、`sdxl-hf`）
-- 全部 31 个 arXiv ID（含 vae/dc-ae 两个 W3 条目）+ 18 个非 arXiv 锚点 grep references.md 命中（2026-11-12 机械核对）。
+- 全部 32 个 arXiv ID（含 vae/dc-ae 两个 W3 条目 + fix round 1 补录的 2202.00512）+ 19 个非 arXiv 锚点 grep references.md 命中（2026-11-12 机械核对）。
 
 ## references.md 本轮变更清单（2026-11-12）
 
-- Part 7 新增 49 条：31 篇论文（`gan`、`glow`、`ddpm`、`iddpm`、`score-sde`、`edm`、`vincent-2011`、`ddim`、`classifier-guidance`、`cfg`、`consistency-models`、`lcm`、`dmd`、`dmd2`、`rectified-flow`、`dpm-solver`、`flow-matching`、`sd3`、`ldm`、`dit`、`pixart-alpha`、`pixart-sigma`、`sana`、`var`、`llamagen`、`infinity`、`maskgit`、`muse` [B]、`emu3`、`imagen` [B]、`sdxl`）+ 18 个代码/权重锚点（`ddpm-repo`、`ddpm-pytorch` 教学参照、`score-sde-repo`、`ddim-repo`、`consistency-models-repo`、`dmd2-repo`、`flow-matching-repo`、`sd3.5-repo`、`dit-repo`、`latent-diffusion-repo`、`sgm-repo`、`flux-repo` [C]、`sana-repo`、`pixart-repo`、`var-repo`、`llamagen-repo`、`infinity-repo`、`emu3-repo`、`sdxl-hf`）。
+- Part 7 新增 51 条（fix round 1 修正计数：原写 49 条/31 论文/18 锚点，按实为 51 条/32 论文/19 锚点）：32 篇论文（`gan`、`glow`、`ddpm`、`iddpm`、`score-sde`、`edm`、`vincent-2011`、`ddim`、`classifier-guidance`、`cfg`、`consistency-models`、`lcm`、`dmd`、`dmd2`、`rectified-flow`、`dpm-solver`、`progressive-distillation`、`flow-matching`、`sd3`、`ldm`、`dit`、`pixart-alpha`、`pixart-sigma`、`sana`、`var`、`llamagen`、`infinity`、`maskgit`、`muse` [B]、`emu3`、`imagen` [B]、`sdxl`）+ 19 个代码/权重锚点（`ddpm-repo`、`ddpm-pytorch` 教学参照、`score-sde-repo`、`ddim-repo`、`consistency-models-repo`、`dmd2-repo`、`flow-matching-repo`、`sd3.5-repo`、`dit-repo`、`latent-diffusion-repo`、`sgm-repo`、`flux-repo` [C]、`sana-repo`、`pixart-repo`、`var-repo`、`llamagen-repo`、`infinity-repo`、`emu3-repo`、`sdxl-hf`）。
 - 既有条目被引章节回写 2 处：`vae`（+7.1）、`dc-ae`（+7.6）。
-- 术语表新增 26 条 P7 术语（首次出现章节 7.1–7.7）。
+- 术语表新增 27 条 P7 术语（首次出现章节 7.1–7.7；fix round 1 修正计数：原写 26，按实 27）。
 - spec ⟨verify⟩ 项全部结案：LCM/DMD/DMD2 标题核实 ✓；NVlabs/Sana 与 PixArt-alpha repo 存在 ✓；FoundationVision/VAR+LlamaGen+Infinity 三 repo 存在 ✓；Infinity bitwise 无限 vocab 摘要实证 ✓；SDXL 标题核实 ✓；Vincent 2011 期刊出处勘误（Neural Computation 非 JMLR）✓。
 
 ## 通用注意事项（P7 写作 agent 必读）
