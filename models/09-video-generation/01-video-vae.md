@@ -14,7 +14,7 @@ $$|V| = T \cdot H \cdot W \cdot 3 = 120 \times 720 \times 1280 \times 3 \approx 
 
 这组数字本身不稀奇，稀奇的是它进 attention 的方式。扩散主干（9.2 的时空 DiT）的成本由 token 数 $N$ 决定，full attention 随 $N^{2}$ 长。若不做任何压缩、把像素网格直接当 token（每 $8 \times 8$ 像素块一个 token 的粗放假设），这段 5 秒视频的 $N = 120 \times 90 \times 160 = 1{,}728{,}000$，$N^{2} \approx 3 \times 10^{12}$——单层 attention 的得分矩阵按 bf16 计约 6 TB。压缩因此不是优化项而是可行性前提：先把 $V$ 编码进 latent $z$，扩散模型只在 $z$ 的空间里工作。
 
-与 8.4 的理解侧对照可以看清生成侧为什么更苛刻：视频理解可以抽稀帧（1 min @ 1 fps × 256 token/帧 = 15,360 token，8.4 式 (1) 的账；更高帧率档直接吃掉 128K context 预算的大半），但生成必须逐帧产出——输出端没有「跳帧」的自由，latent 帧密度由压缩率钉死，帧率与时长动不了。理解侧的省 token 三位置（8.4 §4）对应到生成侧只剩一个：VAE 压缩率本身。这是 Video VAE 在整个系统里的位置：它是 token 预算的唯一闸门。
+与 8.4 的理解侧对照可以看清生成侧为什么更苛刻：视频理解可以抽稀帧（1 min @ 1 fps × 256 token/帧 = 15,360 token，8.4 式 (1) 的账；更高帧率档直接吃掉 128K context 预算的过半），但生成必须逐帧产出——输出端没有「跳帧」的自由，latent 帧密度由压缩率钉死，帧率与时长动不了。理解侧的省 token 三位置（8.4 §4）对应到生成侧只剩一个：VAE 压缩率本身。这是 Video VAE 在整个系统里的位置：它是 token 预算的唯一闸门。
 
 Video VAE 的数学骨架与 6.3 的图像 VAE 完全一致：对角高斯后验 $q_\phi(z \mid V)$、reparameterization 采样 $z = \mu + \sigma \odot \varepsilon$、目标函数 $L = -\mathbb{E}_{q_\phi}\left[ \log p_\theta(V \mid z) \right] + \beta \cdot \mathrm{KL}\left( q_\phi(z \mid V)\, \|\, p(z) \right)$（6.3 式 (8)，推导不重复）。其中 KL 项在视频语境下的角色值得单独点出：它把后验往标准高斯先验上拉，保证「从 $\mathcal{N}(0, I)$ 采样 $z$ → decoder」这条生成路径与 encoder 产出的 latent 同分布——视频 latent 的数值体积比单帧图像大一到两个数量级，标定不良的后果（扩散模型在失配分布上回归）也被同等放大。两阶段分工沿用 7.6 §1 的读法：VAE 负责感知压缩，扩散负责语义生成——LDM 的同预算消融同时给出警示：压缩率存在质量上限，压缩因子过大时 autoencoder 的重建误差封顶整体样本质量。这个上限在视频侧的量化证据见 §5。
 
@@ -26,6 +26,8 @@ $$t = 1 + \left\lceil \frac{T - 1}{\tau} \right\rceil, \qquad h = \frac{H}{s}, \
 
 $$N = t \cdot h \cdot w \qquad (3)$$
 
+**符号**：$t, h, w$ 回指式 (2)——latent 的时间帧数与空间分辨率；$N$ 即 DiT 侧 attention 面对的序列长（约定口径，patchify 等效边长 1）。
+
 数值压缩率（取长视频极限、忽略首帧 $+1$）：
 
 $$R = \frac{T \cdot H \cdot W \cdot 3}{t \cdot h \cdot w \cdot c} \approx \frac{3 \tau s^{2}}{c} \qquad (4)$$
@@ -34,11 +36,11 @@ $$R = \frac{T \cdot H \cdot W \cdot 3}{t \cdot h \cdot w \cdot c} \approx \frac{
 
 式 (3) 与式 (4) 是两本不同的账：attention 关心 $N$（按 $\tau s^{2}$ 缩），存储与带宽关心数值体积（按 $3 \tau s^{2} / c$ 缩），$c$ 是两本账之间的兑换率——同 $R$ 下可以用更大的 $c$ 换更小的 $N$。§4 的 WFVAE 行是这个兑换的实例。
 
-还有一个路线选择问题埋在骨架里：为什么视频生成主流用连续 latent，而不是 6.3 §3-§6 的离散 token（VQ-VAE/RVQ 族）？6.3 §7.4 的选择表在视频侧原样成立：离散化的收益（可以直接套 LLM 的 softmax 建模）在视频上被两件事抵消——量化误差在时间维累积成闪烁与漂移，而连续 latent + 扩散的组合已经在图像侧验证过质量上限。离散视频 tokenizer 存在且很强（MagViT-v2，[Yu et al., 2023](../references.md)，[A]，6.3/8.5 已拆；它的首帧特判约定正是 §2.3 的源头），但本章的主角——CogVideoX/HunyuanVideo/Wan 一系——全部走连续 latent + 扩散路线。
+还有一个路线选择问题埋在骨架里：为什么视频生成主流用连续 latent，而不是 6.3 §3-§6 的离散 token（VQ-VAE/RVQ 族）？6.3 §7.4 的选择表在视频侧原样成立：离散化的收益（可以直接套 LLM 的 softmax 建模）在视频上被两件事抵消——量化误差在时间维累积成闪烁与漂移，而连续 latent + 扩散的组合已经在图像侧验证过质量上限。离散视频 tokenizer 存在（MagViT-v2，[Yu et al., 2023](../references.md)，[A]，6.3/8.5 已拆；它的首帧特判约定正是 §2.3 的源头），但本章的主角——CogVideoX/HunyuanVideo/Wan 一系——全部走连续 latent + 扩散路线。
 
 ## 2. 3D 因果卷积 VAE：结构与时间因果性
 
-Video VAE 与 6.3 图像 VAE 的结构差异归结为一处：全部卷积换成 3D 因果卷积（causal conv3d），下采样栈从空间两维扩到时空三维。CogVideoX 与 HunyuanVideo 的官方实现类名直接写明这一点——`AutoencoderKLCogVideoX` 与 `AutoencoderKLCausal3D`（[cogvideox-config](../references.md)、[hunyuanvideo-vae-config](../references.md)，[A]）。其余部件原样继承：encoder 末层分出后验参数 $\mu$ 与 $\sigma$（对角高斯，6.3 §2.1），decoder 与 encoder 镜像、输入是采样后的 $z$；变的是卷积核多出一个时间维，以及时间维上的 padding 与下采样规则——后者是 §2.1 的公式对象。
+Video VAE 与 6.3 图像 VAE 的结构差异归结为一处：全部卷积换成 3D 因果卷积（causal conv3d），下采样栈从空间两维扩到时空三维。这一结构在两家的官方实现与论文里各有物证：HunyuanVideo 的 VAE 实现类名直书为 `AutoencoderKLCausal3D`（[hunyuanvideo-vae-config](../references.md)，[A]）；CogVideoX 侧类名为 `AutoencoderKLCogVideoX`（[cogvideox-config](../references.md)，[A]），其 3D causal VAE 的出处是论文（[Yang et al., 2024](../references.md)，arXiv:2408.06072，[A]）。其余部件原样继承：encoder 末层分出后验参数 $\mu$ 与 $\sigma$（对角高斯，6.3 §2.1），decoder 与 encoder 镜像、输入是采样后的 $z$；变的是卷积核多出一个时间维，以及时间维上的 padding 与下采样规则——后者是 §2.1 的公式对象。
 
 ```
 V ∈ R^{T×H×W×3}                    例：121×720×1280×3（Wan 式「首帧+120 帧」写法，bf16 ≈ 669 MB）
@@ -64,7 +66,7 @@ V̂ ∈ R^{T×H×W×3}
 
 $$y[c_o, t, i, j] = \sum_{c_i} \sum_{a = 0}^{k_t - 1} \sum_{b = 0}^{k_h - 1} \sum_{d = 0}^{k_w - 1} w[c_o, c_i, a, b, d] \cdot \tilde{x}[c_i, t + a, i + b, j + d] \qquad (5)$$
 
-**符号**：$x$：输入特征，$[c_i, T, H, W]$；$\tilde{x}$：时间维左侧补 $k_{t} - 1$ 帧零的版本，即 $\tilde{x}[\cdot, t', \cdot, \cdot] = x[\cdot, t' - (k_{t} - 1), \cdot, \cdot]$（$t' \ge k_{t} - 1$），$t' < k_{t} - 1$ 处为零；$w$：卷积核；$y$：输出特征。把补零代入求和指标：$y[\cdot, t, \cdot, \cdot]$ 只读到 $x$ 的第 $t - k_{t} + 1$ 至第 $t$ 帧——感受野只向过去延伸，不多不少 $k_{t}$ 帧。
+**符号**：$x$：输入特征，$[c_i, T, H, W]$；$\tilde{x}$：补零版本——时间维左侧补 $k_{t} - 1$ 帧、空间维两侧各补 $(k_{h} - 1)/2$ 与 $(k_{w} - 1)/2$（$k_{h}, k_{w}$ 取奇数），即 $\tilde{x}[\cdot, t', i', j'] = x[\cdot,\ t' - (k_{t} - 1),\ i' - (k_{h} - 1)/2,\ j' - (k_{w} - 1)/2]$，越界处为零；$w$：卷积核；$y$：输出特征。把补零代入求和指标：$y[\cdot, t, i, j]$ 在时间维只读第 $t - k_{t} + 1$ 至第 $t$ 帧、在空间维读以 $(i, j)$ 为中心的 $k_{h} \times k_{w}$ 邻域——时间感受野只向过去延伸（不多不少 $k_{t}$ 帧），空间感受野双向对称，与上文「空间维仍是对称 padding」一致。
 
 注意因果性只加在时间轴上：空间维仍是对称 padding。原因是两个维度的消费方式不同——DiT 对同一帧内的空间位置是双向可见的（9.2 的 full 3D attention 没有空间因果 mask），空间感受野向两个方向延伸没有泄漏问题；而时间轴承载的是「帧序」这个被生成范式（分块自回归、流式）依赖的语义，只有它需要单向约束。
 
@@ -133,7 +135,7 @@ scaling factor 是 VAE 与扩散之间的分布标定接口：$z' = s \cdot z$ �
 | Open-Sora-Plan v1.5（WFVAE） | $(8, 8, 8)$ | 32 | 48× | — | repo README（v1.5.0）+ WF-VAE 论文 [A] |
 | Open-Sora 2.0-11B | Video DC-AE（§5） | — | — | — | 论文 [A] |
 
-读表的四条：
+读表的五条：
 
 1. **通用档 $(4, 8, 8, 16)$ = 48× 是质量与收敛的安全区**（§5 的 CogVideoX ablation 边界），分歧全部发生在「要不要更狠」上。
 2. **深时间压缩的两种付账方式**：WFVAE 把时间压缩翻倍到 $\tau = 8$、代价是通道翻倍到 $c = 32$——数值压缩 $R$ 仍是 48× 不变，但 $N$ 的 $t$ 因子减半、attention 二次项省约 4×。这正是式 (3)(4) 两本账的分离实例：$N$ 按 $\tau s^{2}$ 缩、数值体积按 $3 \tau s^{2} / c$ 缩，$c$ 是兑换旋钮。WF-VAE 的做法是用小波分解组织时间信息流（[Li et al., 2024](../references.md)，arXiv:2411.17459，[A]；Open-Sora-Plan v1.3 报告 [Lin et al., 2024](../references.md)，arXiv:2412.00131，[A]；v1.5.0 配置为 [repo README](../references.md) 口径）。
@@ -143,7 +145,7 @@ scaling factor 是 VAE 与扩散之间的分布标定接口：$z' = s \cdot z$ �
 
 ## 5. 压缩率的边界：收敛、重建与 DC-AE 式深压缩
 
-压缩率不是免费旋钮。公开文献里唯一一组同系 VAE 压缩率对照来自 CogVideoX 论文的 ablation：变体 8×8×1 / 8×8×4 / 16×16×8（论文记号 = 空间 × 空间 × 时间，换算本书 $(\tau, s, s)$ 记号为 $(1, 8, 8)$ / $(4, 8, 8)$ / $(8, 16, 16)$，对应 $R$ = 12× / 48× / 384×），结论原文「when spatial-temporal compression is too aggressive (16×16×8)… convergence… extremely difficult」，最终选定 $(4, 8, 8)$（[Yang et al., 2024](../references.md)，arXiv:2408.06072，[A]）。
+压缩率不是免费旋钮。本书事实源收录的同系 VAE 压缩率对照只有 CogVideoX 论文的 ablation 一组：变体 8×8×1 / 8×8×4 / 16×16×8（论文记号 = 空间 × 空间 × 时间，换算本书 $(\tau, s, s)$ 记号为 $(1, 8, 8)$ / $(4, 8, 8)$ / $(8, 16, 16)$，对应 $R$ = 12× / 48× / 384×），结论原文「when spatial-temporal compression is too aggressive (16×16×8)… convergence… extremely difficult」，最终选定 $(4, 8, 8)$（[Yang et al., 2024](../references.md)，arXiv:2408.06072，[A]）。
 
 机制读法两条：
 
@@ -152,7 +154,7 @@ scaling factor 是 VAE 与扩散之间的分布标定接口：$z' = s \cdot z$ �
 
 两条机制各自给出一个可观测预测（机制推理，非收录的实证结论）：VAE 侧撞边界时，重建视频的运动区域发虚、高频动态纹理被抹平——重建误差集中在帧间差分大的区域；DiT 侧撞边界时，训练 loss 停在高位平台——latent 逐位点信息量被拉大后，扩散目标中难回归分量的占比上升。两个症状指向相反的修法（加 $c$ 或降 $\tau$ 救前者，降 $R$ 救后者），排查时先定位再动手。
 
-DC-AE 式回答：把压缩率继续推高同时保住重建，需要专门的优化技术——图像版 DC-AE（6.3 §7.3：residual autoencoding 让网络在 latent 空间学残差而非直接学重建，外加三阶段适配，把压缩率推到 $f = 32/64$；[Chen et al., 2024](../references.md)，arXiv:2410.10733，[A]）已给出范式。视频侧的官方实例是 Open-Sora 2.0：Video DC-AE + MMDiT（[Zheng et al., 2025](../references.md)，arXiv:2503.09642，[A]）。Wan2.2 走同方向的另一解：$(4, 16, 16)$、$c = 48$——空间压缩从 8 翻倍到 16 由通道从 16 加宽到 48 买单，$R = 64$；TI2V-5B 在 VAE 之上再叠 patchify，token 网格等效 $4 \times 32 \times 32$，5B dense 主干即可跑 720P@24fps（[Wan2.2 官方 README](../references.md)，[A]，无论文；48 通道为 HF config 实测，[wan2.2-a14b-hf](../references.md)，[A]）。两条路线的分工：DC-AE 式把优化技术砸在 VAE 训练上，Wan2.2 式把信息量摊到更多通道上——目标相同，都是把 $R$ 推过 48× 而不撞 CogVideoX ablation 的收敛墙。
+DC-AE 式回答：把压缩率继续推高同时保住重建，需要专门的优化技术——图像版 DC-AE（6.3 §7.3：residual autoencoding 把 shortcut 挂进每个下采样/上采样 block，可学支路只拟合本级残差，外加三阶段适配，把压缩率推到 $f = 32/64$；[Chen et al., 2024](../references.md)，arXiv:2410.10733，[A]）已给出范式。视频侧的官方实例是 Open-Sora 2.0：Video DC-AE + MMDiT（[Zheng et al., 2025](../references.md)，arXiv:2503.09642，[A]）。Wan2.2 走同方向的另一解：$(4, 16, 16)$、$c = 48$——空间压缩从 8 翻倍到 16 由通道从 16 加宽到 48 买单，$R = 64$；TI2V-5B 在 VAE 之上再叠 patchify，token 网格等效 $4 \times 32 \times 32$，5B dense 主干即可跑 720P@24fps（[Wan2.2 官方 README](../references.md)，[A]，无论文；48 通道为 HF config 实测，[wan2.2-a14b-hf](../references.md)，[A]）。两条路线的分工：DC-AE 式把优化技术砸在 VAE 训练上，Wan2.2 式把信息量摊到更多通道上——目标相同，都是把 $R$ 推过 48× 而不撞 CogVideoX ablation 的收敛墙。
 
 重建质量的评估方法论：对「编码 → 解码」往返的重建样本算 FID/FVD（与生成样本同指标、同特征空间），记作 rFID/rFVD 以示区分。它度量的是 VAE 单模块的保真上限，与端到端生成质量解耦——是 §4 各档选型的可比依据，但只在同数据集同口径下可比，跨论文比较没有意义；本书不引未收录的基准数字。
 
