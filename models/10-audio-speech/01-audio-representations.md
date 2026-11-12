@@ -70,13 +70,13 @@ $$S_{\text{mel}}[m, :] = \log\left(M \cdot |X[m, :]|^2\right) \qquad (5)$$
 
 HuBERT（[Hsu et al., 2021](../references.md)，arXiv:2106.07447，[A]；官方实现在 fairseq 的 examples/hubert，[fairseq-repo](../references.md)，[A]）用聚类标签自举出监督信号。第 $b$ 轮迭代：对当前表征做 k-means 得到逐帧离散标签 $z^{(b)}$，mask 掉一部分帧，训练模型预测被 mask 位置的标签：
 
-$$L_{\text{MP}} = \sum_{t \in \mathcal{M}} \log P_{\theta}\left(z_t \mid \tilde{x}\right) \qquad (6)$$
+$$L_{\text{MP}} = - \frac{1}{|\mathcal{M}|} \sum_{t \in \mathcal{M}} \log P_{\theta}\left(z_t \mid \tilde{x}\right) \qquad (6)$$
 
-**符号**：$\mathcal{M}$：被 mask 的帧集合；$\tilde{x}$：加 mask 后的输入；$z_t$：第 $t$ 帧的簇标签；$P_\theta$：模型输出的簇分布。式 (6) 与 3.1 的 MLM 同构——把「词表」换成「k-means 簇表」，掩码预测机制照搬。迭代闭环：本轮训出的隐层表征比上一轮更干净，用它重新聚类得到更好的标签再训下一轮。论文口径：起步教师是一个 100 簇的 k-means，共做两轮聚类迭代。
+**符号**：$\mathcal{M}$：被 mask 的帧集合；$\tilde{x}$：加 mask 后的输入；$z_t$：第 $t$ 帧的簇标签；$P_\theta$：模型输出的簇分布。式 (6) 与 3.1 式 (4) 的 MLM 同构——把「词表」换成「k-means 簇表」，掩码预测机制照搬。符号约定一处：HuBERT 原文按 log-likelihood 最大化写法（不带负号、不归一化），本书从 1.1 起 CE/NLL 一律取最小化口径，式 (6) 据此取负并按 $|\mathcal{M}|$ 归一——两种写法差一个符号约定，优化方向相同。迭代闭环：本轮训出的隐层表征比上一轮更干净，用它重新聚类得到更好的标签再训下一轮。论文口径：起步教师是一个 100 簇的 k-means，共做两轮聚类迭代。
 
 ### 3.2 w2v-BERT：对比 + masked 两段式
 
-w2v-BERT（[Chung et al., 2021](../references.md)，arXiv:2108.06209，[B]——Google 未释官方实现）把离散化与上下文学习拆成两个目标：对比模块先把连续表征量化成离散 token（对比目标一族的机制推导见 6.2 式 (2)-(5) 的 InfoNCE），主目标再对这些离散 token 做 masked language modeling。原文口径即「combines contrastive learning and masked language modeling」：对比项把码本候选拉开（不学这一步码本会塌缩），MLM 项使表征带上上下文语义。
+w2v-BERT（[Chung et al., 2021](../references.md)，arXiv:2108.06209，[B]——Google 未释官方实现）把离散化与上下文学习拆成两个目标：对比模块先把连续表征量化成离散 token（对比目标一族的机制推导见 6.2 式 (2)-(5) 的 InfoNCE），主目标再对这些离散 token 做 masked language modeling。原文口径即「combines contrastive learning and masked language modeling」：对比项负责训练码本候选的分离度（原文配方中该项缺席会导致表征塌缩），MLM 项使表征带上上下文语义。
 
 ### 3.3 content 与 speaker 的分离视角
 
