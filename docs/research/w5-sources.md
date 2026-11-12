@@ -108,7 +108,7 @@
 
 ## references.md 本轮变更清单（2026-11-12）
 
-- Part 8 新增 38 条：23 篇论文（`llava`、`llava-1.5`、`flamingo` [B]、`blip2`、`qwen2-vl`、`qwen2.5-vl`、`internvl`、`internvl3`、`llava-onevision`、`pixtral`、`molmo`、`minicpm-v`、`ovis`、`vcd`、`apollo` [B]、`chameleon` [B]、`transfusion` [B]、`janus`、`janus-pro`、`show-o`、`show-o2`、`bagel`）+ 15 个锚点（`llava-repo`、`open-flamingo-repo`、`qwen-vl-repo`、`qwen25vl-config`、`qwen25vl-modeling`、`lavis-repo`、`internvl-repo`、`llava-next-repo`、`molmo-repo`、`minicpm-v-repo`、`ovis-repo`、`janus-repo`、`showo-repo`、`bagel-repo`、`chameleon-modeling` [B]）。
+- Part 8 新增 37 条：22 篇论文（`llava`、`llava-1.5`、`flamingo` [B]、`blip2`、`qwen2-vl`、`qwen2.5-vl`、`internvl`、`internvl3`、`llava-onevision`、`pixtral`、`molmo`、`minicpm-v`、`ovis`、`vcd`、`apollo` [B]、`chameleon` [B]、`transfusion` [B]、`janus`、`janus-pro`、`show-o`、`show-o2`、`bagel`）+ 15 个锚点（`llava-repo`、`open-flamingo-repo`、`qwen-vl-repo`、`qwen25vl-config`、`qwen25vl-modeling`、`lavis-repo`、`internvl-repo`、`llava-next-repo`、`molmo-repo`、`minicpm-v-repo`、`ovis-repo`、`janus-repo`、`showo-repo`、`bagel-repo`、`chameleon-modeling` [B]）。
 - 既有条目被引章节回写 2 处：`emu3`（+8.5）、`emu3-repo`（+8.5）。
 - 术语表新增 20 条 P8 术语（首次出现章节 8.1–8.5）。
 - spec ⟨verify⟩ 项全部结案：VCD 标题 ✓；Apollo 存在但代码/权重下架 → [B] ✓；Janus-Pro 标题 ✓；Show-o 标题 ✓；Bagel 标题（≠"BAGEL"）✓；Chameleon 稳定性全套（QK-Norm/norm 重排/z-loss/dropout）ar5iv 实证 ✓；Transfusion BOI/EOI + 无 2D RoPE 实证 ✓；ByteDance-Seed/Bagel repo 存在 ✓。
