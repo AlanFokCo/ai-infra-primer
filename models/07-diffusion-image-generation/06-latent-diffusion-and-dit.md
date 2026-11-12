@@ -28,7 +28,7 @@ $$
 
 把这笔账挂到 7.2 立的成本结构上读更清楚：扩散的采样是串行的（7.2 §1：训练并行、采样串行），总成本 = 步数 × 每步前向；步数由 solver 决定（7.4），每步前向由工作空间决定——latent 压缩砍的是后者，与前者正交，两个杠杆可以叠乘。训练目标本身一行不改：7.2 的 $L_{simple}$ 与 7.5 的 $L_{RF}$ 把 $x_0$ 换成 $z_0$ 原样成立，CFG（7.4）同样原样适用——**latent 化对扩散数学是透明的**，全部代价集中在 autoencoder 的重建质量这一处（下一段的 $f$ 消融）。LDM 论文里像素空间的 LDM-1（$f = 1$）对照组把这点坐实：同预算下它的 FID 显著差于 f4/f8 档——省下来的位点不是白省的，扩散在像素空间要为感知冗余付容量税。
 
-但 $f$ 不是越大越好。LDM 论文对 $f \in \{4, 8, 16, 32\}$ 的系统消融（论文原表口径，2026-11-12 锁定）给出双向挤压的结论：$f$ 太小（f4）时压缩不足，扩散模型在近乎像素的空间工作，训练慢、收敛质量反而不升；$f$ 太大（f16/f32）时 autoencoder 的重建误差本身成为生成质量的天花板——decoder 画不回去的细节，扩散模型生成得再好也无从落地。f8 是这条曲线上的甜点。这个「压缩率—质量」权衡在 6.3 §7 的 DC-AE 处再次出现：把 $f$ 推到 32/64 需要专门的优化技术（residual autoencoding + 三阶段适配），不是白来的。
+但 $f$ 不是越大越好，也不是越小越坏。LDM 论文对 $f \in \{1, 4, 8, 16, 32\}$ 的同预算消融（ImageNet、2M 步、单卡 A100，Figure 6/7 口径，2026-11-12 经 ar5iv 原文核实）给出的边界是：像素基线 LDM-1 的训练时间显著长于一切 latent 档，且同预算下 FID 明显更差；LDM-{4–16} 在质量—吞吐上基本拉平；只有 LDM-32 因感知压缩过度而封顶整体样本质量——论文结论是 LDM-4 与 LDM-8 给出最佳合成条件，复杂数据集（ImageNet）需要更保守的压缩率。机制读法：$f$ 过大时 autoencoder 的重建误差成为生成质量的天花板——decoder 画不回去的细节，扩散模型生成得再好也无从落地。这个「压缩率—质量」权衡在 6.3 §7 的 DC-AE 处再次出现：把 $f$ 推到 32/64 同时保住重建，需要专门的优化技术（residual autoencoding + 三阶段适配），不是白来的。
 
 这套结构的分工，LDM 论文给了两个名字：**感知压缩**（perceptual compression）归 autoencoder——把人眼不敏感的高频冗余从表示里剥掉，监督信号是重建 + LPIPS + 对抗项（6.3 §7）；**语义压缩**（semantic compression）归 latent 上的扩散模型——构图、物体、文本语义在这个低维空间里被生成。为什么分开比端到端（一个网络同时学压缩与生成）好，机制上有两条：其一，去噪目标（score matching，7.2/7.3）的容量不该浪费在「学一个感知无损的编解码」上——那是重建损失的强项；其二，两个阶段的数据与损失解耦后，autoencoder 可以在不含文本标注的纯图像上训，扩散模型只面对规整的低维分布。
 
@@ -277,15 +277,15 @@ SANA（[Xie et al., 2024](../references.md)，arXiv:2410.10629，[A]；官方实
 
 **杠杆一：更深的压缩。** 换 6.3 §7.3 的 DC-AE（[Chen et al., 2024](../references.md)，arXiv:2410.10733，[A]），$f = 32$：$1024^2$ 图像的 latent 只有 $32 \times 32 = 1024$ 个位点（f8 下同图为 $128^2 = 16384$——16 倍差距），patchify 取 $p = 1$，token 数 $N = 1024$。
 
-**杠杆二：更便宜的序列混合。** DiT block 里的 softmax attention 换成 linear attention（4.3 的机制直接进扩散）：特征映射取 $\phi = \mathrm{ReLU}$，结合律重排
+**杠杆二：更便宜的序列混合。** DiT block 里的 softmax attention 换成 linear attention（4.3 的机制直接进扩散）：特征映射取 $\phi = \mathrm{ReLU}$，保留归一化分母，结合律重排
 
 $$
-O = \mathrm{softmax}\!\left( \frac{QK^{\top}}{\sqrt{d_h}} \right) V \;\longrightarrow\; O = \phi(Q)\left( \phi(K)^{\top} V \right), \qquad \phi = \mathrm{ReLU} \qquad (15)
+O_i = \frac{\phi(Q_i) \left( \sum_{j=1}^{N} \phi(K_j)^{\top} V_j \right)}{\phi(Q_i) \left( \sum_{j=1}^{N} \phi(K_j)^{\top} \right)}, \qquad \phi = \mathrm{ReLU} \qquad (15)
 $$
 
-**符号**：右式先算 $\phi(K)^{\top}V \in \mathbb{R}^{d_h \times d_h}$（SANA 论文口径：归一化分母一并省去）。非因果双向场景下左序为 $4N^2 d_h$、右序为 $4N d_h^2$（本书 $2mnk$ 口径），交叉点 $N = d_h$；$N = 1024$、$d_h = 64$ 时 attention 项省约 16 倍——4.3 式 (4) 的账从 LLM 原样搬到 DiT。占 block 总 FLOPs 的比例用式 (7) 估（$d = 1152$ 档）：f8 下 $1024^2$ 图（$N = 4096$）attention 项约占 37%，f32 下（$N = 1024$）约 13%——两个杠杆是乘性的：先靠 DC-AE 把 $N$ 压下来，再靠 linear attention 把剩下的二次项抹掉。
+**符号**：式 (15) 即 SANA 论文 Eq. (1)（2026-11-12 经 ar5iv 原文核实）：分子的共享项 $\sum_j \phi(K_j)^{\top} V_j \in \mathbb{R}^{d_h \times d_h}$ 与分母的共享项 $\sum_j \phi(K_j)^{\top} \in \mathbb{R}^{d_h}$ 全序列各算一次、被全部 query 复用——省力的来源是共享与重排，分母并不省。非因果双向场景下左序为 $4N^2 d_h$、右序为 $4N d_h^2$（本书 $2mnk$ 口径，分母与逐 query 读出为低阶项），交叉点 $N = d_h$；$N = 1024$、$d_h = 64$ 时 attention 项省约 16 倍——4.3 式 (4) 的账从 LLM 原样搬到 DiT。占 block 总 FLOPs 的比例用式 (7) 估（$d = 1152$ 档）：f8 下 $1024^2$ 图（$N = 4096$）attention 项约占 37%，f32 下（$N = 1024$）约 13%——两个杠杆是乘性的：先靠 DC-AE 把 $N$ 压下来，再靠 linear attention 把剩下的二次项抹掉。
 
-删掉 softmax 丢掉的是局部归纳偏置（softmax 的锐化天然倾向近邻），SANA 的补偿是 **Mix-FFN**：FFN 的两个逐点投影之间插一个 $3\times3$ depthwise conv，把局部混合职责从 attention 挪给卷积——conv 的 $3\times3$ 邻域混合是逐 token 常数成本，不进式 (7) 的二次项。text encoder 用 Gemma-2-2B（decoder-only LM 的表示直接作条件，§4 的「纯文本监督密度」论据的又一实例）；训练目标为 FM 线性路径（7.5 式 (22)），采样配 FM 系少步 solver（7.4/7.5 的账在此兑现：直轨迹 → 大步长）。DC-AE 的深压缩还带来一条隐性收益：$1024^2$ 的训练可以在原生分辨率端到端进行（latent 只有 $32^2$），免掉「低分辨率预训练 + 高分辨率微调」课程的一个档。系统账（论文摘要口径）：SANA-0.6B 在 $1024^2$ 上对标大其约 20 倍的 FLUX 级系统，笔记本 GPU（16GB）单图一秒内，吞吐高约两个数量级。
+删掉 softmax 丢掉的是局部归纳偏置（softmax 的锐化天然倾向近邻），SANA 的补偿是 **Mix-FFN**：FFN 换成 inverted residual block + $3\times3$ depthwise conv + GLU 的组合，把局部混合职责从 attention 挪给卷积——conv 的 $3\times3$ 邻域混合是逐 token 常数成本，不进式 (7) 的二次项。论文消融（Table 8/12 口径）把这条因果链钉死：self-attention 直接换 linear attention 会掉 FID 与 CLIP Score，Mix-FFN 把损失补回；同一份消融还坐实了 NoPE——零填充 $3\times3$ 卷积隐式携带位置信息，SANA 是首个完全去掉位置编码的 DiT，论文报告无质量损失。text encoder 用 Gemma-2-2B（decoder-only LM 的表示直接作条件，§4 的「纯文本监督密度」论据的又一实例）；训练目标为 FM 线性路径（7.5 式 (22)），采样配论文提出的 Flow-DPM-Solver（7.4 指数积分族在速度场坐标下的对应物：直轨迹 → 大步长）。DC-AE 的深压缩还带来一条隐性收益：$1024^2$ 的训练可以在原生分辨率端到端进行（latent 只有 $32^2$），免掉「低分辨率预训练 + 高分辨率微调」课程的一个档。系统账（论文口径）：SANA-0.6B 在 $1024^2$ 上对标大其约 20 倍的 FLUX 级系统，笔记本 GPU 单图 0.88s（FP16，论文 Table 5），吞吐高约两个数量级。
 
 把 §6-§8 合起来看，效率线的全部动作只有三个，且都不改动扩散数学骨架：更深的 latent 压缩（f8 → f32）、更便宜的序列混合（softmax → linear）、更聪明的训练课程（三阶段 + weak-to-strong）。
 
@@ -293,7 +293,7 @@ $$
 
 | 对象 | 公式/数字 | 要点 |
 | --- | --- | --- |
-| latent 账 | 式 (1)；f8 位点削减 $f^2 = 64\times$ | 感知压缩（AE）与语义生成（diffusion）两阶段分工；f8 为双向挤压的甜点（LDM 消融） |
+| latent 账 | 式 (1)；f8 位点削减 $f^2 = 64\times$ | 感知压缩（AE）与语义生成（diffusion）两阶段分工；LDM 消融：LDM-{4–16} 拉平、LDM-1 慢、LDM-32 限质，f4/f8 最佳 |
 | scaling factor | $s = 1/\hat\sigma_z = 0.18215$，式 (2)(3) | 错误尺度 = log-SNR 轴平移 $2\ln\sigma_z$；单位方差化保 schedule 语义 |
 | cross-attention | 式 (4) | 文本作 K/V、静态只读；§3 四路对比表，DiT 消融：adaLN-Zero 最优 |
 | text encoder | CLIP pooled+sequence vs T5 | T5 强在数据规模、逐 token 监督、长尾覆盖；Imagen：放 text encoder 收益 > 放 U-Net；SD3 去 T5 掉复杂 prompt |
@@ -305,7 +305,7 @@ $$
 | QK-norm | 式 (13)(14) | per-head RMSNorm ⇒ logit 上界 $\sqrt{d_h}$，与权重尺度解耦 |
 | FLUX 变体 [C] | double → single stream | 前段双流分工、后段参数共享（已披露口径） |
 | PixArt-α | 三阶段 + adaLN-single | adaLN 调制占 DiT 参数约 27% → single 版压至常数级（论文口径）；训练成本约 SD1.5 的 12%（摘要口径） |
-| SANA | 式 (15) + DC-AE f32 | $N = 1024$ @ $1024^2$；ReLU linear attention 省 attention 项约 $16\times$；Mix-FFN 补局部性 |
+| SANA | 式 (15) + DC-AE f32 | $N = 1024$ @ $1024^2$；ReLU linear attention（分子/分母共享项，分母保留）省 attention 项约 $16\times$；Mix-FFN 补局部性并带来 NoPE |
 
 ## 练习
 
