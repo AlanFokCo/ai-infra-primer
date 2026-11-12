@@ -128,7 +128,7 @@ $$
 
 三条读法：(i) 导数处处非负——无 ReLU 式死区，且 $f_\alpha$ 单调、不把输入折叠（折叠会让不同输入挤到同一输出，丢信息）；(ii) 导数本身以频率 $2\alpha$ 振荡——梯度场携带周期结构，网络学周期函数时不必从零拼出正弦；(iii) $\alpha$ 逐通道可学，不同通道可以分工到不同频率档——这给了上采样栈一条「逐层搭谐波」的组织方式。
 
-周期先验的另一面是混叠。非线性作用在离散信号上会产生谐波：$\sin^2$ 作用在正弦上由 $\sin^2\theta = (1 - \cos 2\theta)/2$ 直接倍频。采样率 $f_s$ 下，任何高于 $f_s/2$ 的分量折叠回 $[0, f_s/2]$（10.1 式 (1) Nyquist 的直接推论）：24 kHz 系统中一个 15 kHz 的生成谐波混叠到 $24 - 15 = 9$ kHz——落在可听带内的虚假分量。上采样与非线性交替的栈把这个效应逐级放大。BigVGAN 的对策是给 snake 配 low-pass filter 做抗混叠（原文消融记录该组件引入约 19 倍的差距量级），把谐波能量在折叠发生前截掉——「universal」泛化档与这个细节直接相关：混叠分量是录音条件相关的，截掉它等于删掉一类跨域分布偏移。
+周期先验的另一面是混叠。非线性作用在离散信号上会产生谐波：$\sin^2$ 作用在正弦上由 $\sin^2\theta = (1 - \cos 2\theta)/2$ 直接倍频。采样率 $f_s$ 下，任何高于 $f_s/2$ 的分量折叠回 $[0, f_s/2]$（10.1 式 (1) Nyquist 的直接推论）：24 kHz 系统中一个 15 kHz 的生成谐波混叠到 $24 - 15 = 9$ kHz——落在可听带内的虚假分量。上采样与非线性交替的栈把这个效应逐级放大。BigVGAN 的对策是给 snake 配 low-pass filter 做抗混叠，把谐波能量在折叠发生前截掉。消融口径（论文 Table 4/7/8，波末审查按 ar5iv 全文复核）：去掉滤波器后，MUSDB18 分布外 SMOS 从 4.20 掉到 4.15（差约 0.05，Wilcoxon p<0.01 统计显著），LibriTTS 上 PESQ 3.574 → 3.472、MCD 0.418 → 0.462——是小数点级的稳定掉点而非量级效应；掉点在分布外数据上统计显著，与「universal」泛化档直接相关：混叠分量是录音条件相关的，截掉它等于删掉一类跨域分布偏移。
 
 ## 5. VITS：把整条级联并成一个 ELBO
 
@@ -328,7 +328,7 @@ mel 帧轴  t = 1..T
 | HiFi-GAN MPD | 式 (5)：1D 按质数周期 $p \in \{2,3,5,7,11\}$ 折成 2D，周期性变竖直条纹 | §3 |
 | feature matching | 式 (6)：判别器中间激活的 L1 匹配——对抗训练的自我稳定回路 | §3 |
 | HiFi-GAN 总目标 | 式 (8)：对抗 + FM + mel 回归三件 | §3 |
-| BigVGAN snake | 式 (9)：$x + \sin^2(\alpha x)/\alpha$；式 (10)：$f' = 1 + \sin(2\alpha x) \in [0,2]$；配低通抗混叠（消融量级 ×19） | §4 |
+| BigVGAN snake | 式 (9)：$x + \sin^2(\alpha x)/\alpha$；式 (10)：$f' = 1 + \sin(2\alpha x) \in [0,2]$；配低通抗混叠（消融：去滤波器 OOD SMOS 4.20→4.15，统计显著） | §4 |
 | VITS | 式 (11) 条件 ELBO；式 (12) flow 增强先验（训练用 $f^{-1}$、采样用 $f$）；式 (13) MAS 硬对齐（Viterbi 式 DP）；式 (14) 五项总目标 | §5 |
 | VALL-E | 式 (15) 按层链式；式 (16) AR 第一层；式 (17) NAR 第 2–8 层层内并行；3s prompt = 前缀条件化 | §6 |
 | VALL-E 2 [B] | repetition aware sampling（重复坍缩补丁）+ grouped code modeling（步长按组放大） | §6 |
@@ -349,7 +349,7 @@ mel 帧轴  t = 1..T
 ## 参考
 
 - [Kong et al., 2020](../references.md)：HiFi-GAN: Generative Adversarial Networks for Efficient and High Fidelity Speech Synthesis，arXiv:2010.05646，[A]（key: hifi-gan）——式 (5) MPD 质数周期 $[2,3,5,7,11]$ 2D reshape、式 (6) feature matching、式 (7)(8) mel 损失与总目标
-- [Lee et al., 2022](../references.md)：BigVGAN: A Universal Neural Vocoder with Large-Scale Training，arXiv:2206.04658，[A]（key: bigvgan；repo NVIDIA/BigVGAN）——式 (9)(10) snake 激活与导数、低通抗混叠（消融量级口径）
+- [Lee et al., 2022](../references.md)：BigVGAN: A Universal Neural Vocoder with Large-Scale Training，arXiv:2206.04658，[A]（key: bigvgan；repo NVIDIA/BigVGAN）——式 (9)(10) snake 激活与导数、低通抗混叠（消融 Table 4/7/8：去滤波器 SMOS/PESQ 小数点级掉点，统计显著）
 - [Kim et al., 2021](../references.md)：Conditional Variational Autoencoder with Adversarial Learning for End-to-End Text-to-Speech（VITS），arXiv:2106.06103，[A]（key: vits）——式 (11)–(14)：VAE+flow 先验增强、MAS、stochastic duration predictor、对抗统一目标
 - [Ren et al., 2020](../references.md)：FastSpeech 2: Fast and High-Quality End-to-End Text to Speech，arXiv:2006.04558，[B]（key: fastspeech2）——式 (3)(4)：variance adaptor（duration/pitch/energy）；微软未释官方代码
 - [Wang et al., 2023](../references.md)：Neural Codec Language Models are Zero-Shot Text to Speech Synthesizers（VALL-E），arXiv:2301.02111，[B]（key: vall-e）——式 (15)–(17) 两阶段分解与 3s prompt；微软未开源
