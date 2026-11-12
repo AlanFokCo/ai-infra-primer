@@ -415,6 +415,7 @@
 | llama-omni | LLaMA-Omni: Seamless Speech Interaction with Large Language Models（speech encoder+adaptor+LLM+streaming decoder、免转写直连出处） | Fang et al. | arXiv:2409.06666 ; https://github.com/ictnlp/LLaMA-Omni | [A] | 2026-11-13 | 10.4 |
 | qwen2-audio | Qwen2-Audio Technical Report（audio encoder+adapter+LLM 理解端范式出处——Qwen2.5-Omni Thinker 前代参照） | Chu et al. | arXiv:2407.10759 | [A] | 2026-11-13 | 10.4 |
 | encodec-repo | facebookresearch/encodec 官方 repo（encodec/model.py 文件级实测） | Meta | https://github.com/facebookresearch/encodec | [A] | 2026-11-13 | 10.1 |
+| fairseq-repo | facebookresearch/fairseq 官方 repo（HuBERT 官方实现所在——examples/hubert 预训练代码） | Meta | https://github.com/facebookresearch/fairseq | [A] | 2026-11-13 | 10.1 |
 | dac-repo | descriptinc/descript-audio-codec 官方 repo（dac/model/dac.py 文件级实测） | Descript | https://github.com/descriptinc/descript-audio-codec | [A] | 2026-11-13 | 10.1 |
 | moshi-repo | kyutai-labs/moshi 官方全栈 repo（moshi/moshi/models/compression.py 实测 `class MimiModel(CompressionModel)`——Mimi 走读锚点） | Kyutai | https://github.com/kyutai-labs/moshi | [A] | 2026-11-13 | 10.1, 10.4 |
 | mimi-config | kyutai/mimi config.json（HF 实测：codebook_size 2048、frame_rate 12.5、hidden_size 512——Mimi 参数物证） | Kyutai | https://huggingface.co/kyutai/mimi/blob/main/config.json | [A] | 2026-11-13 | 10.1 |
