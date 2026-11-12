@@ -1,6 +1,6 @@
 # 7.4 采样器与 Guidance（Samplers and Guidance）
 
-> 本章回答两笔账：一是 7.2 留下的 1000 次 NFE 怎么砍——DDIM 的非马尔可夫前向族推导、DDIM σ=0 = PF-ODE 指数积分的精确证明、DPM-Solver 的高阶展开 outline；二是采样预算固定时质量怎么换——classifier guidance 的 Bayes 展开、CFG 的完整推导（隐式分类器与 log-likelihood tilt）、失效机制（score norm 膨胀）与缓解（dynamic thresholding / rescaled CFG），最后是把「步数」与「引导强度」双双蒸进单模型的蒸馏族（progressive distillation / consistency / LCM / reflow / DMD）| 前置：7.2（ε-参数化、$L_{simple}$、后验 $\tilde\beta_t$、ancestral 采样）、7.3（PF-ODE 式 (20)(21)、score↔ε 换算式 (9)、Tweedie 式 (10)、EDM Heun）、7.5（rectified flow 线性路径——reflow 一节） | 锚点：DDIM [A]、classifier guidance [A]、CFG [A]、consistency models [A]、LCM [A]、DMD/DMD2 [A]、DPM-Solver [A]、progressive distillation [A]、rectified flow [A]、Imagen [B]；ermongroup/ddim [A]、openai/consistency_models [A]、tianweiy/DMD2 [A]
+> 本章回答两笔账：一是 7.2 留下的 1000 次 NFE 怎么砍——DDIM 的非马尔可夫前向族推导、DDIM σ=0 = PF-ODE 指数积分的精确证明、DPM-Solver 的高阶展开 outline；二是采样预算固定时质量怎么换——classifier guidance 的 Bayes 展开、CFG 的完整推导（隐式分类器与 log-likelihood tilt）、失效机制（score norm 膨胀）与缓解（dynamic thresholding / rescaled CFG），最后是把「步数」与「引导强度」双双蒸进单模型的蒸馏族（progressive distillation / consistency / LCM / reflow / DMD）| 前置：7.2（ε-参数化、$L_{simple}$、后验 $\tilde\beta_t$、ancestral 采样）、7.3（PF-ODE 式 (20)(21)、score↔ε 换算式 (9)、Tweedie 式 (10)、EDM Heun）、7.5（rectified flow 线性路径——reflow 一节） | 锚点：DDIM [A]、classifier guidance [A]、CFG [A]、consistency models [A]、LCM [A]、DMD/DMD2 [A]、DPM-Solver [A]、progressive distillation [A]、rectified flow [A]、common-diffusion [A]、Imagen [B]；ermongroup/ddim [A]、openai/consistency_models [A]、tianweiy/DMD2 [A]
 
 ## 1. 两条战线与一个共同接口
 
@@ -299,7 +299,7 @@ $$
 
 **符号**：分位数自适应于当前样本当前步——绝大多数步 $s \approx 1$ 不动手，只有真正出界的步被按比例压回 $[-1, 1]$，且无贴边堆积（除以 $s$ 保持相对对比度）。
 
-**rescaled CFG**（CFG 原文与 Imagen 均有使用）：把引导后的预测的整体标准差拉回与纯条件预测一致，再与原引导输出混合：
+**rescaled CFG**（[Hang et al., 2023](../references.md)，arXiv:2305.08891，[A]）：把引导后的预测的整体标准差拉回与纯条件预测一致，再与原引导输出混合：
 
 $$
 \tilde\varepsilon_{\mathrm{rs}} = \tilde\varepsilon \cdot \frac{\mathrm{std}\left( \varepsilon_\theta(x_t, t, c) \right)}{\mathrm{std}\left( \tilde\varepsilon \right)}, \qquad \tilde\varepsilon' = \phi\, \tilde\varepsilon_{\mathrm{rs}} + (1 - \phi)\, \tilde\varepsilon \qquad (22)
@@ -340,10 +340,10 @@ $$
 损失即学生对 $\tilde x_0$ 的回归（等价地对 $\tilde v$ 回归）。一轮训练完成 $T \to T/2$；然后把学生拷贝为新教师，重复减半：
 
 $$
-T \to T/2 \to T/4 \to \cdots \to T / 2^{k}, \qquad \text{每轮一次完整蒸馏训练} \qquad (25)
+T \to T/2 \to T/4 \to \cdots \to T / 2^{k} \qquad (25)
 $$
 
-**符号**：$k$：减半轮数；从 $T = 1024$ 到 4 步需 $k = 8$ 轮。
+**符号**：$k$：减半轮数，每轮一次完整蒸馏训练；从 $T = 1024$ 到 4 步需 $k = 8$ 轮。
 
 机制读法：每一轮学生只需学「教师的二步合成」——目标始终来自同一个高质量教师链，误差不在轮次间爆炸（论文报告 CIFAR-10 上一直减半到 4 步、样本质量接近全步教师，再往下开始掉；具体 FID 见原表）。代价同样清楚：**每轮一次完整训练**，$k$ 轮的累计训练成本远超单次教师训练；且学生绑死一个特定教师与 schedule。这是「蒸馏换 NFE」路线的总账本原型——后面三个家族都在压缩这笔训练账或把目标换得更直接。
 
@@ -352,10 +352,10 @@ $$
 一致性模型（consistency model，[Song et al., 2023](../references.md)，arXiv:2303.01469，[A]；官方实现 [openai/consistency_models](../references.md)，[A]，CT/CD loss 走读锚点 `cm/losses.py`、`cm/karras_diffusion.py`）把蒸馏目标从「匹配教师步进」换成 PF-ODE 的一条几何性质：**同一条 ODE 轨迹上的所有点，应当映射到同一个终点**。定义一致性函数 $f(x_t, t)$ 为「轨迹上点 $(x_t, t)$ 沿 PF-ODE 积到 $t = 0$ 的端点」，则它满足**自一致性**：
 
 $$
-f(x_t, t) = f(x_{t'}, t') \qquad \forall\, t, t' \in [0, 1]\ \text{位于同一轨迹} \qquad (26)
+f(x_t, t) = f(x_{t'}, t') \qquad \forall\, t, t' \in [0, 1] \qquad (26)
 $$
 
-**符号**：轨迹：PF-ODE（7.3 式 (20)）从噪声端出发的解曲线。
+**符号**：等式的成立条件是 $t$ 与 $t'$ 两处取自同一条轨迹；轨迹：PF-ODE（7.3 式 (20)）从噪声端出发的解曲线。
 
 加上边界条件 $f(x_0, 0) = x_0$（数据点是自己轨迹的终点），$f$ 就被唯一定义。网络参数化把边界条件做成恒等式而非软约束（EDM 式外壳，7.3 §8 同族）：
 
@@ -388,10 +388,10 @@ LCM（latent consistency model，[Luo et al., 2023](../references.md)，arXiv:23
 7.5 §10 的曲率账在这里兑现：rectified flow（[Liu et al., 2022](../references.md)，arXiv:2209.03003，[A]）的线性路径 $x_t = (1-t) x_0 + t\varepsilon$、目标速度 $\varepsilon - x_0$ 是**条件**直线；不同端点对的直线相交，学到的边际场在交点处平均——ODE 轨迹仍弯。**reflow** 用模型自身修这个耦合：用当前模型的确定性 ODE 生成配对 $(\hat x_0, \varepsilon)$（从 $\varepsilon$ 积到数据端），再以这批配对重新训练——新一轮的条件路径连接的是「真实会被映射到一起」的端点对，交叉减少，轨迹变直；迭代执行即 $k$-rectified flow：
 
 $$
-\text{第 } k+1 \text{ 轮：}\quad \varepsilon \sim \mathcal{N}(0, I),\quad \hat x_0 = \mathrm{ODEFlow}^{(k)}(\varepsilon),\quad \text{用 } ( \hat x_0, \varepsilon ) \text{ 对重训 } v_\theta^{(k+1)} \qquad (29)
+\varepsilon \sim \mathcal{N}(0, I), \qquad \hat x_0 = \mathrm{ODEFlow}^{(k)}(\varepsilon); \qquad L_{\mathrm{reflow}} = \mathbb{E}_{t, \varepsilon} \left\| v_\theta^{(k+1)}\left( (1-t)\, \hat x_0 + t\, \varepsilon,\ t \right) - \left( \varepsilon - \hat x_0 \right) \right\|^2 \qquad (29)
 $$
 
-**符号**：$\mathrm{ODEFlow}^{(k)}$：第 $k$ 轮模型的噪声→数据确定性映射（1 步或多步积出）。
+**符号**：$\mathrm{ODEFlow}^{(k)}$：第 $k$ 轮模型的噪声→数据确定性映射（1 步或多步积出）；$L_{\mathrm{reflow}}$：第 $k+1$ 轮的训练目标——用第 $k$ 轮自产的配对 $(\hat x_0, \varepsilon)$ 按 7.5 的线性路径（$x_t = (1-t) x_0 + t\varepsilon$、目标速度 $\varepsilon - x_0$）重训。
 
 在蒸馏语境里 reflow 的位置是**前置工序**：轨迹越直，§5.2 的自一致性约束越容易满足（$f$ 逼近的映射越接近线性插值端点），1-2 步学生的逼近误差越小。它与 CM/DMD 不互斥——先 reflow 教师、再蒸馏学生是常见组合。
 
@@ -478,7 +478,8 @@ $$
 - [ermongroup/ddim](../references.md)：DDIM 官方实现，[A]（key: ddim-repo）
 - [Lu et al., 2022](../references.md)：DPM-Solver，arXiv:2206.00927，[A]（key: dpm-solver）——式 (12)(13)：半线性结构 + 指数积分 + Taylor 展开；~10 NFE 口径（标题）
 - [Dhariwal & Nichol, 2021](../references.md)：Diffusion Models Beat GANs on Image Synthesis，arXiv:2105.05233，[A]（key: classifier-guidance）——式 (14)(15)：classifier guidance 的 Bayes 展开与 ε 形式
-- [Ho & Salimans, 2022](../references.md)：Classifier-Free Diffusion Guidance，arXiv:2207.12598，[A]（key: cfg）——式 (16)(17)(18)(19)：隐式分类器推导、tilt 语义；rescaled CFG 式 (22)
+- [Ho & Salimans, 2022](../references.md)：Classifier-Free Diffusion Guidance，arXiv:2207.12598，[A]（key: cfg）——式 (16)(17)(18)(19)：隐式分类器推导、tilt 语义
+- [Hang et al., 2023](../references.md)：Common Diffusion Noise Schedules and Sample Steps are Flawed，arXiv:2305.08891，[A]（key: common-diffusion）——rescaled CFG 式 (22)：std 比值与 $\phi$ 混合
 - [Saharia et al., 2022](../references.md)：Photorealistic Text-to-Image Diffusion Models with Deep Language Understanding，arXiv:2205.11487，[B]（key: imagen）——dynamic thresholding 式 (21)
 - [Salimans & Ho, 2022](../references.md)：Progressive Distillation for Fast Sampling of Diffusion Models，arXiv:2202.00512，[A]（key: progressive-distillation）——式 (24)(25)：减半迭代与目标反解；v-prediction 原始出处（经 7.2 §5.1）
 - [Song et al., 2023](../references.md)：Consistency Models，arXiv:2303.01469，[A]（key: consistency-models）——式 (26)(27)(28)：自一致性、边界参数化、CD/CT
