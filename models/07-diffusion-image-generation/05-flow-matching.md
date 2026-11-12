@@ -428,14 +428,7 @@ rectified flow 在这条账上的优势来自目标结构：条件目标 $\varep
 - [Esser et al., 2024](../references.md)：Scaling Rectified Flow Transformers for High-Resolution Image Synthesis，arXiv:2403.03206，[A]（key: sd3）——式 (27)(28)(30)：logit-normal $t$ 采样与分辨率相关 timestep shift；系统侧 recap 见 7.6/7.7
 - [Ho et al., 2020](../references.md)：Denoising Diffusion Probabilistic Models，arXiv:2006.11239，[A]（key: ddpm）——同族映射的 $\varepsilon$-prediction 一侧（7.2 完整推导）
 - [Salimans & Ho, 2022](../references.md)：Progressive Distillation for Fast Sampling of Diffusion Models，arXiv:2202.00512，[A]（key: progressive-distillation）——v-prediction 原始出处（式 (26) 的桥）
-- [Song et al., 2020](../references.md)：Score-Based Generative Modeling through Stochastic Differential Equations，arXiv:2011.13456，[A]（key: score-sde）——probability-flow ODE 与精确似然（式 (19) 的对应物，7.3）
+- [Song et al., 2021](../references.md)：Score-Based Generative Modeling through Stochastic Differential Equations，arXiv:2011.13456，[A]（key: score-sde）——probability-flow ODE 与精确似然（式 (19) 的对应物，7.3）
 - [Kingma & Dhariwal, 2018](../references.md)：Glow: Generative Flow with Invertible 1x1 Convolutions，arXiv:1807.03039，[A]（key: glow）——离散 change of variables 对照（7.1）
 - [facebookresearch/flow_matching](../references.md)：FM 官方库（`flow_matching/path/`、`loss/`、`solver/`），[A]（key: flow-matching-repo）——§6 代码对照
 - [Stability-AI/sd3.5](../references.md)：SD3.5 官方推理代码，[A]（key: sd3.5-repo）——shift 与采样侧实现对照
-
-
-
-
-
-
-

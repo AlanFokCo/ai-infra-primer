@@ -181,13 +181,13 @@ graph LR
 
 | 章节 | 文件 | 状态 |
 | --- | --- | --- |
-| 7.1 生成模型家族统一对照 | [01-generative-model-map.md](07-diffusion-image-generation/01-generative-model-map.md) | 未开始 |
-| 7.2 DDPM 完整推导 | [02-ddpm.md](07-diffusion-image-generation/02-ddpm.md) | 未开始 |
-| 7.3 Score-Based 视角与 SDE/ODE | [03-score-sde.md](07-diffusion-image-generation/03-score-sde.md) | 未开始 |
-| 7.4 采样器与 Guidance | [04-sampling-and-guidance.md](07-diffusion-image-generation/04-sampling-and-guidance.md) | 未开始 |
-| 7.5 Flow Matching | [05-flow-matching.md](07-diffusion-image-generation/05-flow-matching.md) | 未开始 |
-| 7.6 Latent Diffusion、DiT 与 MMDiT | [06-latent-diffusion-and-dit.md](07-diffusion-image-generation/06-latent-diffusion-and-dit.md) | 未开始 |
-| 7.7 T2I 系统拆解与 AR 生图 | [07-t2i-systems-and-ar-image.md](07-diffusion-image-generation/07-t2i-systems-and-ar-image.md) | 未开始 |
+| 7.1 生成模型家族统一对照 | [01-generative-model-map.md](07-diffusion-image-generation/01-generative-model-map.md) | 已关闭 |
+| 7.2 DDPM 完整推导 | [02-ddpm.md](07-diffusion-image-generation/02-ddpm.md) | 已关闭 |
+| 7.3 Score-Based 视角与 SDE/ODE | [03-score-sde.md](07-diffusion-image-generation/03-score-sde.md) | 已关闭 |
+| 7.4 采样器与 Guidance | [04-sampling-and-guidance.md](07-diffusion-image-generation/04-sampling-and-guidance.md) | 已关闭 |
+| 7.5 Flow Matching | [05-flow-matching.md](07-diffusion-image-generation/05-flow-matching.md) | 已关闭 |
+| 7.6 Latent Diffusion、DiT 与 MMDiT | [06-latent-diffusion-and-dit.md](07-diffusion-image-generation/06-latent-diffusion-and-dit.md) | 已关闭 |
+| 7.7 T2I 系统拆解与 AR 生图 | [07-t2i-systems-and-ar-image.md](07-diffusion-image-generation/07-t2i-systems-and-ar-image.md) | 已关闭 |
 
 ### Part 8 · Multimodal LLMs（W5）
 
@@ -226,3 +226,4 @@ graph LR
 | W1 | 2026-11-11 | P1+P2 共 11 章 | 逐章 evaluator review × 11 + 波末独立对抗审查 1 轮 | 2（全部关闭） | 2（全部关闭） | 5（波末 sweep 全部清零） | 无 | 放行（强制重推导 5 项 pass：Chinchilla Lagrangian / 2.3 √d_k / 2.4 KV cache / 2.5 RoPE / 2.7 Pre-Post-LN 梯度；完整档案见 [w1-review-report.md](../docs/reviews/w1-review-report.md)） |
 | W2 | 2026-11-12 | P3+P4 共 11 章 | 逐章批量审查 × 3 批 + 波末独立对抗审查 1 轮 | 0 | 2（全部关闭） | 9（波末 sweep 全部清零） | 无 | 放行（强制重推导 3 项 pass：4.1 MLA absorption / 4.3 DeltaNet-GDN-KDA 状态更新链 / 4.5 MoE routing；完整档案见 [w2-review-report.md](../docs/reviews/w2-review-report.md)） |
 | W3 | 2026-11-12 | P5+P6 共 9 章 | 逐章批量审查 × 3 批 + 波末独立对抗审查 1 轮（含修复轮复审） | 1（全部关闭） | 2（全部关闭） | 5（全部清零：修复轮 2 条 + 波末 sweep 3 条——F5/F6/F8 原按协议转 W4，提前于本波波末 sweep 清零） | 无 | 初轮有条件放行（5.1 含 S1 需复审）→ 修复后 9 章全放行（强制重推导 3 项 pass：6.2 InfoNCE 双向 CE 与温度梯度 / 6.3 VAE ELBO+STE+RVQ / 5.5 MuonClip qk-clip；完整档案见 [w3-review-report.md](../docs/reviews/w3-review-report.md)） |
+| W4 | 2026-11-12 | P7 共 7 章 | 逐章批量审查 × 3 批 + 波末独立对抗审查 1 轮（含 S1/S2 修复轮复审 × 2） | 2（全部关闭：common-diffusion 作者张冠李戴、iDDPM 动机方向写反） | 2（全部关闭：SANA 归一化分母误述、LDM f 消融边界矛盾） | 8（波末 sweep 全部清零） | 无 | 初轮暂不放行 → S1/S2 修复并复审后 7 章全放行（强制重推导 3 项 pass：7.2 DDPM 全链 / 7.4 CFG + DDIM=PF-ODE / 7.5 conditional FM + rectified flow 映射；完整档案见 [w4-review-report.md](../docs/reviews/w4-review-report.md)） |

@@ -1,6 +1,6 @@
 # 7.4 采样器与 Guidance（Samplers and Guidance）
 
-> 本章回答两笔账：一是 7.2 留下的 1000 次 NFE 怎么砍——DDIM 的非马尔可夫前向族推导、DDIM σ=0 = PF-ODE 指数积分的精确证明、DPM-Solver 的高阶展开 outline；二是采样预算固定时质量怎么换——classifier guidance 的 Bayes 展开、CFG 的完整推导（隐式分类器与 log-likelihood tilt）、失效机制（score norm 膨胀）与缓解（dynamic thresholding / rescaled CFG），最后是把「步数」与「引导强度」双双蒸进单模型的蒸馏族（progressive distillation / consistency / LCM / reflow / DMD）| 前置：7.2（ε-参数化、$L_{simple}$、后验 $\tilde\beta_t$、ancestral 采样）、7.3（PF-ODE 式 (20)(21)、score↔ε 换算式 (9)、Tweedie 式 (10)、EDM Heun）、7.5（rectified flow 线性路径——reflow 一节） | 锚点：DDIM [A]、classifier guidance [A]、CFG [A]、consistency models [A]、LCM [A]、DMD/DMD2 [A]、DPM-Solver [A]、progressive distillation [A]、rectified flow [A]、common-diffusion [A]、Imagen [B]；ermongroup/ddim [A]、openai/consistency_models [A]、tianweiy/DMD2 [A]
+> 本章回答两笔账：一是 7.2 留下的 1000 次 NFE 怎么砍——DDIM 的非马尔可夫前向族推导、DDIM σ=0 = PF-ODE 指数积分的精确证明、DPM-Solver 的高阶展开 outline；二是采样预算固定时质量怎么换——classifier guidance 的 Bayes 展开、CFG 的完整推导（隐式分类器与 log-likelihood tilt）、失效机制（score norm 膨胀）与缓解（dynamic thresholding / rescaled CFG），最后是把「步数」与「引导强度」双双蒸进单模型的蒸馏族（progressive distillation / consistency / LCM / reflow / DMD）| 前置：7.2（ε-参数化、$L_{simple}$、后验 $\tilde\beta_t$、ancestral 采样）、7.3（PF-ODE 式 (20)(21)、score↔ε 换算式 (9)、Tweedie 式 (10)、EDM Heun）、7.5（rectified flow 线性路径——reflow 一节） | 锚点：DDIM [A]、classifier guidance [A]、CFG [A]、consistency models [A]、LCM [A]、DMD/DMD2 [A]、DPM-Solver [A]、progressive distillation [A]、rectified flow [A]、common-diffusion [B]、Imagen [B]；ermongroup/ddim [A]、openai/consistency_models [A]、tianweiy/DMD2 [A]
 
 ## 1. 两条战线与一个共同接口
 
@@ -103,7 +103,7 @@ $$
 
 **符号**：$\hat x_0$ 由 $(x_{\tau_i}, \tau_i)$ 处的预测给出；一跳跨过任意多个训练步。
 
-合法性来自 §2.1 的观察：网络是在全部 $t$ 的边缘上分别训练的，任何格点上的 $\varepsilon_\theta$ 都是那个噪声水平下的合法 score（经 7.3 式 (9) 换算）——跳步不是近似调用一个「本来只在相邻步有效」的算子，而是同一场在稀疏格点上的采样。1000 步训练出的模型直接以 $S = 50$ 或 $S = 100$ 采样，NFE 同比例下降，无需任何重训（[Song et al., 2021](../references.md)，[A]；官方实现 [ermongroup/ddim](../references.md)，[A]）。代价是每跳跨距大、式 (5) 的离散误差按跨距累积——误差账的定量形态在 §2.4 与 §3。
+合法性来自 §2.1 的观察：网络是在全部 $t$ 的边缘上分别训练的，任何格点上的 $\varepsilon_\theta$ 都是那个噪声水平下的合法 score（经 7.3 式 (9) 换算）——跳步不是近似调用一个「本来只在相邻步有效」的算子，而是同一场在稀疏格点上的采样。1000 步训练出的模型直接以 $S = 50$ 或 $S = 100$ 采样，NFE 同比例下降，无需任何重训（[Song et al., 2021](../references.md)，arXiv:2010.02502，[A]；官方实现 [ermongroup/ddim](../references.md)，[A]）。代价是每跳跨距大、式 (5) 的离散误差按跨距累积——误差账的定量形态在 §2.4 与 §3。
 
 ### 2.4 DDIM $\sigma = 0$ = PF-ODE 的一阶离散化（精确证明）
 
@@ -299,7 +299,7 @@ $$
 
 **符号**：分位数自适应于当前样本当前步——绝大多数步 $s \approx 1$ 不动手，只有真正出界的步被按比例压回 $[-1, 1]$，且无贴边堆积（除以 $s$ 保持相对对比度）。
 
-**rescaled CFG**（[Lin et al., 2023](../references.md)，arXiv:2305.08891，[A]）：把引导后的预测的整体标准差拉回与纯条件预测一致，再与原引导输出混合：
+**rescaled CFG**（[Lin et al., 2023](../references.md)，arXiv:2305.08891，[B]）：把引导后的预测的整体标准差拉回与纯条件预测一致，再与原引导输出混合：
 
 $$
 \tilde\varepsilon_{\mathrm{rs}} = \tilde\varepsilon \cdot \frac{\mathrm{std}\left( \varepsilon_\theta(x_t, t, c) \right)}{\mathrm{std}\left( \tilde\varepsilon \right)}, \qquad \tilde\varepsilon' = \phi\, \tilde\varepsilon_{\mathrm{rs}} + (1 - \phi)\, \tilde\varepsilon \qquad (22)
@@ -319,7 +319,7 @@ $$
 
 **符号**：$\varepsilon_\theta$：冻结的条件教师；$w$ 在每样本上从一个区间采样，作为学生的额外条件输入——推理时 $w$ 仍是自由旋钮，但每步只付 1 次前向。
 
-这能把 CFG 的边际成本降回无条件模型水平，是当前 T2I 部署的默认做法；它同时是 §5 各蒸馏路线的标准组件——LCM 的 latent 一致性蒸馏里，教师侧就是带 CFG 的增广 PF-ODE，$w$ 同样作为学生输入蒸入（[Luo et al., 2023](../references.md)，arXiv:2310.04378，[A]）。注意式 (23) 的教师输出按定义在数据流形的「tilt 后」位置上——学生直接学习 tilt 分布的 score，§4.3 的范数膨胀随之内化，thresholding/rescale 在蒸馏后仍然常用。
+这能把 CFG 的边际成本降回无条件模型水平，是当前 T2I 部署的常见做法之一（工程惯例，无单一出处）；它同时是 §5 各蒸馏路线的标准组件——LCM 的 latent 一致性蒸馏里，教师侧就是带 CFG 的增广 PF-ODE，$w$ 同样作为学生输入蒸入（[Luo et al., 2023](../references.md)，arXiv:2310.04378，[A]）。注意式 (23) 的教师输出按定义在数据流形的「tilt 后」位置上——学生直接学习 tilt 分布的 score，§4.3 的范数膨胀随之内化，thresholding/rescale 在蒸馏后仍然常用。
 
 ## 5. 蒸馏族：把步数压进权重
 
@@ -479,7 +479,7 @@ $$
 - [Lu et al., 2022](../references.md)：DPM-Solver，arXiv:2206.00927，[A]（key: dpm-solver）——式 (12)(13)：半线性结构 + 指数积分 + Taylor 展开；~10 NFE 口径（标题）
 - [Dhariwal & Nichol, 2021](../references.md)：Diffusion Models Beat GANs on Image Synthesis，arXiv:2105.05233，[A]（key: classifier-guidance）——式 (14)(15)：classifier guidance 的 Bayes 展开与 ε 形式
 - [Ho & Salimans, 2022](../references.md)：Classifier-Free Diffusion Guidance，arXiv:2207.12598，[A]（key: cfg）——式 (16)(17)(18)(19)：隐式分类器推导、tilt 语义
-- [Lin et al., 2023](../references.md)：Common Diffusion Noise Schedules and Sample Steps are Flawed，arXiv:2305.08891，[A]（key: common-diffusion）——rescaled CFG 式 (22)：std 比值与 $\phi$ 混合
+- [Lin et al., 2023](../references.md)：Common Diffusion Noise Schedules and Sample Steps are Flawed，arXiv:2305.08891，[B]（key: common-diffusion）——rescaled CFG 式 (22)：std 比值与 $\phi$ 混合（[B]：无官方 repo，HF 权重经论文脚注链）
 - [Saharia et al., 2022](../references.md)：Photorealistic Text-to-Image Diffusion Models with Deep Language Understanding，arXiv:2205.11487，[B]（key: imagen）——dynamic thresholding 式 (21)
 - [Salimans & Ho, 2022](../references.md)：Progressive Distillation for Fast Sampling of Diffusion Models，arXiv:2202.00512，[A]（key: progressive-distillation）——式 (24)(25)：减半迭代与目标反解；v-prediction 原始出处（经 7.2 §5.1）
 - [Song et al., 2023](../references.md)：Consistency Models，arXiv:2303.01469，[A]（key: consistency-models）——式 (26)(27)(28)：自一致性、边界参数化、CD/CT

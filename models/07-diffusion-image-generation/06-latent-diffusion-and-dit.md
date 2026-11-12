@@ -151,7 +151,7 @@ DiT（[Peebles & Xie, 2023](../references.md)，arXiv:2212.09748，[A]）的回�
 | --- | --- | --- | --- |
 | 8 | $16$ | $256$ | $\approx 7.4$ |
 | 4 | $64$ | $64$ | $\approx 29.1$ |
-| 2 | $256$ | $16$ | $\approx 118.7$ |
+| 2 | $256$ | $16$ | $\approx 118.6$ |
 
 模型档（同表）：DiT-S/B/L/XL = 隐藏维 $d = 384/768/1024/1152$、层数 $12/12/24/28$、参数量 $33\text{M}/130\text{M}/458\text{M}/675\text{M}$。单 block 前向 FLOPs 按本书 $2mnk$ 口径为
 
@@ -269,7 +269,7 @@ PixArt-α（[Chen et al., 2023](../references.md)，arXiv:2310.00426，[A]）的
 2. **文图对齐**：换上 Flan-T5-XXL text encoder（约 4.3B 参数，论文原文口径）并把标签条件头换成文本条件；关键变量是 caption 质量——用 LLaVA 重写的高密度 caption 替代原生 alt-text，消融显示对齐质量的上限由 caption 信息量决定（§4 的 T5 论据在此落地）。
 3. **高分辨率美学微调**：在高质量美学数据上把分辨率顶上去；消融显示美学质量主要来自这一段的数据筛选，而非架构改动。
 
-配套两个结构/工程件：**adaLN-single**——全部 block 共享一个调制 MLP，block 间差异由一个可学的逐 block embedding 提供。动机是一笔参数账：逐 block 的 adaLN 调制线性层（$d \to 6d$）在 DiT 上的累计开销约占主干参数量的 27%（PixArt-α 论文原文口径）；adaLN-single 把 $L$ 份调制 MLP 换成一份共享 MLP 加 $L$ 个 $6d$ 的可学 embedding，把这项开销压到常数级，省下的参数改投主干。以及文本 embedding 预计算缓存（§4 已述）。净效果（论文摘要口径）：PixArt-α 的训练成本约为 Stable Diffusion v1.5 的 12%，质量对标同期大一个量级的系统。后续 PixArt-Σ（[Chen et al., 2024](../references.md)，arXiv:2403.04692，[A]）走 weak-to-strong：继承 α 的权重，用更高质量数据与 KV 压缩把生成推到 4K——三阶段的哲学（用旧模型的产出喂养新模型的高效训练）延伸到分辨率维度。
+配套两个结构/工程件：**adaLN-single**——全部 block 共享一个调制 MLP，block 间差异由一个可学的逐 block embedding 提供。动机是一笔参数账：逐 block 的 adaLN 调制线性层（$d \to 6d$）在 DiT 上的累计开销约占主干参数量的 27%（PixArt-α 论文原文口径）；adaLN-single 把 $L$ 份调制 MLP 换成一份共享 MLP 加 $L$ 个 $6d$ 的可学 embedding，把这项开销压到常数级，省下的参数改投主干。以及文本 embedding 预计算缓存（§4 已述）。净效果（论文口径：正文 12%，v3 摘要作 10.8%）：PixArt-α 的训练成本约为 Stable Diffusion v1.5 的 12%，质量对标同期大一个量级的系统。后续 PixArt-Σ（[Chen et al., 2024](../references.md)，arXiv:2403.04692，[A]）走 weak-to-strong：继承 α 的权重，用更高质量数据与 KV 压缩把生成推到 4K——三阶段的哲学（用旧模型的产出喂养新模型的高效训练）延伸到分辨率维度。
 
 ### 8.2 SANA：Linear DiT + DC-AE f32
 
@@ -304,7 +304,7 @@ $$
 | MMDiT 联合 attention | 式 (10)(11)(12) | 双流各自 QKV/MLP/adaLN；$S$ 的 $2\times2$ 分块，$S_{yz}$ = 文本逐层被图像修正 |
 | QK-norm | 式 (13)(14) | per-head RMSNorm ⇒ logit 上界 $\sqrt{d_h}$，与权重尺度解耦 |
 | FLUX 变体 [C] | double → single stream | 前段双流分工、后段参数共享（已披露口径） |
-| PixArt-α | 三阶段 + adaLN-single | adaLN 调制占 DiT 参数约 27% → single 版压至常数级（论文口径）；训练成本约 SD1.5 的 12%（摘要口径） |
+| PixArt-α | 三阶段 + adaLN-single | adaLN 调制占 DiT 参数约 27% → single 版压至常数级（论文口径）；训练成本约 SD1.5 的 12%（论文口径） |
 | SANA | 式 (15) + DC-AE f32 | $N = 1024$ @ $1024^2$；ReLU linear attention（分子/分母共享项，分母保留）省 attention 项约 $16\times$；Mix-FFN 补局部性并带来 NoPE |
 
 ## 练习

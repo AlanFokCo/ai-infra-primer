@@ -206,9 +206,9 @@
 | siglip2 | SigLIP 2: Multilingual Vision-Language Encoders with Improved Semantic Understanding, Localization, and Dense Features | Tschannen et al. | arXiv:2502.14786 | [A] | 2026-11-12 | 6.1 |
 | navit | Patch n' Pack: NaViT, a Vision Transformer for any Aspect Ratio and Resolution | Dehghani et al. | arXiv:2307.06304 | [A] | 2026-11-12 | 6.1 |
 | swin | Swin Transformer: Hierarchical Vision Transformer using Shifted Windows | Liu et al. | arXiv:2103.14030 | [A] | 2026-11-12 | 6.1 |
-| clip | Learning Transferable Visual Models From Natural Language Supervision | Radford et al. | arXiv:2103.00020 | [A] | 2026-11-12 | 6.1, 6.2 |
+| clip | Learning Transferable Visual Models From Natural Language Supervision | Radford et al. | arXiv:2103.00020 | [A] | 2026-11-12 | 6.1, 6.2, 7.6 |
 | alignment-uniformity | Understanding Contrastive Representation Learning through Alignment and Uniformity on the Hypersphere | Wang & Isola | arXiv:2005.10242 | [A] | 2026-11-12 | 6.2 |
-| vae | Auto-Encoding Variational Bayes | Kingma & Welling | arXiv:1312.6114 | [A] | 2026-11-12 | 6.3, 7.1 |
+| vae | Auto-Encoding Variational Bayes | Kingma & Welling | arXiv:1312.6114 | [A] | 2026-11-12 | 6.3, 7.1, 7.6 |
 | vq-vae | Neural Discrete Representation Learning | van den Oord et al. | arXiv:1711.00937 | [A] | 2026-11-12 | 6.3 |
 | vqgan | Taming Transformers for High-Resolution Image Synthesis | Esser et al. | arXiv:2012.09841 | [A] | 2026-11-12 | 6.3 |
 | magvit-v2 | Language Model Beats Diffusion -- Tokenizer is Key to Visual Generation | Yu et al. | arXiv:2310.05737 | [A] | 2026-11-12 | 6.3 |
@@ -227,17 +227,17 @@
 | key | 标题 | 作者 | arXiv ID / URL | 证据等级 | 核实日期 | 被引章节 |
 | --- | --- | --- | --- | --- | --- | --- |
 | gan | Generative Adversarial Networks | Goodfellow et al. | arXiv:1406.2661 | [A] | 2026-11-12 | 7.1 |
-| glow | Glow: Generative Flow with Invertible 1x1 Convolutions | Kingma & Dhariwal | arXiv:1807.03039 | [A] | 2026-11-12 | 7.1 |
-| ddpm | Denoising Diffusion Probabilistic Models | Ho et al. | arXiv:2006.11239 | [A] | 2026-11-12 | 7.1, 7.2 |
+| glow | Glow: Generative Flow with Invertible 1x1 Convolutions | Kingma & Dhariwal | arXiv:1807.03039 | [A] | 2026-11-12 | 7.1, 7.5 |
+| ddpm | Denoising Diffusion Probabilistic Models | Ho et al. | arXiv:2006.11239 | [A] | 2026-11-12 | 7.1, 7.2, 7.4, 7.5, 7.6 |
 | iddpm | Improved Denoising Diffusion Probabilistic Models | Nichol & Dhariwal | arXiv:2102.09672 | [A] | 2026-11-12 | 7.2 |
 | ddpm-repo | hojonathanho/diffusion（DDPM 官方 TF 实现；diffusion_tf/ 目录） | Jonathan Ho | https://github.com/hojonathanho/diffusion | [A] | 2026-11-12 | 7.2 |
 | ddpm-pytorch | lucidrains/denoising-diffusion-pytorch（DDPM 教学实现） | lucidrains | https://github.com/lucidrains/denoising-diffusion-pytorch | 教学参照 | 2026-11-12 | 7.2 |
-| score-sde | Score-Based Generative Modeling through Stochastic Differential Equations | Song et al. | arXiv:2011.13456 | [A] | 2026-11-12 | 7.3 |
+| score-sde | Score-Based Generative Modeling through Stochastic Differential Equations | Song et al. | arXiv:2011.13456 | [A] | 2026-11-12 | 7.3, 7.4, 7.5 |
 | edm | Elucidating the Design Space of Diffusion-Based Generative Models | Karras et al. | arXiv:2206.00364 | [A] | 2026-11-12 | 7.3 |
 | vincent-2011 | A Connection Between Score Matching and Denoising Autoencoders（Neural Computation 23(7):1661–1674；**非 JMLR**——spec 7.3 勘误） | Vincent | https://doi.org/10.1162/NECO_a_00142 | [A] | 2026-11-12 | 7.3 |
 | score-sde-repo | yang-song/score_sde_pytorch（score-SDE 官方 PyTorch 实现） | Yang Song | https://github.com/yang-song/score_sde_pytorch | [A] | 2026-11-12 | 7.3 |
 | ddim | Denoising Diffusion Implicit Models | Song et al. | arXiv:2010.02502 | [A] | 2026-11-12 | 7.4 |
-| classifier-guidance | Diffusion Models Beat GANs on Image Synthesis（classifier guidance 出处） | Dhariwal & Nichol | arXiv:2105.05233 | [A] | 2026-11-12 | 7.4 |
+| classifier-guidance | Diffusion Models Beat GANs on Image Synthesis（classifier guidance 出处） | Dhariwal & Nichol | arXiv:2105.05233 | [A] | 2026-11-12 | 7.4, 7.6 |
 | cfg | Classifier-Free Diffusion Guidance | Ho & Salimans | arXiv:2207.12598 | [A] | 2026-11-12 | 7.4 |
 | consistency-models | Consistency Models | Song et al. | arXiv:2303.01469 | [A] | 2026-11-12 | 7.4 |
 | lcm | Latent Consistency Models: Synthesizing High-Resolution Images with Few-Step Inference | Luo et al. | arXiv:2310.04378 | [A] | 2026-11-12 | 7.4 |
@@ -245,11 +245,11 @@
 | dmd2 | Improved Distribution Matching Distillation for Fast Image Synthesis | Yin et al. | arXiv:2405.14867 | [A] | 2026-11-12 | 7.4 |
 | rectified-flow | Flow Straight and Fast: Learning to Generate and Transfer Data with Rectified Flow | Liu et al. | arXiv:2209.03003 | [A] | 2026-11-12 | 7.4, 7.5 |
 | dpm-solver | DPM-Solver: A Fast ODE Solver for Diffusion Probabilistic Model Sampling in Around 10 Steps | Lu et al. | arXiv:2206.00927 | [A] | 2026-11-12 | 7.4 |
-| progressive-distillation | Progressive Distillation for Fast Sampling of Diffusion Models（**v-prediction 参数化原始出处**；iDDPM 的 v 是方差插值系数，勿混） | Salimans & Ho | arXiv:2202.00512 | [A] | 2026-11-12 | 7.2, 7.4 |
+| progressive-distillation | Progressive Distillation for Fast Sampling of Diffusion Models（**v-prediction 参数化原始出处**；iDDPM 的 v 是方差插值系数，勿混） | Salimans & Ho | arXiv:2202.00512 | [A] | 2026-11-12 | 7.2, 7.4, 7.5 |
 | ddim-repo | ermongroup/ddim（DDIM 官方实现） | Song et al. | https://github.com/ermongroup/ddim | [A] | 2026-11-12 | 7.4 |
 | consistency-models-repo | openai/consistency_models（官方；cm/karras_diffusion.py、cm/losses.py 走读锚点） | OpenAI | https://github.com/openai/consistency_models | [A] | 2026-11-12 | 7.4 |
 | dmd2-repo | tianweiy/DMD2（DMD/DMD2 官方实现） | Yin et al. | https://github.com/tianweiy/DMD2 | [A] | 2026-11-12 | 7.4 |
-| common-diffusion | Common Diffusion Noise Schedules and Sample Steps are Flawed（rescaled CFG 出处） | Shanchuan Lin et al. | arXiv:2305.08891 | [A] | 2026-11-12 | 7.4 |
+| common-diffusion | Common Diffusion Noise Schedules and Sample Steps are Flawed（rescaled CFG 出处；无官方 repo，HF 权重经论文脚注链——[B] 口径） | Shanchuan Lin et al. | arXiv:2305.08891 | [B] | 2026-11-12 | 7.4 |
 | flow-matching | Flow Matching for Generative Modeling | Lipman et al. | arXiv:2210.02747 | [A] | 2026-11-12 | 7.5 |
 | sd3 | Scaling Rectified Flow Transformers for High-Resolution Image Synthesis | Esser et al. | arXiv:2403.03206 | [A] | 2026-11-12 | 7.5, 7.6, 7.7 |
 | flow-matching-repo | facebookresearch/flow_matching（FM 官方库；flow_matching/path/、solver/、loss/ 包结构实测） | Meta | https://github.com/facebookresearch/flow_matching | [A] | 2026-11-12 | 7.5 |
@@ -271,7 +271,7 @@
 | maskgit | MaskGIT: Masked Generative Image Transformer | Chang et al. | arXiv:2202.04200 | [A] | 2026-11-12 | 7.7 |
 | muse | Muse: Text-To-Image Generation via Masked Generative Transformers（**Google 未开源**：google-research/muse 404 实测 2026-11-12，不作代码锚点） | Chang et al. | arXiv:2301.00704 | [B] | 2026-11-12 | 7.7 |
 | emu3 | Emu3: Next-Token Prediction is All You Need | Wang et al. | arXiv:2409.18869 | [A] | 2026-11-12 | 7.7 |
-| imagen | Photorealistic Text-to-Image Diffusion Models with Deep Language Understanding（Google，无官方代码） | Saharia et al. | arXiv:2205.11487 | [B] | 2026-11-12 | 7.7 |
+| imagen | Photorealistic Text-to-Image Diffusion Models with Deep Language Understanding（Google，无官方代码） | Saharia et al. | arXiv:2205.11487 | [B] | 2026-11-12 | 7.4, 7.6, 7.7 |
 | sdxl | SDXL: Improving Latent Diffusion Models for High-Resolution Image Synthesis | Podell et al. | arXiv:2307.01952 | [A] | 2026-11-12 | 7.7 |
 | var-repo | FoundationVision/VAR（官方；models/var.py、models/vqvae.py 走读锚点） | FoundationVision | https://github.com/FoundationVision/VAR | [A] | 2026-11-12 | 7.7 |
 | llamagen-repo | FoundationVision/LlamaGen（官方） | FoundationVision | https://github.com/FoundationVision/LlamaGen | [A] | 2026-11-12 | 7.7 |
