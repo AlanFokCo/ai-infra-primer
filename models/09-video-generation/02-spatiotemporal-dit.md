@@ -12,7 +12,7 @@ $$
 
 的 token 序列 $X \in \mathbb{R}^{N \times d}$。
 
-**符号**：$t, h, w$：latent 网格的时间/行/列尺寸（本章 $t$ 在 §1–§5 指 latent 帧数，§6 起回到扩散时间步——两个对象都沿用约定页记号，上下文自明处不另立符号）；$p_t, p$：时间/空间 patch 边长；$c$：latent 通道（CogVideoX/HunyuanVideo/Wan 均为 16，9.1）；$d$：transformer 宽度。这个「先压进 latent 再切成时空 patch」的两段式表述出自 Sora 技术页（[OpenAI](../references.md)，[C]——闭源，只引其已披露的原话口径：视频先压缩到低维 latent 空间，再把表示分解成 spacetime patches，且「Sora is a diffusion transformer」）。
+**符号**：$t, h, w$：latent 网格的时间/行/列尺寸（本章 $t$ 在 §1–§5 的 FLOPs 账中指 latent 帧数；扩散时间步在 §4/§5 的 FM 语境（7.5 recap）与 §6 起登场——两个对象都沿用约定页记号，语境自明处不另立符号）；$p_t, p$：时间/空间 patch 边长；$c$：latent 通道（CogVideoX/HunyuanVideo/Wan 均为 16，9.1）；$d$：transformer 宽度。这个「先压进 latent 再切成时空 patch」的两段式表述出自 Sora 技术页（[OpenAI](../references.md)，[C]——闭源，只引其已披露的原话口径：视频先压缩到低维 latent 空间，再把表示分解成 spacetime patches，且「Sora is a diffusion transformer」）。
 
 patchify 投影本身的账很小但值得记一次：每个 patch 是 $p_t p^{2} c$ 维向量，线性投影到 $d$ 维共 $2N \cdot p_t p^{2} c \cdot d$ FLOPs——代入 Wan 几何（patch=1 等效，$c$ = 16，$d$ = 5,120）得 $4.9 \times 10^{10}$ ≈ 0.05 TFLOPs，相对 §2.5 单层 attention 的 PFLOPs 级是四个数量级之下。patchify 的意义不在计算而在接口：它把「3D 网格」翻译成「带三维坐标的序列」，之后全部章节讨论的都是序列侧的设计。
 
@@ -93,9 +93,9 @@ $$
 
 ### 2.4 质量证据：省 13–31 倍的东西买不买
 
-FLOPs 账一边倒，但 2024–2026 的前沿开放系统一边倒选 full 3D：CogVideoX 论文正文五处明示 3D full attention（[Yang et al., 2024](../references.md)，arXiv:2408.06072，[A]），StepVideo-T2V 摘要明示 DiT with 3D full attention（[Ma et al., 2025](../references.md)，arXiv:2502.10248，[A]），LTX-Video 摘要明示 full spatiotemporal self-attention（[HaCohen et al., 2025](../references.md)，arXiv:2501.00103，[A]）。中间形态也存在：Open-Sora-Plan v1.5 用稀疏化 3D attention（SUV sparse DiT）而非轴分解（[Lin et al., 2024](../references.md)，arXiv:2412.00131，[A]）——省 FLOPs 但不放弃学出来的时空耦合模式。
+FLOPs 账一边倒，但 2024–2026 的前沿开放系统一边倒选 full 3D：CogVideoX 论文正文五处明示 3D full attention（[Yang et al., 2024](../references.md)，arXiv:2408.06072，[A]），StepVideo-T2V 摘要明示 DiT with 3D full attention（[Ma et al., 2025](../references.md)，arXiv:2502.10248，[A]），LTX-Video 摘要明示 full spatiotemporal self-attention（[HaCohen et al., 2025](../references.md)，arXiv:2501.00103，[A]）。中间形态也存在：Open-Sora-Plan v1.5 用稀疏化 3D attention（SUV sparse DiT）而非轴分解（v1.5.0 为官方 repo README 口径，[PKU-YuanGroup/Open-Sora-Plan](../references.md)，[A]；v1.3 论文为 [Lin et al., 2024](../references.md)，arXiv:2412.00131，[A]）——省 FLOPs 但不放弃学出来的时空耦合模式。
 
-机制层面，factorized 省掉的是什么可以精确说清。它的 attention 图是 full $N^{2}$ 的一个稀疏子图：token $(t_{1}, p_{1})$ 与 $(t_{2}, p_{2})$（$p$ 为空间位，$t_{1} \neq t_{2}$、$p_{1} \neq p_{2}$）之间没有直接边，信息必须经中继 token $(t_{2}, p_{1})$ 或 $(t_{1}, p_{2})$ 两跳到达。可以数一下被砍的比例：有直接边的 token 对 = 同帧对 + 同位对 − 自身重复计数 = $tS^{2} + St^{2} - tS$；代入 Wan 几何（$t$ = 21、$S$ = 14,400）：直接边 $4.36 \times 10^{9}$，全部 token 对 $N^{2} = 9.14 \times 10^{10}$——**95.2% 的 token 对在 factorized 里没有直接边**。视频里最常见的对角耦合——物体几帧内移过大幅画面（$t$ 变、$p$ 也变）——恰好全部落在那 95.2% 里；它们只能靠中继位点转发，而每层每对跨帧跨位通信的中继容量只有 $S + t$ 个位点。full 3D 则把「哪些位点对哪些位点重要」交回给 attention 权重本身去学，轴分解是把这个邻域结构硬编码进架构。这与 2.5 NoPE 一节的读法同型：硬编码省的是 FLOPs，花的是表达力预算。
+机制层面，factorized 省掉的是什么可以精确说清。它的 attention 图是 full $N^{2}$ 的一个稀疏子图：token $(t_{1}, p_{1})$ 与 $(t_{2}, p_{2})$（$p$ 为空间位，$t_{1} \neq t_{2}$、$p_{1} \neq p_{2}$）之间没有直接边，信息必须经中继 token $(t_{2}, p_{1})$ 或 $(t_{1}, p_{2})$ 两跳到达。可以数一下被砍的比例：有直接边的 token 对 = 同帧对 + 同位对 − 自身重复计数 = $tS^{2} + St^{2} - tS$；代入 Wan 几何（$t$ = 21、$S$ = 14,400）：直接边 $4.36 \times 10^{9}$，全部 token 对 $N^{2} = 9.14 \times 10^{10}$——**95.2% 的 token 对在 factorized 里没有直接边**。视频里最常见的对角耦合——物体几帧内移过大幅画面（$t$ 变、$p$ 也变）——恰好全部落在那 95.2% 里；它们只能靠中继位点转发：一层（空间、时间各一次）之内，每对跨帧跨位通信可用的两跳中继恰为 $(t_{2}, p_{1})$ 与 $(t_{1}, p_{2})$ 这 2 个位点。同一结构按每 token 口径读：一个 token 一层内的直接邻居只有 $S + t - 1$ 个（Wan 几何下占 $N$ 的 4.8%，恰为上文 95.2% 的补）。full 3D 则把「哪些位点对哪些位点重要」交回给 attention 权重本身去学，轴分解是把这个邻域结构硬编码进架构。这与 2.5 NoPE 一节的读法同型：硬编码省的是 FLOPs，花的是表达力预算。
 
 factorized 内部还有两个自由度值得点名（均无本章收录条目，按机制分析给出）：(i) **顺序**——先空间后时间还是先时间后空间，在残差流（2.1）上复合顺序影响中继路径的构成；(ii) **堆叠方式**——两个子层合一 block（式 (3) 的口径）还是空间 block 与时间 block 逐层交替（投影开销减半、但每个跨帧跨位通信要等两层）。这两个自由度都不改变 $O(N(S + t))$ 的主项，只改常数因子与两跳路径的长度。
 
@@ -137,7 +137,7 @@ expert adaLN 还继承了 adaLN-Zero 的初始化性质（7.6 式 (8) 的推导�
 
 ## 4. HunyuanVideo：dual→single stream 与 MLLM 文本编码器
 
-HunyuanVideo 官方 README 口径为 13B+ 参数、开源模型中最大（[Kong et al., 2024](../references.md)，arXiv:2412.03603，[A]；该文 ar5iv 不可用，本章事实经官方 repo README 一手取证，[Tencent-Hunyuan/HunyuanVideo](../references.md)，[A]）。主干是 MMDiT 的一个变体：前段双流（视频 token 与文本 token 各自过独立参数的子层、attention 在拼接序列上联合计算——7.6 式 (10)-(12) 的同构形），后段单流（拼接后共享一套 QKV/MLP，退回 7.6 §3(c) 的 in-context 形态）——README §3.2 原文口径即「双流阶段各自独立 block、单流阶段拼接」。同一「double→single」思想在 FLUX 上只有 [C] 级披露（7.6 §7.4），HunyuanVideo 是它的开放 [A] 实例。
+HunyuanVideo 官方 README 口径为 13B+ 参数、开源模型中最大（[Kong et al., 2024](../references.md)，arXiv:2412.03603，[A]；该文 ar5iv 不可用，本章事实经官方 repo README 一手取证，[Tencent-Hunyuan/HunyuanVideo](../references.md)，[A]）。主干是 MMDiT 的一个变体：前段双流（视频 token 与文本 token 各自过独立参数的子层、attention 在拼接序列上联合计算——7.6 式 (10)-(12) 的同构形），后段单流（拼接后共享一套 QKV/MLP，退回 7.6 §3(c) 的 in-context 形态）——README §3.2 原文口径即「双流阶段各自独立 block、单流阶段拼接」。同一「double→single」思想在 FLUX 上只有 [C] 级披露（7.6 §7.3），HunyuanVideo 是它的开放 [A] 实例。
 
 参数账：双流段每个 block 为两模态各付一份 QKV/MLP（约 2× 单流 block 参数），单流段一份。把双倍参数预算只花在前段的读法：双流的意义是让文本流在去噪的前若干层被视频状态逐层修正（7.6 §7.1 的「双向」论证），这个修正完成后，后段不再需要维持两套独立表征几何——参数共享的 in-context 形态足够。层数切分点官方 README 未给数值，本章不杜撰。
 
@@ -185,8 +185,10 @@ $$
 **符号**：第二式即 7.5 式 (29)（log-SNR 与 logit 的负二倍关系）。$t \in (0, 1]$ 上 $\mathrm{SNR}(t)$ 严格单调递减（$(1-t)/t$ 递减显然），与 README「SNR decreases monotonically」口径一致。路由规则：
 
 $$
-e(t) = \begin{cases} e_{\text{high}} & t \ge t_{moe} \\ e_{\text{low}} & t < t_{moe} \end{cases}, \qquad t_{moe}:\ \mathrm{SNR}(t_{moe}) = \text{README 口径的 SNR 阈值（} \mathrm{SNR}_{\min} \text{ 的一半）} \qquad (8)
+e(t) = \begin{cases} e_{\text{high}} & t \ge t_{moe} \\ e_{\text{low}} & t < t_{moe} \end{cases}, \qquad \mathrm{SNR}(t_{moe}) = s^{*} \qquad (8)
 $$
+
+**符号**：$e_{\text{high}}, e_{\text{low}}$：high-noise / low-noise 两个 expert 网络；$s^{*}$：切换阈值，官方 README 口径为 $\mathrm{SNR}_{\min}$ 的一半（$\mathrm{SNR}_{\min}$ 为调度上的最小 SNR，其数值与取半的域 README 未展开，见下文的诚实边界）。路由规则的方向与 README 原文一致：$t$ 大（SNR 小，采样早期）走高噪声 expert，$t < t_{moe}$ 切低噪声 expert。
 
 任一 SNR 阈值 $s^{*}$ 对应的时间步可由式 (7) 反解：$(1-t)/t = \sqrt{s^{*}}$，即
 
@@ -208,7 +210,7 @@ expert:   [═ high-noise（布局/早期）═|══ low-noise（细节/后期
 官方 README 原文：每个 expert 约 14B 参数，总参数量 27B、每步仅 14B 激活。逐项入账：
 
 - **内存**：27B × 2 bytes（bf16）≈ 54 GB——两个 expert 的权重都要在生成全程可用（切换发生在 $t_{moe}$ 一次），MoE 不省显存，与 4.5 的结论同型。
-- **每步计算**：任一时刻只有一个 expert 在工作，单步 FLOPs 与一台 14B dense 逐步相同（§2.5 的账原样适用）。对照同存储的假想 dense-27B：每步省一半，全程 $K$ 步省一半。
+- **每步计算**：任一时刻只有一个 expert 在工作，单步 FLOPs 与一台 14B dense 逐步相同（§2.5 的账原样适用）。对照同存储的假想 dense-27B，省幅取决于放大轴：深度加倍（层数 ×2）时每步恰省一半；宽度放大（$d' = \sqrt{2}\,d$）时二次项只随 $d$ 走而不随参数平方走，按 §2.5 的 91%/9% 混合算总账为 ×1.47，实省约 32%——区间 32%–50%，全程 $K$ 步同比例。
 - **容量分配**：dense-14B 要用 14B 覆盖全部 SNR 段；MoE 版每个 SNR 段独占 14B。赌注是「分段专精的收益 > 单模型全段共享的容量损失」——高噪声段决定布局与运动、低噪声段决定细节质感（README 分工口径），这与 7.5 §8 的 log-SNR 读法一致：语义结构在中高噪声段形成，低噪声段的回归残差由高频细节主导，两段的任务统计确实不同。
 - **训练侧推论**（结构层面）：每个 expert 只需在自己的 SNR 段上达到指标，等价于把一条 $t$ 轴上的多任务问题切成两个单任务问题。
 - **步数预算**：均匀 $K$ 步 Euler 采样（$t_k = 1 - k/K$，7.5 式 (23)）下，high-noise expert 服务 $t \ge t_{moe}$ 的步数份额由式 (9) 给出为 $1 - t^{*} = \sqrt{s^{*}} / (1 + \sqrt{s^{*}})$——阈值越低（越靠近噪声端切换），low-noise expert 承担的步数越多。 timestep shift（7.5 §8 的分辨率相关平移）改变 $t$ 的有效标定，也就等比例移动两 expert 的步数分配；切换点在「步数」与「SNR」两个坐标下是同一事件，SNR 坐标的好处是对 schedule 变换不变——这正是官方 README 用 SNR 而非步数定义切换点的原因（本书机制分析）。
@@ -235,7 +237,7 @@ expert:   [═ high-noise（布局/早期）═|══ low-noise（细节/后期
 | 机制 | 文本逐层更新 | attention FLOPs 增量 | 参数增量 | 本章实例 |
 | --- | --- | --- | --- | --- |
 | cross-attn（文本只读 K/V） | 否 | $+4NMd$ | 每层一组文本侧 K/V 投影（$+4d^{2}$ 量级） | Wan（$M$ = 512：+34.9 TFLOPs/层，为 self-attn 二次项的 1.9%） |
-| joint stream（拼接共享 QKV） | 是 | $+4d(2NM + M^{2})$ | 0（共享） | CogVideoX 后段等价形态（$M$ = 226：+2.6%） |
+| joint stream（拼接共享 QKV） | 是 | $+4d(2NM + M^{2})$ | 0（共享） | CogVideoX（全程拼接单流，$M$ = 226：+2.6%） |
 | joint stream + 模态分参（MMDiT 族） | 是 | 同上 | 文本流整套 QKV/MLP（≈ 翻倍/block） | HunyuanVideo 双流段；CogVideoX 只分 adaLN（式 (6)，折中） |
 | in-context（7.6 §3(c) 纯拼接） | 是 | 同上 | 0 | HunyuanVideo 单流段 |
 
@@ -249,12 +251,12 @@ $$
 \phi_j(t, h, w) = \theta_j \cdot \begin{cases} t & j \in J_t \\ h & j \in J_h \\ w & j \in J_w \end{cases} \qquad (10)
 $$
 
-**符号**：$(t, h, w)$：token 的三轴坐标；$\theta_j$：第 $j$ 个旋转对的角频率；$J_t \sqcup J_h \sqcup J_w = \{0, \ldots, d_h/2 - 1\}$：频段的连续切分。$\tilde q_j \mapsto e^{i\phi_j}\tilde q_j$ 的复数写法与 2.5 §4.6 相同。
+**符号**：$(t, h, w)$：token 的三轴坐标；$\theta_j$：第 $j$ 个旋转对的角频率；$J_t \cup J_h \cup J_w = \{0, \ldots, d_h/2 - 1\}$：频段的连续切分（三段互不重叠）。$\tilde q_j \mapsto e^{i\phi_j}\tilde q_j$ 的复数写法与 2.5 §4.4 相同。
 
 **与 8.2 M-RoPE 的同构是严格的**：8.2 式 (14)-(16) 给理解侧 VLM 的每个 token 构造 $(t, h, w)$ 三元组、按 `mrope_section` 切频段，式 (10) 是同一构造在生成侧的再现。内积不变性逐段成立——2.5 式 (13) 的证明按块对角结构重放一遍，三段各自只含本轴位移差：
 
 $$
-\left\langle R_{(t_1,h_1,w_1)}\, q,\; R_{(t_2,h_2,w_2)}\, k \right\rangle = g\big(q, k;\; \Delta t, \Delta h, \Delta w\big), \qquad \Delta t = t_2 - t_1 \ \text{等} \qquad (11)
+\left\langle R_{(t_1,h_1,w_1)}\, q,\; R_{(t_2,h_2,w_2)}\, k \right\rangle = g\big(q, k;\; \Delta t, \Delta h, \Delta w\big), \qquad \Delta t = t_2 - t_1,\ \Delta h = h_2 - h_1,\ \Delta w = w_2 - w_1 \qquad (11)
 $$
 
 **符号**：$g$：只依赖内容与三位移差的函数（8.2 式 (17) 同型）。差别只剩两处语境：理解侧的三元组由输入几何给定（8.2 §9.1），生成侧的坐标服务 latent 网格；且视频 DiT 的 attention 全双向（无 causal mask），式 (11) 对所有 token 对成立，无三角约束。
@@ -356,7 +358,8 @@ Qwen2.5-VL:   [0‥15]  t 轴 16 | [16‥39] h 轴 24 | [40‥63] w 轴 24   折
 - [Lightricks, LTX-Video repo](../references.md)：[A]（key: ltx-video-repo）——§10
 - [Zheng et al., 2025](../references.md)：Open-Sora 2.0，arXiv:2503.09642，[A]（key: open-sora-2）——§10
 - [HPC-AI Tech, Open-Sora repo](../references.md)：[A]（key: open-sora-repo）——§10
-- [Lin et al., 2024](../references.md)：Open-Sora Plan，arXiv:2412.00131，[A]（key: open-sora-plan）——§2.4（SUV sparse DiT）
+- [Lin et al., 2024](../references.md)：Open-Sora Plan，arXiv:2412.00131，[A]（key: open-sora-plan）——§2.4（v1.3 报告）
+- [PKU-YuanGroup, Open-Sora-Plan repo](../references.md)：[A]（key: open-sora-plan-repo）——§2.4（v1.5 SUV sparse DiT，README 口径）
 - [Genmo, Mochi repo](../references.md)：[C]（key: mochi）——§7、§10（AsymmDiT）
 - [Polyak et al., 2024](../references.md)：Movie Gen，arXiv:2410.13720，[B]（key: moviegen）——§10（73K token、30B）
 - [OpenAI, Sora 技术页](../references.md)：[C]（key: sora）——§1（spacetime patches 表述）
