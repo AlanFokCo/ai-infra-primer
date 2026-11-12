@@ -6,7 +6,7 @@
 
 ## 1. I2V：条件注入公式家族
 
-I2V（image-to-video）的问题形式：给定条件图像 $I_c$（与文本 $c_{txt}$），生成以 $I_c$ 为首帧（或内容锚点）的视频。在 latent 侧（9.1），条件图像是 $z_c^{img} = s \cdot E(I_c) \in \mathbb{R}^{1 \times h \times w \times c}$（$s$：VAE scaling factor，9.1 §3 口径——与压缩率记号 $(\tau, s, s)$ 里的空间 $s$ 同名不同义）——首帧特判约定（9.1 式 (2)）使单张图像与视频首帧共享同一 latent 空间，I2V 因此不需要任何新编码器。剩下的问题只有一个：这个 latent 怎么进 DiT。开放系统的答案是一个三件套公式家族，Wan2.1-I2V 是代码级证据最全的实例。
+I2V（image-to-video）的问题形式：给定条件图像 $I_c$（与文本 $c_{txt}$），生成以 $I_c$ 为首帧（或内容锚点）的视频。在 latent 侧（9.1），条件图像是 $z_c^{img} = s \cdot E(I_c) \in \mathbb{R}^{1 \times h \times w \times c}$（$s$：VAE scaling factor，9.1 §3 口径——与压缩率记号 $(\tau, s, s)$ 里的空间 $s$ 同名不同义）——首帧特判约定（9.1 式 (2)）使单张图像与视频首帧共享同一 latent 空间，I2V 因此不需要任何新编码器。剩下的问题只有一个：这个 latent 怎么进 DiT。开放系统的答案是一个条件注入公式家族——输入侧的 latent 拼接与 mask（§1.1）、对首帧条件失配的专门处理（§1.2）、语义侧的 CLIP embedding（§1.3）——Wan2.1-I2V 是代码级证据最全的实例。
 
 ### 1.1 latent concat + mask 通道
 
@@ -16,7 +16,7 @@ $$
 \tilde x_t = [\,x_t \,;\, z_c \,;\, m\,] \in \mathbb{R}^{t \times h \times w \times 36} \qquad (1)
 $$
 
-**符号**：$x_t \in \mathbb{R}^{t \times h \times w \times 16}$：当前去噪步的噪声 latent；$z_c$：条件 latent——锚点帧位填 $z_c^{img}$、其余位填零；$m$：逐 latent 帧的锚点指示（1 = 该帧由条件钉死，标准读法；官方未展开 mask 的逐位语义说明），空间维广播。给定锚点集合 $\mathcal{A} \subseteq \{0, \ldots, t-1\}$：
+**符号**：$x_t \in \mathbb{R}^{t \times h \times w \times 16}$：当前去噪步的噪声 latent；$z_c$：条件 latent——锚点帧位填 $z_c^{img}$、其余位填零；$m$：binary mask，逐位语义为官方口径（Wan 论文 §5.1.1：1 = preserved frame、0 = to be generated），空间维广播；式 (2) 写成 latent 帧级抽象，实际进拼接的形状见下文 4 通道注记。给定锚点集合 $\mathcal{A} \subseteq \{0, \ldots, t-1\}$：
 
 $$
 z_c^{(j)} = \begin{cases} z_c^{img,(j)} & j \in \mathcal{A} \\ 0 & j \notin \mathcal{A} \end{cases}, \qquad m^{(j)} = \begin{cases} 1 & j \in \mathcal{A} \\ 0 & j \notin \mathcal{A} \end{cases} \qquad (2)
@@ -37,19 +37,25 @@ m    [t × h × w ×  4]  锚点 mask ─────┘         │
 
 拼接后的 $\tilde x_t$ 过常规 patchify + 线性投影（9.2 §1），第一层权重从 $16 \times d$ 换成 $36 \times d$——这是唯一需要新参数的层。账（patch=1 等效口径、$d$ = 5,120 的 Wan 14B 档）：第一层参数增量 $20 \times 5120 \approx 1.0 \times 10^{5}$，相对 14B 主干约百万分之七；每 token 投影 FLOPs 增量 $2 \times 20 \times 5120$，乘 $N$ = 302,400 约 0.06 TFLOPs，对 9.2 §2.5 单层 2.06 PFLOPs 的总账是十万分之三。I2V 的成本全在数据与训练步数上，不在架构上。
 
-mask 占 4 通道而非 1 是 config 实测值，官方未说明缘由——机制读法（本书分析，不坐实）：多通道广播给「这是锚点帧」这个比特一份冗余编码，使它在投影进 $d$ 维后不易被 latent 特征淹没。
+mask 恰占 4 通道的官方解释同在 §5.1.1：帧级 mask $M \in \{0,1\}^{1 \times T \times h \times w}$ 与目标视频同时间长度，进式 (1) 的拼接前按 Wan-VAE 时间 stride 重排为 $s \times t \times h \times w$（$s$ = 4）——4 个通道即「每个 latent 帧所覆盖的各原始帧位是否 preserved」的逐位指示，首帧 I2V 下只有帧 0 落位为 1。
+
+工程细节一则，与 §2 的主题互证：Wan 论文 §5.1.1 明示 I2V 新增投影层零初始化（「an additional projection layer is employed, which is initialized with zero values」）——T2V→I2V 的改造在训练起点不扰动基座行为。「起点即原模型」不是 ControlNet 一家的纪律，在工业 I2V 配方里同样是显式实践。
 
 一个退化观察（本书分析）：$\mathcal{A} = \varnothing$ 时式 (1)(2) 退回纯 T2V 输入（条件通道全零、mask 全零）——T2V 与 I2V 在同一输入接口下统一，只差一个 mask 的取值。Wan2.2 仓即同时发布 T2V 与 I2V 形态（[Wan-Video/Wan2.2](../references.md)，[A]；TI2V-5B 档的 VAE 与主干账见 9.1）。
 
-### 1.2 noise augmentation：首帧加噪防复制粘贴
+### 1.2 首帧条件失配的两种回答：noise augmentation 与数据过滤
 
-直接把干净的 $z_c^{img}$ 喂进去有一个训练动力学问题：训练样本的条件帧取自视频自身，与后续帧天然一致；最小化去噪损失的一条捷径是把条件帧复制到输出首帧区域、再从此出发外推——「复制粘贴」策略在训练集上损失很低，但它没有学到「从一张不一致的图出发组织运动」。推理时用户给的图与训练分布几乎必然不一致（画风、分辨率、内容），按复制粘贴策略学出的模型在首帧交接处露馅。Wan 论文的配方（[Team Wan, 2025](../references.md)，arXiv:2503.20314，[A]）是给条件 latent 加噪：
+直接把干净的 $z_c^{img}$ 喂进去有一个训练动力学问题：训练样本的条件帧取自视频自身，与后续帧天然一致；最小化去噪损失的一条捷径是把条件帧复制到输出首帧区域、再从此出发外推——「复制粘贴」策略在训练集上损失很低，但它没有学到「从一张不一致的图出发组织运动」。推理时用户给的图与训练分布几乎必然不一致（画风、分辨率、内容），按复制粘贴策略学出的模型在首帧交接处露馅。对这个条件失配，文献里有两条出处可考的回答。
+
+**回答一：noise augmentation（SVD 谱系）。** 给条件帧加噪（在 latent 空间施加）后再走通道拼接：
 
 $$
 \hat z_c = z_c^{img} + \sigma_c\, \eta, \qquad \eta \sim \mathcal{N}(0, I) \qquad (3)
 $$
 
-**符号**：$\sigma_c$：条件噪声强度（加噪的调度细节以 Wan 论文原文为准）。像素级复制被噪声破坏后，条件帧唯一可用的角色是语义与构图锚点——模型被迫学「保留身份、重画细节」，恰是推理时需要的泛化方向；训练时见过的条件分布（带噪、有损）也覆盖了推理时的条件分布（用户图 ≠ 任何视频的真实首帧），train/test 的条件失配被同时缓解。
+**符号**：$\sigma_c$：条件噪声强度（调度细节以原文为准）。出处是 SVD（[Blattmann et al., 2023](../references.md)，**[B]**——无官方代码，配方级断言按论文引用）：原文 §4.3「we concatenate a noise-augmented version of the conditioning frame channel-wise」、附录 D.5 明示加噪施加于 latent 空间（该用法原文上溯 Ho et al.）。机制读法：像素级复制被噪声破坏后，条件帧唯一可用的角色是语义与构图锚点——模型被迫学「保留身份、重画细节」，恰是推理时需要的泛化方向；训练时见过的条件分布（带噪、有损）也覆盖了推理时的条件分布（用户图 ≠ 任何视频的真实首帧），train/test 的条件失配被同时缓解。
+
+**回答二：数据侧过滤（Wan）。** Wan 的 I2V 配方（论文 §5.1.1，即 §1.1 的拼接 + mask + CLIP 三件套）本身不含 noise augmentation；它对首帧失配的回答在数据侧（论文 §5.1 原文口径）：用 SigLIP 特征（编码器本身见 6.1/8.5）的余弦相似度过滤训练对——「we retain only the videos with a similarity greater than a predefined threshold」，让「条件帧与视频内容一致」的样本在训练分布里占主导，从源头收窄失配。两种回答不互斥（本书分析）：加噪破坏复制捷径、过滤收窄条件分布，作用于同一失败模式的两端，可以叠加。
 
 ### 1.3 CLIP image embedding cross-attn
 
@@ -194,8 +200,8 @@ I_1 ─► [段 1: p(V_1 | I_1, c_1)] ─► V_1 ─► last(Dec(V_1)) = I_2 ─
 
 | 族 | 机制 | 公式 | 关键性质 |
 | --- | --- | --- | --- |
-| I2V 输入拼接 | latent concat + mask | 式 (1)(2)：36 = 16+16+4（Wan2.1-I2V config） | 首层增量 $\sim 10^{5}$ 参数；$\mathcal{A} = \varnothing$ 退化回 T2V |
-| 条件加噪 | noise augmentation | 式 (3)：$\hat z_c = z_c + \sigma_c \eta$ | 破复制粘贴捷径；对齐训练/推理条件分布 |
+| I2V 输入拼接 | latent concat + mask | 式 (1)(2)：36 = 16+16+4（Wan2.1-I2V config） | 首层增量 $\sim 10^{5}$ 参数；binary mask 官方语义（1=preserved）+ 时间 stride 重排为 4 通道；新增投影层零初始化（起点即原模型）；$\mathcal{A} = \varnothing$ 退化回 T2V |
+| 条件失配 | noise augmentation（SVD 谱系，[B]）/ 数据过滤（Wan，[A]） | 式 (3)：$\hat z_c = z_c + \sigma_c \eta$；SigLIP 相似度阈值过滤 | 破复制捷径 / 收窄训练条件分布——同一失败模式的两端，可叠加 |
 | 语义图像条件 | CLIP embedding cross-attn | `clip_fea`：MLPProj(1280→$d$) 注入（Wan 代码实测） | 像素级（concat）与语义级（CLIP）双通道分工 |
 | 结构控制 | ControlNet 可训练副本 + zero-conv | 式 (4)：零初始化 ⇒ 起点即原模型 | 门先开、支路后动；与 adaLN-Zero / LoRA 同族 |
 | 相机控制 | Plücker 射线图 | 式 (5)：$(d,\; o \times d) \in \mathbb{R}^{6}$ / pixel | moment 与取点无关；旋转/平移分置；与网格同形 |
@@ -216,7 +222,8 @@ I_1 ─► [段 1: p(V_1 | I_1, c_1)] ─► V_1 ─► last(Dec(V_1)) = I_2 ─
 
 ## 参考
 
-- [Team Wan, 2025](../references.md)：Wan: Open and Advanced Large-Scale Video Generative Models，arXiv:2503.20314，[A]（key: wan）——§1.2 noise augmentation 配方
+- [Team Wan, 2025](../references.md)：Wan: Open and Advanced Large-Scale Video Generative Models，arXiv:2503.20314，[A]（key: wan）——§1.1（§5.1.1：binary mask 语义、时间 stride 重排、新增投影层零初始化）、§1.2（§5.1：SigLIP 相似度数据过滤）
+- [Blattmann et al., 2023](../references.md)：Stable Video Diffusion（SVD），[B]（key: svd——**条目待 controller 收录**，arXiv ID 见 task-5-report 回写需求；无官方代码，配方按论文引用）——§1.2 noise augmentation 出处（§4.3 条件帧通道拼接加噪、附录 D.5 latent 空间施加）
 - [Alibaba, Wan-AI/Wan2.1-I2V-14B-720P config](../references.md)：[A]（key: wan21-i2v-config）——§1.1 `in_dim: 36` = 16+16+4
 - [Alibaba, Wan-Video/Wan2.1](../references.md)：[A]（key: wan2.1-repo）——§1.3 `clip_fea` 与 `img_emb = MLPProj(1280, dim)` 走读锚点
 - [Team Wan, Wan-Video/Wan2.2](../references.md)：[A]（key: wan2.2）——§1.1 T2V/I2V 同仓发布形态（无论文，官方 README 口径）
