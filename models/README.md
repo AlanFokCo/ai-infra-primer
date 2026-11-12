@@ -162,20 +162,20 @@ graph LR
 
 | 章节 | 文件 | 状态 |
 | --- | --- | --- |
-| 5.1 Llama 谱系（开源参照系） | [01-llama-lineage.md](05-case-studies/01-llama-lineage.md) | 未开始 |
-| 5.2 DeepSeek | [02-deepseek.md](05-case-studies/02-deepseek.md) | 未开始 |
-| 5.3 Qwen | [03-qwen.md](05-case-studies/03-qwen.md) | 未开始 |
-| 5.4 GLM | [04-glm.md](05-case-studies/04-glm.md) | 未开始 |
-| 5.5 Kimi / Moonshot | [05-kimi-moonshot.md](05-case-studies/05-kimi-moonshot.md) | 未开始 |
-| 5.6 跨家对照与方法论 | [06-cross-lab-comparison.md](05-case-studies/06-cross-lab-comparison.md) | 未开始 |
+| 5.1 Llama 谱系（开源参照系） | [01-llama-lineage.md](05-case-studies/01-llama-lineage.md) | 已关闭 |
+| 5.2 DeepSeek | [02-deepseek.md](05-case-studies/02-deepseek.md) | 已关闭 |
+| 5.3 Qwen | [03-qwen.md](05-case-studies/03-qwen.md) | 已关闭 |
+| 5.4 GLM | [04-glm.md](05-case-studies/04-glm.md) | 已关闭 |
+| 5.5 Kimi / Moonshot | [05-kimi-moonshot.md](05-case-studies/05-kimi-moonshot.md) | 已关闭 |
+| 5.6 跨家对照与方法论 | [06-cross-lab-comparison.md](05-case-studies/06-cross-lab-comparison.md) | 已关闭 |
 
 ### Part 6 · Vision Representations（W3）
 
 | 章节 | 文件 | 状态 |
 | --- | --- | --- |
-| 6.1 Vision Transformer | [01-vit.md](06-vision-representations/01-vit.md) | 未开始 |
-| 6.2 CLIP 与对比学习 | [02-clip-and-contrastive.md](06-vision-representations/02-clip-and-contrastive.md) | 未开始 |
-| 6.3 Autoencoder 与 Visual Tokenizer | [03-autoencoders-and-tokenizers.md](06-vision-representations/03-autoencoders-and-tokenizers.md) | 未开始 |
+| 6.1 Vision Transformer | [01-vit.md](06-vision-representations/01-vit.md) | 已关闭 |
+| 6.2 CLIP 与对比学习 | [02-clip-and-contrastive.md](06-vision-representations/02-clip-and-contrastive.md) | 已关闭 |
+| 6.3 Autoencoder 与 Visual Tokenizer | [03-autoencoders-and-tokenizers.md](06-vision-representations/03-autoencoders-and-tokenizers.md) | 已关闭 |
 
 ### Part 7 · Diffusion & Image Generation（W4）
 
@@ -225,3 +225,4 @@ graph LR
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | W1 | 2026-11-11 | P1+P2 共 11 章 | 逐章 evaluator review × 11 + 波末独立对抗审查 1 轮 | 2（全部关闭） | 2（全部关闭） | 5（波末 sweep 全部清零） | 无 | 放行（强制重推导 5 项 pass：Chinchilla Lagrangian / 2.3 √d_k / 2.4 KV cache / 2.5 RoPE / 2.7 Pre-Post-LN 梯度；完整档案见 [w1-review-report.md](../docs/reviews/w1-review-report.md)） |
 | W2 | 2026-11-12 | P3+P4 共 11 章 | 逐章批量审查 × 3 批 + 波末独立对抗审查 1 轮 | 0 | 2（全部关闭） | 9（波末 sweep 全部清零） | 无 | 放行（强制重推导 3 项 pass：4.1 MLA absorption / 4.3 DeltaNet-GDN-KDA 状态更新链 / 4.5 MoE routing；完整档案见 [w2-review-report.md](../docs/reviews/w2-review-report.md)） |
+| W3 | 2026-11-12 | P5+P6 共 9 章 | 逐章批量审查 × 3 批 + 波末独立对抗审查 1 轮（含修复轮复审） | 1（全部关闭） | 2（全部关闭） | 5（全部清零：修复轮 2 条 + 波末 sweep 3 条——F5/F6/F8 原按协议转 W4，提前于本波波末 sweep 清零） | 无 | 初轮有条件放行（5.1 含 S1 需复审）→ 修复后 9 章全放行（强制重推导 3 项 pass：6.2 InfoNCE 双向 CE 与温度梯度 / 6.3 VAE ELBO+STE+RVQ / 5.5 MuonClip qk-clip；完整档案见 [w3-review-report.md](../docs/reviews/w3-review-report.md)） |

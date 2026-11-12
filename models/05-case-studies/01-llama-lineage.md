@@ -144,7 +144,7 @@ $$
 y \;=\; \sum_{i \in \mathrm{Top1}(s(x))} g_i(x) \, E_i(x) + E_{s}(x) \;=\; g_{i^{*}}(x) \, E_{i^{*}}(x) + E_{s}(x) \qquad (5)
 $$
 
-**符号**：$x \in \mathbb{R}^{d}$：层输入；$E_i$：第 $i$ 份 routed SwiGLU expert（中间维 8192，config 字段 intermediate_size）；$E_{s}$：常驻 shared expert，不经路由、不乘门控；$s(x)$：router 打分；$g_{i^{*}}$：选中者的归一化门控权重。top-1 是 Switch 路线（4.5 §2.3，[Fedus et al., 2021](../references.md)，arXiv:2101.03961，[A]）：dispatch 决策、通信与 combine 对照 top-2 各减半；其「等算力下质量不降」是 Switch 论文在其规模与设置下的对照结论，向 128 experts 的外推无公开证据（§7 开放问题 2）。router 侧的打分形态则部分可见：config 有 `router_aux_loss_coef = 0.001`（4.5 §2 的 aux loss 路线，非 V3 式 aux-loss-free）与 jitter = 0.0（无探索噪声），官方实现的亲和度为 sigmoid（4.5 §3.2 同族）。
+**符号**：$x \in \mathbb{R}^{d}$：层输入；$E_i$：第 $i$ 份 routed SwiGLU expert（中间维 8192，config 字段 intermediate_size）；$E_{s}$：常驻 shared expert，不经路由、不乘门控；$s(x)$：router 打分；$g_{i^{*}}$：选中者的门控权重（官方实现为原始 sigmoid 分直接乘入，不归一化）。top-1 是 Switch 路线（4.5 §2.3，[Fedus et al., 2021](../references.md)，arXiv:2101.03961，[A]）：dispatch 决策、通信与 combine 对照 top-2 各减半；其「等算力下质量不降」是 Switch 论文在其规模与设置下的对照结论，向 128 experts 的外推无公开证据（§7 开放问题 2）。router 侧的打分形态则部分可见：config 有 `router_aux_loss_coef = 0.001`（4.5 §2 的 aux loss 路线，非 V3 式 aux-loss-free）与 jitter = 0.0（无探索噪声），官方实现的亲和度为 sigmoid（4.5 §3.2 同族）。
 
 解耦账用激活参数占比表示（官方 blog 口径，[W]）：
 

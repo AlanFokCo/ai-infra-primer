@@ -97,7 +97,7 @@ $$
 
 GLM-4.6 无独立 tech report，GLM-4.7 连 arXiv 条目都没有（搜索 0 条，2026-11-12）——两代的正确处理流程本身值得写成一节，这是 5.6 方法论章的预演。事实样式（全部本轮实测，2026-11-12）：
 
-1. **GLM-4.6 的 README 只有 58 行**：0 个参数数字、6 处指向 GLM-4.5。参数级断言的唯一合法来源是 4.5 report 摘要（355B/32B，[A]）——但引用它的前提是先证架构同构，否则「4.6 = 355B」就是无出处转述。
+1. **GLM-4.6 的 README 只有 58 行**：0 个参数数字、5 个链接指向 GLM-4.5 资源。参数级断言的唯一合法来源是 4.5 report 摘要（355B/32B，[A]）——但引用它的前提是先证架构同构，否则「4.6 = 355B」就是无出处转述。
 2. **同构证明 = config 逐字段 diff**：GLM-4.5 与 4.6 两 config 同拉对照，唯一差异是 max_position_embeddings 131072 → 202752。架构同构成立，355B/32B 的援引才合法；「4.6 = 4.5 架构 + 长窗化」是 config 级事实。能力增量（编码等宣称）只是 model card 级证据，[W] 降级引用。
 3. **GLM-4.7 的 config 与 4.6 逐字段完全一致**：同 checkpoint 迭代线，架构零变更、能力升级。能力宣称引旁证渠道（OpenRouter 模型清单，2026-11-12：「Z.ai's latest flagship…enhanced programming + multi-step reasoning」，ctx 标称 204800）——旁证一律标日期；标称 ctx 与 config 字段 202752 的口径差已在 §1 表注五登记。
 4. **一般化为四步**：(i) 先拉 config，与最近前代逐字段 diff；(ii) 无 report 时，参数/配方数字找最近前代 report，且以 (i) 的同构验证为援引前提；(iii) model card / API 旁证全部标日期、按 [W] 降级；(iv) 训练配方类断言在无 paper 时不做。四步在 4.6/4.7 上的完整走样即本节——5.6 会把同一流程展开成通用 checklist。
@@ -147,7 +147,7 @@ GLM-4.6（92 层，d = 5120，untied 词表）
 **参数复算：全字段锁定后的闭合。** 355B 是 report 摘要口径——report Table 1 注明口径「含 MTP 层参数、不含 word embeddings 与输出层」（[A]）；config 侧所需字段已全部实测（fix round 1 复核 hf-mirror config，2026-11-12），复算因此可以闭合而非止步：
 
 $$
-N = \underbrace{90 \cdot 161 \cdot (3 \cdot 5120 \cdot 1536)}_{\text{experts（89 MoE 层 + MTP 层）}} + \underbrace{93 \cdot (5120 \cdot 12288 + 2 \cdot 5120 \cdot 1024 + 12288 \cdot 5120)}_{\text{attention（92 层 + MTP 层）}} + \underbrace{3 \cdot (3 \cdot 5120 \cdot 12288)}_{\text{dense FFN}} + \underbrace{90 \cdot 5120 \cdot 160}_{\text{router}} \qquad (4)
+N = \underbrace{90 \cdot 161 \cdot (3 \cdot 5120 \cdot 1536)}_{\text{experts (89 MoE + 1 MTP layers)}} + \underbrace{93 \cdot (5120 \cdot 12288 + 2 \cdot 5120 \cdot 1024 + 12288 \cdot 5120)}_{\text{attention (92 + 1 MTP layers)}} + \underbrace{3 \cdot (3 \cdot 5120 \cdot 12288)}_{\text{dense FFN}} + \underbrace{90 \cdot 5120 \cdot 160}_{\text{router}} \qquad (4)
 $$
 
 **符号**：expert 按 SwiGLU 三矩阵计（`hidden_act = "silu"` 实测，gated 口径坐实）；attention 项 = Q/K/V/O 四个投影；MTP = 一个完整 MoE 层（report 原文 "we add an MoE layer as the MTP layer"），其 expert / attention / router 已并入前三项的系数 90 / 93 / 90。数值：experts ≈ 341.9B、attention ≈ 12.7B、dense FFN ≈ 0.57B、router ≈ 0.07B，合计 ≈ 355.2B——与官方 355B 闭合到 0.2B（约 0.06%）以内，残差即 QKV bias（92 层 × 14336 ≈ 1.3M）、norm 增益与 MTP 拼接投影小项。闭合同时反证两个未单列字段的取值：shared expert 与 routed 同宽 1536（否则总和溢出 355B），MTP 恰为一层。词表两侧 $2Vd$ ≈ 1.55B 按官方口径不入账。本节初稿曾以「残差 4.9B、归属未锁定字段」收尾——dense FFN 宽度与 MTP 字段本就在 config 里，初稿的「未锁定」认定是漏读（fix round 1 更正）；残差框架本身保留。
@@ -172,7 +172,7 @@ $$
 | 2D 位置退出 | 退化角读法 | $m$=1 后缀特例 ⊂ prefix-LM（3.1 §4.4）；退化角上两维各失一维，RoPE 占优；objective 存否不可见（§5 问题 1） |
 | GLM-130B | 130B 双语开放；[gMASK] | 100B 量级稳定性记录 [A]；与 2.7 机制家族的逐项对应留练习 4 |
 | 旗舰零件坐标 | 式 (2)：71.1 GiB @ 202752（MHA 反事实 854 GiB）；$\rho$=9/161≈5.6%；式 (3)：$\lambda_{\max}$≈4.1M（partial 0.5） | $g$=12 居中；first 3 dense 同 V3；bias + QK-Norm 叠加 vs Qwen3 纯 QK-Norm；MTP ×1 为整件 MoE 层；$\theta$=$10^{6}$ 原生覆盖 |
-| 无 paper 读法 | §3 四步 | 4.6 README 58 行 0 数字 6 指针；config diff 唯一字段；4.7 config 零差异；旁证标日期 |
+| 无 paper 读法 | §3 四步 | 4.6 README 58 行 0 数字 5 链接；config diff 唯一字段；4.7 config 零差异；旁证标日期 |
 | config 精读 | 式 (4)：全字段闭合复算 ≈ 355.2B vs 官方 355B（含 MTP、不含词表口径），残差 0.06% | 激活 ≈ 32.4B ≈ 官方 32B；MTP 弃置后 ≈ 32.0B；355B/32B 照抄官方口径 |
 | 开放问题 | §5 六条 | objective 存否、130B 处置对应、叠加冗余度、dense 前导层数、[W] 归因、partial 动机与打分函数形态 |
 
@@ -190,7 +190,7 @@ $$
 - [Team GLM, 2024](../references.md)：ChatGLM: A Family of Large Language Models from GLM-130B to GLM-4 All Tools，arXiv:2406.12793，[A]（key: glm-4）——ChatGLM → GLM-4 代际报告，All Tools 定位
 - [GLM-4.5 Team, 2025](../references.md)：GLM-4.5: Agentic, Reasoning, and Coding (ARC) Foundation Models，arXiv:2508.06471，[A]（key: glm-4.5）——355B/32B、23T tokens、hybrid reasoning 的摘要口径出处
 - [GLM-V Team, 2025](../references.md)：GLM-4.5V and GLM-4.1V-Thinking，arXiv:2507.01006，[A]（key: glm-4.5v）——视觉版存在性登记，细节归 P8
-- [Z.ai, GLM-4.6 config.json 与 model card](../references.md)：[W]（key: glm-4.6）——本章 §4 逐字段精读对象；无独立 tech report，README 58 行、6 处引 4.5（2026-11-12 实测）
+- [Z.ai, GLM-4.6 config.json 与 model card](../references.md)：[W]（key: glm-4.6）——本章 §4 逐字段精读对象；无独立 tech report，README 58 行、5 个链接引 4.5（2026-11-12 实测）
 - [Z.ai, GLM-4.7 config.json 与 model card](../references.md)：[W]（key: glm-4.7）——config 与 4.6 逐字段一致；无 arXiv（2026-11-12 实测）
 - [Z.ai, zai-org/GLM-4 官方 repo](../references.md)：[A]（key: glm-4-repo）——GLM-4 系列代码锚点（THUDM/GLM-4 已 301 至此）
 - [Z.ai, zai-org/GLM-4.5 官方 repo](../references.md)：[A]（key: glm-4.5-repo）——GLM-4.5 系列代码锚点

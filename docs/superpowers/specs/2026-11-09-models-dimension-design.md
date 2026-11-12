@@ -521,6 +521,7 @@ STYLE_GUIDE.md 是写作 agent 与 evaluator agent 的共同唯一标准，必�
 
 - 2026-11-11 W0+W1 完成：11 章（P1 三章 + P2 八章）+ W0 脚手架（STYLE_GUIDE / references.md / lint 脚本 / math-render-probe）；审查为逐章 review + 波末独立对抗审查；S1 2 起 / S2 2 起全部关闭，S3 5 起于波末 sweep 清零；强制重推导 5 项（1.3 Chinchilla Lagrangian、2.3 √d_k、2.4 KV cache、2.5 RoPE、2.7 Pre-Post-LN 梯度）全部 pass；无大纲偏差。审查档案：docs/reviews/w1-review-report.md
 - 2026-11-12 W2 完成：11 章（P3 三章 + P4 八章）；审查为逐章批量审查 3 批 + 波末独立对抗审查 1 轮；S1 0 起 / S2 2 起全部关闭（ModernBERT 交错比 3:1→2:1 跨章传播、README 进度表未随波更新），S3 9 起于波末 sweep 清零；强制重推导 3 项（4.1 MLA absorption、4.3 DeltaNet-GDN-KDA 状态更新链、4.5 MoE routing）全部 pass；无大纲偏差。篇幅口径裁定：STYLE_GUIDE §8 由「总字符数」改为「正文 CJK 汉字数」（标准章 ≥3500 / 推导重章 ≥5500 软目标 / 短篇 ≥2500）。审查档案：docs/reviews/w2-review-report.md
+- 2026-11-12 W3 完成：9 章（P5 六章 + P6 三章）；审查为逐章批量审查 3 批 + 波末独立对抗审查 1 轮（含修复轮复审）；S1 1 起（5.1 式 (5) 漏 shared expert）/ S2 2 起（5.1 router 均衡可见性收窄、5.3 upcycling 归属纠正为 Qwen2-7B）全部关闭，S3 5 起全部清零（F4/F7 修复轮清零，F5/F6/F8 原按协议转 W4、提前于本波波末 sweep 清零）；强制重推导 3 项（6.2 InfoNCE 双向 CE 与温度梯度、6.3 VAE ELBO+STE+RVQ、5.5 MuonClip qk-clip）全部 pass；初轮有条件放行（5.1 含 S1 需复审），修复轮后 9 章全放行；无大纲偏差。审查档案：docs/reviews/w3-review-report.md
 
 ---
 
