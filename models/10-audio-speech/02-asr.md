@@ -106,7 +106,7 @@ s=1 ∅ ●═╝  ↗     ║  ·      ║：走两格 s→s+2（仅当 y'_{s+2
 t=1 时起点 s ∈ {1, 2}，t = T 时终点 s ∈ {S−1, S}（式 (9)(11)）
 ```
 
-由此还得到一个可检查的长度约束：每帧至多走两格，故 $t$ 帧最多走到 $s = 2t$，$T$ 帧走满 $S = 2U + 1$ 格天然要求 $T \ge U + 1$ 量级；更紧的约束来自重复标签——$y$ 中每处连续重复都强制消耗至少一帧 blank（重复标签间必须走经 blank 位），故 CTC 可表示 $y$ 的必要条件是 $T \ge U + |\{i : y_i = y_{i-1}\}|$。标签比帧还多的输入，CTC 给不出非零概率（RNN-T 无此约束，§4.3）。
+由此还得到一个可检查的长度约束：每帧至多走两格，配合起点 $s = 2$ 与终点 $s = S - 1$ 的自由度（式 (9)(11)），无重复标签时 $T \ge U$ 即可走通（$2T \ge 2U$）；紧约束来自重复标签——$y$ 中每处连续重复都强制消耗至少一帧 blank（重复标签间必须走经 blank 位），故 CTC 可表示 $y$ 的紧约束是 $T \ge U + |\{i : y_i = y_{i-1}\}|$（无重复时退化为 $T \ge U$）。标签比帧还多的输入，CTC 给不出非零概率（RNN-T 无此约束，§4.3）。
 
 ### 2.4 前向变量 $\alpha$：定义、递推与终止
 
@@ -130,7 +130,7 @@ $$
 \alpha_t(s) = P_t(y'_s) \begin{cases} \alpha_{t-1}(s) + \alpha_{t-1}(s-1), & y'_s = \varnothing \ \text{or}\ y'_{s-2} = y'_s \\ \alpha_{t-1}(s) + \alpha_{t-1}(s-1) + \alpha_{t-1}(s-2), & \text{otherwise} \end{cases} \qquad (10)
 $$
 
-第一行对应 §2.3 的两类禁跳情形：$s$ 为奇时 $y'_s = \varnothing$（跳入将丢标签）；$s$ 为偶且 $y'_{s-2} = y'_s$ 时为重复标签（跳入将触发非法合并）。注意这里的条件用「到点」$s$ 写出，与 §2.3 用「出点」$s-2$ 写出等价：$s$ 偶、$y'_{s-2} \ne y'_s$ 当且仅当 $y'_s \ne \varnothing$ 且 $y'_{s-2} \ne y'_s$。
+第一行对应 §2.3 的两类禁跳情形：$s$ 为奇时 $y'_s = \varnothing$（跳入将丢标签）；$s$ 为偶且 $y'_{s-2} = y'_s$ 时为重复标签（跳入将触发非法合并）。注意这里的条件用「到点」$s$ 写出，与 §2.3 用「出点」$s-2$ 写出等价：$s$ 偶、$y'_{s-2} \ne y'_s$ 当且仅当 $y'_s \ne \varnothing$ 且 $y'_{s-2} \ne y'_s$。越界项按 0 计：$\alpha_{t-1}(0)$、$\alpha_{t-1}(-1)$ 恒为 0（与式 (13) 的越界约定对称）。
 
 **终止**（落实终点自由度）：
 
@@ -217,7 +217,7 @@ $$
 RNN-T（RNN-Transducer，[Graves, 2012](../references.md)，arXiv:1211.3711，[B]——2012 年论文无官方代码，ESPnet 等为第三方标准实现）由三个网络组成：
 
 - **transcription network**（声学端）：$f_t = \mathrm{enc}(x)_t$，与 CTC 的 encoder 同位。
-- **prediction network**（标签端）：$g_u = g(y_1, \ldots, y_{u-1})$——只看已输出标签历史、不看声学，一个小型 LM。
+- **prediction network**（标签端）：$g_u = g(y_1, \ldots, y_u)$——消费完第 $u$ 个标签后的状态（$g_0$ 为空历史的初始状态），只看标签历史、不看声学，一个小型 LM。格点 $(t, u)$ 已发出 $u$ 个标签（对照下方 $\alpha(t, u)$ 的定义），故 $P(k \mid t, u)$ 作为第 $u+1$ 次发射的分布，条件于 $g_u$ 即条件于 $y_1..\,y_u$；式 (18) 中从 $(t, u-1)$ 发出的标签迁移预测 $y_u$，用的是 $g_{u-1} = g(y_1..\,y_{u-1})$，索引自洽。
 - **joint network**：两者相加融合后过 softmax：
 
 $$
@@ -323,13 +323,13 @@ $$
 
 ## 7. 流式识别：chunk attention 与 lookahead 账
 
-CTC/RNN-T 的发射是逐帧/逐格点的，encoder 一旦因果化（只看左侧上下文）就天然流式：发射延迟 = 一帧 + encoder 右上下文。AED 有两处非流式：双向 encoder 看全句、cross-attention 覆盖全部 1500 个位置。流式改造的标准件是 chunk attention：帧按块长 $C$ 分组，第 $t$ 帧的 query 只可见键 $j \le \lceil t / C \rceil\, C + L$（$L$ 为 lookahead 帧数），写成 mask（2.4 的 mask 口径）：
+CTC/RNN-T 的发射是逐帧/逐格点的，encoder 一旦因果化（只看左侧上下文）就天然流式：发射延迟 = 一帧 + encoder 右上下文。AED 有两处非流式：双向 encoder 看全句、cross-attention 覆盖全部 1500 个位置。流式改造的标准件是 chunk attention：帧按块长 $C$ 分组，第 $t$ 帧的 query 只可见键 $j \le \lceil t / C \rceil\, C + L$（$L$ 为 lookahead 帧数），写成 2.4 的加性 mask 口径（$M_{tj} = 0$ 为可见、$-\infty$ 为屏蔽，加在 attention logit 上）：
 
 $$
-\mathrm{AttnMask}(t, j) = \begin{cases} 1, & j \le \lceil t / C \rceil\, C + L \\ 0, & \text{otherwise} \end{cases} \qquad (22)
+M_{tj} = \begin{cases} 0, & j \le \lceil t / C \rceil\, C + L \\ -\infty, & \text{otherwise} \end{cases} \qquad (22)
 $$
 
-延迟账（教学估算，hop = 10 ms）：块尾帧的 encoder 输出要等 $L$ 帧右上下文，算法延迟下界约 $L \times 10\ \mathrm{ms}$，叠加块内等待至多再 $C \times 10\ \mathrm{ms}$；$L$ 每加一帧换 10 ms 延迟，精度-延迟在这条直线上选点。Whisper 形态的 30 秒定长窗与流式不兼容——窗本身就是 30 秒的右上下文——故流式系统要么回到 CTC/RNN-T 主干，要么用 §3 的 hybrid：CTC 分支出增量结果、attention 分支周期性修正，是工业界常见组合（通用配方级陈述，不绑定具体系统数字）。
+延迟账（教学估算，hop = 10 ms）：块尾帧（$t = cC$）的 encoder 输出只等 $L$ 帧右上下文，算法延迟下界 $\approx L \times 10\ \mathrm{ms}$；块首帧还要等本块填满，上界包络 $\approx (L + C) \times 10\ \mathrm{ms}$——逐帧延迟落在 $[L,\ L + C] \times 10\ \mathrm{ms}$ 区间内；$L$ 每加一帧换 10 ms 延迟，精度-延迟在这条直线上选点。Whisper 形态的 30 秒定长窗与流式不兼容——窗本身就是 30 秒的右上下文——故流式系统要么回到 CTC/RNN-T 主干，要么用 §3 的 hybrid：CTC 分支出增量结果、attention 分支周期性修正，是工业界常见组合（通用配方级陈述，不绑定具体系统数字）。
 
 ## 8. 2024–2026 开放系统三例
 
@@ -367,7 +367,7 @@ $$
 | RNN-T | $P(k \mid t, u)$ 式 (17)；格点递推式 (18)(19)；$O(TU)$ joint 税 | §4 |
 | 三家对照 | 对齐 / 输出依赖 / 长度 / 成本 / 流式 / LM 回路 / 精度定性 | §5 表 |
 | Whisper | 3000 帧 → 1500 位置（式 (20)）；前缀控制（式 (21)）；680k hrs 弱监督 | §6 |
-| 流式 | chunk attention（式 (22)）；延迟下界 $\approx (L + C) \times 10$ ms（教学估算） | §7 |
+| 流式 | chunk attention（式 (22)，加性 mask）；逐帧延迟 $\approx L \times 10$ ms（块尾下界）至 $(L + C) \times 10$ ms（块首上界），教学估算 | §7 |
 | LLM-based ASR | encoder → projector → LLM（式 (23)），同构 8.1 式 (2) | §9 |
 
 ## 练习
@@ -378,7 +378,7 @@ $$
 
 3.（推导 + 计算）RNN-T 同构练习。(a) 写出 $\beta(t, u)$ 的定义与反向递推，使 $\alpha(t, u)\,\beta(t, u)$ 给出格点后验（提示：终态含式 (19) 的收尾 blank）；(b) $T = 500$、$U = 50$、$|\mathcal{V}| = 4000$ 时，数 RNN-T 的 joint softmax 次数与 logit 张量元素数，对照 CTC 的帧级 softmax 次数；(c) 论证「prediction network 输出为常数 + 每帧至多一发标签」时 RNN-T 退化为 CTC 形态，并指出此时仍残留的一处语义差异。
 
-4.（计算）窗口与流式账。(a) 按式 (20)：12 秒语音进 Whisper 的 encoder 计算浪费比例是多少？(b) 若 hop 改为 20 ms（50 fps），30 秒窗的 encoder 位置数与 $T/U$ 比率怎么变？(c) 某流式 AED 取 $C = 16$、$L = 8$，按 §7 的账给出算法延迟下界（ms）。
+4.（计算）窗口与流式账。(a) 按式 (20)：12 秒语音进 Whisper 的 encoder 计算浪费比例是多少？(b) 若 hop 改为 20 ms（50 fps），30 秒窗的 encoder 位置数与 $T/U$ 比率怎么变？(c) 某流式 AED 取 $C = 16$、$L = 8$，按 §7 的账分别给出块尾下界与块首上界（ms）。
 
 ## 参考
 
