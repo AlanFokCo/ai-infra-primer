@@ -208,11 +208,11 @@
 | swin | Swin Transformer: Hierarchical Vision Transformer using Shifted Windows | Liu et al. | arXiv:2103.14030 | [A] | 2026-11-12 | 6.1 |
 | clip | Learning Transferable Visual Models From Natural Language Supervision | Radford et al. | arXiv:2103.00020 | [A] | 2026-11-12 | 6.1, 6.2 |
 | alignment-uniformity | Understanding Contrastive Representation Learning through Alignment and Uniformity on the Hypersphere | Wang & Isola | arXiv:2005.10242 | [A] | 2026-11-12 | 6.2 |
-| vae | Auto-Encoding Variational Bayes | Kingma & Welling | arXiv:1312.6114 | [A] | 2026-11-12 | 6.3 |
+| vae | Auto-Encoding Variational Bayes | Kingma & Welling | arXiv:1312.6114 | [A] | 2026-11-12 | 6.3, 7.1 |
 | vq-vae | Neural Discrete Representation Learning | van den Oord et al. | arXiv:1711.00937 | [A] | 2026-11-12 | 6.3 |
 | vqgan | Taming Transformers for High-Resolution Image Synthesis | Esser et al. | arXiv:2012.09841 | [A] | 2026-11-12 | 6.3 |
 | magvit-v2 | Language Model Beats Diffusion -- Tokenizer is Key to Visual Generation | Yu et al. | arXiv:2310.05737 | [A] | 2026-11-12 | 6.3 |
-| dc-ae | Deep Compression Autoencoder for Efficient High-Resolution Diffusion Models | Chen et al. | arXiv:2410.10733 | [A] | 2026-11-12 | 6.3 |
+| dc-ae | Deep Compression Autoencoder for Efficient High-Resolution Diffusion Models | Chen et al. | arXiv:2410.10733 | [A] | 2026-11-12 | 6.3, 7.6 |
 | vision-transformer-repo | google-research/vision_transformer（ViT 官方 JAX 实现；vit_jax/models_vit.py） | Google | https://github.com/google-research/vision_transformer | [A] | 2026-11-12 | 6.1 |
 | big-vision | google-research/big_vision（SigLIP/SigLIP 2/NaViT 官方训练代码；big_vision/models/vit.py） | Google | https://github.com/google-research/big_vision | [A] | 2026-11-12 | 6.1 |
 | clip-repo | openai/CLIP 官方 repo（模型与 zero-shot 协议） | OpenAI | https://github.com/openai/CLIP | [A] | 2026-11-12 | 6.2 |
@@ -226,6 +226,56 @@
 
 | key | 标题 | 作者 | arXiv ID / URL | 证据等级 | 核实日期 | 被引章节 |
 | --- | --- | --- | --- | --- | --- | --- |
+| gan | Generative Adversarial Networks | Goodfellow et al. | arXiv:1406.2661 | [A] | 2026-11-12 | 7.1 |
+| glow | Glow: Generative Flow with Invertible 1x1 Convolutions | Kingma & Dhariwal | arXiv:1807.03039 | [A] | 2026-11-12 | 7.1 |
+| ddpm | Denoising Diffusion Probabilistic Models | Ho et al. | arXiv:2006.11239 | [A] | 2026-11-12 | 7.1, 7.2 |
+| iddpm | Improved Denoising Diffusion Probabilistic Models | Nichol & Dhariwal | arXiv:2102.09672 | [A] | 2026-11-12 | 7.2 |
+| ddpm-repo | hojonathanho/diffusion（DDPM 官方 TF 实现；diffusion_tf/ 目录） | Jonathan Ho | https://github.com/hojonathanho/diffusion | [A] | 2026-11-12 | 7.2 |
+| ddpm-pytorch | lucidrains/denoising-diffusion-pytorch（DDPM 教学实现） | lucidrains | https://github.com/lucidrains/denoising-diffusion-pytorch | 教学参照 | 2026-11-12 | 7.2 |
+| score-sde | Score-Based Generative Modeling through Stochastic Differential Equations | Song et al. | arXiv:2011.13456 | [A] | 2026-11-12 | 7.3 |
+| edm | Elucidating the Design Space of Diffusion-Based Generative Models | Karras et al. | arXiv:2206.00364 | [A] | 2026-11-12 | 7.3 |
+| vincent-2011 | A Connection Between Score Matching and Denoising Autoencoders（Neural Computation 23(7):1661–1674；**非 JMLR**——spec 7.3 勘误） | Vincent | https://doi.org/10.1162/NECO_a_00142 | [A] | 2026-11-12 | 7.3 |
+| score-sde-repo | yang-song/score_sde_pytorch（score-SDE 官方 PyTorch 实现） | Yang Song | https://github.com/yang-song/score_sde_pytorch | [A] | 2026-11-12 | 7.3 |
+| ddim | Denoising Diffusion Implicit Models | Song et al. | arXiv:2010.02502 | [A] | 2026-11-12 | 7.4 |
+| classifier-guidance | Diffusion Models Beat GANs on Image Synthesis（classifier guidance 出处） | Dhariwal & Nichol | arXiv:2105.05233 | [A] | 2026-11-12 | 7.4 |
+| cfg | Classifier-Free Diffusion Guidance | Ho & Salimans | arXiv:2207.12598 | [A] | 2026-11-12 | 7.4 |
+| consistency-models | Consistency Models | Song et al. | arXiv:2303.01469 | [A] | 2026-11-12 | 7.4 |
+| lcm | Latent Consistency Models: Synthesizing High-Resolution Images with Few-Step Inference | Luo et al. | arXiv:2310.04378 | [A] | 2026-11-12 | 7.4 |
+| dmd | One-step Diffusion with Distribution Matching Distillation | Yin et al. | arXiv:2311.18828 | [A] | 2026-11-12 | 7.4 |
+| dmd2 | Improved Distribution Matching Distillation for Fast Image Synthesis | Yin et al. | arXiv:2405.14867 | [A] | 2026-11-12 | 7.4 |
+| rectified-flow | Flow Straight and Fast: Learning to Generate and Transfer Data with Rectified Flow | Liu et al. | arXiv:2209.03003 | [A] | 2026-11-12 | 7.4, 7.5 |
+| dpm-solver | DPM-Solver: A Fast ODE Solver for Diffusion Probabilistic Model Sampling in Around 10 Steps | Lu et al. | arXiv:2206.00927 | [A] | 2026-11-12 | 7.4 |
+| ddim-repo | ermongroup/ddim（DDIM 官方实现） | Song et al. | https://github.com/ermongroup/ddim | [A] | 2026-11-12 | 7.4 |
+| consistency-models-repo | openai/consistency_models（官方；cm/karras_diffusion.py、cm/losses.py 走读锚点） | OpenAI | https://github.com/openai/consistency_models | [A] | 2026-11-12 | 7.4 |
+| dmd2-repo | tianweiy/DMD2（DMD/DMD2 官方实现） | Yin et al. | https://github.com/tianweiy/DMD2 | [A] | 2026-11-12 | 7.4 |
+| flow-matching | Flow Matching for Generative Modeling | Lipman et al. | arXiv:2210.02747 | [A] | 2026-11-12 | 7.5 |
+| sd3 | Scaling Rectified Flow Transformers for High-Resolution Image Synthesis | Esser et al. | arXiv:2403.03206 | [A] | 2026-11-12 | 7.5, 7.6, 7.7 |
+| flow-matching-repo | facebookresearch/flow_matching（FM 官方库；flow_matching/path/、solver/、loss/ 包结构实测） | Meta | https://github.com/facebookresearch/flow_matching | [A] | 2026-11-12 | 7.5 |
+| sd3.5-repo | Stability-AI/sd3.5（SD3.5 官方推理代码；mmditx.py、sd3_impls.py——MMDiT 走读锚点） | Stability AI | https://github.com/Stability-AI/sd3.5 | [A] | 2026-11-12 | 7.5, 7.6, 7.7 |
+| ldm | High-Resolution Image Synthesis with Latent Diffusion Models | Rombach et al. | arXiv:2112.10752 | [A] | 2026-11-12 | 7.6 |
+| dit | Scalable Diffusion Models with Transformers | Peebles & Xie | arXiv:2212.09748 | [A] | 2026-11-12 | 7.6 |
+| pixart-alpha | PixArt-α: Fast Training of Diffusion Transformer for Photorealistic Text-to-Image Synthesis | Chen et al. | arXiv:2310.00426 | [A] | 2026-11-12 | 7.6 |
+| pixart-sigma | PixArt-Σ: Weak-to-Strong Training of Diffusion Transformer for 4K Text-to-Image Generation | Chen et al. | arXiv:2403.04692 | [A] | 2026-11-12 | 7.6 |
+| sana | SANA: Efficient High-Resolution Image Synthesis with Linear Diffusion Transformers | Xie et al. | arXiv:2410.10629 | [A] | 2026-11-12 | 7.6 |
+| dit-repo | facebookresearch/DiT（官方；models.py 含 adaLN-Zero 实现） | Meta | https://github.com/facebookresearch/DiT | [A] | 2026-11-12 | 7.6 |
+| latent-diffusion-repo | CompVis/latent-diffusion（LDM 官方；ldm/models/diffusion/ddpm.py、ddim.py 走读锚点） | CompVis | https://github.com/CompVis/latent-diffusion | [A] | 2026-11-12 | 7.6 |
+| sgm-repo | Stability-AI/generative-models（SGM：SDXL/SD3 训练代码；sgm/modules/diffusionmodules/ 目录实测） | Stability AI | https://github.com/Stability-AI/generative-models | [A] | 2026-11-12 | 7.6, 7.7 |
+| flux-repo | black-forest-labs/flux（官方推理代码；HF 权重 gated——spec 口径 [C]） | Black Forest Labs | https://github.com/black-forest-labs/flux | [C] | 2026-11-12 | 7.6 |
+| sana-repo | NVlabs/Sana（SANA 官方实现） | NVIDIA | https://github.com/NVlabs/Sana | [A] | 2026-11-12 | 7.6 |
+| pixart-repo | PixArt-alpha/PixArt-alpha（官方，含 PixArt-Σ） | PixArt team | https://github.com/PixArt-alpha/PixArt-alpha | [A] | 2026-11-12 | 7.6 |
+| var | Visual Autoregressive Modeling: Scalable Image Generation via Next-Scale Prediction | Tian et al. | arXiv:2404.02905 | [A] | 2026-11-12 | 7.7 |
+| llamagen | Autoregressive Model Beats Diffusion: Llama for Scalable Image Generation | Sun et al. | arXiv:2406.06525 | [A] | 2026-11-12 | 7.7 |
+| infinity | Infinity: Scaling Bitwise AutoRegressive Modeling for High-Resolution Image Synthesis | Han et al. | arXiv:2412.04431 | [A] | 2026-11-12 | 7.7 |
+| maskgit | MaskGIT: Masked Generative Image Transformer | Chang et al. | arXiv:2202.04200 | [A] | 2026-11-12 | 7.7 |
+| muse | Muse: Text-To-Image Generation via Masked Generative Transformers（**Google 未开源**：google-research/muse 404 实测 2026-11-12，不作代码锚点） | Chang et al. | arXiv:2301.00704 | [B] | 2026-11-12 | 7.7 |
+| emu3 | Emu3: Next-Token Prediction is All You Need | Wang et al. | arXiv:2409.18869 | [A] | 2026-11-12 | 7.7 |
+| imagen | Photorealistic Text-to-Image Diffusion Models with Deep Language Understanding（Google，无官方代码） | Saharia et al. | arXiv:2205.11487 | [B] | 2026-11-12 | 7.7 |
+| sdxl | SDXL: Improving Latent Diffusion Models for High-Resolution Image Synthesis | Podell et al. | arXiv:2307.01952 | [A] | 2026-11-12 | 7.7 |
+| var-repo | FoundationVision/VAR（官方；models/var.py、models/vqvae.py 走读锚点） | FoundationVision | https://github.com/FoundationVision/VAR | [A] | 2026-11-12 | 7.7 |
+| llamagen-repo | FoundationVision/LlamaGen（官方） | FoundationVision | https://github.com/FoundationVision/LlamaGen | [A] | 2026-11-12 | 7.7 |
+| infinity-repo | FoundationVision/Infinity（官方） | FoundationVision | https://github.com/FoundationVision/Infinity | [A] | 2026-11-12 | 7.7 |
+| emu3-repo | baaivision/Emu3（官方） | BAAI | https://github.com/baaivision/Emu3 | [A] | 2026-11-12 | 7.7 |
+| sdxl-hf | stabilityai/stable-diffusion-xl-base-1.0（HF；model_index.json 实测：StableDiffusionXLPipeline、双 text encoder CLIP-L+OpenCLIP-G） | Stability AI | https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0 | [A] | 2026-11-12 | 7.7 |
 
 ### Part 8 · Multimodal LLMs
 
