@@ -199,13 +199,13 @@ $$
 
 与式 (8) 的对照值得停一步：离散化之后不再有解析后验，VAE 框架里的 KL 项去了哪里？VQ-VAE 论文的接法：取确定性后验 $q(k^{*} \mid x) = 1$（one-hot 在 argmin 上）、先验为 $K$ 类均匀分布，则 ELBO 的 KL 项退化成常数 $\log K$，不进任何梯度——式 (14) 的三项正是这个退化 ELBO 剩下的可优化部分。正则的角色由 codebook loss 与 commitment loss 接管：一个管 code 跟着数据走，一个管数据贴着 code 走。
 
-codebook loss 其实不必走梯度。对 entry $e_i$ 而言，式 (14) 第二项关于 $e_i$ 的极小有闭式：设 batch 内被分到 $e_i$ 的 encoder 输出集合为 $S_i$，对 $\sum_{z \in S_i} \| z - e_i \|^{2}$ 求导置零得 $e_i = |S_i|^{-1} \sum_{z \in S_i} z$——被分配点的均值（练习 2 推这一步）。EMA 更新就是这个闭式解的滑动平均版（论文 §3.2）：
+codebook loss 其实不必走梯度。对 entry $e_i$ 而言，式 (14) 第二项关于 $e_i$ 的极小有闭式：设 batch 内被分到 $e_i$ 的 encoder 输出集合为 $S_i$，对 $\sum_{z \in S_i} \| z - e_i \|^{2}$ 求导置零得 $e_i = |S_i|^{-1} \sum_{z \in S_i} z$——被分配点的均值，即 K-Means 更新（练习 2 推这一步）。全量数据的闭式解不能直接用于小 batch 训练，论文在 Appendix A.1 给出它的在线版——EMA 更新：
 
 $$
 N_i \leftarrow \gamma N_i + (1 - \gamma)\, n_i, \qquad m_i \leftarrow \gamma m_i + (1 - \gamma) \sum_{z \in S_i} z, \qquad e_i = \frac{m_i}{N_i} \qquad (15)
 $$
 
-**符号**：$n_i = |S_i|$：本 batch 分到 code $i$ 的位点数；$N_i, m_i$：滑动平均的计数与向量和；$\gamma$：衰减系数，论文取 $\gamma = 0.99$（配 Laplace smoothing 防 $N_i = 0$ 的零除）。机制读法：EMA 把 codebook 从梯度循环里摘出来——code 的更新不与 encoder 共享学习率、不被重建梯度的噪声污染，训练曲线因此更稳；VQ-VAE 论文报告 EMA 版与梯度版效果相当但收敛更快。
+**符号**：$n_i = |S_i|$：本 batch 分到 code $i$ 的位点数；$N_i, m_i$：滑动平均的计数与向量和；$\gamma$：衰减系数，论文报告 $\gamma = 0.99$ 在实践中效果稳定。机制读法：EMA 把 codebook 从梯度循环里摘出来——code 的更新不与 encoder 共享学习率、不被重建梯度的噪声污染。定位要钉准：EMA 在论文里是式 (14) 第二项的替代方案（Appendix A.1），正文明说主实验未用它（"not used for the experiments in this work"）——主实验走的是 codebook loss 的梯度下降，两版不要混为一谈。顺带补一条 commitment 项的原文动机：embedding 空间没有天然的尺度约束，若 code 学得比 encoder 慢，$\| z_e \|$ 会任意膨胀，commitment 项就是压住这个膨胀的配重。
 
 ### 3.4 codebook collapse：死锁机制与缓解
 
@@ -231,7 +231,7 @@ $$
 \min_{E, D_{ec}, E_{cb}}\; \max_{D}\; L_{\mathrm{rec}} + \lambda\; \mathbb{E}_{x}\left[ \log D(x) \right] + \mathbb{E}_{\hat{x}}\left[ \log\left( 1 - D(\hat{x}) \right) \right] \qquad (17)
 $$
 
-**符号**：$E, D_{ec}, E_{cb}$：encoder、decoder、codebook；$L_{\mathrm{rec}}$：式 (14) 加式 (16) 的重建侧全部项；$\lambda$：对抗项权重，见下。判别器侧把真图的 $D(x)$ 推高、把重建图 $D(\hat{x})$ 压低；生成侧（$E, D_{ec}, E_{cb}$）在式 (17) 里被 $D$ 的梯度反向塑造——重建图被判得越假，生成侧收到的「往真里修」的梯度越大。官方实现（[CompVis/taming-transformers](../references.md)，`taming/models/vqgan.py`，[A]）用 hinge 变体：
+**符号**：$E, D_{ec}, E_{cb}$：encoder、decoder、codebook；$L_{\mathrm{rec}}$：式 (14) 加式 (16) 的重建侧全部项；$\lambda$：对抗项权重，见下。判别器侧把真图的 $D(x)$ 推高、把重建图 $D(\hat{x})$ 压低；生成侧（$E, D_{ec}, E_{cb}$）在式 (17) 里被 $D$ 的梯度反向塑造——重建图被判得越假，生成侧收到的「往真里修」的梯度越大。官方实现（[CompVis/taming-transformers](../references.md)，[A]）用 hinge 变体（loss 定义在 `taming/modules/losses/vqperceptual.py`，`taming/models/vqgan.py` 是调用方）：
 
 $$
 L_{D} = \mathbb{E}_{x}\left[ \max\left( 0,\ 1 - D(x) \right) \right] + \mathbb{E}_{\hat{x}}\left[ \max\left( 0,\ 1 + D(\hat{x}) \right) \right], \qquad L_{G} = -\mathbb{E}_{\hat{x}}\left[ D(\hat{x}) \right] \qquad (18)
@@ -247,7 +247,7 @@ $$
 
 **符号**：$G_L$：decoder 最后一层的参数；$\nabla_{G_L}$ 取梯度后按范数计。机制一目了然：让两项在「对输出端的拉力」上始终同阶——训练早期重建梯度大、$\lambda$ 自动缩小对抗项；重建收敛后对抗项接管细节。量化环节沿用 §3 的 STE（式 (12)(13)）与 EMA（式 (15)），原样嵌进式 (17) 的最小化侧。
 
-落地坐标：VQGAN 的常用档是 f16、$K = 1024$（官方 checkpoint 命名 `vqgan_imagenet_f16_1024` 即此口径）——$256^{2}$ 图被压成 $16 \times 16 = 256$ 个 code 的网格，这是「图像 = 256 个离散 token」的第一个可用实现，也是后来一大票 T2I 系统的 tokenizer 起点。
+落地坐标：VQGAN 的常用档是 f16、$K = 1024$（官方 checkpoint 命名 `vqgan_imagenet_f16_1024` 即此口径）——$256^{2}$ 图被压成 $16 \times 16 = 256$ 个 code 的网格，「图像 = 256 个离散 token」由此成为可用实现，后来一大票 T2I 系统的 tokenizer 由此起步。
 
 ## 5. RVQ：残差量化递推与 bitrate 账
 
@@ -293,7 +293,7 @@ $$
 
 **符号**：$z \in \mathbb{R}^{d}$：encoder 输出（单 latent 位点展平）；$q(z) \in \{ -1, +1 \}^{d}$：量化结果。codebook 不再是一张可学表，而是超立方体的顶点集 $\{ -1, +1 \}^{d}$——隐式 codebook，大小 $2^{d}$，位点的 token id 就是 sign 模式的二进制编号。没有最近邻检索（lookup-free 的名字由此来），量化是逐维独立的一次符号函数；STE 照旧：$q^{\mathrm{ST}} = z + \mathrm{sg}[\operatorname{sign}(z) - z]$，梯度拷贝同式 (12)(13)。
 
-代价：$2^{d}$ 个顶点里能被 argmin「自然选中」的概念不复存在——没有距离几何，使用率必须由目标函数显式管理。LFQ 的熵正则由两项组成。对第 $i$ 维，样本 $z$ 诱导一个 Bernoulli：$p_i(z) = (z_i + 1)/2$（设 $z_i$ 经有界化落在 $[-1, 1]$，$p_i$ 是「第 $i$ 维取 $+1$」的软概率），其熵 $H(p) = -p \log p - (1 - p) \log(1 - p)$。记 batch 大小 $B$、batch 聚合概率 $\bar{p}_i = \frac{1}{B} \sum_{b=1}^{B} p_i(z^{(b)})$，则
+代价：$2^{d}$ 个顶点里能被 argmin「自然选中」的概念不复存在——没有距离几何，使用率必须由目标函数显式管理。LFQ 的熵正则由两项组成。对第 $i$ 维，样本 $z$ 诱导一个 Bernoulli：$p_i(z) = (z_i + 1)/2$（设 $z_i$ 经有界化落在 $[-1, 1]$，$p_i$ 是「第 $i$ 维取 $+1$」的软概率——该参数化是实现层的操作化写法：原文的 $q(z_i)$ 保持抽象分布记号，官方 magvit 实现按顶点距离的负值过 softmax 得概率再算熵，数值细节以实现为准），其熵 $H(p) = -p \log p - (1 - p) \log(1 - p)$。记 batch 大小 $B$、batch 聚合概率 $\bar{p}_i = \frac{1}{B} \sum_{b=1}^{B} p_i(z^{(b)})$，则
 
 $$
 L_{\mathrm{ent}} = \frac{1}{B} \sum_{b=1}^{B} \sum_{i=1}^{d} H\left( p_i(z^{(b)}) \right) \; - \; \sum_{i=1}^{d} H\left( \bar{p}_i \right) \qquad (23)
@@ -301,7 +301,7 @@ $$
 
 **符号**：第一项：逐样本熵，最小化它把每个样本的每维推向 $0$ 或 $1$——$z_i$ 贴向 $\pm 1$ 的顶点，不许「骑墙」（$p_i \approx 1/2$ 时熵最大）；第二项：batch 聚合熵，式 (23) 里带负号即最大化它，把逐维的边缘使用推向均匀（$\bar{p}_i = 1/2$），进而让 $2^{d}$ 个顶点被整批样本铺开。一压一抬，正是 §3.4 collapse 的目标函数级解法：逐样本要确定、逐维边缘要均匀。总目标是 VQGAN 家族三项（重建 + LPIPS + 对抗）再加 $L_{\mathrm{ent}}$。
 
-定位：MAGVIT-v2 用 LFQ 把视频与图像量化进同一个 vocabulary（摘要口径，[A]），并在该论文的评测上让 AR 生成超过同期扩散模型——「tokenizer 质量是 AR 路线的杠杆点」这一判断由此坐实，直接影响 P7 的「AR vs diffusion」讨论与 P8 的多模态 tokenizer 选择。
+定位：MAGVIT-v2 用 LFQ 把视频与图像量化进同一个 vocabulary（摘要口径，[A]），并在该论文的评测上让语言模型路线的生成质量超过同期扩散模型——标题主张即此；注意其主结果的采样范式是 masked LM（掩码迭代解码）而非严格逐 token 自回归，「tokenizer 质量是语言模型视觉路线的杠杆点」这一判断由此坐实，直接影响 P7 的「AR vs diffusion」讨论与 P8 的多模态 tokenizer 选择。
 
 ## 7. 现代 AE：SD-VAE、SD3/FLUX、DC-AE
 
@@ -327,15 +327,21 @@ $$
 
 $f$ 从 8 继续往上翻，瓶颈不在表示而在优化：decoder 要从 $H/32$ 的网格还原全部高频细节，式 (8) 的重建项在 f32 起步就训不动。DC-AE（deep compression autoencoder，[Chen et al., 2024](../references.md)，arXiv:2410.10733，[A]）用两个技术把压缩率推到 f32/f64：
 
-**(a) residual autoencoding（残差自编码）**。先用无参数的 space-to-channel 变换 $S$——6.1 式 (1) 的无投影版：把 $f \times f \times C$ 的块摊进通道维，$S: \mathbb{R}^{H \times W \times C} \to \mathbb{R}^{(H/f) \times (W/f) \times C f^{2}}$——得到一个不保真但保低频结构的下采样捷径，网络只学与捷径的差：
+**(a) residual autoencoding（残差自编码）**。捷径不是 ResNet 的恒等映射，而是无参数的 space-to-channel 映射（6.1 式 (1) 的无投影版：$f \times f$ 空间块摊进通道维），并且不是整图级一条，而是挂在**每个下采样/上采样 block 上**并联。encoder 的下采样 block（输入 $H \times W \times C$、输出 $\frac{H}{2} \times \frac{W}{2} \times 2C$）配的非参捷径为
 
 $$
-\hat{x} = S^{-1}\left( S(x) + F(x) \right), \qquad F = D \circ E \qquad (25)
+\underbrace{H \times W \times C \;\rightarrow\; \frac{H}{2} \times \frac{W}{2} \times 4C}_{\text{space-to-channel}} \quad \underbrace{\rightarrow\; \frac{H}{2} \times \frac{W}{2} \times 2C}_{\text{channel averaging}} \qquad (25)
 $$
 
-**符号**：$F = D \circ E$：encoder-decoder 复合，输出与 $S(x)$ 同形的修正项；$S^{-1}$：channel-to-space（space-to-channel 的排列逆）。重建目标 $\| x - \hat{x} \|^{2}$ 的梯度不再要求网络从头合成低频结构——低频由 $S(x)$ 短路直通，$F$ 只拟合残差 $x - S^{-1}(S(x))$，优化景观从「学整图」变成「学差分」，深压缩下这是训得动与训不动的分界。
+即 space-to-channel 之后把通道拆成两组逐组平均，对齐主路的输出通道。decoder 的上采样 block 对称（输入 $\frac{H}{2} \times \frac{W}{2} \times 2C$）：
 
-**(b) decoupled high-resolution adaptation（解耦高分辨率适配）**。三阶段训练：(i) 低分辨率下全量训练完整 AE；(ii) 高分辨率下接入一个轻量并联适配分支（encoder 头部/decoder 尾部），只训分支、主干冻结；(iii) 全量高分辨率微调。机制：把「压缩能力」与「分辨率泛化」解耦成两个顺序求解的优化问题——一步合并训练时两个目标在高分辨率下互相干扰，拆开之后各自有干净的梯度信号（论文 §3 的三阶段口径）。
+$$
+\underbrace{\frac{H}{2} \times \frac{W}{2} \times 2C \;\rightarrow\; H \times W \times \frac{C}{2}}_{\text{channel-to-space}} \quad \underbrace{\rightarrow\; H \times W \times C}_{\text{duplicate + concat}} \qquad (26)
+$$
+
+block 输出 = 卷积主路 + 捷径输出，中间 stage 按同一原则改造。机制：捷径把可保结构的低频分量直通下去，每个 block 的可学支路只需拟合本级的局部残差，优化景观从「学整图」变成「逐级学差分」——深压缩下这是训得动与训不动的分界（论文 Figure 3 的消融对照）。
+
+**(b) decoupled high-resolution adaptation（解耦高分辨率适配）**。动机是一笔实测账：f64 AE 从 $256^{2}$ 直接泛化到 $1024^{2}$ 时 rFID 从 0.50 掉到 7.40，而同设置下 f8 AE 反而从 0.51 改善到 0.19——论文称之为高空间压缩 AE 的 generalization penalty，压缩率越高越重。直接上高分辨率训练则两头挨打：训练成本高，且高分辨率 GAN 训练不稳定。DC-AE 的解法是三阶段（论文 Figure 6 口径）：(i) **phase 1 低分辨率全量训练**：完整 AE 在低分辨率（$256^{2}$ 口径）上训，loss 为 L1 + LPIPS，不含 GAN；(ii) **phase 2 高分辨率 latent adaptation**：高分辨率下只调中间层——encoder 头部与 decoder 的**输入层**——其余冻结，loss 同 phase 1；作用是适配 latent 空间以缓解 generalization penalty，实验上只调中间层即够，显存从全量高分辨率训练的 153.98 GB 降到 67.81 GB（$1024^{2}$、batch 12 口径）；(iii) **phase 3 低分辨率 local refinement**：GAN（PatchGAN）loss 解耦到本阶段才进场，只调 decoder 的头部层、其余全部冻结，并且在**低分辨率**上跑。phase 3 的机制依据有两条：重建 loss 单独已足够学到内容与语义，GAN loss 的边际贡献集中在局部细节与去 artifact（论文 Figure 5 对照），只调 decoder 头部即可拿到这份收益且比全量训练更准；同时冻结其余层保证 GAN 训练不改动 latent 空间，于是本阶段可以留在低分辨率、不必担心 generalization penalty——既绕开高分辨率 GAN 的不稳定，又再省一份训练成本。
 
 账：$512^{2}$ 图经 f32 得 $16 \times 16 = 256$ 个 latent 位点、f64 得 $8 \times 8 = 64$ 个——对照 §1 的像素账，序列长度再省一到两个量级。DC-AE 是 SANA 文生图系统的 latent 基石（SANA 用 f32 档，P7 展开）；官方实现在 mit-han-lab/efficientvit 的 `applications/dc_ae` 目录（[efficientvit](../references.md)，[A]）。
 
@@ -364,12 +370,12 @@ $$
 | posterior collapse | §2.6 | KL 单独最优 = 后塌成先验；decoder 过强时 recon 不抵抗；缓解：β 退火 / free bits / 弱 decoder |
 | VQ-VAE 量化 | 式 (11)：argmin 最近邻 | latent = K 值词表上的 $hw$ 网格；接 PixelCNN 先验 |
 | STE | 式 (12)(13)：$z_e + \mathrm{sg}[z_q - z_e]$ | 前向硬量化、反向梯度拷贝；误差正比于量化残差，由 commitment 项压住 |
-| VQ-VAE loss | 式 (14)(15) | recon + codebook + commitment（β=0.25）；EMA（γ=0.99）= 均值闭式解的滑动平均 |
+| VQ-VAE loss | 式 (14)(15) | recon + codebook + commitment（β=0.25）；EMA（γ=0.99，Appendix A.1 替代方案，主实验未用）= K-Means 闭式解的在线版 |
 | codebook collapse | §3.4 | 不选中 → 不更新的死锁；诊断用使用分布 perplexity；缓解：EMA / 死码重启 / 熵正则 |
 | VQGAN | 式 (16)(17)(18)(19) | LPIPS 换特征空间监督；PatchGAN + hinge；自适应 λ = 梯度范数比 |
 | RVQ | 式 (20)(21) | 残差递推 $r_{i+1} = r_i - e_i$；容量 $K^{n_q}$；bitrate $= n_q \log_2 K \cdot f_{\mathrm{rate}}$，P10 直接复用 |
 | LFQ | 式 (22)(23) | sign 量化、隐式 codebook $2^{d}$；逐样本熵压、聚合熵抬 |
-| 现代 AE | 式 (24)(25) | SD-VAE f8/4ch、s=0.18215 单位方差化；FLUX 16ch、加 shift；DC-AE f32/f64：residual autoencoding + 三阶段适配 |
+| 现代 AE | 式 (24)(25)(26) | SD-VAE f8/4ch、s=0.18215 单位方差化；FLUX 16ch、加 shift；DC-AE f32/f64：逐 block 非参捷径 + 三阶段适配（phase 2 调中间层高分辨率适配、phase 3 低分辨率只调 decoder 头部上 GAN） |
 | 离散 vs 连续 | §7.4 表 | 由下游生成范式定：diffusion 用连续、AR 用离散 |
 
 ## 练习
@@ -382,11 +388,11 @@ $$
 ## 参考
 
 - [Kingma & Welling, 2013](../references.md)：Auto-Encoding Variational Bayes，arXiv:1312.6114，[A]（key: vae）——式 (1)(2)(3)(4)(5)(6)(7)(8)(9)(10)，ELBO 双路径与 reparameterization
-- [van den Oord et al., 2017](../references.md)：Neural Discrete Representation Learning，arXiv:1711.00937，[A]（key: vq-vae）——式 (11)(12)(13)(14)(15)，STE、commitment（β=0.25）、EMA（γ=0.99）、PixelCNN 先验
+- [van den Oord et al., 2017](../references.md)：Neural Discrete Representation Learning，arXiv:1711.00937，[A]（key: vq-vae）——式 (11)(12)(13)(14)(15)，STE、commitment（β=0.25）、EMA（γ=0.99，Appendix A.1 替代方案、主实验未用）、PixelCNN 先验
 - [Esser et al., 2020](../references.md)：Taming Transformers for High-Resolution Image Synthesis，arXiv:2012.09841，[A]（key: vqgan）——式 (16)(17)(18)(19)，LPIPS、PatchGAN、自适应 λ、f16/K=1024 档
 - [Yu et al., 2023](../references.md)：Language Model Beats Diffusion -- Tokenizer is Key to Visual Generation，arXiv:2310.05737，[A]（key: magvit-v2）——式 (22)(23)，LFQ 与熵正则、图像视频统一 vocabulary
-- [Chen et al., 2024](../references.md)：Deep Compression Autoencoder for Efficient High-Resolution Diffusion Models，arXiv:2410.10733，[A]（key: dc-ae）——式 (25)，f32/f64、residual autoencoding 与三阶段适配
-- [CompVis/taming-transformers](../references.md)：[A]（key: taming-transformers-repo）——`taming/models/vqgan.py`，VQGAN 官方实现
+- [Chen et al., 2024](../references.md)：Deep Compression Autoencoder for Efficient High-Resolution Diffusion Models，arXiv:2410.10733，[A]（key: dc-ae）——式 (25)(26)，f32/f64、residual autoencoding 与三阶段适配
+- [CompVis/taming-transformers](../references.md)：[A]（key: taming-transformers-repo）——`taming/models/vqgan.py`（模型）、`taming/modules/losses/vqperceptual.py`（LPIPS/hinge loss），VQGAN 官方实现
 - [mit-han-lab/efficientvit](../references.md)：[A]（key: efficientvit-repo）——`applications/dc_ae`，DC-AE 官方实现
 - [diffusers AutoencoderKL](../references.md)：[A]（key: autoencoderkl）——`src/diffusers/models/autoencoders/autoencoder_kl.py`，SD 系 VAE 走读锚点
 - [lucidrains/vector-quantize-pytorch](../references.md)：教学参照（key: vector-quantize-pytorch）——VQ/RVQ/LFQ 教学实现，死码重启配置对照
