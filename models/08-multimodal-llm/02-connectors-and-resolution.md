@@ -33,7 +33,7 @@ $$
 
 **符号**：$z_i$：$z_{img}$ 第 $i$ 行（单个 patch 的 $d_v$ 维特征）；$v_i \in \mathbb{R}^{d_{llm}}$：进 LLM 的第 $i$ 个视觉 token；GELU 为逐元素非线性（2.6）。线性 projector 是式 (2) 砍掉第一层：$v_i = W z_i + b$。
 
-参数账直接读：式 (2) 约 $d_v d_{llm} + d_{llm}^{2} \approx 2\, d_v d_{llm}$ 个参数（$d_{llm} \approx d_v$ 档时两项同阶）。代一档真实宽度——$d_v$ = 1024（ViT-L/14）、$d_{llm}$ = 4096——约 8.4M 参数，相对 LLM 本体是千分位。等长映射 $M = N$：CLIP-336 网格的 576 个 token 原数进 LLM。
+参数账直接读：式 (2) 共 $d_v d_{llm} + d_{llm}^{2}$ 个参数——注意现代组合里 $d_{llm} > d_v$，$d_{llm}^{2}$ 项占大头，简写 $2\, d_v d_{llm}$ 只在 $d_{llm} \approx d_v$ 时成立。代一档真实宽度——$d_v$ = 1024（ViT-L/14）、$d_{llm}$ = 4096——$1024 \times 4096 + 4096^{2} \approx 21$ M，相对 7B 级 LLM 本体仍是千分位级。等长映射 $M = N$：CLIP-336 网格的 576 个 token 原数进 LLM。
 
 LLaVA-1.5 论文的 ablation 表给了一个此后成为默认结论的对比（[Liu et al., 2023](../references.md)，[A]，引原表）：在其数据规模（caption 预训练 558K 条 + 指令微调 665K 条，约 1.2M 总量）下，(a) 线性换成 2 层 MLP 稳定提升；(b) 更复杂的 connector——Q-Former 类——在该预算下不占优。结论 (b) 的机制论证放到 §3.4：Q-Former 的 32-token 瓶颈要求先把「从 576 个 patch 里选哪些信息」这个选择函数学进约 1.9 亿参数，而 BLIP-2 把这个函数训出来用了 129M 图文对——与 1.2M 差两个数量级。容量与数据不匹配时，瓶颈不是压缩而是纯损失。**小数据下 MLP 够、Q-Former 不划算**，其反面同样成立：数据到 1 亿级、且要求冻结双塔不动预训练资产时，Q-Former 的账翻正（§3.4）。
 
@@ -51,7 +51,7 @@ $$
 Q' \;=\; Q + \mathrm{SelfAttn}\big( [Q;\, U] \big), \qquad Q'' \;=\; Q' + \mathrm{XAttn}\big( \mathrm{LN}(Q'),\; z_{img} \big), \qquad Q^{out} \;=\; Q'' + \mathrm{FFN}\big( \mathrm{LN}(Q'') \big) \qquad (3)
 $$
 
-**符号**：$U \in \mathbb{R}^{T \times d_q}$：文本 token 的嵌入（共享 self-attn 内与 queries 同序列计算，可见性由 §3.2 的 mask 控制）；$\mathrm{XAttn}(A, B)$：以 $A$ 为 query、$B$ 为 key/value 的 cross-attention；cross-attn 层隔层插入（每隔一个 self-attn 层插一个，论文口径）；$z_{img}$ 来自**冻结**的 ViT，全程不回传梯度。$B$ = 32 个 query 在 $L$ 层内反复做「self-attn 整合已读信息 + cross-attn 从 576 个 patch 里再取一轮」，最终输出 $B$ 行定长表征。形状走读：
+**符号**：$U \in \mathbb{R}^{T \times d_q}$：文本 token 的嵌入（共享 self-attn 内与 queries 同序列计算，可见性由 §3.2 的 mask 控制）；$\mathrm{XAttn}(A, B)$：以 $A$ 为 query、$B$ 为 key/value 的 cross-attention；cross-attn 层隔层插入（每隔一个 self-attn 层插一个，论文口径）；$z_{img}$ 来自**冻结**的 ViT，全程不回传梯度。式 (3) 的 LN 位置按 2.7 的 Pre-LN 惯例写成教学化简；Q-Former 由 BERT-base 初始化，实际是 Post-LN——LN 施加在残差相加之后（2.7 的两种位置对照），不改变本节的维度与数据流结论。$B$ = 32 个 query 在 $L$ 层内反复做「self-attn 整合已读信息 + cross-attn 从 576 个 patch 里再取一轮」，最终输出 $B$ 行定长表征。形状走读：
 
 ```
 z_img [N × d_v]（冻结 ViT，N = 576）        U [T × 768]（文本 token）
@@ -89,7 +89,7 @@ $$
 s_{ij} = \max_{k \in \{1, \ldots, B\}} \left\langle \bar z_{q,i}^{(k)},\ \bar z_{t,j} \right\rangle \qquad (4)
 $$
 
-再按 6.1 式 (13) 的 InfoNCE 双向形式写 loss（mask 用 ITC 档，queries 与文本互不可见——相似度只经读出端的 $\max$ 耦合）：
+再按 InfoNCE 的双向形式写 loss（单向式见 6.1 式 (13)，双向形式与 batch 负样本账归 6.2；mask 用 ITC 档，queries 与文本互不可见——相似度只经读出端的 $\max$ 耦合）：
 
 $$
 L_{ITC} = -\frac{1}{2E} \sum_{i=1}^{E} \left[ \log \frac{\exp(s_{ii}/\tau)}{\sum_{j=1}^{E} \exp(s_{ij}/\tau)} + \log \frac{\exp(s_{ii}/\tau)}{\sum_{j=1}^{E} \exp(s_{ji}/\tau)} \right] \qquad (5)
@@ -186,13 +186,13 @@ connector 的四族都默认视觉塔输出 $z_{img}$ 是给定的。但视觉�
 
 AnyRes 的思路：不硬 resize 整图，而是把原图切成若干块，每块按视觉塔原生分辨率（$S \times S$ = 336×336）吃，外加一张整图缩略图保留全局（[Li et al., 2024](../references.md)，arXiv:2408.03326，[A]，LLaVA-OneVision 承继 LLaVA-NeXT 的 AnyRes 方案）。
 
-**网格选择规则**。预定义候选网格集 $\mathcal{G} = \{ (r_h, r_w) \}$（行×列分块数）。对图像 $(H, W)$ 与候选 $(r_h, r_w)$，画布为 $(r_h S, \; r_w S)$，等比缩放图像使其恰好放进画布：
+**网格选择规则**（实现口径：LLaVA-NeXT 的 `select_best_resolution`，`llava/mm_utils.py`，[LLaVA-NeXT repo](../references.md)，[A]）。预定义候选网格集 $\mathcal{G} = \{ (r_h, r_w) \}$（行×列分块数）。对图像 $(H, W)$ 与候选 $(r_h, r_w)$，画布为 $(r_h S, \; r_w S)$，等比缩放图像使其恰好放进画布，并定义两个键：
 
 $$
-s = \min\!\left( \frac{r_h S}{H},\; \frac{r_w S}{W} \right), \qquad H' = \operatorname{floor}(sH),\quad W' = \operatorname{floor}(sW), \qquad u(r_h, r_w) = \frac{H' W'}{r_h r_w S^{2}} \qquad (11)
+s = \min\!\left( \frac{r_h S}{H},\; \frac{r_w S}{W} \right), \quad H' = \operatorname{floor}(sH),\; W' = \operatorname{floor}(sW), \quad e = \min\!\left( H' W',\; HW \right), \quad \rho = r_h r_w S^{2} - e \qquad (11)
 $$
 
-**符号**：$u \in (0, 1]$：画布利用率（resize 后实际像素占画布面积的比例；$1 - u$ 即 padding/浪费）。选择规则：$g^{*} = \operatorname{arg\,max}_{(r_h, r_w) \in \mathcal{G}}\; u$——浪费最小的网格，平局取块数少者。$u = 1$ 当且仅当图像宽高比恰为 $r_w : r_h$。
+**符号**：$e$：effective resolution——缩放后面积与原图面积取小（等比缩放不增像素，$e$ 即真正落进画布的源信息量）；$\rho$：wasted resolution——画布面积中未被有效像素填满的部分。选择规则是**字典序**：先取 $e$ 最大的候选，平局再取 $\rho$ 最小者——「最小浪费」只是平局后的第二键。读法：第一键让切块后的可用像素总量最大（分辨率信息优先），第二键才压 padding 虚账。两键会与「单看利用率」的规则分叉：800×1200 的图在 (1,2) 与 (2,2) 之间，字典序选出 (2,2)（$e$ = 301056 > 169344），而利用率 $e / (r_h r_w S^{2})$ 键会选 (1,2)（0.75 > 0.67）——写作口径按实现取前者。
 
 **切块与拼接**。选定 $g^{*} = (r_h, r_w)$ 后 padding 到画布、切成 $k = r_h r_w$ 块，每块独立过同一视觉塔得 $N$ = 576 tokens；另把原图整体等比压进 $S \times S$ 得缩略图，再过同一视觉塔。token 总账（约定页口径）：
 
@@ -204,7 +204,7 @@ $$
 
 ```
 原图 1568×1176                缩略图：整图 → 336×336 → 576 tokens（全局）
-   │ 选网格 (r_h, r_w)：式 (11) argmax u
+   │ 选网格 (r_h, r_w)：式 (11) 字典序（先 max e、平局 min ρ）
    ▼
 resize 进 (r_h·336)×(r_w·336) 画布，padding，切 k 块
    │ 每块 336×336 → 同一 ViT → 576 tokens
@@ -221,7 +221,7 @@ k 块局部 tokens（raster 序拼接，行间可学 newline 向量分隔）+ �
 
 ## 8. Qwen2-VL naive dynamic resolution：任意 $H \times W$ 直接进
 
-Qwen2-VL 把问题反过来问：为什么要有固定画布？（[Wang et al., 2024](../references.md)，arXiv:2409.12191，[A]，论文标题即 *...at Any Resolution*）。naive dynamic resolution（原生动态分辨率）的做法：不切块、不缩放——原图（仅调整到 patch 的整数倍）直接 patchify，token 数随分辨率自然涨落。管线：
+Qwen2-VL 把问题反过来问：为什么要有固定画布？（[Wang et al., 2024](../references.md)，arXiv:2409.12191，[A]，论文标题即 *...at Any Resolution*）。naive dynamic resolution（原生动态分辨率）的做法：不切块、不缩放——原图（仅等比调整到 28 的整数倍：patch 14 × merge 2，保证 merge 后网格整除）直接 patchify，token 数随分辨率自然涨落。管线：
 
 $$
 (H, W) \;\to\; \underbrace{\left( \tfrac{H}{14} \times \tfrac{W}{14} \right)}_{\text{patchify},\; p = 14} \;\to\; \underbrace{z_{img}}_{\text{ViT with 2D RoPE}} \;\to\; \underbrace{M = \frac{HW}{28^{2}} = \frac{HW}{784}}_{\text{spatial merge } 2 \times 2} \qquad (13)
@@ -236,7 +236,7 @@ $$
 | 方案 | 每图 token 数 $M$ | 算式 |
 | --- | --- | --- |
 | 固定 336（CLIP 档） | 576 | 常数（宽高比被压坏） |
-| AnyRes（$S$ = 336，选网格 (1,2)，$u$ = 1） | $3 \times 576$ = 1728 | 式 (12)，$k$ = 2 + 缩略图 |
+| AnyRes（$S$ = 336，选网格 (1,2)，零浪费） | $3 \times 576$ = 1728 | 式 (12)，$k$ = 2 + 缩略图 |
 | Qwen2-VL 系（$p$ = 14 + merge 2） | $1344 \times 672 / 784$ = 1152 | 式 (13) |
 | Pixtral（$p$ = 16，无 merge） | $1344 \times 672 / 256$ = 3528 | §10 |
 
@@ -252,7 +252,7 @@ $$
 (t_s, h_s, w_s) = \begin{cases} (c_s,\; c_s,\; c_s), & s\ \text{text token} \\ (t_0,\; t_0 + i,\; t_0 + j), & s\ \text{image patch } (i, j) \\ (t_0 + \tau_f,\; t_0 + i,\; t_0 + j), & s\ \text{video patch } (i, j) \text{ at step } f \end{cases} \qquad (14)
 $$
 
-**符号**：$c_s$：文本位置的连续计数，逐 token 加一；$i \in \{0, \ldots, H_g - 1\}$、$j \in \{0, \ldots, W_g - 1\}$：merge 后网格坐标；$\tau_f$：时间坐标，随时间步递增（两代规则不同，见下）。视觉段结束后，后续文本从 $t_0 + \max(T, H_g, W_g)$ 继续（三值恢复同值递增）。
+**符号**：$c_s$：文本位置的连续计数，逐 token 加一；$i \in \{0, \ldots, H_g - 1\}$、$j \in \{0, \ldots, W_g - 1\}$：merge 后网格坐标；$\tau_f$：时间坐标，随时间步递增（两代规则不同，见下）。视觉段结束后，后续文本从 $t_0 + \max(T, H_g, W_g)$ 继续（三值恢复同值递增；实现口径的版本差异见 §9.4 注记）。
 
 三条规则各有一句机制读法。**文本三值同值**：§9.3 将证明这使纯文本段与标准 1D RoPE 逐点相同——文本能力不被改造，这是整个设计能直接套在现成 LLM 上的原因。**图像 $t$ 恒定**：图像没有「时间」，$t$ 轴对图内 patch 不加区分（§9.3 将看到 $t$ 段对图内 attention 退化为纯内容项）；$(h, w)$ 承载 2D 网格。**视频 $t$ 递增**：Qwen2-VL 按帧序递增；Qwen2.5-VL 把 $t$ 轴与**绝对时间**对齐——dynamic FPS 采样下相邻帧的 $t$ 差正比于真实秒数间隔而非帧序号（[Bai et al., 2025](../references.md)，[A]；具体换算常数引 tech report 原文，8.4 展开）——模型由此读到「事件的真实节奏」，而非被采样率扭曲的帧计数。
 
@@ -327,6 +327,8 @@ def get_rope_index(segments):
 
 **符号**：`tau(f)`：时间坐标函数——Qwen2-VL 为帧序递增，Qwen2.5-VL 与绝对秒数对齐（§9.1）。两条性质可直接从伪码读出：(a) 文本段的相对结构不被中间插入的图像改变——图像只是抬高了其后文本的绝对 id，而 RoPE 的 score 平移不变（2.5 式 (13) 推论），文本内部任意两 token 的差 $n - m$ 不变；(b) 三轴 id 在同一计数系统里单调推进，跨模态的「先后顺序」与模态内的「几何坐标」用同一组整数编码——这就是「多模态 RoPE」之名的实质。
 
+实现注记（版本口径）：式 (14) 与伪码的推进规则 $\max(T, H_g, W_g)$ 对应 Qwen2-VL 论文与早期实现；当前 transformers main 的 `get_rope_index` 改为 `current_pos += max(grid_h, grid_w) // spatial_merge_size`——视频 $t$ 轴行程不进 max。图像（$T$ = 1）下两口径一致；长视频场景的 id 推进以 main 为准。三元组构造规则本身不受影响，本章推导照原样成立。
+
 ### 9.5 与 P9 的衔接
 
 同一构造在视频生成侧再现：视频 DiT 的 3D/分解式 RoPE 同样把 $(t, h, w)$ 三轴挂到频段分段上（P9 视频生成章展开），与本节数学同构——差别只在理解侧的三元组由输入几何直接给定，生成侧的三轴坐标要服务 latent 网格的双向 attention。
@@ -348,7 +350,7 @@ $$
 | connector | $M$（每图） | 分辨率灵活性 | 参数量级 | 数据需求 | 代表系统 |
 | --- | --- | --- | --- | --- | --- |
 | 线性 | $N$ | 跟随视觉塔网格（固定分辨率） | $d_v d_{llm}$ | 最小 | LLaVA [A] |
-| MLP（2 层 GELU，式 (2)） | $N$ | 同上 | $\approx 2 d_v d_{llm}$（约 $10^{7}$ 档） | academic 级（约 1M 条）可训 | LLaVA-1.5 [A] |
+| MLP（2 层 GELU，式 (2)） | $N$ | 同上 | $d_v d_{llm} + d_{llm}^{2}$（1024/4096 档 ≈ 21M） | academic 级（约 1M 条）可训 | LLaVA-1.5 [A] |
 | 软查表（visual embedding table） | $N$ | 同上 | embedding 表量级 | 对齐目标另设 | Ovis [A] |
 | Q-Former（式 (3)-(7)） | $B$ = 32（定长） | 受冻结视觉塔网格限制 | 约 1.9 亿 | 1 亿级图文对（stage 1） | BLIP-2 [A] |
 | Perceiver resampler（式 (8)） | $B$ = 64（定长） | 变长进、定长出（帧×patch 展平） | latent + resampler 塔 | 大配方内嵌 | Flamingo [B] |
@@ -361,12 +363,12 @@ $$
 | 概念 | 公式 / 数值 | 要点 |
 | --- | --- | --- |
 | connector 契约 | $v = \phi(z_{img})$，式 (1) | 三自由度：维度对齐 / token 数变换 / 表征翻译 |
-| MLP projector | 式 (2) | 等长 $M = N$；约 $2 d_v d_{llm}$ 参数；LLaVA-1.5 ablation：academic 数据下最优 [A] |
+| MLP projector | 式 (2) | 等长 $M = N$；$d_v d_{llm} + d_{llm}^{2}$ 参数（1024/4096 档 ≈ 21M）；LLaVA-1.5 ablation：academic 数据下最优 [A] |
 | Q-Former | 式 (3)-(7)：共享 self-attn + 隔层 XAttn、三 mask、ITC/ITM/ITG | $M = B$ = 32 定长瓶颈；约 1.9 亿参数需 129M 对训练；小数据不划算的容量-数据账（§3.4） |
 | Perceiver resampler | 式 (8) | $M = B$ = 64 与 $N$ 无关；cross-attn $O(BNd)$ 挡住二次项；Flamingo [B] |
 | pixel shuffle | 式 (9)(10)：$M = N r^{2}$、通道 ×$1/r^{2}$ | 拼接无损、取舍在投影；InternVL $r$ = 0.5、Qwen spatial_merge 2；LLM 端二次项 ×1/16 |
 | 固定分辨率损失账 | §6 | 1568×1176 → 336：12 px 字符缩到 2.6 px，一个 patch 混 5 行字；保细节需 9408 tokens ≈ 16×576 |
-| AnyRes | 式 (11) 网格选择 argmax $u$、式 (12) $M = (k+1)N$ | 4 切 → 2880；块内 ViT 原生 PE、跨块 raster 序 + newline，全局靠缩略图 |
+| AnyRes | 式 (11) 网格选择字典序（max $e$、平局 min $\rho$）、式 (12) $M = (k+1)N$ | 4 切 → 2880；块内 ViT 原生 PE、跨块 raster 序 + newline，全局靠缩略图 |
 | naive dynamic resolution | 式 (13)：$M = HW/784$ | 任意 $H \times W$；配套：ViT 2D RoPE、window attention（112 px + 全局层 [7,15,23,31]）、M-RoPE |
 | M-RoPE | 式 (14) 三元组、式 (15)(16) 频段切分 [16,24,24]、式 (17) 内积不变性 | 文本三值同值 ⇒ 纯文本 = 标准 RoPE（推论 1）；图内 $t$ 段退化、$h/w$ 承载 2D（推论 2）；跨段相位自动含网格坐标（推论 3）；视频 $t$ 对齐绝对时间（→ 8.4） |
 | Pixtral native | 式 (18)：$M = HW/256$ | 2D RoPE 进塔、免 tiling；token 汇率最贵的原生细节路线 [A] |
@@ -376,7 +378,7 @@ $$
 
 1.（推导）pixel shuffle 的无损条件与成本账。(a) 证明式 (9) 的拼接步是指标置换（给出显式双射），因此无损；(b) 证明「拼接 + 线性投影」整步存在无损实现的充要条件是 $d_{llm} \ge 4 d_v$（秩论证）；(c) 取 $d_v$ = 1024、$d_{llm}$ = 3584、$N$ = 576：算压缩前后 LLM 单层 attention 对该视觉段的二次项 FLOPs 比（2.3 式 (12) 口径）。
 2.（推导）M-RoPE 的两个验证。(a) 从式 (14)(16) 出发证明推论 1：文本-文本对的式 (17) 逐通道等于 2.5 式 (13)；(b) 取文本 token $m$ = 5、图像段 $t_0$ = 10、patch $(i, j)$ = (2, 3)，写出该文本-图像对在三段的相位差，并解释为什么右下 patch 的 $w$ 段相位差大于左上 patch。
-3.（计算）AnyRes 网格选择。图像 1200×800、$S$ = 336、候选网格 $\mathcal{G}$ = {(1,2), (2,1), (2,2), (3,2)}：按式 (11) 逐候选算 $u$，给出 $g^{*}$ 与总 token 数 $M$（式 (12)，$N$ = 576）。
+3.（计算）AnyRes 网格选择。图像 1200×800、$S$ = 336、候选网格 $\mathcal{G}$ = {(1,2), (2,1), (2,2), (3,2)}：按式 (11) 的字典序逐候选算 $e$ 与 $\rho$，给出 $g^{*}$ 与总 token 数 $M$（式 (12)，$N$ = 576）；再算各候选的利用率 $e / (r_h r_w S^{2})$，验证本例两种规则同解。
 4.（代码）教学实现 `get_rope_index`（§9.4 伪码补全为可运行 Python）：输入段序列（文本长、图像网格 (1, $H_g$, $W_g$)、视频网格 ($T$, $H_g$, $W_g$)，`tau(f) = f`），断言三条性质：文本段三值相等且相邻差 1；图像段 $t$ 恒定、$h$ 取遍 $[t_0, t_0 + H_g)$；视觉段之后文本从 $t_0 + \max(T, H_g, W_g)$ 起。
 
 ## 参考
