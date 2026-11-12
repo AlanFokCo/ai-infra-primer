@@ -10,7 +10,7 @@ Qwen3-235B-A22B-Instruct-2507 的 config.json 里 `num_attention_heads=64` 而 `
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Qwen1 | — | — | — | — | — | MHA（谱系起点，GQA 于 Qwen2 引入） | 无（dense） | — | — | — | — | qwen1 [A] |
 | Qwen1.5 | — | — | — | — | — | 同上，标准配方承接代 | 无（dense 全尺寸） | — | — | — | — | qwen1.5 [W] |
-| Qwen2 | 含 57B-A14B 一档 | — | — | — | — | GQA 全系普及 | dense 主线 + 57B-A14B（upcycling：report 未点名源 dense，shape 一致性指向 Qwen2-7B，§2.3） | QKV bias（旧制，Qwen3 起移除） | 152064 | — | — | qwen2 [A] |
+| Qwen2 | dense 4 档（0.5B/1.5B/7B/72B）+ 57B-A14B | — | — | — | — | GQA 全系普及 | dense 主线 + 57B-A14B（upcycling 自 Qwen2-7B，report §2.2.3 明写，§2.3） | QKV bias（旧制，Qwen3 起移除） | 152064 | — | — | qwen2 [A] |
 | Qwen2.5-7B-1M | — | — | — | — | — | GQA | 无（dense） | — | 152064 | 1010000 | $10^{7}$ | qwen2.5 [A]、qwen2.5-1m [A] |
 | Qwen3-8B（dense 代表） | 8B 档 | 36 | 4096 | 32/8（$g$=4） | 128 | GQA + RoPE | 无 | RMSNorm + QK-Norm，attention_bias=false | 151936 | 40960 | $10^{6}$ | qwen3 [A]、qwen3-8b-config [A] |
 | Qwen3-30B-A3B | 30.5B / 3.3B | 48 | — | 32/4（$g$=8） | — | GQA | 128 top-8，无 shared | 同上行 | 151936 | — | — | qwen3 [A] |
@@ -60,17 +60,17 @@ $d_k$ = 128 时全部 logit 落在 $[-11.3, 11.3]$，与位置差 $m - n$ 无关
 
 ### 2.3 upcycling：dense→MoE 的权重移植
 
-Qwen2-57B-A14B 的 MoE 化走的是 upcycling，Qwen2 report 全文三处提及（ar5iv 取证，[A]）。但 report §2.2.2 的原文只写「leveraging the weights of a dense model」——**没有点名源模型**（Qwen1.5-32B 在该文只作评测 baseline 出现）。形状证据指向同代的 Qwen2-7B：HF config 实测 57B-A14B 为 hidden 3584 / 28 层 / FFN 中间维 18944，与 Qwen2-7B 逐项一致；而 Qwen1.5-32B 是 5120 / 64 层 / 27392（fix round 1 复核，2026-11-12）——upcycling 要逐元素搬运 FFN 权重，shape 不同在几何上就不成立，「源是 Qwen1.5-32B」的流传说法由此排除。另校正一处归属：该技术常被记到 Moonlight 名下，Moonlight 论文全文 0 次提及（W3 research pass 逐文核实）；公开谱系里的旗舰级实例是 Qwen2 这一例，5.5 章回引本节。
+Qwen2-57B-A14B 的 MoE 化走的是 upcycling，源模型在 report 里有明文：§2.2.3 写道「Qwen2-57B-A14B is upscaled from Qwen2-7B」（ar5iv 全文复核，2026-11-12）。形状证据与之互证：HF config 实测 57B-A14B 为 hidden 3584 / 28 层 / FFN 中间维 18944，与 Qwen2-7B 逐项一致（fix round 1 复核）；而 Qwen1.5-32B 是 5120 / 64 层 / 27392——upcycling 要逐元素搬运 FFN 权重，shape 不同在几何上就不成立，「源是 Qwen1.5-32B」的流传说法由明文与形状双重排除。另校正一处归属：该技术常被记到 Moonlight 名下，Moonlight 论文全文 0 次提及 upcycling（W3 research pass 逐文核实）；公开谱系里的旗舰级实例是 Qwen2 这一例，5.5 章回引本节。
 
-程序层面，report §2.2.2 的 upcycling 不是朴素拷贝：dense FFN 先经 fine-grained 切分与维度 shuffle 分发给各 expert，且每个 fine-grained expert 的参数有 50% 被随机重初始化：
+程序层面（report §2.2.2 Expert Initialization 节原文），这套 upcycling 不是朴素拷贝：设 expert 中间维 $h_E$、expert 数 $n$、源 dense FFN 中间维 $h_{\mathrm{FFN}}$，先把 FFN 整体复制 $\lceil n h_E / h_{\mathrm{FFN}} \rceil$ 份（保证可切出 $n$ 个 expert 的总宽度）；每份拷贝沿中间维 shuffle（逐拷贝不同，保证跨拷贝多样性）；再从这些拷贝中切出 $n$ 个 expert、丢弃剩余维度；最后对每个 fine-grained expert 的 50% 参数随机重初始化。公式化：
 
 $$
-W^{(e)}_i \leftarrow M_i \odot \big(P_i\, \Pi\, W^{\mathrm{dense}}_{\mathrm{FFN}}\big) + \left(1 - M_i\right) \odot R_i, \qquad \Pr\left[ (M_i)_j = 1 \right] = 0.5 \qquad (4)
+W^{(e)}_i \leftarrow M_i \odot \big(P_i\, \Pi\, \widetilde{W}^{\mathrm{dense}}_{\mathrm{FFN}}\big) + \left(1 - M_i\right) \odot R_i, \qquad \Pr\left[ (M_i)_j = 1 \right] = 0.5 \qquad (4)
 $$
 
-**符号**：$W^{\mathrm{dense}}_{\mathrm{FFN}}$：源 dense 的 FFN 参数（SwiGLU 三矩阵同法处理）；$\Pi$：维度置换（shuffle）；$P_i$：第 $i$ 个 expert 的中间维切片选择（fine-grained 切分，思想同 4.5 式 (14)）；$M_i \in \{0,1\}$：逐参数保留掩码，50% 的位置保留继承值；$R_i$：随机初始化值；$1 - M_i$ 按广播理解；router 打分投影 $W_g \in \mathbb{R}^{d \times N_e}$（4.5 式 (1)）不继承任何旧权重，随机初始化。
+**符号**：$\widetilde{W}^{\mathrm{dense}}_{\mathrm{FFN}}$：源 dense FFN 参数（SwiGLU 三矩阵同法处理）复制 $\lceil n h_E / h_{\mathrm{FFN}} \rceil$ 份后的总参数；$\Pi$：逐拷贝不同的中间维置换（shuffle）；$P_i$：第 $i$ 个 expert 的切片选择（从 shuffle 后拷贝中抽取 $h_E$ 宽的一段，剩余维度丢弃；fine-grained 切分思想同 4.5 式 (14)）；$M_i \in \{0,1\}$：逐参数保留掩码，50% 的位置保留继承值；$R_i$：随机初始化值；$1 - M_i$ 按广播理解；router 打分投影 $W_g \in \mathbb{R}^{d \times N_e}$（4.5 式 (1)）不继承任何旧权重，随机初始化。
 
-账：57B total / 14B active。继承的覆盖是部分的——FFN 侧每个 expert 只有一半参数来自 dense checkpoint，另一半与 router 一起从零学起；attention 与 embedding 在 shape 一致（3584 / 28 层）的前提下可直接继承。对照 4.5 式 (1) 的解耦框架：upcycling 用已有 dense checkpoint 替 MoE 的 $N_{\mathrm{tot}}$ 维度预付一部分预训练成本，$N_{\mathrm{act}}$ 口径决定此后的续训与推理价格。
+账：57B total / 14B active。继承的覆盖是部分的——FFN 侧每个 expert 只有一半参数来自 dense checkpoint，另一半与 router 一起从零学起；attention 与 embedding 与 Qwen2-7B 逐项同 shape（3584 hidden / 28 层），直接继承。对照 4.5 式 (1) 的解耦框架：upcycling 用已有 dense checkpoint 替 MoE 的 $N_{\mathrm{tot}}$ 维度预付一部分预训练成本，$N_{\mathrm{act}}$ 口径决定此后的续训与推理价格。
 
 对称性论证也随之改写。朴素拷贝（$N_e$ 份完全相同拷贝）的隐患是均匀路由下各 expert 收相同梯度、分化只能后验发生；Qwen2 的实际程序在初始化时刻就人为打破对称，两道机制叠加：维度 shuffle 使各 expert 拿到 dense FFN 的不同中间维切片，50% 随机重初始化再去掉切片内部的一半相关性。开放问题因此不再是「分化需要多少 token」，而是这组超参数（50% 比例、shuffle 方案）的取舍依据——公开材料无消融（§5）。Qwen3 的 MoE 双档是否沿用这一初始化路径，官方未说明。
 
@@ -175,7 +175,7 @@ rope_theta: 1e7                    所有 full 层共享频率 base；GDN 层不
 | 谱系表 | §1 表（13 列字段约定） | 双轨制：Qwen3 = dense 6 档 + MoE 2 档；Qwen3-Next 起 dense 缺席；Qwen3-Max [C] 无法填表 |
 | GQA 全系化 | 式 (1)；235B 整窗 47 GiB vs MHA 752 GiB | $g$ 逐代收紧（8B 档 4 → 旗舰 16）；262K 窗的前提而非优化 |
 | QK-Norm 替代 QKV bias | 式 (2)(3)：$\vert z \vert \le \sqrt{d_k} \approx 11.3$ | 结构性排除饱和区；界与位置、输入幅度无关；消融缺失 |
-| upcycling | 式 (4)：shuffle 切片 + 50% 重初始化 | 归 Qwen2（非 Moonlight）；report 未点名源 dense、shape 指向 Qwen2-7B；对称性在初始化时人为打破 |
+| upcycling | 式 (4)：复制 $\lceil n h_E / h_{\mathrm{FFN}} \rceil$ 份 + shuffle 切片 + 50% 重初始化 | 归 Qwen2（非 Moonlight）；report §2.2.3 明写源为 Qwen2-7B、shape 互证；对称性在初始化时人为打破 |
 | Qwen3-Next 装配 | 48 = 36 GDN + 12 gated attn；512+1 top-10，$\rho \approx 2.1\%$ | 四件套全部出自 P4；创新在装配坐标（3:1、输出门、partial 0.25、zero-centered） |
 | vocab 151936 | 式 (5)；$2Vd$ ≈ 1.24 B | 四代同一 tokenizer；多语言压缩率换 $T$ 与 $D$；参数占比 15%（8B）→ 0.5%（235B） |
 | config 精读 | `full_attention_interval=4` 生成 `layer_types`；head_dim 256 ≠ 2048/16 | hybrid 层型三种 config 写法（对照 Kimi Linear 双列表、MiniMax-01 全列表） |
@@ -192,7 +192,7 @@ rope_theta: 1e7                    所有 full 层共享频率 base；GDN 层不
 
 - [Bai et al., 2023](../references.md)：Qwen Technical Report，arXiv:2309.16609，[A]（key: qwen1）——谱系起点锚点
 - [Qwen, Qwen1.5 发布博客](../references.md)：[W]（key: qwen1.5）——标准配方承接代，无 arXiv 论文
-- [Yang et al., 2024](../references.md)：Qwen2 Technical Report，arXiv:2407.10671，[A]（key: qwen2）——GQA 全系普及、upcycling（57B-A14B，§2.2.2：shuffle + 50% 重初始化，源 dense 未点名）
+- [Yang et al., 2024](../references.md)：Qwen2 Technical Report，arXiv:2407.10671，[A]（key: qwen2）——GQA 全系普及、upcycling（57B-A14B ← Qwen2-7B：§2.2.3 明写源模型，§2.2.2 复制 + shuffle + 50% 重初始化程序）
 - [Qwen Team, 2024](../references.md)：Qwen2.5 Technical Report，arXiv:2412.15115，[A]（key: qwen2.5）——全尺寸档
 - [Yang et al., 2025](../references.md)：Qwen2.5-1M Technical Report，arXiv:2501.15383，[A]（key: qwen2.5-1m）——rope_theta $10^{7}$ + DCA + YaRN 温度的 1M 组合（config 无 rope_scaling 字段）
 - [Yang et al., 2025](../references.md)：Qwen3 Technical Report，arXiv:2505.09388，[A]（key: qwen3）——dense 6 档 + MoE 2 档双轨、QK-Norm、30.5B/3.3B 与 235B/22B 口径、thinking 模式
