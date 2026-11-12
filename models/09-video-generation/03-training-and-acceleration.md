@@ -80,7 +80,7 @@ CausVid（[Yin et al., 2024](../references.md)，arXiv:2412.07772，[A]；官方
 双向教师（50 步 FM 采样；官方 repo 释出基座 Wan2.1-T2V-1.3B）
    │  ① 教师跑 ODE 生成配对（小集合）          ② 冻结，提供 s_data（real score）
    ▼                                            │
-因果学生 G_ψ（块因果 mask）── 训练：每 chunk 从其采样锚点时间一步预测、拼接成 x
+因果学生 G_ψ（块因果 mask）── 训练：全体 chunk 各采 t^j（含 0），以带噪历史为条件逐 chunk 一步预测、拼接成 x
    │                                            │
    │            x 加噪到随机 t ────────────────► s_ψ（在线 fake score）
    ▲                                            │
@@ -94,7 +94,7 @@ $$L_{ODE}(\psi) = \mathbb{E}_{x_1 \sim \mathcal{N}(0, I),\; j \in \{1, \ldots, K
 
 **符号**：$x^{teacher}_{s}$：教师从 $x_1 \sim \mathcal{N}(0, I)$ 出发的 ODE 解轨迹在噪声水平 $s$ 处的取值；$\{s_j\}_{j=1..K}$：学生的 $K = 4$ 个锚点时间（采样网格，方向 $s : 1 \to 0$）；$G_\psi(x, s)$：学生从 $(x, s)$ 一步映射到数据端的预测（$K$ = 4 步采样由该一步映射经重噪迭代复合而成——few-step 学生的标准用法，7.4 §5 谱系）；$x^{teacher}_{0}$：该轨迹的教师终态。这一构造与 DMD 初代的配对回归同族（7.4 §5.5），DMD2 删除、CausVid 恢复为独立预训阶段。机制读法（本书分析）：DMD 主阶段的 real score 由教师在「噪声化的学生输出」上评估——学生输出若离数据流形太远，加噪后的输入落在教师的训练分布之外、score 信号失真；ODE 预训先把学生钉到教师解流形附近，主阶段的监督才良性。
 
-**阶段二：非对称 DMD 主目标**（论文 Algorithm 1「Asymmetric Distillation with DMD」）。训练输入的构造先钉死（这是后面式 (6) 的 $x$ 的出处）：逐 chunk 采样——第 $i$ 个 chunk 采自己的噪声时间步 $t^{i} \sim \mathrm{Uniform}(\mathcal{T})$（含 0），学生以 clean 历史 chunk（ground truth）为条件、把当前（ground-truth）chunk 的加噪输入**一步**映到数据端 $\hat x_0^{(i)} = G_\psi\left( x^{(i)}_{t^{i}},\, t^{i};\, x^{(<i)} \right)$，各 chunk 的预测拼接成整段视频 $x$（论文 Algorithm 1 lines 5-9 口径）。输入侧的这个构造在 chunk 粒度上已是 Diffusion Forcing 方案——论文 §4.2 原文「Each chunk has its own noise time step, following Diffusion Forcing」（Self-Forcing 论文 §2 亦以此定性 CausVid）；§5 的 DF 框架是同一思想在 token 粒度的推广、并给出变分下界口径。记 $p_\psi$ 为学生输出分布（上述逐 chunk 一步预测拼接的分布）、$p_{data}$ 为数据分布，$p_{\psi, t}$ / $p_{data, t}$ 为各自加噪到水平 $t$ 的平滑分布（FM 线性路径 $x_t = (1-t)x + t\varepsilon$ 的边际）。目标是在随机采样的噪声水平上最小化 reverse KL：
+**阶段二：非对称 DMD 主目标**（论文 Algorithm 1「Asymmetric Distillation with DMD」）。训练输入的构造先钉死（这是后面式 (6) 的 $x$ 的出处）：逐 chunk 采样——**全体** chunk 各自采噪声时间步 $t^{j} \sim \mathrm{Uniform}(\mathcal{T})$（含 0）并各自加噪，历史 chunk 同为带噪的 ground truth；学生以此带噪历史为条件、把当前（ground-truth）chunk 的加噪输入**一步**映到数据端 $\hat x_0^{(i)} = G_\psi\left( x^{(i)}_{t^{i}},\, t^{i};\, x_{t^{<i}}^{(<i)} \right)$，各 chunk 的预测拼接成整段视频 $x$（论文 Algorithm 1 lines 5-9 口径）。输入侧的这个构造在 chunk 粒度上已是 Diffusion Forcing 方案——论文 §4.2 原文「Each chunk has its own noise time step, following Diffusion Forcing」（Self-Forcing 论文 §2 亦以此定性 CausVid，其对 DF 的刻画为「denoising each frame based on noisy context frames」）；§5 的 DF 框架是同一思想在 token 粒度的推广、并给出变分下界口径。记 $p_\psi$ 为学生输出分布（上述逐 chunk 一步预测拼接的分布）、$p_{data}$ 为数据分布，$p_{\psi, t}$ / $p_{data, t}$ 为各自加噪到水平 $t$ 的平滑分布（FM 线性路径 $x_t = (1-t)x + t\varepsilon$ 的边际）。目标是在随机采样的噪声水平上最小化 reverse KL：
 
 $$L_{DMD}(\psi) = \mathbb{E}_{t \sim \pi} \left[ \mathrm{KL}\left( p_{\psi, t}\, \|\, p_{data, t} \right) \right] \qquad (5)$$
 
