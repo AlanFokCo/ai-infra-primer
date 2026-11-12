@@ -105,7 +105,7 @@ DiT 论文对 (a)(c)(d) 与朴素 adaLN 做了同主干四路消融（论文原�
 
 条件 $C$ 的质量上限由 text encoder 决定。现役系统的选择分两族，差异可以用训练目标直接解释（6.2）。
 
-**CLIP 系（CLIP-L、OpenCLIP-G）。** 6.2 的 InfoNCE 只监督「整图 ↔ 整句」的全局对齐：pooled 向量（EOS 位置读出）承载全局语义，sequence 输出（77 个 token）的逐 token 表示没有被细粒度监督过——它够用，是因为对齐目标只需要它够用。工程上两个读出口都用：pooled 向量进调制（时间 embedding 相加后做 adaLN 的全局条件），sequence 输出进 cross-attention 或 token 序列。SD3 的具体接法（sd3.5 实现口径）：CLIP-L 与 OpenCLIP-G 的 sequence 沿特征维拼接（每位置 $768 + 1280 = 2048$ 维）、pooled 两向量拼接后与 $t$ embedding 相加；再与 T5 的 sequence 沿序列维拼接成条件 token 序列（各段截断长度由 config 定）。三个 encoder 的参数量：CLIP-L 123M、OpenCLIP-G 695M、T5-XXL encoder 4.7B（SD3 论文口径）。
+**CLIP 系（CLIP-L、OpenCLIP-G）。** 6.2 的 InfoNCE 只监督「整图 ↔ 整句」的全局对齐：pooled 向量（EOS 位置读出）承载全局语义，sequence 输出（77 个 token）的逐 token 表示没有被细粒度监督过——它够用，是因为对齐目标只需要它够用。工程上两个读出口都用：pooled 向量进调制（时间 embedding 相加后做 adaLN 的全局条件），sequence 输出进 cross-attention 或 token 序列。SD3 的具体接法（sd3.5 实现口径）：CLIP-L 与 OpenCLIP-G 的 sequence 沿特征维拼接（每位置 $768 + 1280 = 2048$ 维）、pooled 两向量拼接后与 $t$ embedding 相加；再与 T5 的 sequence 沿序列维拼接成条件 token 序列（各段截断长度由 config 定）。三个 encoder 的参数量：CLIP-L 123M、OpenCLIP-G 695M（SDXL 公开 config 口径）、T5-XXL encoder 4.7B（SD3 论文口径）。
 
 **T5-XXL 为什么有帮助。** 三条机制：
 
@@ -113,7 +113,7 @@ DiT 论文对 (a)(c)(d) 与朴素 adaLN 做了同主干四路消融（论文原�
 2. **训练目标的颗粒度**：T5 的去噪式目标逐 token 监督表示；CLIP 的对比目标在 sequence 层面是欠监督的。文字渲染、多主体关系这类「逐 token 语义」需求，恰好打在 CLIP 的弱项上。
 3. **覆盖**：罕见词、引号内字符串在 T5 的语料与分词下保留更完整。
 
-消融证据（全部论文口径，2026-11-12 锁定；不新造数字）：Imagen（[Saharia et al., 2022](../references.md)，arXiv:2205.11487，[B]）的核心结论是放大冻结 text encoder（T5-L → XL → XXL）的收益大于放大 U-Net 本身——text encoder 是那个阶段的瓶颈变量；SD3 论文的去 T5 对照显示性能损失集中在复杂组合 prompt 与文字渲染上，且小模型比大模型更依赖 T5（8B 档差距收窄——容量可以部分代偿文本理解）；PixArt-α 的三阶段（§8）把「换 T5 + 重写高质量 caption」作为文图对齐阶段的核心变量。成本侧一笔账：T5-XXL 级 encoder 的推理显存与延迟不可忽略，工程折中是训练/推理侧预计算文本 embedding 缓存（文本分布远窄于图像，cache 命中率高）。
+消融证据（全部论文口径，2026-11-12 锁定；不新造数字）：Imagen（[Saharia et al., 2022](../references.md)，arXiv:2205.11487，[B]）的核心结论是放大冻结 text encoder（T5-L → XL → XXL）的收益大于放大 U-Net 本身——text encoder 是那个阶段的瓶颈变量；SD3 论文在 8B 档做了去 T5-XXL 对照：移除 T5 后人类偏好评测胜率降至 50%/46%/38%（随评测项不同，论文原表口径），损失集中在复杂组合 prompt 与文字渲染上；PixArt-α 的三阶段（§8）把「换 T5 + 重写高质量 caption」作为文图对齐阶段的核心变量。成本侧一笔账：T5-XXL 级 encoder 的推理显存与延迟不可忽略，工程折中是训练/推理侧预计算文本 embedding 缓存（文本分布远窄于图像，cache 命中率高）。
 
 ## 5. LDM 世代的主干：U-Net block 走读
 
@@ -150,7 +150,7 @@ DiT（[Peebles & Xie, 2023](../references.md)，arXiv:2212.09748，[A]）的回�
 | patch $p$ | token 数 $N = (32/p)^2$ | 单 token 输入维 $p^2 c$ | DiT-XL 单次前向 Gflops（论文口径，乘加计 1） |
 | --- | --- | --- | --- |
 | 8 | $16$ | $256$ | $\approx 7.4$ |
-| 4 | $64$ | $64$ | $\approx 29.7$ |
+| 4 | $64$ | $64$ | $\approx 29.1$ |
 | 2 | $256$ | $16$ | $\approx 118.7$ |
 
 模型档（同表）：DiT-S/B/L/XL = 隐藏维 $d = 384/768/1024/1152$、层数 $12/12/24/28$、参数量 $33\text{M}/130\text{M}/458\text{M}/675\text{M}$。单 block 前向 FLOPs 按本书 $2mnk$ 口径为
@@ -200,7 +200,7 @@ $$
 Q = \begin{bmatrix} Z W_Q^{z} \\ Y W_Q^{y} \end{bmatrix}, \qquad K = \begin{bmatrix} Z W_K^{z} \\ Y W_K^{y} \end{bmatrix}, \qquad V = \begin{bmatrix} Z W_V^{z} \\ Y W_V^{y} \end{bmatrix} \qquad (10)
 $$
 
-**符号**：堆叠是序列维拼接，$Q, K, V \in \mathbb{R}^{(N+M) \times d}$；$W^{z}$、$W^{y}$ 是两流各自的投影参数（MMDiT 的「MM」：同构不同参）。
+**符号**：堆叠是序列维拼接，$Q, K, V \in \mathbb{R}^{(N+M) \times d}$；$W^{z}$、$W^{y}$ 是两流各自的投影参数（MMDiT 的「MM」：同构不同参）；$d_h = d / n_h$：单个 attention head 的维度（式 (11) 起用）。
 
 联合 attention 矩阵写出 $2 \times 2$ 分块：
 
@@ -214,7 +214,7 @@ $$
 Z \leftarrow Z + \alpha_z \odot O_z W_O^{z}, \qquad Y \leftarrow Y + \alpha_y \odot O_y W_O^{y} \qquad (12)
 $$
 
-（两流各自的 MLP 子层同构续上，式 (8) 形状。）走读锚点：Stability-AI/sd3.5 的 `mmditx.py`（双流 QKV 与拼接 attention）[A]。一个结构性细节：网络出口只有图像流——$Z$ 经末端 adaLN 与线性层回归速度 $v_\theta$（7.5 的 rectified flow 目标），$Y$ 从头到尾「只被读、不出图」，它在每个 block 被更新的全部意义是让下一个 block 的图像 token 读到更贴合当前去噪状态的文本表示。文本流是手段，不是产出。
+**符号**：$W_O^{z}, W_O^{y}$：两流各自的 attention 输出投影；$\alpha_z, \alpha_y$：两流各自的 adaLN gate（式 (8) 同款零初始化）。（两流各自的 MLP 子层同构续上，式 (8) 形状。）走读锚点：Stability-AI/sd3.5 的 `mmditx.py`（双流 QKV 与拼接 attention）[A]。一个结构性细节：网络出口只有图像流——$Z$ 经末端 adaLN 与线性层回归速度 $v_\theta$（7.5 的 rectified flow 目标），$Y$ 从头到尾「只被读、不出图」，它在每个 block 被更新的全部意义是让下一个 block 的图像 token 读到更贴合当前去噪状态的文本表示。文本流是手段，不是产出。
 
 ```
    Z ∈ R[N,d]（图像 latent token）        Y ∈ R[M,d]（文本 token）
@@ -239,7 +239,7 @@ SD3 系统的完整配方至此闭环：MMDiT 主干 + rectified flow 目标（7
 
 ### 7.2 QK-norm：把 attention logit 的上界钉死
 
-模型档推到 8B 量级时，SD3 论文记录了注意力训练失稳：$q, k$ 的范数随训练增长，logit 绝对值变大，softmax 进入饱和区、梯度消失（注意力熵坍缩）。解法是 query/key 在进入点积前各过一次 per-head RMSNorm（无可学仿射）：
+模型档推到 2B 量级时，SD3 论文（Figure 5 口径）记录了注意力训练失稳：$q, k$ 的范数随训练增长，logit 绝对值变大，softmax 进入饱和区、梯度消失（注意力熵坍缩）。解法是 query/key 在进入点积前各过一次 per-head RMSNorm（无可学仿射）：
 
 $$
 \hat{q} = \frac{q}{\mathrm{RMS}(q)}, \quad \hat{k} = \frac{k}{\mathrm{RMS}(k)}, \qquad \mathrm{RMS}(q) = \sqrt{\tfrac{1}{d_h}\sum_{i=1}^{d_h} q_i^2} \qquad (13)
@@ -266,10 +266,10 @@ FLUX（[black-forest-labs/flux](../references.md)，[C]——官方推理代码�
 PixArt-α（[Chen et al., 2023](../references.md)，arXiv:2310.00426，[A]）的前提是 §6.3 的 scaling 曲线反过来读：既然质量由算力决定，就把每一份算力花在刀刃上。三阶段训练，每段各由一个消融背书（论文原表口径）：
 
 1. **像素依赖预训练**：先在 ImageNet 类别条件任务上训 DiT 主干（$z_0$ 空间、无文本）。自然图像的低层统计（纹理、边缘、局部结构）与文本无关，不该占用文图数据的算力；消融显示该阶段显著加速后续文图收敛。
-2. **文图对齐**：换上 T5 系大杯 text encoder（约 4B 参数）并把标签条件头换成文本条件；关键变量是 caption 质量——用 LLaVA 重写的高密度 caption 替代原生 alt-text，消融显示对齐质量的上限由 caption 信息量决定（§4 的 T5 论据在此落地）。
+2. **文图对齐**：换上 Flan-T5-XXL text encoder（约 4.3B 参数，论文原文口径）并把标签条件头换成文本条件；关键变量是 caption 质量——用 LLaVA 重写的高密度 caption 替代原生 alt-text，消融显示对齐质量的上限由 caption 信息量决定（§4 的 T5 论据在此落地）。
 3. **高分辨率美学微调**：在高质量美学数据上把分辨率顶上去；消融显示美学质量主要来自这一段的数据筛选，而非架构改动。
 
-配套两个结构/工程件：**adaLN-single**——全部 block 共享一个调制 MLP，block 间差异由一个可学的逐 block embedding 提供。对照 §6.2 的账：每 block 调制 MLP 为 $d \to 6d$，DiT-XL 档（$d = 1152$、28 层）约 $1152 \times 6912 \times 28 \approx 1.9$ 亿参数；adaLN-single 把它换成一份共享 MLP（$\approx 6.6$ 百万）加 28 个 $6d$ 向量（$\approx 19$ 万），省下约 27% 的总参数量改投给主干。以及文本 embedding 预计算缓存（§4 已述）。净效果（论文摘要口径）：PixArt-α 的训练成本约为 Stable Diffusion v1.5 的 12%，质量对标同期大一个量级的系统。后续 PixArt-Σ（[Chen et al., 2024](../references.md)，arXiv:2403.04692，[A]）走 weak-to-strong：继承 α 的权重，用更高质量数据与 KV 压缩把生成推到 4K——三阶段的哲学（用旧模型的产出喂养新模型的高效训练）延伸到分辨率维度。
+配套两个结构/工程件：**adaLN-single**——全部 block 共享一个调制 MLP，block 间差异由一个可学的逐 block embedding 提供。动机是一笔参数账：逐 block 的 adaLN 调制线性层（$d \to 6d$）在 DiT 上的累计开销约占主干参数量的 27%（PixArt-α 论文原文口径）；adaLN-single 把 $L$ 份调制 MLP 换成一份共享 MLP 加 $L$ 个 $6d$ 的可学 embedding，把这项开销压到常数级，省下的参数改投主干。以及文本 embedding 预计算缓存（§4 已述）。净效果（论文摘要口径）：PixArt-α 的训练成本约为 Stable Diffusion v1.5 的 12%，质量对标同期大一个量级的系统。后续 PixArt-Σ（[Chen et al., 2024](../references.md)，arXiv:2403.04692，[A]）走 weak-to-strong：继承 α 的权重，用更高质量数据与 KV 压缩把生成推到 4K——三阶段的哲学（用旧模型的产出喂养新模型的高效训练）延伸到分辨率维度。
 
 ### 8.2 SANA：Linear DiT + DC-AE f32
 
@@ -304,7 +304,7 @@ $$
 | MMDiT 联合 attention | 式 (10)(11)(12) | 双流各自 QKV/MLP/adaLN；$S$ 的 $2\times2$ 分块，$S_{yz}$ = 文本逐层被图像修正 |
 | QK-norm | 式 (13)(14) | per-head RMSNorm ⇒ logit 上界 $\sqrt{d_h}$，与权重尺度解耦 |
 | FLUX 变体 [C] | double → single stream | 前段双流分工、后段参数共享（已披露口径） |
-| PixArt-α | 三阶段 + adaLN-single | 调制参数省约 27%（XL 档口算）；训练成本约 SD1.5 的 12%（摘要口径） |
+| PixArt-α | 三阶段 + adaLN-single | adaLN 调制占 DiT 参数约 27% → single 版压至常数级（论文口径）；训练成本约 SD1.5 的 12%（摘要口径） |
 | SANA | 式 (15) + DC-AE f32 | $N = 1024$ @ $1024^2$；ReLU linear attention 省 attention 项约 $16\times$；Mix-FFN 补局部性 |
 
 ## 练习
