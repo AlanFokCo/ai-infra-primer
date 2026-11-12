@@ -77,7 +77,7 @@ $$
 h \leftarrow h + \tanh(\alpha')\, \mathrm{FFN}(h) \qquad (5)
 $$
 
-**符号**：$h \in \mathbb{R}^{B \times T \times d}$：冻结 LLM 某层的文本隐状态；query 来自文本、key/value 来自视觉特征，score 矩阵 shape $[B, H, T, N]$；$\alpha, \alpha'$：逐层可学标量门，**零初始化**。插入层与冻结层交替排布（interleaved），LM 原有参数一行不动；输入序列长度仍是 $T$，视觉不占输入位置。
+**符号**：$h \in \mathbb{R}^{B \times T \times d}$：冻结 LLM 某层的文本隐状态（$B$：batch size，$T$：文本序列长度，$d$：隐状态宽度）；query 来自文本、key/value 来自视觉特征，score 矩阵 shape $[B, n_h, T, N]$（$n_h$：attention head 数——区别于 §1 式 (1) 的图像高 $H$）；$\alpha, \alpha'$：逐层可学标量门，**零初始化**。插入层与冻结层交替排布（interleaved），LM 原有参数一行不动；输入序列长度仍是 $T$，视觉不占输入位置。
 
 零初始化的机制含义要写在数学上：$\tanh(0) = 0$，所以初始化时刻整个模型**逐点等于原冻结 LLM**——第一个 step 的 loss、行为与纯文本模型无差别，新结构是「从零被学开」的，而不是「一上手就扰动预训练权重分布」。门自身也不会卡死在零：
 
@@ -112,14 +112,14 @@ $$
 | 初始化行为 | 新 embedding 行扰动输入分布 | 恒等于原 LLM | 新 embedding 行扰动输入分布 |
 | 代表系统 | LLaVA 系、Qwen-VL 系、InternVL 系 | Flamingo | BLIP-2 |
 
-当代开放旗舰——Qwen2.5-VL（[Bai et al., 2025](../references.md)，arXiv:2502.13923，[A]）与 InternVL3（[Zhu et al., 2025](../references.md)，arXiv:2504.10479，[A]）——清一色选 (a)。生态因此围绕「input-level 下如何省 token、如何保分辨率」演化出整套压缩与分辨率技术，那就是 8.2 的内容。
+当代开放旗舰——Qwen2.5-VL（[Bai et al., 2025](../references.md)，arXiv:2502.13923，[A]）与 InternVL3（[Zhu et al., 2025](../references.md)，arXiv:2504.10479，[A]）——清一色选 (a)（2026-11-12 口径）。生态因此围绕「input-level 下如何省 token、如何保分辨率」演化出整套压缩与分辨率技术，那就是 8.2 的内容。
 
 ## 4. token 预算账
 
 复用 6.1 式 (3)：patch 边长 $p$ 时 $N = HW/p^{2}$，input-level 接入下 $M = N$。三笔标准账（全书约定页口径，实例可用公式现推复算）：
 
 - **单图基线**：CLIP 系 ViT-L/14 的 224 档 $N = 16^{2} = 256$（初代 LLaVA），336 档 $N = 24^{2} = 576$（LLaVA-1.5 起的主流档）；
-- **AnyRes 切图**：切成 $k$ 块各过一次塔、外加 1 张全局缩略图，$M = (k+1) \cdot N$——4 切实例 $5 \times 576 = 2880$（LLaVA-NeXT / LLaVA-OneVision 口径，[Li et al., 2024](../references.md)，arXiv:2408.03326，[A]；网格选择与位置编码处理归 8.2）；
+- **AnyRes 切图**：切成 $k$ 块各过一次塔、外加 1 张全局缩略图，$M = (k+1) \cdot N$——4 切实例 $5 \times 576 = 2880$（LLaVA-NeXT 口径，CLIP-336 每块 576 token）；LLaVA-OneVision 换 SigLIP-384、每块 729 token，4 切为 $5 \times 729 = 3645$（[Li et al., 2024](../references.md)，arXiv:2408.03326，[A]；网格选择与位置编码处理归 8.2）；
 - **视频**：$F$ 帧 × 每帧 token——1 分钟 @1fps、每帧 256 即 $60 \times 256 = 15360$（8.4 展开帧采样与时间压缩）。
 
 把账挂到 LLM 侧读。context 压力 = 全部图/帧的 $M$ 之和 + 文本 token：一张 AnyRes 4 切图吃掉 2880，十张图就是 28800——对照 Qwen2.5-VL-7B 的 128000 窗口（[qwen25vl-config](../references.md)，[A]，config 实测），视觉部分轻易可以吃掉大半窗口。KV cache 同样按 token 计：该模型 LLM 侧 28 层、GQA 4 个 KV head、head_dim 128（config 实测），bf16 下每 token 每层 K+V 共 $2 \times 4 \times 128 \times 2 = 2048$ 字节，全层合计 $28 \times 2048 = 57344$ 字节 $\approx 56$ KB/token——一张 2880 token 的图仅 KV cache 增量就约 165 MB，prefill 的 attention 配对数还按 $T^{2}$ 计。token 预算（token budget）就是这个意义上的硬通货：**每个视觉 token 同时消耗窗口长度、显存与 prefill 算力**。
@@ -143,7 +143,7 @@ $$
 
 更深一层的问题是表征内容的错配：**LLM 的 embedding 空间缺什么视觉特征？** 文本 embedding 是 next-token 目标在纯文本上训出来的（2.2），本身没有任何视觉接地；接进来的 $v$ 必须独自充当「像素世界的摘要」。而 CLIP/SigLIP 特征处于**语义抽象层级**：对比目标（6.2）只监督「整图 ↔ 整句」的全局对齐，不监督逐 patch 的细节保持——颜色精确值、小字、物体计数、细粒度空间关系这些像素级信息在塔内逐层衰减，到 $z_{\text{img}}$ 已所剩无几。两个直接后果：(i) 进 LLM 用 dense patch token 而不用 [CLS] pooled 向量（LLaVA 的选择），至少保住空间网格结构；(ii) 小字 OCR / 计数类任务成为 VLM 的传统短板，直接推高分辨率路线（§4 的账）与视觉塔侧的 dense 监督补强（SigLIP 2 叠加逐 patch 目标正是补这一缺口，6.1 §8）。
 
-一条正向证据来自多阶段配方：stage-1 通常冻结双塔、只训 connector（LLaVA 与 BLIP-2 的共同选择，配方细节归 8.3）——几十万级图文对就能把 $v$ 对齐进 LLM 的 embedding 空间并得到可用的图文问答。这件事本身说明 connector 学的是**空间对齐**（把语义已就位的特征变换进 LLM 可读的坐标系），而不是**内容补全**：视觉内容在塔里已经备好，缺的只是坐标变换。同一个失败模式从反面支持这一读法——connector 对齐不出视觉塔里不存在的信息，小字与计数的短板要补在分辨率与塔侧（§4、6.1 §8），堆 connector 容量没有效果。8.2 的 connector 设计空间里，「压缩 $M$」与「保像素细节」的对冲就建立在这一节的错配之上。
+一条正向证据来自多阶段配方：stage-1 通常冻结双塔、只训 connector（LLaVA 与 BLIP-2 的共同选择，配方细节归 8.3），但两家的结构口径要分开陈述——LLaVA 是 LLM 在环冻结、几十万级图文对就能把 $v$ 对齐进 LLM 的 embedding 空间并得到可用的图文问答；BLIP-2 的 stage 1 没有 LLM 在环（仅冻结 ViT、训 Q-Former，LLM 于 stage 2 才冻结接入，8.2 §3.4），数据规模是 129M 图文对。这件事本身说明 connector 学的是**空间对齐**（把语义已就位的特征变换进 LLM 可读的坐标系），而不是**内容补全**：视觉内容在塔里已经备好，缺的只是坐标变换。同一个失败模式从反面支持这一读法——connector 对齐不出视觉塔里不存在的信息，小字与计数的短板要补在分辨率与塔侧（§4、6.1 §8），堆 connector 容量没有效果。8.2 的 connector 设计空间里，「压缩 $M$」与「保像素细节」的对冲就建立在这一节的错配之上。
 
 ## 6. 参数规模组合表
 
@@ -186,7 +186,7 @@ $$
 - [Li et al., 2023](../references.md)：BLIP-2: Bootstrapping Language-Image Pre-training with Frozen Image Encoders and Large Language Models，arXiv:2301.12597，[A]（key: blip2）——Q-Former 混合接入式 (7)、$B = 32$、188M 参数、冻结矩阵
 - [Bai et al., 2025](../references.md)：Qwen2.5-VL Technical Report，arXiv:2502.13923，[A]（key: qwen2.5-vl）——参数组合与全量训练口径
 - [Zhu et al., 2025](../references.md)：InternVL3: Exploring Advanced Training and Test-Time Recipes for Open-Source Multimodal Models，arXiv:2504.10479，[A]（key: internvl3）——当代开放旗舰对照
-- [Li et al., 2024](../references.md)：LLaVA-OneVision: Easy Visual Task Transfer，arXiv:2408.03326，[A]（key: llava-onevision）——AnyRes 4 切 2880 账
+- [Li et al., 2024](../references.md)：LLaVA-OneVision: Easy Visual Task Transfer，arXiv:2408.03326，[A]（key: llava-onevision）——AnyRes 4 切账（SigLIP-384、每块 729 token，$5 \times 729 = 3645$）
 - [Radford et al., 2021](../references.md)：Learning Transferable Visual Models From Natural Language Supervision，arXiv:2103.00020，[A]（key: clip）——视觉塔与 336/p14 网格、4 亿级图文对
 - [Dosovitskiy et al., 2020](../references.md)：An Image is Worth 16x16 Words，arXiv:2010.11929，[A]（key: vit）——$N = HW/p^{2}$ 出处（6.1 式 (3)）
 - [haotian-liu/LLaVA](../references.md)：[A]（key: llava-repo）——input-level 拼接走读锚点（llava/model 目录）

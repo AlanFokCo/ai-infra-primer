@@ -193,11 +193,11 @@ graph LR
 
 | 章节 | 文件 | 状态 |
 | --- | --- | --- |
-| 8.1 VLM 架构分类学 | [01-vlm-architecture-taxonomy.md](08-multimodal-llm/01-vlm-architecture-taxonomy.md) | 未开始 |
-| 8.2 Connector 与分辨率处理 | [02-connectors-and-resolution.md](08-multimodal-llm/02-connectors-and-resolution.md) | 未开始 |
-| 8.3 VLM 训练目标与数据形式 | [03-training-objectives.md](08-multimodal-llm/03-training-objectives.md) | 未开始 |
-| 8.4 视频理解 | [04-video-understanding.md](08-multimodal-llm/04-video-understanding.md) | 未开始 |
-| 8.5 统一理解与生成 | [05-unified-understanding-generation.md](08-multimodal-llm/05-unified-understanding-generation.md) | 未开始 |
+| 8.1 VLM 架构分类学 | [01-vlm-architecture-taxonomy.md](08-multimodal-llm/01-vlm-architecture-taxonomy.md) | 已关闭 |
+| 8.2 Connector 与分辨率处理 | [02-connectors-and-resolution.md](08-multimodal-llm/02-connectors-and-resolution.md) | 已关闭 |
+| 8.3 VLM 训练目标与数据形式 | [03-training-objectives.md](08-multimodal-llm/03-training-objectives.md) | 已关闭 |
+| 8.4 视频理解 | [04-video-understanding.md](08-multimodal-llm/04-video-understanding.md) | 已关闭 |
+| 8.5 统一理解与生成 | [05-unified-understanding-generation.md](08-multimodal-llm/05-unified-understanding-generation.md) | 已关闭 |
 
 ### Part 9 · Video Generation（W6）
 
@@ -227,3 +227,4 @@ graph LR
 | W2 | 2026-11-12 | P3+P4 共 11 章 | 逐章批量审查 × 3 批 + 波末独立对抗审查 1 轮 | 0 | 2（全部关闭） | 9（波末 sweep 全部清零） | 无 | 放行（强制重推导 3 项 pass：4.1 MLA absorption / 4.3 DeltaNet-GDN-KDA 状态更新链 / 4.5 MoE routing；完整档案见 [w2-review-report.md](../docs/reviews/w2-review-report.md)） |
 | W3 | 2026-11-12 | P5+P6 共 9 章 | 逐章批量审查 × 3 批 + 波末独立对抗审查 1 轮（含修复轮复审） | 1（全部关闭） | 2（全部关闭） | 5（全部清零：修复轮 2 条 + 波末 sweep 3 条——F5/F6/F8 原按协议转 W4，提前于本波波末 sweep 清零） | 无 | 初轮有条件放行（5.1 含 S1 需复审）→ 修复后 9 章全放行（强制重推导 3 项 pass：6.2 InfoNCE 双向 CE 与温度梯度 / 6.3 VAE ELBO+STE+RVQ / 5.5 MuonClip qk-clip；完整档案见 [w3-review-report.md](../docs/reviews/w3-review-report.md)） |
 | W4 | 2026-11-12 | P7 共 7 章 | 逐章批量审查 × 3 批 + 波末独立对抗审查 1 轮（含 S1/S2 修复轮复审 × 2） | 2（全部关闭：common-diffusion 作者张冠李戴、iDDPM 动机方向写反） | 2（全部关闭：SANA 归一化分母误述、LDM f 消融边界矛盾） | 8（波末 sweep 全部清零） | 无 | 初轮暂不放行 → S1/S2 修复并复审后 7 章全放行（强制重推导 3 项 pass：7.2 DDPM 全链 / 7.4 CFG + DDIM=PF-ODE / 7.5 conditional FM + rectified flow 映射；完整档案见 [w4-review-report.md](../docs/reviews/w4-review-report.md)） |
+| W5 | 2026-11-13 | P8 共 5 章 | 逐章批量审查 × 3 批 + 波末独立对抗审查 1 轮 | 0 | 2（全部关闭：LLaVA-1.5 ablation 表归因、OneVision 课程阶段数） | 9（波末 sweep 全部清零） | 无 | 有条件放行 → S2 修复后 5 章全放行（强制重推导 3 项 pass：8.2 M-RoPE 三元组分解 / 8.5 Transfusion 完整 loss + mask / 8.3 loss masking；完整档案见 [w5-review-report.md](../docs/reviews/w5-review-report.md)） |

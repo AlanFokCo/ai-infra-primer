@@ -74,7 +74,7 @@
 | blt | Byte Latent Transformer: Patches Scale Better Than Tokens | Pagnoni et al. | arXiv:2412.09871 | [A] | 2026-11-10 | 2.2 |
 | mqa | Fast Transformer Decoding: One Write-Head is All You Need | Shazeer | arXiv:1911.02150 | [B] | 2026-11-10 | 2.4, 4.1 |
 | llama-3.1-70b-config | Llama-3.1-70B config.json（HF，gated repo） | Meta | https://huggingface.co/meta-llama/Llama-3.1-70B/blob/main/config.json | [A] | 2026-11-10 | 2.4, 4.1, 5.1 |
-| rope | RoFormer: Enhanced Transformer with Rotary Position Embedding | Su et al. | arXiv:2104.09864 | [A] | 2026-11-10 | 2.5, 4.6, 5.1, 6.1 |
+| rope | RoFormer: Enhanced Transformer with Rotary Position Embedding | Su et al. | arXiv:2104.09864 | [A] | 2026-11-10 | 2.5, 4.6, 5.1, 6.1, 8.2 |
 | alibi | Train Short, Test Long: Attention with Linear Biases Enables Input Length Extrapolation | Press et al. | arXiv:2108.12409 | [A] | 2026-11-10 | 2.5 |
 | t5 | Exploring the Limits of Transfer Learning with a Unified Text-to-Text Transformer | Raffel et al. | arXiv:1910.10683 | [A] | 2026-11-10 | 2.5, 3.1, 3.2 |
 | nope | The Impact of Positional Encoding on Length Generalization in Transformers | Kazemnejad et al. | arXiv:2305.19466 | [B] | 2026-11-10 | 2.5, 4.4, 5.1 |
@@ -87,7 +87,7 @@
 | deepnorm | DeepNet: Scaling Transformers to 1,000 Layers | Wang et al. | arXiv:2203.00555 | [A] | 2026-11-10 | 2.7 |
 | gemma2 | Gemma 2: Improving Open Language Models at a Practical Size | Gemma Team | arXiv:2408.00118 | [A] | 2026-11-10 | 2.2, 2.7, 5.5 |
 | gemma3 | Gemma 3 Technical Report | Gemma Team | arXiv:2503.19786 | [A] | 2026-11-10 | 2.2, 2.7, 4.2, 4.6 |
-| qk-norm | Query-Key Normalization for Transformers | Henry et al. | arXiv:2010.04245 | [B] | 2026-11-10 | 2.7, 5.3, 5.5 |
+| qk-norm | Query-Key Normalization for Transformers | Henry et al. | arXiv:2010.04245 | [B] | 2026-11-10 | 2.7, 5.3, 5.5, 8.5 |
 | nanogpt | nanoGPT（教学实现 repo） | Karpathy | https://github.com/karpathy/nanoGPT | 教学参照 | 2026-11-10 | 2.8 |
 
 ### Part 3 · Objectives & Variants
@@ -201,17 +201,17 @@
 
 | key | 标题 | 作者 | arXiv ID / URL | 证据等级 | 核实日期 | 被引章节 |
 | --- | --- | --- | --- | --- | --- | --- |
-| vit | An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale | Dosovitskiy et al. | arXiv:2010.11929 | [A] | 2026-11-12 | 6.1 |
-| siglip | Sigmoid Loss for Language Image Pre-Training | Zhai et al. | arXiv:2303.15343 | [A] | 2026-11-12 | 6.1 |
+| vit | An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale | Dosovitskiy et al. | arXiv:2010.11929 | [A] | 2026-11-12 | 6.1, 8.1 |
+| siglip | Sigmoid Loss for Language Image Pre-Training | Zhai et al. | arXiv:2303.15343 | [A] | 2026-11-12 | 6.1, 8.5 |
 | siglip2 | SigLIP 2: Multilingual Vision-Language Encoders with Improved Semantic Understanding, Localization, and Dense Features | Tschannen et al. | arXiv:2502.14786 | [A] | 2026-11-12 | 6.1 |
 | navit | Patch n' Pack: NaViT, a Vision Transformer for any Aspect Ratio and Resolution | Dehghani et al. | arXiv:2307.06304 | [A] | 2026-11-12 | 6.1 |
 | swin | Swin Transformer: Hierarchical Vision Transformer using Shifted Windows | Liu et al. | arXiv:2103.14030 | [A] | 2026-11-12 | 6.1 |
-| clip | Learning Transferable Visual Models From Natural Language Supervision | Radford et al. | arXiv:2103.00020 | [A] | 2026-11-12 | 6.1, 6.2, 7.6 |
+| clip | Learning Transferable Visual Models From Natural Language Supervision | Radford et al. | arXiv:2103.00020 | [A] | 2026-11-12 | 6.1, 6.2, 7.6, 8.1 |
 | alignment-uniformity | Understanding Contrastive Representation Learning through Alignment and Uniformity on the Hypersphere | Wang & Isola | arXiv:2005.10242 | [A] | 2026-11-12 | 6.2 |
 | vae | Auto-Encoding Variational Bayes | Kingma & Welling | arXiv:1312.6114 | [A] | 2026-11-12 | 6.3, 7.1, 7.6 |
-| vq-vae | Neural Discrete Representation Learning | van den Oord et al. | arXiv:1711.00937 | [A] | 2026-11-12 | 6.3 |
-| vqgan | Taming Transformers for High-Resolution Image Synthesis | Esser et al. | arXiv:2012.09841 | [A] | 2026-11-12 | 6.3 |
-| magvit-v2 | Language Model Beats Diffusion -- Tokenizer is Key to Visual Generation | Yu et al. | arXiv:2310.05737 | [A] | 2026-11-12 | 6.3 |
+| vq-vae | Neural Discrete Representation Learning | van den Oord et al. | arXiv:1711.00937 | [A] | 2026-11-12 | 6.3, 8.5 |
+| vqgan | Taming Transformers for High-Resolution Image Synthesis | Esser et al. | arXiv:2012.09841 | [A] | 2026-11-12 | 6.3, 8.5 |
+| magvit-v2 | Language Model Beats Diffusion -- Tokenizer is Key to Visual Generation | Yu et al. | arXiv:2310.05737 | [A] | 2026-11-12 | 6.3, 8.5 |
 | dc-ae | Deep Compression Autoencoder for Efficient High-Resolution Diffusion Models | Chen et al. | arXiv:2410.10733 | [A] | 2026-11-12 | 6.3, 7.6 |
 | vision-transformer-repo | google-research/vision_transformer（ViT 官方 JAX 实现；vit_jax/models_vit.py） | Google | https://github.com/google-research/vision_transformer | [A] | 2026-11-12 | 6.1 |
 | big-vision | google-research/big_vision（SigLIP/SigLIP 2/NaViT 官方训练代码；big_vision/models/vit.py） | Google | https://github.com/google-research/big_vision | [A] | 2026-11-12 | 6.1 |
@@ -228,7 +228,7 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | gan | Generative Adversarial Networks | Goodfellow et al. | arXiv:1406.2661 | [A] | 2026-11-12 | 7.1 |
 | glow | Glow: Generative Flow with Invertible 1x1 Convolutions | Kingma & Dhariwal | arXiv:1807.03039 | [A] | 2026-11-12 | 7.1, 7.5 |
-| ddpm | Denoising Diffusion Probabilistic Models | Ho et al. | arXiv:2006.11239 | [A] | 2026-11-12 | 7.1, 7.2, 7.4, 7.5, 7.6 |
+| ddpm | Denoising Diffusion Probabilistic Models | Ho et al. | arXiv:2006.11239 | [A] | 2026-11-12 | 7.1, 7.2, 7.4, 7.5, 7.6, 8.5 |
 | iddpm | Improved Denoising Diffusion Probabilistic Models | Nichol & Dhariwal | arXiv:2102.09672 | [A] | 2026-11-12 | 7.2 |
 | ddpm-repo | hojonathanho/diffusion（DDPM 官方 TF 实现；diffusion_tf/ 目录） | Jonathan Ho | https://github.com/hojonathanho/diffusion | [A] | 2026-11-12 | 7.2 |
 | ddpm-pytorch | lucidrains/denoising-diffusion-pytorch（DDPM 教学实现） | lucidrains | https://github.com/lucidrains/denoising-diffusion-pytorch | 教学参照 | 2026-11-12 | 7.2 |
@@ -268,7 +268,7 @@
 | var | Visual Autoregressive Modeling: Scalable Image Generation via Next-Scale Prediction | Tian et al. | arXiv:2404.02905 | [A] | 2026-11-12 | 7.7 |
 | llamagen | Autoregressive Model Beats Diffusion: Llama for Scalable Image Generation | Sun et al. | arXiv:2406.06525 | [A] | 2026-11-12 | 7.7 |
 | infinity | Infinity: Scaling Bitwise AutoRegressive Modeling for High-Resolution Image Synthesis | Han et al. | arXiv:2412.04431 | [A] | 2026-11-12 | 7.7 |
-| maskgit | MaskGIT: Masked Generative Image Transformer | Chang et al. | arXiv:2202.04200 | [A] | 2026-11-12 | 7.7 |
+| maskgit | MaskGIT: Masked Generative Image Transformer | Chang et al. | arXiv:2202.04200 | [A] | 2026-11-12 | 7.7, 8.5 |
 | muse | Muse: Text-To-Image Generation via Masked Generative Transformers（**Google 未开源**：google-research/muse 404 实测 2026-11-12，不作代码锚点） | Chang et al. | arXiv:2301.00704 | [B] | 2026-11-12 | 7.7 |
 | emu3 | Emu3: Next-Token Prediction is All You Need | Wang et al. | arXiv:2409.18869 | [A] | 2026-11-12 | 7.7, 8.5 |
 | imagen | Photorealistic Text-to-Image Diffusion Models with Deep Language Understanding（Google，无官方代码） | Saharia et al. | arXiv:2205.11487 | [B] | 2026-11-12 | 7.4, 7.6, 7.7 |
@@ -283,15 +283,15 @@
 
 | key | 标题 | 作者 | arXiv ID / URL | 证据等级 | 核实日期 | 被引章节 |
 | --- | --- | --- | --- | --- | --- | --- |
-| llava | Visual Instruction Tuning | Liu et al. | arXiv:2304.08485 | [A] | 2026-11-12 | 8.1 |
-| llava-1.5 | Improved Baselines with Visual Instruction Tuning（MLP connector ablation 出处） | Liu et al. | arXiv:2310.03744 | [A] | 2026-11-12 | 8.2 |
-| flamingo | Flamingo: a Visual Language Model for Few-Shot Learning（**DeepMind 未开源**：无官方代码与权重，开放复现锚点走 open-flamingo-repo） | Alayrac et al. | arXiv:2204.14198 | [B] | 2026-11-12 | 8.1, 8.2 |
+| llava | Visual Instruction Tuning | Liu et al. | arXiv:2304.08485 | [A] | 2026-11-12 | 8.1, 8.2, 8.3 |
+| llava-1.5 | Improved Baselines with Visual Instruction Tuning（linear→MLP 为正文陈述、Q-Former 语料规模为 limitations 讨论——无 connector 消融表） | Liu et al. | arXiv:2310.03744 | [A] | 2026-11-12 | 8.1, 8.2, 8.3 |
+| flamingo | Flamingo: a Visual Language Model for Few-Shot Learning（**DeepMind 未开源**：无官方代码与权重，开放复现锚点走 open-flamingo-repo） | Alayrac et al. | arXiv:2204.14198 | [B] | 2026-11-12 | 8.1, 8.2, 8.3, 8.4 |
 | blip2 | BLIP-2: Bootstrapping Language-Image Pre-training with Frozen Image Encoders and Large Language Models（Q-Former 出处） | Li et al. | arXiv:2301.12597 | [A] | 2026-11-12 | 8.1, 8.2 |
-| qwen2-vl | Qwen2-VL: Enhancing Vision-Language Model's Perception of the World at Any Resolution（naive dynamic resolution + M-RoPE 出处） | Wang et al. | arXiv:2409.12191 | [A] | 2026-11-12 | 8.2 |
+| qwen2-vl | Qwen2-VL: Enhancing Vision-Language Model's Perception of the World at Any Resolution（naive dynamic resolution + M-RoPE 出处） | Wang et al. | arXiv:2409.12191 | [A] | 2026-11-12 | 8.2, 8.4 |
 | qwen2.5-vl | Qwen2.5-VL Technical Report（M-RoPE 绝对时间对齐、dynamic FPS、window attention vision tower 出处） | Bai et al. | arXiv:2502.13923 | [A] | 2026-11-12 | 8.1, 8.2, 8.3, 8.4 |
 | internvl | InternVL: Scaling up Vision Foundation Models and Aligning for Generic Visual-Linguistic Tasks（pixel shuffle 用法出处之一） | Chen et al. | arXiv:2312.14238 | [A] | 2026-11-12 | 8.2 |
-| internvl3 | InternVL3: Exploring Advanced Training and Test-Time Recipes for Open-Source Multimodal Models | Zhu et al. | arXiv:2504.10479 | [A] | 2026-11-12 | 8.1, 8.2 |
-| llava-onevision | LLaVA-OneVision: Easy Visual Task Transfer（AnyRes 承继、训练配方全开放） | Li et al. | arXiv:2408.03326 | [A] | 2026-11-12 | 8.2, 8.3, 8.4 |
+| internvl3 | InternVL3: Exploring Advanced Training and Test-Time Recipes for Open-Source Multimodal Models | Zhu et al. | arXiv:2504.10479 | [A] | 2026-11-12 | 8.1 |
+| llava-onevision | LLaVA-OneVision: Easy Visual Task Transfer（AnyRes 承继、训练配方全开放） | Li et al. | arXiv:2408.03326 | [A] | 2026-11-12 | 8.1, 8.2, 8.3, 8.4 |
 | pixtral | Pixtral 12B（native resolution + 2D RoPE 出处） | Agrawal et al. | arXiv:2410.07073 | [A] | 2026-11-12 | 8.2 |
 | molmo | Molmo and PixMo: Open Weights and Open Data for State-of-the-Art Vision-Language Models | Deitke et al. | arXiv:2409.17146 | [A] | 2026-11-12 | 8.3 |
 | minicpm-v | MiniCPM-V: A GPT-4V Level MLLM on Your Phone | Yao et al. | arXiv:2408.01800 | [A] | 2026-11-12 | 8.2 |
@@ -306,13 +306,13 @@
 | show-o2 | Show-o2: Improved Native Unified Multimodal Models（代码在 showlab/Show-o 的 show-o2/ 子目录，无独立 repo） | Xie et al. | arXiv:2506.15564 | [A] | 2026-11-12 | 8.5 |
 | bagel | Emerging Properties in Unified Multimodal Pretraining（**BAGEL 出处论文——arXiv 标题不含 "BAGEL"，勿张冠李戴**；BAGEL-7B-MoT 7B active / 14B total） | Deng et al. | arXiv:2505.14683 | [A] | 2026-11-12 | 8.5 |
 | llava-repo | haotian-liu/LLaVA 官方 repo（llava/model 目录实测——input-level 拼接走读锚点） | LLaVA team | https://github.com/haotian-liu/LLaVA | [A] | 2026-11-12 | 8.1, 8.3 |
-| open-flamingo-repo | mlfoundations/open_flamingo（Flamingo 开放复现；open_flamingo/src/flamingo.py gated_cross_attn_layers 实测——gated xattn 走读锚点） | mlfoundations | https://github.com/mlfoundations/open_flamingo | [A] | 2026-11-12 | 8.1 |
+| open-flamingo-repo | mlfoundations/open_flamingo（Flamingo 开放复现；open_flamingo/src/flamingo.py gated_cross_attn_layers 实测——gated xattn 走读锚点） | mlfoundations | https://github.com/mlfoundations/open_flamingo | [A] | 2026-11-12 | 8.1, 8.2 |
 | qwen-vl-repo | QwenLM/Qwen3-VL（**QwenLM/Qwen2.5-VL 已 301 重定向至此**——系列 repo 归并，引用写新地址） | Qwen | https://github.com/QwenLM/Qwen3-VL | [A] | 2026-11-12 | 8.1, 8.4 |
 | qwen25vl-config | Qwen/Qwen2.5-VL-7B-Instruct config.json（HF 实测：rope_scaling={type: mrope, mrope_section [16,24,24]}、vision 32L/hidden 1280/patch 14/spatial_merge 2/window 112+fullattn [7,15,23,31]、LLM 28L/3584/28Q-4KV/ctx 128000/vocab 152064/rope_theta 1e6） | Qwen | https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct/blob/main/config.json | [A] | 2026-11-12 | 8.1, 8.2, 8.4 |
-| qwen25vl-modeling | transformers repo：Qwen2.5-VL modeling 代码（modeling_qwen2_5_vl.py；mrope_section split 与 get_rope_index (t,h,w) 三元组构造——M-RoPE 走读锚点） | HuggingFace | https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen2_5_vl/modeling_qwen2_5_vl.py | [A] | 2026-11-12 | 8.2 |
+| qwen25vl-modeling | transformers repo：Qwen2.5-VL modeling 代码（modeling_qwen2_5_vl.py；mrope_section split 与 get_rope_index (t,h,w) 三元组构造——M-RoPE 走读锚点） | HuggingFace | https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen2_5_vl/modeling_qwen2_5_vl.py | [A] | 2026-11-12 | 8.2, 8.4 |
 | lavis-repo | salesforce/LAVIS（BLIP-2 官方训练代码；lavis/models/blip2_models/blip2_qformer.py 实测——Q-Former 三目标走读锚点） | Salesforce | https://github.com/salesforce/LAVIS | [A] | 2026-11-12 | 8.2 |
 | internvl-repo | OpenGVLab/InternVL 官方 repo（internvl_chat/internvl/model/internvl_chat/modeling_internvl_chat.py 实测：pixel_shuffle(scale_factor=downsample_ratio=0.5)、num_image_token=(H/p)²·r²——pixel shuffle 走读锚点） | OpenGVLab | https://github.com/OpenGVLab/InternVL | [A] | 2026-11-12 | 8.2 |
-| llava-next-repo | LLaVA-VL/LLaVA-NeXT 官方 repo（LLaVA-OneVision 代码家；README 实测含 llava_onevision 锚点） | LLaVA team | https://github.com/LLaVA-VL/LLaVA-NeXT | [A] | 2026-11-12 | 8.3, 8.4 |
+| llava-next-repo | LLaVA-VL/LLaVA-NeXT 官方 repo（LLaVA-OneVision 代码家；README 实测含 llava_onevision 锚点） | LLaVA team | https://github.com/LLaVA-VL/LLaVA-NeXT | [A] | 2026-11-12 | 8.2, 8.3, 8.4 |
 | molmo-repo | allenai/Molmo 官方 repo（模型 + PixMo 数据全开放） | AllenAI | https://github.com/allenai/Molmo | [A] | 2026-11-12 | 8.3 |
 | minicpm-v-repo | OpenBMB/MiniCPM-V 官方 repo | OpenBMB | https://github.com/OpenBMB/MiniCPM-V | [A] | 2026-11-12 | 8.2 |
 | ovis-repo | ATH-MaaS/Ovis（**AIDC-AI/Ovis 已 301 重定向至此**——组织改名，引用写新地址） | AIDC-AI | https://github.com/ATH-MaaS/Ovis | [A] | 2026-11-12 | 8.2 |
@@ -557,12 +557,18 @@
 | AnyRes | 保留英文（AnyRes，任意分辨率切图方案） | 8.2 |
 | naive dynamic resolution | 原生动态分辨率（naive dynamic resolution） | 8.2 |
 | M-RoPE (multimodal RoPE) | 保留英文（M-RoPE；(t,h,w) 三元组位置 id） | 8.2 |
+| ITC / ITM / ITG | 保留英文（ITC/ITM/ITG，BLIP-2 Q-Former 三目标） | 8.2 |
 | loss masking（VLM 语境） | 损失掩码（loss masking） | 8.3 |
 | interleaved image-text | 交错图文（interleaved） | 8.3 |
 | object hallucination | 物体幻觉（object hallucination） | 8.3 |
 | visual contrastive decoding (VCD) | 视觉对比解码（VCD） | 8.3 |
 | dynamic FPS | 保留英文（dynamic FPS，动态帧率采样） | 8.4 |
 | temporal grounding | 时间定位（temporal grounding） | 8.4 |
+| frame sampler | 帧采样器（frame sampler） | 8.4 |
+| temporal patch / tubelet | 时间 patch / 时空 patch（temporal patch / tubelet） | 8.4 |
+| tokens per second (tps)（视频语境） | 每秒 token 数（tps） | 8.4 |
 | unified multimodal model | 统一多模态模型（unified model，理解+生成同模型） | 8.5 |
 | mixture-of-transformers (MoT) | 保留英文（MoT） | 8.5 |
 | BOI / EOI token | 保留英文（BOI/EOI，begin/end-of-image 特殊 token） | 8.5 |
+| sufficiency（invariance 对偶） | 充分性（sufficiency） | 8.5 |
+| absorbing-uniform（离散扩散腐蚀语境） | 吸收-均匀混合（Absorbing-Uniform） | 8.5 |

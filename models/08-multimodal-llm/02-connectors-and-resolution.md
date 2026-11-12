@@ -200,7 +200,7 @@ $$
 M = (k + 1) \cdot N \qquad (12)
 $$
 
-4 切实例（$g^{*}$ = (2,2)）：$M = 5 \times 576 = 2880$。
+4 切实例（$g^{*}$ = (2,2)）：$M = 5 \times 576 = 2880$（LLaVA-NeXT 口径，CLIP-336 每块 576 token；LLaVA-OneVision 换 SigLIP-384、每块 729 token，4 切为 $5 \times 729 = 3645$）。
 
 ```
 原图 1568×1176                缩略图：整图 → 336×336 → 576 tokens（全局）
@@ -254,7 +254,7 @@ $$
 
 **符号**：$c_s$：文本位置的连续计数，逐 token 加一；$i \in \{0, \ldots, H_g - 1\}$、$j \in \{0, \ldots, W_g - 1\}$：merge 后网格坐标；$\tau_f$：时间坐标，随时间步递增（两代规则不同，见下）。视觉段结束后，后续文本从 $t_0 + \max(T, H_g, W_g)$ 继续（三值恢复同值递增；实现口径的版本差异见 §9.4 注记）。
 
-三条规则各有一句机制读法。**文本三值同值**：§9.3 将证明这使纯文本段与标准 1D RoPE 逐点相同——文本能力不被改造，这是整个设计能直接套在现成 LLM 上的原因。**图像 $t$ 恒定**：图像没有「时间」，$t$ 轴对图内 patch 不加区分（§9.3 将看到 $t$ 段对图内 attention 退化为纯内容项）；$(h, w)$ 承载 2D 网格。**视频 $t$ 递增**：Qwen2-VL 按帧序递增；Qwen2.5-VL 把 $t$ 轴与**绝对时间**对齐——dynamic FPS 采样下相邻帧的 $t$ 差正比于真实秒数间隔而非帧序号（[Bai et al., 2025](../references.md)，[A]；具体换算常数引 tech report 原文，8.4 展开）——模型由此读到「事件的真实节奏」，而非被采样率扭曲的帧计数。
+三条规则各有一句机制读法。**文本三值同值**：§9.3 将证明这使纯文本段与标准 1D RoPE 逐点相同——文本能力不被改造，这是整个设计能直接套在现成 LLM 上的原因。**图像 $t$ 恒定**：图像没有「时间」，$t$ 轴对图内 patch 不加区分（§9.3 将看到 $t$ 段对图内 attention 退化为纯内容项）；$(h, w)$ 承载 2D 网格。**视频 $t$ 递增**：Qwen2-VL 按帧序递增；Qwen2.5-VL 把 $t$ 轴与**绝对时间**对齐——dynamic FPS 采样下相邻帧的 $t$ 差正比于真实秒数间隔而非帧序号（[Bai et al., 2025](../references.md)，[A]；换算常数见 HF config `tokens_per_second = 2`，[qwen25vl-config](../references.md)，[A]，8.4 展开）——模型由此读到「事件的真实节奏」，而非被采样率扭曲的帧计数。
 
 ### 9.2 频段切分：三段共用一条几何级数
 
@@ -390,7 +390,7 @@ $$
 - [Wang et al., 2024](../references.md)：Qwen2-VL: Enhancing Vision-Language Model's Perception of the World at Any Resolution，arXiv:2409.12191，[A]（key: qwen2-vl）——§8 naive dynamic resolution、§9 M-RoPE 出处
 - [Bai et al., 2025](../references.md)：Qwen2.5-VL Technical Report，arXiv:2502.13923，[A]（key: qwen2.5-vl）——§9.1 $t$ 轴绝对时间对齐、§8 window attention 视觉塔
 - [Chen et al., 2023](../references.md)：InternVL: Scaling up Vision Foundation Models and Aligning for Generic Visual-Linguistic Tasks，arXiv:2312.14238，[A]（key: internvl）——§5.1 pixel shuffle 用法
-- [Li et al., 2024](../references.md)：LLaVA-OneVision: Easy Visual Task Transfer，arXiv:2408.03326，[A]（key: llava-onevision）——§7 AnyRes 承继（4 切 2880 账）
+- [Li et al., 2024](../references.md)：LLaVA-OneVision: Easy Visual Task Transfer，arXiv:2408.03326，[A]（key: llava-onevision）——§7 AnyRes 承继（SigLIP-384、每块 729 token，4 切 $5 \times 729 = 3645$）
 - [Agrawal et al., 2024](../references.md)：Pixtral 12B，arXiv:2410.07073，[A]（key: pixtral）——§10 native resolution + 2D RoPE
 - [Yao et al., 2024](../references.md)：MiniCPM-V: A GPT-4V Level MLLM on Your Phone，arXiv:2408.01800，[A]（key: minicpm-v）——§10 端侧高分辨率对照
 - [Lu et al., 2024](../references.md)：Ovis: Structural Embedding Alignment for Multimodal Large Language Model，arXiv:2405.20797，[A]（key: ovis）——§2 软查表变体

@@ -66,7 +66,7 @@ caption 数据             模板与 special token 定型        幻觉专项（
 
 两个数据教训是各家 report 的公约数。(a) **纯文本数据必须保留**：多模态混合里不放文本指令，LLM 原有的指令遵循与长文能力会退化——冻结派与解冻派都承认的遗忘风险，只是用不同方式付费（前者付融合深度，后者付文本数据配额）。(b) **全部任务统一灌进同一对话模板**：special token（`<image>`、轮次标记、角色标记）的用法在这一阶段定型——§3.3 将看到，这套模板从此就是模型的分布内格式。
 
-两个配方变体值得单列。**渐进迁移**（LLaVA-OneVision，[Li et al., 2024](../references.md)，arXiv:2408.03326，[A]）：stage 2 内部再分单图 → 多图/视频，后阶段在前阶段 checkpoint 上续训，论文 ablation 支撑「视频能力可以从图像迁移获得」的取径（8.4 展开）。**数据全开放**（Molmo，[Deitke et al., 2024](../references.md)，arXiv:2409.17146，[A]）：PixMo 的 caption 不是 web 爬的 alt-text，而是标注者口述图像内容再转写的 dense caption——单条覆盖的对象、属性、空间关系密度远超 web caption，直接对应 §1.3 的 $\eta$ 账；另有把对象坐标写进回答文本的 pointing 数据，把位置监督变成普通的 next-token 目标。数据与配方全部随权重开放（[allenai/Molmo](../references.md)，[A]），这也是本章把它列为锚点的原因：配方类断言第一次可以逐条对照原始数据复算。
+两个配方变体值得单列。**渐进迁移**（LLaVA-OneVision，[Li et al., 2024](../references.md)，arXiv:2408.03326，[A]）：stage 2 内部再分单图阶段 → OneVision 混合阶段（多图+视频+单图复用同训），后阶段在前阶段 checkpoint 上续训，论文 ablation 支撑「视频能力可以从图像迁移获得」的取径（8.4 展开）。**数据全开放**（Molmo，[Deitke et al., 2024](../references.md)，arXiv:2409.17146，[A]）：PixMo 的 caption 不是 web 爬的 alt-text，而是标注者口述图像内容再转写的 dense caption——单条覆盖的对象、属性、空间关系密度远超 web caption，直接对应 §1.3 的 $\eta$ 账；另有把对象坐标写进回答文本的 pointing 数据，把位置监督变成普通的 next-token 目标。数据与配方全部随权重开放（[allenai/Molmo](../references.md)，[A]），这也是本章把它列为锚点的原因：配方类断言第一次可以逐条对照原始数据复算。
 
 ### 2.3 stage 3：偏好对齐与幻觉专项数据
 
@@ -77,9 +77,9 @@ caption 数据             模板与 special token 定型        幻觉专项（
 | 系统 | stage 1 | stage 2 | stage 3 |
 | --- | --- | --- | --- |
 | LLaVA-1.5 [A] | 558K caption；冻双塔、只训 MLP | 665K 指令混合；解冻 LLM | 无 |
-| LLaVA-OneVision [A] | 沿用前序 checkpoint | 单图 → 多图/视频渐进 SFT | （论文范围外） |
+| LLaVA-OneVision [A] | 沿用前序 checkpoint | 单图阶段 → OneVision 混合阶段（多图+视频+单图复用同训） | （论文范围外） |
 | Qwen2.5-VL [A] | 多阶段预训练（ViT 自 phase 2 起解冻参与） | 多任务 SFT（ViT 随 post-training 再冻结） | 偏好对齐（tech report 口径） |
-| Molmo [A] | caption 预训练（PixMo dense caption） | SFT（PixMo 混合） | （引论文原表） |
+| Molmo [A] | caption 预训练（PixMo dense caption） | SFT（PixMo 混合） | 无（论文配方止于 caption 预训练 + SFT） |
 
 读法：三段的分工是「先对齐空间（stage 1）、再学任务格式（stage 2）、最后校准行为偏好（stage 3）」——冻结开关逐段放开、数据从粗到精、可训参数量级逐段放大。阶段划得越细，对数据质量的容忍度越高：噪声最大的 web caption 只接触 connector，最精的偏好数据作用于全参数。一段式端到端配方不是不存在，而是把三笔风险（噪声污染、能力遗忘、偏好未校准）合并支付。
 
@@ -193,7 +193,7 @@ tech report 的分数是「在作者的评测协议下」的数字：prompt 模�
 
 ## 参考
 
-- [Li et al., 2024](../references.md)：LLaVA-OneVision: Easy Visual Task Transfer，arXiv:2408.03326，[A]（key: llava-onevision）——§2.2 渐进迁移配方（单图 → 多图/视频）、§2.4 配方对照
+- [Li et al., 2024](../references.md)：LLaVA-OneVision: Easy Visual Task Transfer，arXiv:2408.03326，[A]（key: llava-onevision）——§2.2 渐进迁移配方（单图阶段 → OneVision 混合阶段）、§2.4 配方对照
 - [Bai et al., 2025](../references.md)：Qwen2.5-VL Technical Report，arXiv:2502.13923，[A]（key: qwen2.5-vl）——§2.3 偏好对齐阶段、§2.4 多阶段配方口径
 - [Deitke et al., 2024](../references.md)：Molmo and PixMo: Open Weights and Open Data for State-of-the-Art Vision-Language Models，arXiv:2409.17146，[A]（key: molmo）——§2.2 dense caption 与 pointing 数据、§4.3 数据侧缓解
 - [Leng et al., 2023](../references.md)：Mitigating Object Hallucinations in Large Vision-Language Models through Visual Contrastive Decoding，arXiv:2311.16922，[A]（key: vcd）——§4.1 判别式评测协议（POPE / MME）、§4.2 视觉不确定性放大语言先验与统计偏差的机制分析、§4.3 VCD 式 (4) 与候选集截断
