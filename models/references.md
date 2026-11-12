@@ -374,6 +374,63 @@
 
 | key | 标题 | 作者 | arXiv ID / URL | 证据等级 | 核实日期 | 被引章节 |
 | --- | --- | --- | --- | --- | --- | --- |
+| soundstream | SoundStream: An End-to-End Neural Audio Codec（75Hz@24kHz（stride 320）、N_q·log2N 每帧比特公式、8×10×75=6kbps 实例账、3–18kbps 可变码率出处；**Google 未开源**） | Zeghidour et al. | arXiv:2107.03312 | [B] | 2026-11-13 | 10.1 |
+| encodec | High Fidelity Neural Audio Compression（EnCodec：75Hz@24kHz、≤32×1024 码本、1.5–24kbps 挡位、multi-scale STFT discriminator 出处） | Défossez et al. | arXiv:2210.13438 | [A] | 2026-11-13 | 10.1 |
+| dac | High-Fidelity Audio Compression with Improved RVQGAN（DAC：factorized+L2-normalized codes、quantizer dropout 副作用修正、44.1kHz/86Hz/9×1024 出处） | Kumar et al. | arXiv:2306.06546 | [A] | 2026-11-13 | 10.1 |
+| moshi | Moshi: a speech-text foundation model for real-time dialogue（Mimi：12.5Hz、split-RVQ=1 语义 VQ+7 声学 RVQ、第一层 cosine 蒸馏 WavLM、Q=8×2048=1.1kbps；RQ-Transformer 时间/深度两级；Inner Monologue；multi-stream 全双工；160ms 理论/200ms 实测延迟；Helium 7B 基座） | Défossez et al. | arXiv:2410.00037 | [A] | 2026-11-13 | 10.1, 10.4 |
+| hubert | HuBERT: Self-Supervised Speech Representation Learning by Masked Prediction of Hidden Units（k-means 100 簇教师起步、两轮迭代、masked prediction 出处） | Hsu et al. | arXiv:2106.07447 | [A] | 2026-11-13 | 10.1 |
+| w2v-bert | W2v-BERT: Combining Contrastive Learning and Masked Language Modeling for Self-Supervised Speech Pre-Training（对比+MLM 两段式出处；Google 未释官方实现） | Chung et al. | arXiv:2108.06209 | [B] | 2026-11-13 | 10.1 |
+| wavtokenizer | WavTokenizer: an Efficient Acoustic Discrete Codec Tokenizer for Audio Language Modeling（单码本 K=4096、40/75fps@24kHz 出处） | Ji et al. | arXiv:2408.16532 | [A] | 2026-11-13 | 10.1 |
+| xcodec2 | Llasa: Scaling Train-Time and Inference-Time Compute for Llama-based Speech Synthesis（**X-codec2 出处论文——标题即 Llasa，勿写 XCodec2**；语义-声学融合统一单码本、16kHz/stride 320=50fps、K=65536=0.8kbps） | Ye et al. | arXiv:2502.04128 ; https://huggingface.co/HKUSTAudio/Llasa-3B | [A] | 2026-11-13 | 10.1 |
+| whisper | Robust Speech Recognition via Large-Scale Weak Supervision（680k hrs、16kHz/80ch log-mel/25ms 窗 10ms hop、30s 段、special tokens 任务控制出处） | Radford et al. | arXiv:2212.04356 | [A] | 2026-11-13 | 10.2, 10.4 |
+| ctc | Connectionist Temporal Classification: Labelling Unsegmented Sequence Data with Recurrent Neural Networks（**ICML 2006, pp. 369–376，无 arXiv**——边缘化求和、blank、forward-backward 原始出处） | Graves et al. | https://doi.org/10.1145/1143844.1143891 | [B] | 2026-11-13 | 10.2 |
+| rnn-t | Sequence Transduction with Recurrent Neural Networks（RNN-T：(t,u) 2D lattice、forward 变量 α(t,u)、transcription+prediction+joint 三件套出处；2012 无官方代码） | Graves | arXiv:1211.3711 | [B] | 2026-11-13 | 10.2 |
+| sensevoice | FunAudioLLM: Voice Understanding and Generation Foundation Models for Natural Interaction Between Humans and LLMs（SenseVoice：非自回归端到端多语 ASR+情感+事件，5×/15× faster than Whisper-small/large 出处；兼 CosyVoice 出处报告） | An et al. | arXiv:2407.04051 | [A] | 2026-11-13 | 10.2 |
+| fireredasr | FireRedASR: Open-Source Industrial-Grade Mandarin Speech Recognition Models from Encoder-Decoder to LLM Integration（FireRedASR-AED/LLM 双型号出处） | Xu et al. | arXiv:2501.14350 ; https://github.com/FireRedTeam/FireRedASR | [A] | 2026-11-13 | 10.2 |
+| qwen3-asr | Qwen3-ASR Technical Report（Qwen3-ASR-1.7B/0.6B+ForcedAligner-0.6B、52 语言方言、AuT encoder+Qwen3 LM 出处；2026-01-29） | Shi et al. | arXiv:2601.21337 | [A] | 2026-11-13 | 10.2 |
+| vall-e | Neural Codec Language Models are Zero-Shot Text to Speech Synthesizers（VALL-E：AR 建第一层+NAR 建第 2–8 层两阶段、3s prompt in-context cloning 出处；**微软未开源**） | Wang et al. | arXiv:2301.02111 | [B] | 2026-11-13 | 10.3 |
+| vall-e-2 | VALL-E 2: Neural Codec Language Models are Human Parity Zero-Shot Text to Speech Synthesizers（repetition aware sampling、grouped code modeling 出处；**未开源**） | Chen et al. | arXiv:2406.05370 | [B] | 2026-11-13 | 10.3 |
+| cosyvoice | CosyVoice: A Scalable Multilingual Zero-shot Text-to-speech Synthesizer based on Supervised Semantic Tokens（ASR encoder 内插 VQ 的监督语义 token + LLM + conditional FM decoder 出处；S3Tokenizer 为官方生态命名，论文正文无此词） | Du et al. | arXiv:2407.05407 | [A] | 2026-11-13 | 10.3 |
+| cosyvoice2 | CosyVoice 2: Scalable Streaming Speech Synthesis with Large Language Models（chunk-aware causal FM 双流式、VQ→FSQ、25Hz token rate、直用预训练文本 LLM 出处） | Du et al. | arXiv:2412.10117 | [A] | 2026-11-13 | 10.3 |
+| cosyvoice3 | CosyVoice 3: Towards In-the-wild Speech Generation via Scaling-up and Post-training（FSQ 改插 MinMo voice encoder、scale-up+post-training 出处） | Du et al. | arXiv:2505.17589 | [A] | 2026-11-13 | 10.3 |
+| f5-tts | F5-TTS: A Fairytaler that Fakes Fluent and Faithful Speech with Flow Matching（text-guided speech-infilling+CFM、filler tokens 对齐免 duration model、Sway Sampling、DiT 出处） | Chen et al. | arXiv:2410.06885 | [A] | 2026-11-13 | 10.3 |
+| e2-tts | E2 TTS: Embarrassingly Easy Fully Non-Autoregressive Zero-Shot TTS（字符+filler tokens、FM mel 生成+audio infilling 出处——F5 直接前驱；**微软未开源**） | Eskimez et al. | arXiv:2406.18009 | [B] | 2026-11-13 | 10.3 |
+| voicebox | Voicebox: Text-Guided Multilingual Universal Speech Generation at Scale（text-guided speech infilling + FM/OT path 出处；**Meta 未开源**） | Le et al. | arXiv:2306.15687 | [B] | 2026-11-13 | 10.3 |
+| naturalspeech3 | NaturalSpeech 3: Zero-Shot Speech Synthesis with Factorized Codec and Diffusion Models（FACodec FVQ 分解 content/prosody/timbre/detail 出处；**微软未开源**） | Ju et al. | arXiv:2403.03100 | [B] | 2026-11-13 | 10.3 |
+| maskgct | MaskGCT: Zero-Shot Text-to-Speech with Masked Generative Codec Transformer（codec token 上 mask-predict NAR 出处；官方实现在 Amphion） | Wang et al. | arXiv:2409.00750 | [A] | 2026-11-13 | 10.3 |
+| hifi-gan | HiFi-GAN: Generative Adversarial Networks for Efficient and High Fidelity Speech Synthesis（MPD 质数周期 [2,3,5,7,11] 2D reshape、MSD、feature matching loss 出处） | Kong et al. | arXiv:2010.05646 | [A] | 2026-11-13 | 10.3 |
+| bigvgan | BigVGAN: A Universal Neural Vocoder with Large-Scale Training（snake 激活 x+sin²(αx)/α+低通抗混叠出处） | Lee et al. | arXiv:2206.04658 ; https://github.com/NVIDIA/BigVGAN | [A] | 2026-11-13 | 10.3 |
+| vits | Conditional Variational Autoencoder with Adversarial Learning for End-to-End Text-to-Speech（VAE+flow 后验增强+对抗+MAS 单调对齐+随机时长预测出处） | Kim et al. | arXiv:2106.06103 | [A] | 2026-11-13 | 10.3 |
+| fastspeech2 | FastSpeech 2: Fast and High-Quality End-to-End Text to Speech（variance adaptor：duration/pitch/energy 出处；**微软未释官方代码**） | Ren et al. | arXiv:2006.04558 | [B] | 2026-11-13 | 10.3 |
+| indextts | IndexTTS: An Industrial-Level Controllable and Efficient Zero-Shot Text-To-Speech System（GPT 式 AR TTS、拼音纠错+标点控停出处） | Deng et al. | arXiv:2502.05512 ; https://github.com/index-tts/index-tts | [A] | 2026-11-13 | 10.3 |
+| indextts2 | IndexTTS2: A Breakthrough in Emotionally Expressive and Duration-Controlled Auto-Regressive Zero-Shot Text-to-Speech（情感表达+时长可控出处） | Zhou et al. | arXiv:2506.21619 | [A] | 2026-11-13 | 10.3 |
+| megatts3 | MegaTTS 3: Sparse Alignment Enhanced Latent Diffusion Transformer for Zero-Shot Speech Synthesis | Jiang et al. | arXiv:2502.18924 ; https://github.com/bytedance/MegaTTS3 | [A] | 2026-11-13 | 10.3 |
+| spark-tts | Spark-TTS: An Efficient LLM-Based Text-to-Speech Model with Single-Stream Decoupled Speech Tokens（BiCodec：低码率语义 token+定长全局 speaker token 单流分解出处） | Wang et al. | arXiv:2503.01710 ; https://github.com/SparkAudio/Spark-TTS | [A] | 2026-11-13 | 10.3 |
+| qwen2.5-omni | Qwen2.5-Omni Technical Report（Thinker-Talker、TMRoPE=Time-aligned M-RoPE、Talker 用 Thinker hidden 双流 AR、**block-wise DiT FM→modified BigVGAN** vocoder 出处） | Xu et al. | arXiv:2503.20215 | [A] | 2026-11-13 | 10.4 |
+| qwen3-omni | Qwen3-Omni Technical Report（Thinker-Talker MoE、MTP 产残差码本、**Code2Wav 轻量因果 ConvNet 取代 block-wise DiT**、12.5Hz 单帧即时合成出处） | Xu et al. | arXiv:2509.17765 | [A] | 2026-11-13 | 10.4 |
+| glm-4-voice | GLM-4-Voice: Towards Intelligent and Human-Like End-to-End Spoken Chatbot（175bps 单码本 12.5Hz 监督 tokenizer+FM decoder 出处） | Zeng et al. | arXiv:2412.02612 | [A] | 2026-11-13 | 10.4 |
+| audiolm | AudioLM: a Language Modeling Approach to Audio Generation（semantic→coarse acoustic→fine acoustic 分层生成出处；**Google 未开源**） | Borsos et al. | arXiv:2209.03143 | [B] | 2026-11-13 | 10.4 |
+| kimi-audio | Kimi-Audio Technical Report（开源音频基座：理解+生成+对话、13M 小时预训、FM detokenizer 出处） | KimiTeam | arXiv:2504.18425 | [A] | 2026-11-13 | 10.4 |
+| step-audio | Step-Audio: Unified Understanding and Generation in Intelligent Speech Interaction（130B 统一语音-文本模型、Step-Audio-Chat 开源出处） | Huang et al. | arXiv:2502.11946 | [A] | 2026-11-13 | 10.4 |
+| llama-omni | LLaMA-Omni: Seamless Speech Interaction with Large Language Models（speech encoder+adaptor+LLM+streaming decoder、免转写直连出处） | Fang et al. | arXiv:2409.06666 ; https://github.com/ictnlp/LLaMA-Omni | [A] | 2026-11-13 | 10.4 |
+| qwen2-audio | Qwen2-Audio Technical Report（audio encoder+adapter+LLM 理解端范式出处——Qwen2.5-Omni Thinker 前代参照） | Chu et al. | arXiv:2407.10759 | [A] | 2026-11-13 | 10.4 |
+| encodec-repo | facebookresearch/encodec 官方 repo（encodec/model.py 文件级实测） | Meta | https://github.com/facebookresearch/encodec | [A] | 2026-11-13 | 10.1 |
+| dac-repo | descriptinc/descript-audio-codec 官方 repo（dac/model/dac.py 文件级实测） | Descript | https://github.com/descriptinc/descript-audio-codec | [A] | 2026-11-13 | 10.1 |
+| moshi-repo | kyutai-labs/moshi 官方全栈 repo（moshi/moshi/models/compression.py 实测 `class MimiModel(CompressionModel)`——Mimi 走读锚点） | Kyutai | https://github.com/kyutai-labs/moshi | [A] | 2026-11-13 | 10.1, 10.4 |
+| mimi-config | kyutai/mimi config.json（HF 实测：codebook_size 2048、frame_rate 12.5、hidden_size 512——Mimi 参数物证） | Kyutai | https://huggingface.co/kyutai/mimi/blob/main/config.json | [A] | 2026-11-13 | 10.1 |
+| whisper-repo | openai/whisper 官方 repo（whisper/model.py 文件级实测） | OpenAI | https://github.com/openai/whisper | [A] | 2026-11-13 | 10.2 |
+| espnet-repo | espnet/espnet（CTC/RNN-T 标准第三方实现锚点；hybrid L=λL_CTC+(1−λ)L_att 配方出处实现） | ESPnet | https://github.com/espnet/espnet | [A] | 2026-11-13 | 10.2 |
+| sensevoice-repo | QwenAudio/SenseVoice 官方 repo（**FunAudioLLM/SenseVoice 已 301 重定向至此**——引用写新地址） | Alibaba | https://github.com/QwenAudio/SenseVoice | [A] | 2026-11-13 | 10.2 |
+| hifigan-repo | jik876/hifi-gan 官方 repo（models.py 文件级实测——MPD/MRF 走读锚点） | Kong et al. | https://github.com/jik876/hifi-gan | [A] | 2026-11-13 | 10.3 |
+| vits-repo | jaywalnut310/vits 官方 repo（models.py 文件级实测） | Kim | https://github.com/jaywalnut310/vits | [A] | 2026-11-13 | 10.3 |
+| cosyvoice-repo | QwenAudio/CosyVoice 官方 repo（**FunAudioLLM/CosyVoice 已 301 重定向至此**；cosyvoice/{tokenizer,flow,llm,hifigan} 目录文件级实测） | Alibaba | https://github.com/QwenAudio/CosyVoice | [A] | 2026-11-13 | 10.3 |
+| f5-tts-repo | SWivid/F5-TTS 官方 repo（src/f5_tts 目录实测） | F5-TTS | https://github.com/SWivid/F5-TTS | [A] | 2026-11-13 | 10.3 |
+| amphion-repo | open-mmlab/Amphion（MaskGCT 官方实现所在） | OpenMMLab | https://github.com/open-mmlab/Amphion | [A] | 2026-11-13 | 10.3 |
+| qwen2.5-omni-repo | QwenLM/Qwen2.5-Omni 官方 repo | Alibaba | https://github.com/QwenLM/Qwen2.5-Omni | [A] | 2026-11-13 | 10.4 |
+| qwen3-omni-repo | QwenLM/Qwen3-Omni 官方 repo | Alibaba | https://github.com/QwenLM/Qwen3-Omni | [A] | 2026-11-13 | 10.4 |
+| glm4voice-repo | zai-org/GLM-4-Voice 官方 repo（**THUDM/GLM-4-Voice 已 301 重定向至此**（API 301 body 实测），与 CogVideo 同迁移链；flow_inference.py、speech_tokenizer/ 文件级实测） | Z.ai | https://github.com/zai-org/GLM-4-Voice | [A] | 2026-11-13 | 10.4 |
+| kimi-audio-repo | MoonshotAI/Kimi-Audio 官方 repo（kimia_infer/、infer.py 文件级实测） | Moonshot AI | https://github.com/MoonshotAI/Kimi-Audio | [A] | 2026-11-13 | 10.4 |
+| step-audio-repo | stepfun-ai/Step-Audio 官方 repo | StepFun | https://github.com/stepfun-ai/Step-Audio | [A] | 2026-11-13 | 10.4 |
 
 ## 术语表
 
