@@ -11,11 +11,11 @@ GLM-4.6 的 config.json 与 GLM-4.5 逐字段 diff 只剩一项：max_position_e
 | GLM（2021） | — | — | — | — | — | Part A 双向 + Part B span 内因果（blank infilling；2D learned absolute 位置，无 RoPE） | 无（dense） | — | — | — | — | glm [A] |
 | GLM-130B | 130B（dense） | — | — | — | — | 同 objective 族 + [gMASK] 文档级变体 | 无（dense） | — | — | — | — | glm-130b [A] |
 | ChatGLM 系列 → GLM-4 | — | — | — | — | — | — | — | — | — | — | — | glm-4 [A] |
-| GLM-4.5 | 355B / 32B（report 摘要口径） | 92 | 5120 | 96/8（$g$=12） | 128 | GQA + RoPE | 160+1 top-8，first 3 dense | — | 151552 | 131072 | $10^{6}$ | glm-4.5 [A] + glm-4.6 config [W] |
-| GLM-4.6 | 同 4.5（数字引 4.5 report，合法性见 §3） | 92 | 5120 | 96/8（$g$=12） | 128 | GQA + RoPE | 160+1 top-8，first 3 dense | — | 151552 | 202752 | $10^{6}$ | glm-4.6 [W] |
-| GLM-4.7 | 同 4.5 | 92 | 5120 | 96/8（$g$=12） | 128 | GQA + RoPE | 160+1 top-8，first 3 dense | — | 151552 | 202752（API 侧标称 204800） | $10^{6}$ | glm-4.7 [W] |
+| GLM-4.5 | 355B / 32B（report 摘要口径：含 MTP、不含词表两侧） | 92 | 5120 | 96/8（$g$=12） | 128 | GQA + RoPE（partial 0.5） | 160+1 top-8，first 3 dense；MTP ×1 | RMSNorm + QK-Norm（config 实测） | 151552 | 131072 | $10^{6}$ | glm-4.5 [A] + glm-4.6 config [W] |
+| GLM-4.6 | 同 4.5（数字引 4.5 report，合法性见 §3） | 92 | 5120 | 96/8（$g$=12） | 128 | GQA + RoPE（partial 0.5） | 160+1 top-8，first 3 dense；MTP ×1 | RMSNorm + QK-Norm（config 实测） | 151552 | 202752 | $10^{6}$ | glm-4.6 [W] |
+| GLM-4.7 | 同 4.5 | 92 | 5120 | 96/8（$g$=12） | 128 | GQA + RoPE（partial 0.5） | 160+1 top-8，first 3 dense；MTP ×1 | RMSNorm + QK-Norm（config 实测） | 151552 | 202752（API 侧标称 204800） | $10^{6}$ | glm-4.7 [W] |
 
-表注五条。其一，「—」= 本轮 research pass 未实测该字段：GLM 2021 / GLM-130B / ChatGLM / GLM-4 各行的逐字段 config 未纳入本书实测序列，谱系结论不依赖这些格子；数值口径优先级为 config.json 实测 > tech report 架构表 > model card > blog（W3 约定页）。其二，total/active 不是 config 字段：355B/32B 引 GLM-4.5 report 摘要（[GLM-4.5 Team, 2025](../references.md)，arXiv:2508.06471，[A]），4.6/4.7 行照抄该数字的合法性来自 §3 的 config 同构验证，不是当然成立。其三，GLM-4.5/4.6/4.7 的架构字段以 GLM-4.6/4.7 config 实测为准（2026-11-12），4.5 行与 4.6 唯一的差异已在 diff 中排除（仅 ctx）。其四，head_dim 128 $\neq$ 5120/96 ≈ 53.3——2.8「head_dim 误解」条目的又一实例，q 投影实为 5120 → 12288、K/V 各 5120 → 1024。其五，GLM-4.7 的 API 侧 ctx 标称 204800（OpenRouter 旁证，2026-11-12）与 config 字段 202752 并存——服务口径与字段口径之差登记在此，不互相覆盖。
+表注五条。其一，「—」= 本轮 research pass 未实测该字段：GLM 2021 / GLM-130B / ChatGLM / GLM-4 各行的逐字段 config 未纳入本书实测序列，谱系结论不依赖这些格子；数值口径优先级为 config.json 实测 > tech report 架构表 > model card > blog（W3 约定页）。其二，total/active 不是 config 字段：355B/32B 引 GLM-4.5 report 摘要（[GLM-4.5 Team, 2025](../references.md)，arXiv:2508.06471，[A]），4.6/4.7 行照抄该数字的合法性来自 §3 的 config 同构验证，不是当然成立。其三，GLM-4.5/4.6/4.7 的架构字段以 GLM-4.6/4.7 config 实测为准（2026-11-12），4.5 行与 4.6 唯一的差异已在 diff 中排除（仅 ctx）。其四，head_dim 128 $\neq$ 5120/96 ≈ 53.3——2.8「head_dim 误解」条目的又一实例，q 投影实为 5120 → 12288、K/V 各 5120 → 1024。其五，GLM-4.7 的 API 侧 ctx 标称 204800（OpenRouter 旁证，2026-11-12）与 config 字段 202752 并存——服务口径与字段口径之差登记在此，不互相覆盖。其六，旗舰三行的 norm 列与 partial 标注为 config 实测（`rms_norm_eps`=$10^{-5}$ 的字段签名 + `use_qk_norm`=true + `partial_rotary_factor`=0.5，2026-11-12 fix round 复核 hf-mirror config）；MTP ×1 即 `num_nextn_predict_layers`=1，机制归 4.5 §6。
 
 读表得出的结构观察是两段式。**objective 驱动期**（GLM 2021、GLM-130B）：谱系的独有机制（blank infilling、2D 位置编码、[gMASK]）由 objective 反向决定，填不满的列恰是「该期还没有标准零件箱」的侧面。**收敛期**（GLM-4.5 起）：每一列都能填，且取值与 DeepSeek/Qwen 同族——GQA、RoPE、细粒度 MoE + shared expert + dense 前导层、untied 词表。两段之间的过渡带是 ChatGLM → GLM-4：对话服务化（instruction / RLHF 归 training 维度），代际报告（[Team GLM, 2024](../references.md)，arXiv:2406.12793，[A]）一篇覆盖 GLM-130B 到 GLM-4 全家族，标题里的 All Tools 即工具调用定位；本 pass 未实测该过渡带各代 config，其架构字段本章不断言。GLM-4.5V（[GLM-V Team, 2025](../references.md)，arXiv:2507.01006，[A]）为视觉版（GLM-4.5V 与 GLM-4.1V-Thinking），多模态细节归 P8，本章只登记存在性。
 
@@ -77,17 +77,19 @@ $$
 
 **MoE 稀疏度取点。** 160 routed + 1 shared、top-8，层内口径 $\rho = 9/161 \approx 5.6\%$；总量口径 32/355 ≈ 9.0%。在 4.5 §1 的稀疏度谱上居中：DeepSeek-V3 层内 3.5%（256+1 top-8）、Qwen3-Next 2.1%（512+1 top-10）、GLM 5.6%。expert 中间维 1536 与 Qwen3-235B 同值，是细粒度切分（4.5 式 (14)(15)：expert 数乘 $m$、中间维除 $m$）落在相近粒度档的信号。
 
-**first_k_dense_replace = 3。** 前 3 层 dense——与 DeepSeek-V3 同取 3，5.2 §6 的两条机制读法照搬：浅层表示未分化、路由信号噪声最大，dense 前导层给统一基底变换；浅层 MoE 均衡回路早期最不稳，dense 起步把振荡隔离在表示基底之外。K2 取 1（5.5），三家取点无公开消融，列入 §5。另记一笔字段级证据：GLM-4.6 config 的 MoE 字段名（first_k_dense_replace、moe_intermediate_size 等）与 DeepSeek-V3 config 同形——字段字典层面的谱系信号，强度低于 K2 的 architectures = DeepseekV3ForCausalLM（5.5 的复用证据），但方向相同：细粒度 MoE 的 config schema 已跨实验室流通。
+**first_k_dense_replace = 3。** 前 3 层 dense——与 DeepSeek-V3 同取 3，5.2 §6 的两条机制读法照搬：浅层表示未分化、路由信号噪声最大，dense 前导层给统一基底变换；浅层 MoE 均衡回路早期最不稳，dense 起步把振荡隔离在表示基底之外。K2 取 1（5.5），三家取点无公开消融，列入 §5。另记两笔字段级证据。其一，GLM-4.6 config 的 MoE 字段名（first_k_dense_replace、moe_intermediate_size、norm_topk_prob、routed_scaling_factor、n_group/topk_group）与 DeepSeek-V3 config 同形——字段字典层面的谱系信号；但 architectures = Glm4MoeForCausalLM、model_type = glm4_moe（自有架构类，config 实测），强度因此低于 K2 的 architectures = DeepseekV3ForCausalLM（5.5 的复用证据）：GLM 借的是 schema 而非类。其二，路由的 config 落点：`norm_topk_prob = true` + `routed_scaling_factor = 2.5` 是 4.5 式 (16)(17) 族「选中集内归一 + 缩放常数」的签名（取点同 5.2 §6 的 V3）；`n_group = 1`、`topk_group = 1` 把 V3 的组限定分发（8 选 4，4.5 §7 的通信动机）退化为全域路由。打分函数形态（sigmoid/softmax）config 无字段，未锁定（§5）。
 
-**attention_bias = true：QKV bias 保留。** 与 Qwen3 的分野正面相对——Qwen3 以 QK-Norm 替代 QKV bias，把 logit 幅度用结构封顶 $|z| \le \sqrt{d_k}$（5.3 §2.2）；GLM-4.5/4.6/4.7 保留 QKV bias，本轮实测字段范围内无 QK-Norm 痕迹。两条路线回答同一个问题（logit 失控 → softmax 饱和 → 梯度消失，2.3 §3.4）：一条把稳定性收归结构，一条留在可学参数手里。bias 参数量本身每层 $12288 + 1024 + 1024 = 14336$ 个、92 层合计约 1.3M——参数的边角料，分野在机制不在参数。GLM 侧该选择的消融公开缺失（§5）。
+**MTP ×1：草稿模块是整件 MoE 层。** config 实测 `num_nextn_predict_layers = 1`；GLM-4.5 report 明写 "we add an MoE layer as the MTP layer"（[A]）——即 4.5 §6 的 $D$=1 链式模块在 GLM 的取点不是小头而是完整一层 MoE（161 expert + attention），训练期监督加密、推理期 self-speculative 草稿、可整体弃置（机制推导归 4.5 §6，不重复）。参数量账进 §4 式 (4)。
 
-**rope_theta = $10^{6}$ 原生覆盖。** 最慢旋转通道波长（2.5 波长账）：
+**attention_bias = true 且 use_qk_norm = true：bias 与 QK-Norm 叠加。** 两个字段同 config 实测（2026-11-12）：GLM-4.5/4.6/4.7 不是「保留 bias、拒绝 QK-Norm」，而是两件都要——GLM-4.5 report Table 1 明写 QK-Norm: Yes，正文自述 "incorporate QK-Norm to stabilize the range of attention logits"（[A]）。与 Qwen3 的分野因此不是二选一：Qwen3 是纯 QK-Norm（attention_bias=false，5.3 §2.2），GLM 是叠加——QK-Norm 把 logit 幅度结构性封顶 $|z| \le \sqrt{d_k}$，bias 保留逐通道常数位移的自由度，同一个稳定性问题（logit 失控 → softmax 饱和 → 梯度消失，2.3 §3.4）上 GLM 多付一份可学参数。bias 参数量每层 $12288 + 1024 + 1024 = 14336$ 个、92 层合计约 1.3M——参数的边角料；叠加是否冗余（封顶之后位移自由度还剩多少表达贡献）无公开消融，列入 §5。
+
+**rope_theta = $10^{6}$ + partial 0.5，原生覆盖。** config 实测 `partial_rotary_factor = 0.5`：128 维 head_dim 只旋 64 维，位置信号集中在旋转维上、其余 64 维纯内容内积（2.5 §4.7 的 partial RoPE 账）。最慢旋转通道波长公式里 $d$ 取旋转维数：
 
 $$
-\lambda_{\max} = 2\pi\, \theta^{\,1 - 2/d} \qquad (3)
+\lambda_{\max} = 2\pi\, \theta^{\,1 - 2/d_{\mathrm{rope}}} \qquad (3)
 $$
 
-**符号**：$\theta$：RoPE base；$d$：head_dim。代入 $\theta$=$10^{6}$、$d$=128：$\lambda_{\max} \approx 5.1 \times 10^{6}$，202752 的窗口只占最慢波长的约 4.0%——不借 rope_scaling 即原生覆盖（本轮实测字段范围内无该字段），对照 DeepSeek-V3 的 $\theta$=$10^{4}$ 必须外挂 YaRN factor 40 才到 163840（5.2 §3.6）。131072 → 202752 的代际扩窗在架构字段上只有 max_position_embeddings 一格变动，扩窗配方（数据与训练日程）属训练侧，[W] 边界内不断言。
+**符号**：$\theta$：RoPE base；$d_{\mathrm{rope}}$：旋转维数 = partial_rotary_factor × head_dim。代入 $\theta$=$10^{6}$、$d_{\mathrm{rope}}$=64：$\lambda_{\max} \approx 4.1 \times 10^{6}$，202752 的窗口占最慢波长的约 5.0%——`rope_scaling` 字段存在但值为 null（config 实测），原生覆盖成立，对照 DeepSeek-V3 的 $\theta$=$10^{4}$ 必须外挂 YaRN factor 40 才到 163840（5.2 §3.6）。131072 → 202752 的代际扩窗在架构字段上只有 max_position_embeddings 一格变动，扩窗配方（数据与训练日程）属训练侧，[W] 边界内不断言。注意 GLM 的 partial 与 DeepSeek-V3 的 64/192 同刻度不同处境：V3 的 nope 维是 MLA 权重吸收的前提（2.5 §4.7），GLM 是纯 GQA、无吸收需求——partial 在此的动机公开材料未说明（§5）。
 
 **训练侧口径登记。** 355B/32B、23T tokens 多阶段训练、hybrid reasoning（thinking / direct 双模式）、ARC（Agentic, Reasoning, Coding）定位——全部引 GLM-4.5 report 摘要（[A]）。双模式的机制本体归 training 维度；模型侧痕迹与 Qwen3 thinking 同型（5.3 已处理），本章不展开。
 
@@ -112,44 +114,54 @@ GLM-4.6 无独立 tech report，GLM-4.7 连 arXiv 条目都没有（搜索 0 条
 | `hidden_size` | 5120 | stream 宽度 $d$ |
 | `num_attention_heads` / `num_key_value_heads` | 96 / 8 | GQA $g$=12；q 投影 5120 → 12288，K/V 各 → 1024 |
 | `head_dim` | 128 | $\neq$ 5120/96 ≈ 53.3（2.8 §8 实例；§1 表注四） |
-| （routed experts） | 160 | 细粒度 MoE，粒度档同 Qwen3-235B（1536 中间维） |
-| （shared experts） | 1 | 常驻公共通道（4.5 §3.1） |
+| `use_qk_norm` | true | QK-Norm：与 QKV bias 叠加（§2.4）；4.5 report Table 1「QK-Norm: Yes」互证 |
+| `attention_bias` | true | QKV bias；叠加取点见 §2.4 |
+| `n_routed_experts` / `n_shared_experts` | 160 / 1 | 细粒度 MoE，粒度档同 Qwen3-235B（1536 中间维）；shared 为常驻公共通道（4.5 §3.1） |
 | `num_experts_per_tok` | 8 | 每 token 加 shared 共 9 个，层内 $\rho \approx 5.6\%$ |
-| `moe_intermediate_size` | 1536 | 单 expert FFN 中间维 |
+| `moe_intermediate_size` | 1536 | 单 expert FFN 中间维（shared 同宽——式 (4) 闭合反证） |
+| `intermediate_size` | 12288 | 前 3 个 dense 层的 FFN 中间维 |
 | `first_k_dense_replace` | 3 | 前 3 层 dense；字段名与 DeepSeek-V3 同形（§2.4） |
+| `norm_topk_prob` / `routed_scaling_factor` | true / 2.5 | 选中集内归一 + 缩放常数（4.5 式 (16)(17) 族落点，取点同 V3） |
+| `n_group` / `topk_group` | 1 / 1 | 组限定分发退化为全域路由（对照 V3 的 8 选 4） |
+| `num_nextn_predict_layers` | 1 | MTP $D$=1，整件 MoE 层（§2.4、式 (4)） |
 | `max_position_embeddings` | 202752 | 4.5 → 4.6 唯一 diff 字段；model card「200K」互证 |
-| `rope_theta` | $10^{6}$ | 式 (3)：$\lambda_{\max} \approx 5.1$M，原生覆盖全窗 |
+| `rope_theta` | $10^{6}$ | 式 (3)：$\lambda_{\max} \approx 4.1$M，原生覆盖全窗 |
+| `partial_rotary_factor` | 0.5 | 只旋 128 维中的 64 维（2.5 §4.7） |
+| `rope_scaling` | null | 字段存在、值为空——原生覆盖的 config 签名 |
+| `hidden_act` | "silu" | gated FFN 门函数：SwiGLU 三矩阵口径坐实 |
+| `rms_norm_eps` | $10^{-5}$ | RMSNorm 的字段签名（§1 谱系表 norm 列依据） |
 | `vocab_size` | 151552 | 与 Qwen 151936 同量级不同档（2.2 五档账）；tokenizer 是否同源本 pass 未锁定 |
-| `attention_bias` | true | QKV bias 保留；与 Qwen3 的分野见 §2.4 |
 | `tie_word_embeddings` | false | 词表参数 $2Vd$ |
+| `architectures` / `model_type` | Glm4MoeForCausalLM / glm4_moe | 自有架构类；借 DeepSeek schema 不借类（§2.4） |
 
 层栈结构（shape 走读）：
 
 ```
 GLM-4.6（92 层，d = 5120，untied 词表）
-┌─ 层 1–3 : dense ── GQA(96Q/8KV × 128，RoPE θ=10^6) + FFN（中间维未锁定）
-├─ 层 4–92: MoE ──── GQA(同上) + router(160 选 8) + 160 routed + 1 shared（d_ff = 1536）
-└─ 词表   : 151552 × 5120 × 2 ≈ 1.55B（embedding + 输出头）
+┌─ 层 1–3 : dense ── GQA(96Q/8KV × 128，RoPE θ=10^6 旋 64 维，QK-Norm + QKV bias) + SwiGLU FFN(d_ff = 12288)
+├─ 层 4–92: MoE ──── GQA(同上) + router(160 选 8，top-k 内归一 × 2.5) + 160 routed + 1 shared（d_ff = 1536）
+├─ 训练期外挂: MTP × 1 ── 整件 MoE 层（161 expert + attention；推理可弃，4.5 §6）
+└─ 词表   : 151552 × 5120 × 2 ≈ 1.55B（embedding + 输出头；官方 355B/32B 口径不含此项）
 ```
 
-**参数复算与诚实的残差。** 355B 是 report 摘要口径，config 字段能复算到哪一步值得走一遍（§3 方法论的内部一致性检查）。可按锁定字段复算的部分：
+**参数复算：全字段锁定后的闭合。** 355B 是 report 摘要口径——report Table 1 注明口径「含 MTP 层参数、不含 word embeddings 与输出层」（[A]）；config 侧所需字段已全部实测（fix round 1 复核 hf-mirror config，2026-11-12），复算因此可以闭合而非止步：
 
 $$
-N_{\mathrm{locked}} = \underbrace{89 \cdot 160 \cdot (3 \cdot 5120 \cdot 1536)}_{\text{routed experts}} + \underbrace{92 \cdot (5120 \cdot 12288 + 2 \cdot 5120 \cdot 1024 + 12288 \cdot 5120)}_{\text{attention}} + \underbrace{2 \cdot 151552 \cdot 5120}_{\text{vocab}} + \underbrace{89 \cdot 5120 \cdot 160}_{\text{router}} \qquad (4)
+N = \underbrace{90 \cdot 161 \cdot (3 \cdot 5120 \cdot 1536)}_{\text{experts（89 MoE 层 + MTP 层）}} + \underbrace{93 \cdot (5120 \cdot 12288 + 2 \cdot 5120 \cdot 1024 + 12288 \cdot 5120)}_{\text{attention（92 层 + MTP 层）}} + \underbrace{3 \cdot (3 \cdot 5120 \cdot 12288)}_{\text{dense FFN}} + \underbrace{90 \cdot 5120 \cdot 160}_{\text{router}} \qquad (4)
 $$
 
-**符号**：按 gated FFN 三矩阵口径计 expert（activation 函数字段本 pass 未实测，若为两矩阵 FFN 则 MoE 项乘 2/3）；attention 项 = Q/K/V/O 四个投影。数值：routed ≈ 336.0B、attention ≈ 12.54B、vocab ≈ 1.55B、router ≈ 0.07B，合计 ≈ 350.1B。与官方 355B 的残差约 4.9B（1.4%）落在本 pass 未锁定的字段上：shared expert 的中间维、前 3 个 dense 层的 FFN 宽度、norm 增益与 bias 项。残差归属明确标注，不凑数——这与 §3 的规则 (ii) 是同一条纪律。
+**符号**：expert 按 SwiGLU 三矩阵计（`hidden_act = "silu"` 实测，gated 口径坐实）；attention 项 = Q/K/V/O 四个投影；MTP = 一个完整 MoE 层（report 原文 "we add an MoE layer as the MTP layer"），其 expert / attention / router 已并入前三项的系数 90 / 93 / 90。数值：experts ≈ 341.9B、attention ≈ 12.7B、dense FFN ≈ 0.57B、router ≈ 0.07B，合计 ≈ 355.2B——与官方 355B 闭合到 0.2B（约 0.06%）以内，残差即 QKV bias（92 层 × 14336 ≈ 1.3M）、norm 增益与 MTP 拼接投影小项。闭合同时反证两个未单列字段的取值：shared expert 与 routed 同宽 1536（否则总和溢出 355B），MTP 恰为一层。词表两侧 $2Vd$ ≈ 1.55B 按官方口径不入账。本节初稿曾以「残差 4.9B、归属未锁定字段」收尾——dense FFN 宽度与 MTP 字段本就在 config 里，初稿的「未锁定」认定是漏读（fix round 1 更正）；残差框架本身保留。
 
-**激活侧（每 token）**：attention 12.54B + MoE 层 9 个 expert（8 routed + 1 shared，按 1536 中间维口径）$89 \times 9 \times 23.6$M ≈ 18.9B，合计 ≈ 31.4B，加 3 个 dense 层 FFN 后与官方「32B activated」（report 摘要口径，[A]）相容；官方口径对词表侧的计法未披露，按 P5 约定照抄官方数字、口径差登记在此（同 5.2 §3.3 的处理）。
+**激活侧（每 token，同口径含 MTP、不含词表）**：attention $93 \times 136.3$M ≈ 12.7B + MoE 激活 $90 \times 9 \times 23.6$M ≈ 19.1B + dense FFN 0.57B ≈ 32.4B，与官方「32B activated」（report 摘要口径，[A]）吻合到 1%。推理期 MTP 可整体弃置（4.5 §6），弃置后激活 ≈ 32.0B——官方口径含 MTP 是训练配置口径，两个数字都登记。
 
 ## 5. 技术开放问题清单
 
 1. **blank infilling 在旗舰代的存否不可见**：config 只能证明 2D 位置表退出（§2.2），GLM-4.5 预训练是否仍混合 blank infilling 变体，report 摘要层面无锁定证据——谱系「独门 objective」的当代存否是公开材料的缺口。
 2. **GLM-130B 稳定性处置与机制家族的逐项对应未建立**：论文逐项处置（[A]）与 2.7 的 Post-LN / warmup / DeepNorm 分析之间的映射本书未复核，其 config 亦未实测。
-3. **QKV bias 保留路线的消融缺失**：GLM-4.5/4.6/4.7 保留 attention_bias（§2.4），Qwen3 转 QK-Norm；两条稳定性路线的逐项对照（质量、logit 幅度分布、训练稳定性）无公开数据。
+3. **bias + QK-Norm 叠加的冗余度无消融**：GLM-4.5/4.6/4.7 两件同用（§2.4），Qwen3 纯 QK-Norm；封顶之后 bias 的位移自由度还剩多少表达贡献、去掉它对 GLM 的质量与训练稳定性曲线影响多少，公开材料无逐项数据。
 4. **first_k_dense_replace 的最优性**：3（DeepSeek-V3、GLM-4.5/4.6）与 1（K2）之间无公开消融（同 5.2 §7 问题 1，跨谱系共用）。
 5. **4.6/4.7 能力增量不可归因**：[W] 边界——config 同构下，ctx 扩窗配方与 post-training 改动均无 paper，能力宣称只能标日期登记（§3）。
-6. **参数复算残差的字段归属**：shared expert 中间维、dense 前导层 FFN 宽度未实测，式 (4) 与 355B 之间约 1.4% 残差的具体构成开放（§4）。
+6. **GLM 侧 partial RoPE 的动机未说明**：纯 GQA 无 MLA 权重吸收需求（对照 2.5 §4.7 的 V3 处境），64/128 旋转配比的收益项公开材料未给消融；router 打分函数形态（sigmoid/softmax）config 无字段、未锁定（§2.4）。
 
 ## 总结
 
@@ -159,15 +171,15 @@ $$
 | blank infilling 后果账 | 式 (1)；7.3× 监督成本（$T$=512、15%、$\mu$=3） | 买到：可生成判定通过 + 理解生成同体（单 stack 单 loss，模式切换在数据侧）；付掉：监督密度 15% + 序列开销 $2m$ |
 | 2D 位置退出 | 退化角读法 | $m$=1 后缀特例 ⊂ prefix-LM（3.1 §4.4）；退化角上两维各失一维，RoPE 占优；objective 存否不可见（§5 问题 1） |
 | GLM-130B | 130B 双语开放；[gMASK] | 100B 量级稳定性记录 [A]；与 2.7 机制家族的逐项对应留练习 4 |
-| 旗舰零件坐标 | 式 (2)：71.1 GiB @ 202752（MHA 反事实 854 GiB）；$\rho$=9/161≈5.6%；式 (3)：$\lambda_{\max}$≈5.1M | $g$=12 居中；first 3 dense 同 V3；QKV bias 保留 vs Qwen3 QK-Norm；$\theta$=$10^{6}$ 原生覆盖 |
+| 旗舰零件坐标 | 式 (2)：71.1 GiB @ 202752（MHA 反事实 854 GiB）；$\rho$=9/161≈5.6%；式 (3)：$\lambda_{\max}$≈4.1M（partial 0.5） | $g$=12 居中；first 3 dense 同 V3；bias + QK-Norm 叠加 vs Qwen3 纯 QK-Norm；MTP ×1 为整件 MoE 层；$\theta$=$10^{6}$ 原生覆盖 |
 | 无 paper 读法 | §3 四步 | 4.6 README 58 行 0 数字 6 指针；config diff 唯一字段；4.7 config 零差异；旁证标日期 |
-| config 精读 | 式 (4)：锁定字段复算 ≈ 350.1B，残差 4.9B 归属标注 | 激活 31.4B + dense 层 ≈ 官方 32B；355B/32B 照抄官方口径 |
-| 开放问题 | §5 六条 | objective 存否、130B 处置对应、bias 路线消融、dense 前导层数、[W] 归因、残差字段 |
+| config 精读 | 式 (4)：全字段闭合复算 ≈ 355.2B vs 官方 355B（含 MTP、不含词表口径），残差 0.06% | 激活 ≈ 32.4B ≈ 官方 32B；MTP 弃置后 ≈ 32.0B；355B/32B 照抄官方口径 |
+| 开放问题 | §5 六条 | objective 存否、130B 处置对应、叠加冗余度、dense 前导层数、[W] 归因、partial 动机与打分函数形态 |
 
 ## 练习
 
 1.（计算）用式 (2) 复核：GLM-4.6（$L$=92、$H_{kv}$=8、$d_{\mathrm{head}}$=128）在 $T$=202752、bf16、$B$=1 下的 KV cache 总量（71.1 GiB），以及 MHA 反事实（$H_{kv}$=96）的 854 GiB。再与 Qwen3-235B 的每 token 斜率 188 KiB（5.3 §2.1）对照：用 $g$=12 与 $g$=16 解释两家的取点差，并算 $B$=32 并发时两家各自的整窗 cache 总量。
-2.（计算）参数账。(a) 按式 (4) 重算 350.1B 的四个分项，验证到 0.1B；(b) 重算激活侧 31.4B（attention 12.54B + $89 \times 9 \times 23.6$M），说明与官方 32B 的口径差可能落在哪些项上；(c) 若 activation 字段实为两矩阵 FFN，式 (4) 的 routed 项与激活账各乘多少，残差变成多少？
+2.（计算）参数账。(a) 按式 (4) 重算 355.2B 的四个分项，验证到 0.1B，并指出 90/93/90 三个系数各自由哪几层贡献；(b) 重算激活侧 32.4B 与 MTP 弃置后的 32.0B，说明官方「含 MTP、不含词表两侧」口径在两个数字上的体现；(c) 反证练习：若 shared expert 中间维实为 $2 \times 1536$，式 (4) 总和变为多少、与官方 355B 的差变为多少——以此说明「闭合反证字段取值」的论证逻辑。
 3.（推导）推广式 (1)：覆盖率 $r$、span 均长 $\mu$ 时，证 $m = rT/\mu$、$|x_{\mathrm{in}}| = T(1 + 2r/\mu)$，并推出「每被监督 token 的前向成本 / CLM」= $(1 + 2r/\mu)/r = 1/r + 2/\mu$。代入 $(r, \mu) \in \{(0.15, 3), (0.15, 10), (0.50, 64)\}$ 各算一倍率，并解释两个方向的渐近：$\mu$ 增大只把倍率压向 $1/r$（序列开销项消失），$r$ 增大才把监督密度项压向 1——文档级 [gMASK] 变体（3.1 §4.2：span 取原文 50%–100%）同时取高 $r$ 高 $\mu$，倍率趋 1 的机制在此。
 4.（代码 + 调研）(a) 写约 15 行教学代码（教学用，非优化实现）：输入两个 config.json 的 dict，输出逐字段 diff（键、旧值、新值）；以 GLM-4.5/4.6/4.7 三份 config 为测试用例，期望输出分别为单字段（max_position_embeddings）与零字段。(b) 读 GLM-130B 论文（arXiv:2210.02414）的稳定性章节，把每一项处置对应到 2.7 的机制（Post-LN 梯度集中、warmup、DeepNorm $(\alpha, \beta)$），列一张对照表——这是 §5 问题 2 的完整答卷。
 
