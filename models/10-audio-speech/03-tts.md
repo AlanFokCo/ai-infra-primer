@@ -2,7 +2,7 @@
 
 > 合成是识别的逆问题，但不是它的镜像：$P(x \mid y)$ 是一对多映射——同一文本有无数种合法读法——必须有一个潜变量来吸收「说话方式」（时长、韵律、音高、音色），三条路线正是这个潜变量的三种安置方案：级联管线把它拆成显式监督模块（duration/pitch/energy），LM 路线把它压进 codec token 上的 softmax 分布，FM 路线把它交给噪声与 infilling 构造。本章给每条路线一个推导锚点：HiFi-GAN 的 MPD 质数周期折叠与 feature matching（vocoder 的对抗工程）、VITS 的 VAE+flow+MAS 统一目标、VALL-E 的 AR+NAR 两阶段分解、F5-TTS 的 infilling CFM 与 Sway Sampling；最后落级联 / LM / FM 三路线对照表 | 前置：1.1（CE 与采样）、2.4（KV cache 账）、6.3（ELBO 式 (3)、VQ/RVQ、LFQ）、7.1（GAN minimax 式 (3)、flow change-of-variables 式 (4)）、7.5（FM 式 (7)、CFM 式 (9)、rectified flow、timestep shift）、7.6（DiT）、7.7（mask-predict）、10.1（codec 六家账与式 (7) bitrate、semantic vs acoustic 对照）、10.2（对齐作为潜变量的另一种处理、前缀条件化式 (21)） | 锚点：jik876/hifi-gan（models.py）[A]、jaywalnut310/vits [A]、QwenAudio/CosyVoice [A]、SWivid/F5-TTS [A]、open-mmlab/Amphion（MaskGCT）[A]；VALL-E / VALL-E 2 / E2-TTS / VoiceBox / NS3 均 [B]（无官方代码，公式引论文原文）
 
-记号约定（沿用 10.1/10.2）：文本序列 $y = (y_1, \ldots, y_U)$（音素或字符级，$U$ 约 10 fps 量级）；声学侧两种形态——mel 帧序列 $x \in \mathbb{R}^{T \times K}$（$T$ 帧，100 fps 量级）与 codec 码矩阵 $C \in \{0, \ldots, K-1\}^{T \times n_q}$（$c_{t,j}$ = 帧 $t$ 第 $j$ 个量化器的码，RVQ 记号同 10.1）；波形 $x[n]$。
+记号约定（沿用 10.1/10.2）：文本序列 $y = (y_1, \ldots, y_U)$（音素或字符级，$U$ 约 10 fps 量级）；声学侧两种形态——mel 帧序列 $x \in \mathbb{R}^{T \times K}$（$T$ 帧，100 fps 量级）与 codec 码矩阵 $C \in \{0, \ldots, K-1\}^{T \times n_q}$（$c_{t,j}$ = 帧 $t$ 第 $j$ 个量化器的码，RVQ 记号同 10.1）；波形 $x[n]$。两处 $K$ 各自定义（mel 通道数 / 码本大小），随 10.1 惯例并置、按上下文区分。
 
 ## 1. 形式化：一对多映射是 TTS 的第一约束
 
@@ -156,7 +156,7 @@ $$
 A^{*} = \operatorname{arg\,max}_{A \in \mathcal{A}_{\mathrm{mono}}} \sum_{t=1}^{T} \log \mathcal{N}\left( z_t;\, \mu_{a(t)},\, \sigma_{a(t)}^2 \right) \qquad (13)
 $$
 
-**符号**：$\mathcal{A}_{\mathrm{mono}}$：单调对齐集合——每帧恰好指派一个音素、音素下标随帧不减，等价于给每个音素分配非负时长 $d_u$ 且 $\sum_u d_u = T$；$a(t)$：帧 $t$ 被指派的音素；$z_t$：后验采样的第 $t$ 帧 latent。
+**符号**：$\mathcal{A}_{\mathrm{mono}}$：单调对齐集合——每帧恰好指派一个音素、音素下标随帧不减，等价于给每个音素分配正整数时长 $d_u \ge 1$ 且 $\sum_u d_u = T$；$a(t)$：帧 $t$ 被指派的音素；$z_t$：后验采样的第 $t$ 帧 latent。
 
 求解结构：单调约束给出与 CTC 同族的格点（10.2 §2.3 的扩展序列在这里换成「音素段」），把 10.2 式 (6) 的「对全部路径求和」换成「对全部对齐取 max」即 Viterbi 式 DP，$O(TU)$ 精确求解——每步训练迭代先跑一次 MAS 得 $A^{*}$，再按式 (11) 的 ELBO 更新。与 CTC 的对照读法值得停一拍：同一个「对齐未知」问题，识别侧求和（软，保留全部对齐的不确定性），合成侧取 max（硬，只要一条最可能的）——硬指派恰好给出式 (3) 所需的显式 $d_u$，它也是 stochastic duration predictor 的训练监督来源。duration predictor 本身用 flow 建时长分布（条件于音素编码），推理时采样 $d_u$——同一文本的韵律多样性由这个采样给出，而不是由确定性的时长回归钉死。
 
@@ -172,7 +172,7 @@ $$
 
 ## 6. LM 路线：VALL-E 的两阶段分解
 
-10.1 §6.3 的伏笔在此兑现：codec token 把语音变成离散序列后，TTS 与文本条件生成同构——VALL-E 论文的表述是 acoustic tokens 充当「一门外语」。设定：10.1 §4 骨架的 RVQ codec，$n_q = 8$ 个量化器（论文公式中 $j \in [2, 8]$ 的口径），码矩阵 $C \in \{0, \ldots, K-1\}^{T \times 8}$；文本侧转为音素序列 $y$；另有一段 acoustic prompt $\tilde{C}$（参考录音的 codec 码）。
+10.1 §6.3 的离散 token 进 LM 分析在此兑现其生成侧一半：codec token 把语音变成离散序列后，TTS 与文本条件生成同构——对 LM 而言，acoustic token 等价于又一种待建模的离散语言。设定：10.1 §4 骨架的 RVQ codec，$n_q = 8$ 个量化器（论文公式中 $j \in [2, 8]$ 的口径），码矩阵 $C \in \{0, \ldots, K-1\}^{T \times 8}$；文本侧转为音素序列 $y$；另有一段 acoustic prompt $\tilde{C}$（参考录音的 codec 码）。
 
 VALL-E（[Wang et al., 2023](../references.md)，arXiv:2301.02111，[B]——微软未释官方代码与权重，公式引论文原文）把联合分布按量化器层做链式分解，再在每层内选择时间结构：
 
@@ -213,7 +213,7 @@ codec decoder ──► 波形 x̂[n]
 
 为什么这样切，三笔账。(i) RVQ 的第一级承载最粗结构（6.3 §5 残差递推：$e_1$ 最接近 $z$ 本身，后续各级只补残差细节）——内容与韵律的全局连贯主要在第 1 层，自回归的全局一致性花在刀刃上。(ii) 第 2–8 层是逐级精修：给定全部低层码后，高层码的帧间依赖弱，并行化的建模误差代价小。(iii) 步数账：把 $8T$ 个码全部摊平自回归是 $8T$ 步严格串行；两阶段是 $T$ 步 AR 加 7 趟层内并行前向。按 10.1 §4.2 的 8 码本档帧率（75 fps）估：每秒音频的串行步数从约 600 降到 75 步加 7 趟——延迟结构完全不同。
 
-**3 秒 prompt 的 in-context cloning**（原文：「only a 3-second enrolled recording of an unseen speaker as an acoustic prompt」）：机制是前缀条件化——与 10.2 式 (21) 的 Whisper 前缀同一原理、方向相反（那里前缀指定任务，这里前缀指定音色）。训练样本里 prompt 与目标是同一说话人的相邻片段，LM 学到的是「延续 prompt 的音色与声学环境」；推理时把前缀换成 3 秒未见说话人的录音，条件分布的音色轴随前缀移动。无 speaker embedding、无微调——LM 路线对级联路线 d-vector 模块的结构性替代就在这一步：音色控制从「一个外挂模块的输出」变成「序列条件本身的属性」。
+**3 秒 prompt 的 in-context cloning**（原文：「only a 3-second enrolled recording of an unseen speaker as an acoustic prompt」）：机制是前缀条件化——与 10.2 式 (21) 的 Whisper 前缀同一原理、方向相反（那里前缀指定任务，这里前缀指定音色）。训练样本里 prompt 与目标是同一说话人同一录音的片段，LM 学到的是「延续 prompt 的音色与声学环境」；推理时把前缀换成 3 秒未见说话人的录音，条件分布的音色轴随前缀移动。无 speaker embedding、无微调——LM 路线对级联路线 d-vector 模块的结构性替代就在这一步：音色控制从「一个外挂模块的输出」变成「序列条件本身的属性」。
 
 **VALL-E 2**（[Chen et al., 2024](../references.md)，arXiv:2406.05370，[B]）的两个补丁都打在式 (16)(17) 的已知病上。**Repetition Aware Sampling**：原文「refines the original nucleus sampling process by accounting for token repetition in the decoding history……stabilizes the decoding……circumvents the infinite loop issue」——AR 长序列在 codec 码上的重复坍缩（同一码段无限循环）是该路线的典型失败，补丁在采样器层：按解码历史中的重复情况在 random 与 nucleus 采样间自适应切换。**Grouped Code Modeling**：「organizes codec codes into groups to effectively shorten the sequence length」——把一帧的多个码编组建模，机制上等价于把式 (16) 的步长按组放大、压缩 AR 段长度。标题级主张 human parity，证据等级维持 [B]。
 
@@ -237,13 +237,13 @@ VALL-E 的 token 是声学重建导向的（10.1 §6.2 对照表：纯声学码�
 
 token-to-speech 段是 conditional flow matching（recap 7.5 式 (9)）：以 semantic token 序列（加说话人条件）为条件、在 mel 空间回归条件速度场，再经 §3 的 HiFi-GAN 部件回波形。结构注记：这条链是「LM 路线」与「级联路线」的混血——文本→token 用 LM（拿 in-context 与语言先验的好处），token→mel→波形回到连续域级联（拿 FM 与 vocoder 的音质好处）；codec 的 RVQ 层级结构（VALL-E 的 8 层账）被整个绕开——semantic token 单流逐帧，没有式 (17) 的层间分解问题。
 
-**CosyVoice 2**（[Du et al., 2024](../references.md)，arXiv:2412.10117，[A]）四个改动各值一读。(i) **chunk-aware causal FM**：「enabling both streaming and non-streaming synthesis within a single model」——FM decoder 按 chunk 因果化（第 $k$ 块 mel 只可见第 $\le k$ 块的 token 条件与已生成 mel），同一权重整句输入即非流式、逐块输入即流式——流式与非流式从两套系统并成一套（mask 语义与 10.2 §7 的 chunk attention 同族）。(ii) tokenizer 的 VQ 换 **FSQ**（finite scalar quantization）：「Replacing vector quantization (VQ) in the speech tokenizer with finite scalar quantization (FSQ), improving codebook utilization」——lookup-free 量化族（6.3 §6 的 LFQ 近亲）：每维标量各自取有限档、码本为各维档数之积，无学习码本即无利用率塌缩。(iii) **去掉 text encoder 与 speaker embedding**，直用预训练文本 LLM 主干（Qwen2.5-0.5B）——文本理解整个外包给语言模型先验；speaker 信息随之改由序列条件携带（机制读法：与 §6 的 in-context prompt 逻辑合流）。(iv) token rate 25 Hz（原文：「Our speech tokenizer works at a token rate of 25 Hz, i.e., 25 speech tokens per second」）——LM 侧序列长度是 75 fps 档的三分之一（10.1 式 (7) 的账），式 (16) 的 AR 段每秒 25 步。
+**CosyVoice 2**（[Du et al., 2024](../references.md)，arXiv:2412.10117，[A]）四个改动各值一读。(i) **chunk-aware causal FM**：「enabling both streaming and non-streaming synthesis within a single model」——FM decoder 按 chunk 因果化（第 $k$ 块 mel 只可见第 $\le k$ 块的 token 条件与已生成 mel），同一权重整句输入即非流式、逐块输入即流式——流式与非流式从两套系统并成一套（mask 语义与 10.2 §7 的 chunk attention 同族）。(ii) tokenizer 的 VQ 换 **FSQ**（finite scalar quantization）：「Replacing vector quantization (VQ) in the speech tokenizer with finite scalar quantization (FSQ), improving codebook utilization」——lookup-free 量化族（6.3 §6 的 LFQ 近亲）：每维标量各自取有限档、码本为各维档数之积，无学习码本即无利用率塌缩。(iii) **去掉 text encoder 与 speaker embedding**，直用预训练文本 LLM 主干（Qwen2.5-0.5B）——文本理解整个外包给语言模型先验；speaker 信息随之改由序列条件携带（机制读法：与 §6 的 in-context prompt 逻辑合流）。(iv) token rate 25 Hz（原文：「Our speech tokenizer works at a token rate of 25 Hz, i.e., 25 speech tokens per second」）——LM 侧序列长度是 75 fps 档的三分之一（单码本流的 token/s = fps 本身，10.1 §6.1 对照表的 fps 列），式 (16) 的 AR 段每秒 25 步。
 
 **CosyVoice 3**（[Du et al., 2025](../references.md)，arXiv:2505.17589，[A]）：FSQ 模块改插 **MinMo** voice encoder（CV2 为 SenseVoice-Large ASR encoder——两代差异原文直述），主线转向 scale-up + post-training，定位 in-the-wild 语音生成。
 
 ## 8. FM 路线：VoiceBox → E2-TTS → F5-TTS（infilling 走读）
 
-这条路线从一个更激进的问题出发：级联要 duration model、LM 要 codec——两个都不要行不行？**VoiceBox**（[Le et al., 2023](../references.md)，arXiv:2306.15687，[B]——Meta 未开源）把 TTS 改写成填空：「text-guided speech infilling task, where the goal is to generate masked speech given its surrounding audio and text transcript」——任意位置挖掉一段语音，条件为上下文音频 + 文本转写，用 flow matching（optimal transport path——7.5 §6 的直线路径族）学回填。任意 mask 位置意味着编辑、去噪、跨语种迁移共用同一模型；更关键的是对齐信息在训练构造中自带：mask 边界外的音频与文本逐帧对应，模型被迫学会文本到帧的映射，duration 问题在任务定义里就消失了。
+这条路线从一个更激进的问题出发：级联要 duration model、LM 要 codec——两个都不要行不行？**VoiceBox**（[Le et al., 2023](../references.md)，arXiv:2306.15687，[B]——Meta 未开源）把 TTS 改写成填空：「text-guided speech infilling task, where the goal is to generate masked speech given its surrounding audio and text transcript」——任意位置挖掉一段语音，条件为上下文音频 + 文本转写，用 flow matching（optimal transport path——7.5 §6 的直线路径族）学回填。任意 mask 位置意味着编辑、去噪等多任务共用同一模型；更关键的是对齐成本被重新安置：构造自带的是「挖空段内容必与其文本段对应」的锚定关系（边界处的文本-音频配对），帧级对齐并不在输入中、由模型内学——duration 问题因此从显式建模降为隐式学习。
 
 **E2-TTS**（[Eskimez et al., 2024](../references.md)，arXiv:2406.18009，[B]——微软未开源）把这个任务推到极简：「text input is converted into a character sequence with filler tokens……flow-matching-based mel spectrogram generator……trained based on the audio infilling task……does not require additional components (e.g., duration model, grapheme-to-phoneme)」——逐字符 + filler 的输入形态在此成型，G2P 一并省掉。
 
@@ -294,7 +294,7 @@ mel 帧轴  t = 1..T
 
 **NaturalSpeech 3 / FACodec**（[Ju et al., 2024](../references.md)，arXiv:2403.03100，[B]——微软未开源）：「factorized vector quantization (FVQ)……decompose speech waveform into distinct subspaces of content, prosody, timbre, and acoustic details」——10.1 §3.3 分离视角的完整产品形态：四个子流各配码本，生成侧各属性流各配一个 diffusion model。克隆 = 换 timbre 子流、保 content 流；可控性走到极端形态——内容、韵律、音色、声学细节各有独立旋钮；代价是四条生成链的复合复杂度。
 
-**MaskGCT**（[Wang et al., 2024](../references.md)，arXiv:2409.00750，[A]——官方实现在 open-mmlab/Amphion）：声学 codec token 上的 mask-predict NAR（7.7 §7 的解码范式搬进语音：全部位点并行出价、按置信度逐轮兑现），两级结构：文本 → 语义 token → 声学 token。与 VALL-E 的对照直接：同样建 codec token，把「AR 第一层 + NAR 其余层」换成 mask-predict 全并行——式 (16) 的 $T$ 步串行税再降一档；代价是伪似然族的老问题（7.7 §7 对照表：迭代伪似然乘积不等于联合似然）。
+**MaskGCT**（[Wang et al., 2024](../references.md)，arXiv:2409.00750，[A]——官方实现在 open-mmlab/Amphion）：声学 codec token 上的 mask-predict NAR（7.7 §7 的解码范式搬进语音：全部位点并行出价、按置信度逐轮兑现），两级结构：文本 → 语义 token → 声学 token。与 VALL-E 的对照直接：同样建 codec token，把「AR 第一层 + NAR 其余层」换成 mask-predict 全并行——式 (16) 的 $T$ 步串行税再降一档；代价是伪似然族的老问题（7.7 §7：迭代伪似然乘积不等于联合似然）。
 
 **2025 批一段式**——从「管线」回归「一个模型」的工程化收束，四家各带一个标志性决策：
 
