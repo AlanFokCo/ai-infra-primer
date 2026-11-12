@@ -8,7 +8,7 @@
 
 | 模型（证据） | attention 方案 | 位置编码 | MoE 粒度与路由 | norm | vocab | ctx（max_position_embeddings） | per-token cache | 激活比（官方口径） | MTP | hybrid |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Llama-4 Scout [W] | GQA（$g$=5，8 KV 头×128）+ chunk 8192 | iRoPE 3:1（每第 4 层 NoPE）；RoPE $\theta=5\times10^{5}$ + llama3 式 f16 | 16 top-1，层层 MoE；路由细节未公开 | RMSNorm（Pre-LN）+ QK-Norm（use_qk_norm=true；Maverick 无） | 202048 | 10,485,760 | 192 KiB | 17B/109B ≈ 15.6% | 公开材料无签名 | 否（chunked full） |
+| Llama-4 Scout [W] | GQA（$g$=5，8 KV 头×128）+ chunk 8192 | iRoPE 3:1（每第 4 层 NoPE）；RoPE $\theta=5\times10^{5}$ + llama3 式 f16 | 16 routed + 1 shared，top-1，层层 MoE（Maverick 128 routed + 1 shared，隔层）；路由细节未公开 | RMSNorm（Pre-LN）+ QK-Norm（use_qk_norm=true；Maverick 无） | 202048 | 10,485,760 | 192 KiB | 17B/109B ≈ 15.6% | 公开材料无签名 | 否（chunked full） |
 | DeepSeek-V3.2 [A] | MLA（576 元素/层）+ DSA top-2048 | MLA 解耦 RoPE 64 维；$\theta=10^{4}$ + YaRN f40（4096→163840） | 256+1 top-8，前 3 层 dense；sigmoid + aux-loss-free 偏置 + 组限定 8 选 4 | RMSNorm（Pre-LN） | 129280 | 163840 | 68.6 KiB（decode 读取压至 top-2048 行） | 37B/671B ≈ 5.5% | 有（$D$=1，接受率 85–90%） | 否（sparse full） |
 | Qwen3-Next [W] | 12 层 gated GQA（$g$=8，2 KV 头×256）+ 36 层 GDN | full 层 partial RoPE 0.25（旋 64/256 维），$\theta=10^{7}$；GDN 层无 RoPE | 512+1 top-10；norm_topk_prob | zero-centered RMSNorm + gated 变体 | 151936 | 262144（宣称可扩 1,010,000） | 24 KiB + 36 MiB 定长状态 | 3B/80B = 3.75% | 有（model card 列装） | 是（3:1） |
 | GLM-4.6 [W] | GQA（$g$=12，8 KV 头×128） | RoPE $\theta=10^{6}$ + partial 0.5（旋 64/128 维，$\lambda_{\max}$≈4.1M 原生覆盖） | 160+1 top-8，前 3 层 dense | RMSNorm + QK-Norm + QKV bias（叠加） | 151552 | 202752 | 368 KiB | 32B/355B ≈ 9.0%（含 MTP、不含词表） | 有（$D$=1，整件 MoE 层） | 否 |
@@ -32,9 +32,9 @@ $$
 
 **符号**：$N_{\mathrm{tot}}$ / $N_{\mathrm{act}}$：总 / 激活参数；$D$：训练 token 数；$Q$：服务期推理 token 总量；$L$：loss 约束——由总参数与数据摊薄，不进 FLOPs 目标。式 (1) 的全部经济含义：服务成本只认 $N_{\mathrm{act}}$（延迟与吞吐定价），容量维度 $N_{\mathrm{tot}}$ 按显存与互联定价，两本账分开优化。$Q$ 越大的服务方，最优解越把 $N_{\mathrm{tot}}/N_{\mathrm{act}}$ 拉大——这就是对照表 MoE 列全勤的机制：不是某家的偏好，是式 (1) 在 $Q$ 大 regime 下的唯一方向。
 
-稀疏度谱（对照表激活比列）：Scout 15.6% → GLM-4.6 9.0% → V3.2 5.5% → Qwen3-Next 3.75% → K3 3.7%（routed 口径 1.8%），与 4.5 §1 登记的 $N_{\mathrm{tot}}/N_{\mathrm{act}}$ 谱（Mixtral ≈ 3.6 → Qwen3-30B ≈ 9.2 → V3 ≈ 18.1）同向单调。用 config 字段可自算的等价口径是 FFN 侧「等总参 dense 的 per-token FLOPs 倍数」$N_e/(k+K_s)$：Scout 16/1 = 16×（无 shared 签名字段；5.1 §6 的常驻 FFN 假说若成立则为 8×）、V3.2 257/9 ≈ 28.6×、GLM-4.6 161/9 ≈ 17.9×、Qwen3-Next 513/11 ≈ 46.6×、K3 896/16 = 56×（routed 口径）。代价侧同样收敛地出现：router 均衡机制（V3 的 aux-loss-free 偏置、Qwen3-Next 的 norm_topk_prob、Llama-4 未公开）、前导 dense 层端点加固（V3/GLM 取 3、K2/Kimi Linear 取 1）、expert 并行的 all-to-all 通信账（4.5 §7 预告，归系统维度）——式 (1) 只给方向，这三个旋钮是每家必须自己填的工程空格。
+稀疏度谱（对照表激活比列）：Scout 15.6% → GLM-4.6 9.0% → V3.2 5.5% → Qwen3-Next 3.75% → K3 3.7%（routed 口径 1.8%），与 4.5 §1 登记的 $N_{\mathrm{tot}}/N_{\mathrm{act}}$ 谱（Mixtral ≈ 3.6 → Qwen3-30B ≈ 9.2 → V3 ≈ 18.1）同向单调。用 config 字段可自算的等价口径是 FFN 侧「等总参 dense 的 per-token FLOPs 倍数」$N_e/(k+K_s)$：Scout 17/2 ≈ 8.5×（16 routed + 1 shared，blog/config 口径，5.1 §5.1/§6）、V3.2 257/9 ≈ 28.6×、GLM-4.6 161/9 ≈ 17.9×、Qwen3-Next 513/11 ≈ 46.6×、K3 896/16 = 56×（routed 口径）。代价侧同样收敛地出现：router 均衡机制（V3 的 aux-loss-free 偏置、Qwen3-Next 的 norm_topk_prob、Llama-4 未公开）、前导 dense 层端点加固（V3/GLM 取 3、K2/Kimi Linear 取 1）、expert 并行的 all-to-all 通信账（4.5 §7 预告，归系统维度）——式 (1) 只给方向，这三个旋钮是每家必须自己填的工程空格。
 
-### 2.2 为什么都探索 subquadratic：1M ctx 的 KV 账
+### 2.2 为什么四家上了 subquadratic：1M ctx 的 KV 账
 
 2.4 的 KV cache 账按「每 token 斜率 × 窗长」写法 recap（GQA 系，bf16 字节系数 $b$=2）：
 
@@ -101,7 +101,7 @@ config.json 是新模型最诚实的一份文件——权重形状由它唯一�
 | `head_dim` | 头维是否独立于 $d/H_q$ | $\neq$ hidden/heads 即独立投影维（2.8 的「常见误解」条目） | Qwen3-Next 256 ≠ 128；GLM-4.6 128 ≠ 53 |
 | `kv_lora_rank` / `qk_rope_head_dim` | MLA 签名 | cache = $(d_c + d_R)$ 元素/层（4.1） | V3/K2 = 512+64 = 576 |
 | `q_lora_rank` / `qk_nope_head_dim` / `v_head_dim` | MLA 投影维 | score 内维 = nope + rope | K2 五字段与 V3 逐值相同（5.5 §4） |
-| `n_routed_experts` / `num_experts_per_tok` / `n_shared_experts` | $N_e$ / $k$ / $K_s$ | $\rho = (k+K_s)/N_e$；FLOPs 倍数 $N_e/(k+K_s)$ | Qwen3-Next 512/10/1（5.3 §4.1） |
+| `n_routed_experts` / `num_experts_per_tok` / `n_shared_experts` | $N_e$ / $k$ / $K_s$ | $\rho = (k+K_s)/N_e$；FLOPs 倍数 $N_e/(k+K_s)$ | Qwen3-Next 512/10/1（5.3 §4.1）；Scout 16+1（字段名 `num_local_experts`，5.1 §6） |
 | `moe_intermediate_size` | expert 中间维 $d_{\mathrm{ff}}^{(e)}$ | 单 expert $3 d\, d_{\mathrm{ff}}^{(e)}$（SwiGLU 三矩阵口径，2.6） | V3 2048 → 44.0M/expert（4.5 §1） |
 | `first_k_dense_replace` | 前导 dense 层数 | 浅层表示未分化 / router 早期振荡两种读法（5.2 §6） | V3/GLM 取 3 vs K2/Kimi Linear 取 1 |
 | `vocab_size` / `tie_word_embeddings` | 词表参数 | untied → $2Vd$ | Scout 202048（5.1 §5） |
@@ -160,8 +160,8 @@ report 的价值分布极不均匀；五步按信息密度排序，每步配一�
 | 主题 | 结论 | 公式 / 数字 | 去向 |
 | --- | --- | --- | --- |
 | 对照总表 | 五家旗舰全 MoE；attention 五落点互不重合；ctx 跨 64 倍 | §1 表（11 列 × 5 行） | 回收 5.1–5.5 |
-| MoE 收敛 | 式 (1)：服务认 $N_{\mathrm{act}}$、容量认 $N_{\mathrm{tot}}$ | $\rho$ 谱 15.6% → 3.7%；FLOPs 倍数 16×–56× | 4.5 |
-| subquadratic 收敛 | 式 (2)：纯 GQA @1M = 192–368 GiB/序列；attention 打分 @1M ≈ $10^{12}$ FLOPs/token | 三家三条出路（GLM 留对照）：压读取（DSA 64×）/ 压层数（hybrid ÷$(r{+}1)$）/ 压可见窗（chunk） | 4.2 / 4.4 / 5.1 |
+| MoE 收敛 | 式 (1)：服务认 $N_{\mathrm{act}}$、容量认 $N_{\mathrm{tot}}$ | $\rho$ 谱 15.6% → 3.7%；FLOPs 倍数 8.5×–56× | 4.5 |
+| subquadratic 收敛 | 式 (2)：纯 GQA @1M = 192–368 GiB/序列；attention 打分 @1M ≈ $10^{12}$ FLOPs/token | 四家三条出路（GLM 留对照）：压读取（DSA 64×）/ 压层数（hybrid ÷$(r{+}1)$）/ 压可见窗（chunk） | 4.2 / 4.4 / 5.1 |
 | MTP 收敛 | 式 (3)：$\alpha$ = 85–90% → $\mathbb{E}$ ≈ 1.85–1.9 → 约 1.8× TPS | 草稿白捡 + 无损 + 正交；三家明装（GLM 为整件 MoE 层变体）、Llama-4 与 K2/K3 无签名 | 4.5 §6、5.4 §2.4 |
 | 分歧 | MLA 压斜率（1.125 KiB/层）/ hybrid 压层数（24 KiB/token）/ 纯 GQA 靠 chunk（4 KiB/层） | cache / 计算 / 实现复杂度三维表 | 4.1 / 4.4 |
 | 方法论 | config 字段字典（19 行）+ modeling 三落点路径 + report 五步 + 30 min checklist | §4 四件工具 | 可迁移 |
