@@ -299,7 +299,7 @@ $$
 
 **符号**：分位数自适应于当前样本当前步——绝大多数步 $s \approx 1$ 不动手，只有真正出界的步被按比例压回 $[-1, 1]$，且无贴边堆积（除以 $s$ 保持相对对比度）。
 
-**rescaled CFG**（[Hang et al., 2023](../references.md)，arXiv:2305.08891，[A]）：把引导后的预测的整体标准差拉回与纯条件预测一致，再与原引导输出混合：
+**rescaled CFG**（[Lin et al., 2023](../references.md)，arXiv:2305.08891，[A]）：把引导后的预测的整体标准差拉回与纯条件预测一致，再与原引导输出混合：
 
 $$
 \tilde\varepsilon_{\mathrm{rs}} = \tilde\varepsilon \cdot \frac{\mathrm{std}\left( \varepsilon_\theta(x_t, t, c) \right)}{\mathrm{std}\left( \tilde\varepsilon \right)}, \qquad \tilde\varepsilon' = \phi\, \tilde\varepsilon_{\mathrm{rs}} + (1 - \phi)\, \tilde\varepsilon \qquad (22)
@@ -479,7 +479,7 @@ $$
 - [Lu et al., 2022](../references.md)：DPM-Solver，arXiv:2206.00927，[A]（key: dpm-solver）——式 (12)(13)：半线性结构 + 指数积分 + Taylor 展开；~10 NFE 口径（标题）
 - [Dhariwal & Nichol, 2021](../references.md)：Diffusion Models Beat GANs on Image Synthesis，arXiv:2105.05233，[A]（key: classifier-guidance）——式 (14)(15)：classifier guidance 的 Bayes 展开与 ε 形式
 - [Ho & Salimans, 2022](../references.md)：Classifier-Free Diffusion Guidance，arXiv:2207.12598，[A]（key: cfg）——式 (16)(17)(18)(19)：隐式分类器推导、tilt 语义
-- [Hang et al., 2023](../references.md)：Common Diffusion Noise Schedules and Sample Steps are Flawed，arXiv:2305.08891，[A]（key: common-diffusion）——rescaled CFG 式 (22)：std 比值与 $\phi$ 混合
+- [Lin et al., 2023](../references.md)：Common Diffusion Noise Schedules and Sample Steps are Flawed，arXiv:2305.08891，[A]（key: common-diffusion）——rescaled CFG 式 (22)：std 比值与 $\phi$ 混合
 - [Saharia et al., 2022](../references.md)：Photorealistic Text-to-Image Diffusion Models with Deep Language Understanding，arXiv:2205.11487，[B]（key: imagen）——dynamic thresholding 式 (21)
 - [Salimans & Ho, 2022](../references.md)：Progressive Distillation for Fast Sampling of Diffusion Models，arXiv:2202.00512，[A]（key: progressive-distillation）——式 (24)(25)：减半迭代与目标反解；v-prediction 原始出处（经 7.2 §5.1）
 - [Song et al., 2023](../references.md)：Consistency Models，arXiv:2303.01469，[A]（key: consistency-models）——式 (26)(27)(28)：自一致性、边界参数化、CD/CT
