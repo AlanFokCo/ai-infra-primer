@@ -46,7 +46,7 @@
 - **LLaVA**（`llava`，arXiv:2304.08485，Haotian Liu，本轮核实——标题 *Visual Instruction Tuning*）：input-level 拼接范式出处（线性 projector）。锚点 `llava-repo`（haotian-liu/LLaVA，200；llava/model 目录实测）。
 - **Flamingo**（`flamingo`，arXiv:2204.14198，Alayrac，本轮核实，**[B]——DeepMind 未开源**）：gated xattn（tanh(α) zero-init）+ Perceiver resampler 出处。开放复现锚点 `open-flamingo-repo`（mlfoundations/open_flamingo，200；open_flamingo/src/flamingo.py 实测含 `gated_cross_attn_layers`——gated xattn 走读锚点）。
 - **BLIP-2**（`blip2`，arXiv:2301.12597，Junnan Li，本轮核实）：Q-Former 出处（混合接入点 (c)），详拆在 8.2。
-- **Qwen2.5-VL**（`qwen2.5-vl`，arXiv:2502.13923，Shuai Bai，本轮核实）：当代开放旗舰锚点。HF 配置实测见 `qwen25vl-config`（7B：vision 32L/hidden 1280/patch 14/spatial_merge 2/window attention 112+fullattn 层 [7,15,23,31]；LLM 28L/3584/28Q-4KV/ctx 128000/vocab 152064/rope_theta 1e6——「vision 0.4B 级 × LLM 7B 级」参数组合表的实测素材，参数总量引 tech report 原表）。
+- **Qwen2.5-VL**（`qwen2.5-vl`，arXiv:2502.13923，Shuai Bai，本轮核实）：当代开放旗舰锚点。HF 配置实测见 `qwen25vl-config`（7B：vision 32L/hidden 1280/patch 14/spatial_merge 2/window attention 112+fullattn 层 [7,15,23,31]；LLM 28L/3584/28Q-4KV/ctx 128000/vocab 152064/rope_theta 1e6——「vision 0.6B 级 × LLM 7B 级」参数组合表的素材。**vision 参数量修正（2026-11-12 W5 审查）**：tech report Table 1 仅结构参数、无 ViT 参数总量行，原锁「0.4B 级」有误；按 config 现推（32L、d=1280、intermediate 3456、SwiGLU）≈0.63B，含 merger ≈0.67B——写作引「0.6B 级（config 现推）」。
 - **InternVL3**（`internvl3`，arXiv:2504.10479，Jinguo Zhu，本轮 search_query 定位核实——标题 *InternVL3: Exploring Advanced Training and Test-Time Recipes for Open-Source Multimodal Models*）：当代开放旗舰对照。
 - repo 重定向记录：**QwenLM/Qwen2.5-VL 已 301 → QwenLM/Qwen3-VL**（系列 repo 归并）；引用一律写 `qwen-vl-repo`（QwenLM/Qwen3-VL，-L 解出 200）。
 - 写作注意：三接入点公式是本章骨架；参数规模组合表的数字引各家 tech report 原表并标日期，不自行加总。

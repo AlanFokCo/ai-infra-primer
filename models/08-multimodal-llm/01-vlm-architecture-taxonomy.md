@@ -59,7 +59,7 @@ $$
                                   ↑ `<image>` 占位符展开处
 ```
 
-这个范式出自 LLaVA（[Liu et al., 2023](../references.md)，arXiv:2304.08485，[A]）：视觉塔取 CLIP ViT-L/14，丢掉 [CLS]、取全部 patch token 的网格特征，connector 是单个线性层 $W \in \mathbb{R}^{d_{\text{llm}} \times d_v}$（后续 LLaVA-1.5 升级为两层 MLP 并把输入提到 336 档，[Liu et al., 2023](../references.md)，arXiv:2310.03744，[A]；connector 的 ablation 归 8.2）。实现走读锚点：haotian-liu/LLaVA 的 llava/model 目录（[llava-repo](../references.md)，[A]）。
+这个范式出自 LLaVA（[Liu et al., 2023](../references.md)，arXiv:2304.08485，[A]）：视觉塔取 CLIP ViT-L/14，丢掉 [CLS]、取全部 patch token 的网格特征，connector 是单个线性层 $W \in \mathbb{R}^{d_{\text{llm}} \times d_v}$（后续 LLaVA-1.5 升级为两层 MLP 并把输入提到 336 档，[Liu et al., 2023](../references.md)，arXiv:2310.03744，[A]；linear vs MLP 的对照行归 8.2）。实现走读锚点：haotian-liu/LLaVA 的 llava/model 目录（[llava-repo](../references.md)，[A]）。
 
 input-level 的代价与收益都写在式 (3) 里。收益是**零新结构**：多模态融合复用 LLM 全部 $L$ 层 self-attention 的容量，图文交互深度拉满，工程上对任何现成 LLM 都是「不改结构、只加数据」。代价有二：$M$ 个 token 全额占用 context 与 KV cache（§4 的账）；且 LLM 必须参与训练——它的 embedding 空间从没见过这种行（§5）。
 
@@ -85,7 +85,7 @@ $$
 \frac{\partial}{\partial \alpha} \tanh(\alpha) = 1 - \tanh^{2}(\alpha) \qquad (6)
 $$
 
-式 (6) 即「门在零点斜率为 1」：$\alpha = 0$ 时右端取值为 $1$，只要 XAttn 分支输出非零、上游梯度非零，$\alpha$ 第一步就收到满额梯度（完整推导留作练习 2）。这是 adaLN-Zero 家族（7.6）的同一招用在条件注入上：把「新模块起步 = identity」变成初始化时刻可证明的性质。Flamingo 论文的消融显示，去掉 tanh 门控的零初始化、让 xattn 输出按普通残差直接注入，会明显掉点（[B]，论文口径）——初始恒等性不是装饰，是这条路线保住冻结 LM 能力的关键设计。
+**符号**：$\alpha$：式 (4) 的逐层可学门控标量；右端为 $\tanh$ 的一阶导数。式 (6) 即「门在零点斜率为 1」：$\alpha = 0$ 时右端取值为 $1$，只要 XAttn 分支输出非零、上游梯度非零，$\alpha$ 第一步就收到满额梯度（完整推导留作练习 2）。这是 adaLN-Zero 家族（7.6）的同一招用在条件注入上：把「新模块起步 = identity」变成初始化时刻可证明的性质。Flamingo 论文的消融显示，去掉 tanh 门控的零初始化、让 xattn 输出按普通残差直接注入，会明显掉点（[B]，论文口径）——初始恒等性不是装饰，是这条路线保住冻结 LM 能力的关键设计。
 
 (b) 的推理账与 (a) 结构性不同：视觉不占输入序列，LLM 自注意力的 KV cache 长度仍是 $T$ 而非 $T + M$；视觉特征的 K/V 在每个插入层各算一次、decode 全程复用。代价写在同一处：融合只发生在插入层——冻结层里的文本 token 看不到图像，图文交互深度由插入层的数量与位置决定。这就是 §3.4 对照表「交互深度」一栏的出处。
 
@@ -99,7 +99,7 @@ $$
 v = W_{\text{proj}}\, \mathrm{QFormer}\left( q_{1:B},\; z_{\text{img}} \right) \in \mathbb{R}^{B \times d_{\text{llm}}}, \qquad M = B = 32 \qquad (7)
 $$
 
-**符号**：$q_{1:B}$：可学 query，BLIP-2 取 $B = 32$；$W_{\text{proj}}$：到 LLM 宽度的线性投影。「混合」的准确含义：Q-Former 内部的 cross-attention（query 读冻结 ViT 输出）就是 (b) 的读取机制，只不过它被收编进 connector、作用于 LLM 体外；最终接入仍按 (a) 拼进输入序列。(c) = (b) 的读取 × (a) 的落点。与纯 (a) 相比，$M$ 与图像分辨率解耦——256 个 patch 也好、2880 个 tile token 也好，进 LLM 的恒为 32 个。代价是「压什么、丢什么」的决定被集中压给 Q-Former 的训练目标（ITC/ITM/ITG 三目标与两阶段训练，8.2 详拆）；且它不是免费的——小数据下未必打得过朴素 MLP，LLaVA-1.5 的对照实验同样在 8.2。
+**符号**：$q_{1:B}$：可学 query，BLIP-2 取 $B = 32$；$W_{\text{proj}}$：到 LLM 宽度的线性投影。「混合」的准确含义：Q-Former 内部的 cross-attention（query 读冻结 ViT 输出）就是 (b) 的读取机制，只不过它被收编进 connector、作用于 LLM 体外；最终接入仍按 (a) 拼进输入序列。(c) = (b) 的读取 × (a) 的落点。与纯 (a) 相比，$M$ 与图像分辨率解耦——256 个 patch 也好、2880 个 tile token 也好，进 LLM 的恒为 32 个。代价是「压什么、丢什么」的决定被集中压给 Q-Former 的训练目标（ITC/ITM/ITG 三目标与两阶段训练，8.2 详拆）；且它不是免费的——LLaVA-1.5 的讨论指出，Q-Former 类 resampler 方案的训练语料在数亿级，而其 1.2M 数据规模下两层 MLP 已够（论文讨论口径，非表内消融行；机制账与 linear/MLP 对照行归 8.2）。
 
 ### 3.4 三接入点对照
 
@@ -137,9 +137,9 @@ $$
 | Flamingo [B] | 冻结（NFNet-F6，对比预训练） | 训练（resampler + xattn） | 冻结（Chinchilla） |
 | BLIP-2 [A] | 冻结（ViT-g/14） | 训练（Q-Former，两阶段） | 冻结（FlanT5 / OPT） |
 | LLaVA [A] | 冻结（CLIP ViT-L/14） | 训练（线性层 / MLP） | 微调 |
-| Qwen2.5-VL [A] | 训练（自研 ViT 塔） | 训练 | 训练 |
+| Qwen2.5-VL [A] | 分阶段：预训练 phase 2 起解冻、post-training 再冻结 | 训练 | 训练 |
 
-冻结的机制理由分两笔。**冻 LLM**（Flamingo / BLIP-2 路线）：保护预训练语言能力——few-shot、指令遵循这些资产是在纯文本语料上长出来的，多模态数据混进来微调就有冲淡风险；配合 zero-init 门（式 (4)-(6)），训练起点干脆就是原模型本身。代价是新容量全部集中在新插入层或 connector 里，融合深度受限（§3.4 表）。**冻 ViT**（除 Qwen 系外几乎全员）：CLIP/SigLIP 塔的表征是 4 亿级图文对对比预训练的产物（6.2，[Radford et al., 2021](../references.md)，arXiv:2103.00020，[A]），VLM 手里的图文对规模小几个量级，微调容易把现成的好表征拉坏；外加一笔工程账——塔冻结意味着 $z_{\text{img}}$ 可离线预计算、入缓存复用。Qwen2.5-VL 代表相反端点：vision tower 自研（window attention + spatial merge，结构归 8.2）并全程参与训练——数据量到位时联合训练上限更高，这是拿算力换表征自由度的选择。
+冻结的机制理由分两笔。**冻 LLM**（Flamingo / BLIP-2 路线）：保护预训练语言能力——few-shot、指令遵循这些资产是在纯文本语料上长出来的，多模态数据混进来微调就有冲淡风险；配合 zero-init 门（式 (4)-(6)），训练起点干脆就是原模型本身。代价是新容量全部集中在新插入层或 connector 里，融合深度受限（§3.4 表）。**冻 ViT**（除 Qwen 系外几乎全员）：CLIP/SigLIP 塔的表征是 4 亿级图文对对比预训练的产物（6.2，[Radford et al., 2021](../references.md)，arXiv:2103.00020，[A]），VLM 手里的图文对规模小几个量级，微调容易把现成的好表征拉坏；外加一笔工程账——塔冻结意味着 $z_{\text{img}}$ 可离线预计算、入缓存复用。Qwen2.5-VL 代表相反端点：vision tower 自研（window attention + spatial merge，结构归 8.2），预训练 phase 2 起全解冻参与联合训练，post-training（SFT/DPO）阶段再度冻结（tech report 口径）——数据量到位时联合训练上限更高，但冻结仍是训练末段的默认收束。
 
 更深一层的问题是表征内容的错配：**LLM 的 embedding 空间缺什么视觉特征？** 文本 embedding 是 next-token 目标在纯文本上训出来的（2.2），本身没有任何视觉接地；接进来的 $v$ 必须独自充当「像素世界的摘要」。而 CLIP/SigLIP 特征处于**语义抽象层级**：对比目标（6.2）只监督「整图 ↔ 整句」的全局对齐，不监督逐 patch 的细节保持——颜色精确值、小字、物体计数、细粒度空间关系这些像素级信息在塔内逐层衰减，到 $z_{\text{img}}$ 已所剩无几。两个直接后果：(i) 进 LLM 用 dense patch token 而不用 [CLS] pooled 向量（LLaVA 的选择），至少保住空间网格结构；(ii) 小字 OCR / 计数类任务成为 VLM 的传统短板，直接推高分辨率路线（§4 的账）与视觉塔侧的 dense 监督补强（SigLIP 2 叠加逐 patch 目标正是补这一缺口，6.1 §8）。
 
@@ -147,14 +147,14 @@ $$
 
 ## 6. 参数规模组合表
 
-真实组合（各家论文原表 / config 实测口径，2026-11-12 锁定；不自行加总）：
+真实组合（各家论文原表 / config 实测与现推口径，2026-11-12 锁定；vision 与 LLM 两列不跨列加总）：
 
 | 系统 | vision encoder | LLM | 可训参数量级 | 接入点 |
 | --- | --- | --- | --- | --- |
 | LLaVA-13B | CLIP ViT-L/14（0.3B，6.1 §4 口径） | Vicuna-13B | 线性 $W$：$1024 \times 5120 \approx 5$ M | (a) |
 | Flamingo-80B [B] | NFNet-F6（0.4B 级，冻结） | Chinchilla-70B（冻结） | resampler + xattn $\approx$ 10B | (b) |
 | BLIP-2 | ViT-g/14（1B，冻结） | FlanT5-XXL 11B（冻结） | Q-Former 188M | (c) |
-| Qwen2.5-VL-7B | 自研 ViT（0.4B 级：32 层、hidden 1280，config 实测） | 7B 级（28 层、宽 3584） | 全量训练 | (a) |
+| Qwen2.5-VL-7B | 自研 ViT（0.6B 级：32 层、hidden 1280，config 现推） | 7B 级（28 层、宽 3584） | 全量（分阶段，见 §5） | (a) |
 
 三个读法。其一，**vision 塔恒为 LLM 的零头**（0.3–1B 对 7–70B）：这是分工而非巧合——视觉侧所需容量远低于语言侧，把参数预算花在 LLM 上是各家共同结论；§5 的「冻 ViT」之所以便宜，部分原因正是它本来就小。其二，**接入点决定可训参数的位置与量级**：(a) 的 connector 是百万级（线性 $W$ 的参数量就是 $d_v \times d_{\text{llm}}$ 一笔），可训主体是 LLM 自身；(b) 把可训参数堆进插入层、堆到 10B 也不动原模型一行；(c) 折中在亿级。开放生态里 (a) 成主流、(b) 式微，工程解释直接：(a) 对任何现成 LLM 都是「不改结构、只加数据」，整个 P2/P4 的推理与训练栈原样复用；(b) 要求框架支持层间插层，且面对开源 LLM 权重时「冻结保能力」的收益需要用自家算力重新兑现。其三，这张表同时是边际收益表的底稿：vision 侧从 0.3B 升到 1B（BLIP-2 档）吃掉的参数预算，只相当于 LLM 从 7B 迈到 8B 的一步，而视觉表征的升级（分辨率、dense 监督）直接作用于 §5 点名的短板——LLM 已到 70B 级的组合里继续堆语言参数，边际收益通常不如把 vision 侧的分辨率与表征补齐。8.2 的 connector 与分辨率军备竞赛正是沿这个不等式展开。
 
