@@ -93,7 +93,7 @@ $$P\big( \mathbf{x}_{1:S} \big) = \prod_{s=1}^{S}\ \underbrace{\prod_{k=1}^{K} P
 
 ### 4.3 RQ-Transformer：时间 × 深度的两级分解（本章核心推导）
 
-式 (4) 若朴素实现，要把每帧 $Q$ 个 token 展平成一条长 $Q \cdot S$ 的序列过标准 causal Transformer——长上下文成本与 cache 都乘上 $Q$ 倍（账在下面）。RQ-Transformer（Moshi 论文 §3.4.1；谱系：RQ-Transformer 出自 Lee et al. 2022 的二维 token 网格生成，层次化序列分解思想同族于 MegaByte（Yu et al. 2024）——Moshi 论文转引）把二维网格（时间 $s$ × 深度 $k$）拆成两级模型。原文定义：「breaks down a flattened sequence of length $K \cdot S$ into $S$ timesteps for a large **Temporal Transformer** which produces a context embedding used to condition a smaller **Depth Transformer** over $K$ steps」。
+式 (4) 若朴素实现，要把每帧 $Q$ 个 token 展平成一条长 $Q \cdot S$ 的序列过标准 causal Transformer——长上下文成本与 cache 都乘上 $Q$ 倍（账在下面）。RQ-Transformer（Moshi 论文 §3.4.1；谱系：RQ-Transformer 出自 Lee et al. 2022 的二维 token 网格生成，层次化序列分解思想同族于 MegaByte（Yu et al. 2024）——Moshi 论文转引）把二维网格（时间 $s$ × 深度 $k$）拆成两级模型。原文定义：「breaks down a flattened sequence of length $K \cdot S$ into $S$ timesteps for a large **Temporal Transformer** which produces a context embedding used to condition a smaller **Depth Transformer** over $K$ steps」（引句的 $K$ 为全流子序列总数 = 本章 $Q$ = 17，记号映射见式 (6) 后的计数口径说明）。
 
 **第一级：Temporal Transformer**（大模型，Helium 7B 文本 LLM 初始化，2.1T tokens 文本预训练）。帧 $s$ 的输入是该帧已齐 token 的 embedding 求和：
 
@@ -107,7 +107,7 @@ $$g_{s,0} = c_s, \qquad g_{s,j} = f_{\text{depth}}\big( c_s,\, e_{s,0}, \ldots, 
 
 **符号**：深度序固定为 $x_{s,0} = w_s$（文本第 0 步）、$x_{s,j} = a^{m}_{s,j}$（$j = 1..K$）；$e_{s,j}$：深度第 $j$ 步已生成 token 的 embedding；$W_j$：第 $j$ 类 token 的输出头（文本头与各码本头分开）。
 
-计数口径说明（防与原文「over $K$ steps」对不上）：原文按音频码本计深度步数（$K = 8$ 步）；本章把文本头并列为深度第 0 步得 $Q' = 9$。两种读法功能等价——文本步是 $c_s$ 上的线性头（$g_{s,0} = c_s$ 直出，可不经 depth 前向），Depth Transformer 本体只跑 8 个码本步。
+计数口径说明（防与原文「over $K$ steps」对不上）：原文的 $K$ 是**全流子序列总数**——§3.4.2 Eq (6) 明确「a total number of $K = 2Q + 1$ streams, with $Q = 8$」即 $K = 17$（其 $Q$ = 每流码本数，对应本章 $K$ = 8；含用户流 8 条——训练时用户流也建模，部署时只喂不采），「the number of steps in the Depth Transformer is at most $K$」按 17 计。本章的 8 步口径对应**官方实现**（kyutai-labs/moshi `lm.py` 实测：`dep_q = 8`、`n_q = 16`，文本由 `text_linear` 从 temporal 输出直出、用户流推理只喂不采）：Depth Transformer 本体只跑 Moshi 侧 8 个码本步，文本步是 $c_s$ 上的线性头——本章 $Q' = 9$（1 文本 + 8 码本）由此而来。
 
 把式 (5)(6) 代回式 (4)，模型流的条件因子全部换成「经 $c_s$ 瓶装」的形式：
 
@@ -141,7 +141,7 @@ RQ-Transformer 一帧的生成流（帧 s；c_s 由 §4.3 式 (5) 在帧 s-1 末
 
 两点结论。**其一，长上下文因子从 $Q^2$ 降回 $1$**：展平基线的随 $S$ 增长项携带 $Q^2 = 289$ 倍乘子，RQ 把它拆成「时间轴 $S$ 项 × 1 倍」加「帧内 $Q'^2$ 的常数项」——后者不随对话长度增长。代入具体数：10 分钟对话 $S = 7500$ 帧，展平基线每帧读约 $17 \times 7500 \approx 1.3 \times 10^5$ 条 cache，RQ 时间轴读 $7.5 \times 10^3$ 条——长上下文读取量 $17 \times$ 差，且 cache 总增长也慢 $17 \times$。**其二，帧内结构成本被移进小模型**：Depth Transformer 承担每帧 9 步，但它是「smaller」档，9 步浅层前向在 80 ms 的帧预算内是廉价的；大模型的宽度只按帧率（12.5 Hz）计费，不按 token rate（100 tok/s + 文本）计费。这就是「80 ms 一帧出 17 个 token 还能实时」的算术来源。
 
-**参数账（结构比例）**。三块：(i) Temporal——Helium 7B 初始化，是绝对大头（原文口径；7B 级 LLM 的典型宽度 $d_t$ 在 4096 档）；(ii) Depth——小模型，原文仅给定性「smaller」，不给未收录参数数；(iii) embedding + 输出头表：16 个音频码本（双流 × $K = 8$）× 2048 entry 的输入表、文本词表的输入/输出表、各码本输出头——音频表合计约 $16 \times 2048 \times d_t \approx 3.3 \times 10^4 \times d_t$ 参数，$d_t = 4096$ 档约 1.3 亿，相对 7B 主干是百分位级。结构判断：RQ 的账本质是「把 token rate 的税从宽度上转移到深度（层数极少的小模型）上」——codebook 越多、帧率越低，这笔转移越划算；反方向（$K = 1$ 单码本）则根本不需要 Depth 级，§5.2 的 GLM-4-Voice 正是那个极端点。
+**参数账（结构比例）**。三块：(i) Temporal——Helium 7B 初始化，是绝对大头（原文口径；7B 级 LLM 的典型宽度 $d_t$ 在 4096 档）；(ii) Depth——原文给全规模（§3.4.1 正文：「As detailed in Table 1, our Depth Transformer has 6 layers, a dimension of 1024, and 16 attention heads」；Table 1 同载 MLP 4096）：按每层 $4 d^2 + 2 d\, d_{\text{mlp}}$（attention 四矩阵 + MLP 上下投影）估，$6 \times (4 \times 1024^2 + 2 \times 1024 \times 4096) \approx 7.5 \times 10^7$——约 75M，恰为 Temporal 7B 的约 1%，「smaller」是百倍级的小，效率表里的 $d_d$ 由此钉在 1024；(iii) embedding + 输出头表：16 个音频码本（双流 × $K = 8$）× 2048 entry 的输入表、文本词表的输入/输出表、各码本输出头——音频表合计约 $16 \times 2048 \times d_t \approx 3.3 \times 10^4 \times d_t$ 参数，$d_t = 4096$ 档约 1.3 亿，相对 7B 主干是百分位级。结构判断：RQ 的账本质是「把 token rate 的税从宽度上转移到深度（层数极少的小模型）上」——75M 对 7B 的 1% 配比把这笔记账直接坐实：codebook 越多、帧率越低，这笔转移越划算；反方向（$K = 1$ 单码本）则根本不需要 Depth 级，§5.2 的 GLM-4-Voice 正是那个极端点。
 
 ### 4.4 Inner Monologue：时间对齐的文本前缀
 
