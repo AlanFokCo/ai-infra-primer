@@ -15,7 +15,7 @@
 | 主干 | MMDiT：图文双流各自 QKV/MLP/adaLN + 拼接序列联合 attention | 7.6 §7.1 |
 | 训练稳定化 | QK-norm：per-head RMSNorm 把 logit 上界钉在 $\sqrt{d_h}$ | 7.6 §7.2 |
 | 文本条件 | CLIP-L + OpenCLIP-G + T5-XXL 三 encoder（123M + 695M + 4.7B） | 7.6 §4 |
-| 采样 | PF-ODE solver（7.3 §4 族）+ CFG：$\tilde v = v_\theta(\varnothing) + w\,(v_\theta(c) - v_\theta(\varnothing))$ | 7.4 §4.2 |
+| 采样 | PF-ODE solver（7.3 §6 族）+ CFG：$\tilde v = v_\theta(\varnothing) + w\,(v_\theta(c) - v_\theta(\varnothing))$ | 7.4 §4.2 |
 
 整机数据流走一遍（推理方向，$t: 1 \to 0$）：
 
@@ -30,7 +30,7 @@ prompt ─► T5-XXL ───► sequence 沿序列维拼进 Y ────┘
 z_0 ─► 除以 scaling factor ─► VAE decoder ─► 像素图
 ```
 
-**scaling 证据。** SD3 论文报告验证 loss 随主干参数（约 0.8B → 8B 档）持续下降，且与人类偏好评测同向改善；8B 档在人类偏好上超过 SDXL 等前代开放模型（均论文 Figure 口径，2026-11-12）。机制读法：DiT 在 ImageNet 上的 Gflops↔FID 对数线性（7.6 §6.3）延续到了 T2I 尺度——「换 transformer 主干就能吃 scaling law」这个 DiT 的核心论点，由 SD3 在开放权重系统上坐实。后续的 SD3.5 与 FLUX（[C]，权重 gated、仅述已披露口径）都是这台整机的直接变体：前者同配方的权重更新，后者 double→single stream 的结构变体（7.6 §7.3）。
+**scaling 证据。** SD3 论文报告验证 loss 随主干规模（depth 15–38，最大 8B 档）持续下降，且与人类偏好评测同向改善；8B 档在人类偏好上超过 SDXL 等前代开放模型（均论文 Figure 口径，2026-11-12）。机制读法：DiT 在 ImageNet 上的 Gflops↔FID 对数线性（7.6 §6.3）延续到了 T2I 尺度——「换 transformer 主干就能吃 scaling law」这个 DiT 的核心论点，由 SD3 在开放权重系统上坐实。后续的 SD3.5 与 FLUX（[C]，权重 gated、仅述已披露口径）都是这台整机的直接变体：前者同配方的权重更新，后者 double→single stream 的结构变体（7.6 §7.3）。
 
 本章其余系统都可以读作对这张配方表的改写：SDXL 改的是条件通路与阶段分工，Imagen 改的是表示空间与模型分解，AR 系把生成目标整个换掉。
 
@@ -38,7 +38,7 @@ z_0 ─► 除以 scaling factor ─► VAE decoder ─► 像素图
 
 先看一个数据管线的矛盾。训练 $1024^2$ 模型时，长宽比各异的原图要切成方形训练样本（multi-aspect bucketing，7.6 §7.3）：直接中心裁剪会产出大量「构图被切」的样本——人物只剩半身、物体被边框切断；模型学到这些样本后，生成时也会随机断头。SDXL 之前的对策是丢数据（按尺寸与裁剪质量过滤），SDXL（[Podell et al., 2023](../references.md)，arXiv:2307.01952，[A]）反过来：**不丢数据，把每张样本的原始尺寸与裁剪坐标作为条件标注给模型**。
 
-**micro-conditioning（微条件化）。** 设训练样本来自原图尺寸 $(h_0, w_0)$、裁剪窗口左上角坐标 $(c_y, c_x)$、目标分辨率 $(h_t, w_t)$。每个标量各自过一组 Fourier 特征（与 timestep embedding 同族的 sinusoidal 展开，注入通路见 7.6 §5）：
+**微条件化（micro-conditioning）。** 设训练样本来自原图尺寸 $(h_0, w_0)$、裁剪窗口左上角坐标 $(c_y, c_x)$、目标分辨率 $(h_t, w_t)$。每个标量各自过一组 Fourier 特征（与 timestep embedding 同族的 sinusoidal 展开，注入通路见 7.6 §5）：
 
 $$
 \phi(v) = \left[ \sin(\omega_1 v),\, \cos(\omega_1 v),\, \ldots,\, \sin(\omega_m v),\, \cos(\omega_m v) \right], \qquad \omega_k = \exp\left( -\tfrac{k}{m} \ln \Omega \right) \qquad (1)
@@ -56,7 +56,7 @@ $$
 
 **base + refiner 两阶段。** SDXL 的整机由两个独立权重的 latent diffusion 模型组成（同 f8/4ch latent 空间，6.3 §7.1）：base 是 2.6B 的 U-Net 主干（论文口径；text encoder 侧 CLIP-L 123M + OpenCLIP-G 695M，7.6 §4 已核），refiner 是同族 U-Net，只在**低噪声段**（$t$ 近 0 的一端）训练与工作——正是 7.2 §2.3 频谱读法里高频细节成形的区间。两种用法（论文口径）：(a) 切换式（ensemble of expert denoisers）：base 从 $t = 1$ 走到切换时刻 $t_s$，refiner 接管 $t_s \to 0$；(b) 后处理式：base 出完整 latent，加少量噪声回到 $t_s$ 再让 refiner 去回 0（SDEdit 风格的细节精修）。账的读法与 4.5 的 MoE 同构：MoE 沿 token 轴分工，这里沿 $t$ 轴分工——两个专家各自只在自己擅长的噪声区间分配容量，refiner 不必学构图、base 不必精修纹理。refiner 是可选项：base 单用即可出图，加 refiner 换细节与纹理的偏好分（论文口径）。
 
-定位一句话：SDXL 的生成目标与主干家族全是 7.2/7.6 §5 的旧部件（latent + U-Net + cross-attention），新意集中在**条件通路**（式 (1)(2)）与**沿 $t$ 的系统分工**——它是一个「系统工程」而非「算法」意义上的升级，这恰恰是它成为之后两年工业部署默认底座的原因。
+定位一句话：SDXL 的生成目标与主干家族全是 7.2/7.6 §5 的旧部件（latent + U-Net + cross-attention），新意集中在**条件通路**（式 (1)(2)）与**沿 $t$ 的系统分工**——它是一个「系统工程」而非「算法」意义上的升级。
 
 ## 3. Imagen [B]：像素级联、T5-only 与 dynamic thresholding
 
@@ -95,10 +95,10 @@ $$
 **(2) 目标函数同式。** 同样的链式分解、同样的精确负对数似然：
 
 $$
-p_\theta(z) = \prod_{i=1}^{N} p_\theta(z_i \mid z_{</<i}), \qquad L = -\,\mathbb{E}_{z \sim p_{data}} \sum_{i=1}^{N} \log p_\theta(z_i \mid z_{</<i}) \qquad (5)
+p_\theta(z) = \prod_{i=1}^{N} p_\theta(z_i \mid z_{<<i}), \qquad L = -\,\mathbb{E}_{z \sim p_{data}} \sum_{i=1}^{N} \log p_\theta(z_i \mid z_{<<i}) \qquad (5)
 $$
 
-**符号**：$N$：token 数（$256^2$ 档为 256）；$z_{</<i}$：raster 前缀。没有 ELBO 下界、没有回归替代目标——7.1 对照表里 AR 行的「精确似然」在图像上原样成立，这是它对 diffusion 的硬优势（diffusion 侧精确似然要走 PF-ODE 的 trace 积分，7.3 §5 / 7.5 §2，贵到不实用）。
+**符号**：$N$：token 数（$256^2$ 档为 256）；$z_{<<i}$：raster 前缀。没有 ELBO 下界、没有回归替代目标——7.1 对照表里 AR 行的「精确似然」在图像上原样成立，这是它对 diffusion 的硬优势（diffusion 侧精确似然要走 PF-ODE 的 trace 积分，7.3 §6.3 / 7.5 §2，贵到不实用）。
 
 **(3) 架构原样复用。** 2.8 §1 的标准配方整块搬来：Pre-LN RMSNorm + RoPE + SwiGLU 的 decoder-only block，无卷积、无 2D 位置编码、无视觉专属组件。规模档 111M → 3.1B。
 
@@ -108,27 +108,27 @@ $$
 
 ## 5. AR 生图 II：VAR —— next-scale prediction
 
-先问 raster 展平丢了什么。位点 $(i, j)$ 与 $(i, j+1)$ 在序列里相邻，但 $(i, j)$ 与 $(i+1, j)$ 隔了 $w$ 个位置——2D 邻接关系在 1D 化后只剩一半；更要命的是前缀条件的信息不完备：预测右下角时，右半张与下半张图的「历史」根本不存在，模型只能凭左上的 L 形邻域外推全局结构。VAR（[Tian et al., 2024](../references.md)，arXiv:2404.02905，[A]，走读锚点 [FoundationVision/VAR](../references.md) 的 `models/var.py`、`models/vqvae.py`）的答法不是换模型，而是换「下一个」的定义：next-token 改成 **next-scale prediction（下一尺度预测）**。
+先问 raster 展平丢了什么。位点 $(i, j)$ 与 $(i, j+1)$ 在序列里相邻，但 $(i, j)$ 与 $(i+1, j)$ 隔了 $w$ 个位置——2D 邻接关系在 1D 化后只剩一半；更要命的是前缀条件的信息不完备：预测右下角时，右半张与下半张图的「历史」根本不存在，模型只能凭左上的 L 形邻域外推全局结构。VAR（[Tian et al., 2024](../references.md)，arXiv:2404.02905，[A]，走读锚点 [FoundationVision/VAR](../references.md) 的 `models/var.py`、`models/vqvae.py`）的答法不是换模型，而是换「下一个」的定义：next-token 改成 **下一尺度预测（next-scale prediction）**。
 
-**形式化。** tokenizer 是多尺度 VQ（6.3 §3 家族的残差结构，共享 codebook，VAR 档词表 $V = 4096$）：图像被编码成 $K$ 个逐级加细的 token map $r_1, \ldots, r_K$，$r_k \in \{1, \ldots, V\}^{h_k \times w_k}$，$256^2$ 档的尺度序列 $(h_k, w_k) \in \{1, 2, 3, 4, 5, 6, 8, 10, 13, 16\}$（$K = 10$）；重建侧把各尺度 map 查表、上采样对齐后相加（tokenizer 账 recap 6.3，此处不重推）。生成分解按尺度自回归：
+**形式化。** tokenizer 是多尺度 VQ（残差量化结构同 6.3 §5 的 RVQ 家族，共享 codebook，VAR 档词表 $V = 4096$）：图像被编码成 $K$ 个逐级加细的 token map $r_1, \ldots, r_K$，$r_k \in \{1, \ldots, V\}^{h_k \times w_k}$，$256^2$ 档的尺度序列 $(h_k, w_k) \in \{1, 2, 3, 4, 5, 6, 8, 10, 13, 16\}$（$K = 10$）；重建侧把各尺度 map 查表、上采样对齐后相加（tokenizer 账 recap 6.3，此处不重推）。生成分解按尺度自回归：
 
 $$
-p(r_1, \ldots, r_K) = \prod_{k=1}^{K} p(r_k \mid r_{</<k}) \qquad (6)
+p(r_1, \ldots, r_K) = \prod_{k=1}^{K} p(r_k \mid r_{<<k}) \qquad (6)
 $$
 
-**符号**：条件 $r_{</<k} = (r_1, \ldots, r_{k-1})$：所有更粗尺度的**完整** map；$r_k$ 内部全部 $h_k w_k$ 个位点并行预测。注意力 mask 因此是 block 因果形：尺度间因果（第 $k$ 块只看前 $k-1$ 块）、尺度内双向。
+**符号**：条件 $r_{<<k} = (r_1, \ldots, r_{k-1})$：所有更粗尺度的**完整** map；$r_k$ 内部全部 $h_k w_k$ 个位点并行预测。注意力 mask 因此是 block 因果形：尺度间因果（第 $k$ 块只看前 $k-1$ 块）、尺度内双向。
 
 ```
 r_1    r_2    r_3              r_10
 1×1 →  2×2 →  3×3 →  …  →    16×16        共享 codebook V = 4096
 └──────── 条件前缀 = 全部更粗尺度的完整 map ────────┘
-          p(r_k | r_{</<k})：r_k 内 h_k·w_k 个位点一步并行
+          p(r_k | r_{<<k})：r_k 内 h_k·w_k 个位点一步并行
 重建：ẑ = Σ_k upsample(r_k 的查表向量)
 ```
 
 **raster vs scale 的信息结构论证。** (a) 条件完备性：每步的条件是整张图的粗粒度全貌——全局构图在 $r_1$（$1 \times 1$）一步定死，之后逐步补细节；raster 在任何一步都看不到全图。(b) 2D 结构保留：步内并行 + 双向注意力，token map 的空间邻接不被展平破坏。(c) 依赖链长度：$256^2$ 档总 token 数 $\sum_k h_k w_k = 680$，但串行步数只有 $K = 10$——raster 的 256 步压到 10 步，且每步是一次完整的并行前向。注意这个顺序与扩散同构：coarse-to-fine 正是 7.2 §2.3 频谱读法里 $t: 1 \to 0$ 的进程，VAR 把扩散的时间轴离散化成了尺度轴——它兼有 AR 的精确似然与扩散的「先全局后局部」结构。
 
-**scaling law。** VAR 论文给出 test loss 与 FID 随参数量（至 2B）与训练算力的幂律拟合（论文 Figure 口径，2026-11-12）——图像 AR 生成第一次接入 1.3 的 scaling-law 账，且幂律形态干净；VAR-2B（depth 30）在 ImageNet $256^2$ 报 FID 1.73（论文口径），压过同基准全部扩散与 GAN 对照。附带品：由于每步条件是完整粗图，in-painting / out-painting 变成「改条件前缀」的特例，论文演示了免微调的 zero-shot 编辑（论文口径）。
+**scaling law。** VAR 论文给出 test loss 与 FID 随参数量（至 2B）与训练算力的幂律拟合（论文 Figure 口径，2026-11-12）——图像 AR 生成第一次接入 1.3 的 scaling-law 账，且幂律形态干净；VAR-2B（depth 30）在 ImageNet $256^2$ 报 FID 1.73（VAR-d30-re，rejection sampling 变体；裸 d30 为 1.92，均论文口径），压过同基准全部扩散与 GAN 对照。附带品：由于每步条件是完整粗图，in-painting / out-painting 变成「改条件前缀」的特例，论文演示了免微调的 zero-shot 编辑（论文口径）。
 
 ## 6. AR 生图 III：Infinity —— bitwise tokenizer 把词表推向 $2^d$
 
@@ -146,7 +146,7 @@ $$
 
 ## 7. mask-predict 族：MaskGIT 与 MUSE [B]
 
-先看第三个回答：AR 的串行来自「顺序承诺」——每个 token 一旦生成就不可改。mask-predict 族换个承诺方式：全部位点同时出价、逐轮收敛，每轮只兑现最有把握的一部分。MaskGIT（[Chang et al., 2022](../references.md)，arXiv:2202.04200，[A]）用 8–64 轮迭代完成一张 $256^2$ 图（raster AR 要 256 步严格串行），ImageNet $256^2$ FID 6.18（论文口径，2026-11-12）。代价在似然列：每步预测的是「给定未 mask 位点、被 mask 位点的条件分布」，整轮迭代的伪似然乘积不等于联合似然——7.1 对照表里这一格要让给 AR 与 diffusion（ELBO）。
+先看第三个回答：AR 的串行来自「顺序承诺」——每个 token 一旦生成就不可改。mask-predict 族换个承诺方式：全部位点同时出价、逐轮收敛，每轮只兑现最有把握的一部分。MaskGIT（[Chang et al., 2022](../references.md)，arXiv:2202.04200，[A]）用 8 轮迭代完成一张 $256^2$ 图（论文报告甜点 8–12 轮、更多迭代反而有害；raster AR 要 256 步严格串行），ImageNet $256^2$ FID 6.18（论文口径，2026-11-12）。代价在似然列：每步预测的是「给定未 mask 位点、被 mask 位点的条件分布」，整轮迭代的伪似然乘积不等于联合似然——7.1 对照表里这一格要让给 AR 与 diffusion（ELBO）。
 
 **训练。** BERT 式目标：VQ token 网格（VQGAN f16 tokenizer，6.3 §4 的 $16 \times 16$ 档）随机 mask 一部分，双向 transformer 预测被 mask 位点；训练时的 mask 比例按与解码同一族的 schedule 采样（$r = \gamma(u)$，$u$ 均匀，论文口径）。
 
@@ -166,7 +166,7 @@ $$
 每轮：全位点并行预测 → 按置信度保留 n_t 个继续 mask
 ```
 
-**MUSE [B]。** MUSE（[Chang et al., 2023](../references.md)，arXiv:2301.00704，[B]——Google 未开源，`google-research/muse` 404 实测 2026-11-12，不作代码锚点，机制按论文公式讲、实现细节不断言）把 mask-predict 装进 T2I 系统：T5-XXL 文本条件拼进序列，base $256^2$ masked transformer + token 空间级联超分到 $512^2$/$1024^2$——与 Imagen 的级联同位，但每级是 mask-predict 而非 diffusion。步数优势直接兑现成延迟（论文口径）：MUSE 出 $512^2$ 图 1.3 秒，对照 SD v1.4 的 3.7 秒与 Imagen 的 9.1 秒——同一时代的三个系统恰好各占本表一族，这组数字是三路线延迟结构差异的最干净证据。
+**MUSE [B]。** MUSE（[Chang et al., 2023](../references.md)，arXiv:2301.00704，[B]——Google 未开源，`google-research/muse` 404 实测 2026-11-12，不作代码锚点，机制按论文公式讲、实现细节不断言）把 mask-predict 装进 T2I 系统：T5-XXL 文本条件拼进序列，base $256^2$ masked transformer + token 空间级联超分到 $512^2$——与 Imagen 的级联同位，但每级是 mask-predict 而非 diffusion。步数优势直接兑现成延迟（论文表 3 口径）：MUSE $512^2$ 出图 1.3 秒、$256^2$ 出图 0.5 秒（TPUv4）；同表的 Imagen $256^2$ 为 9.1 秒（同硬件）、SD v1.4（LDM 50 步）$512^2$ 为 3.7 秒（A100 口径）——数字跨硬件、跨分辨率，只宜读作量级证据：并行解码把单图延迟压进秒级，而迭代去噪系统在十秒级。同一时代的三个系统恰好各占本表一族，这组数字是三路线延迟结构差异的直接证据。
 
 ## 8. Emu3：图、视、文全 token 统一的账
 
@@ -188,12 +188,12 @@ LlamaGen 证明了「AR 主干够」、VAR 证明了「顺序可以换」、Infi
 
 | 维度 | Diffusion / FM（SD3、SDXL、Imagen） | AR raster（LlamaGen） | AR next-scale（VAR、Infinity） | mask-predict（MaskGIT、MUSE） |
 | --- | --- | --- | --- | --- |
-| 似然 | ELBO 下界；精确似然走 PF-ODE trace（7.3 §5），贵到不实用 | 精确 NLL（式 (5)） | 精确 NLL（式 (6)） | 无精确似然：迭代伪似然 ≠ 联合似然 |
-| 串行步数（$256^2$ 档） | 20–50 步 solver（7.4 §3）；蒸馏后 1–4 步（7.4 §5.6） | 256 步严格串行；KV cache 省重算不省依赖链 | $K = 10$ 步 | $T = 8$–$64$ 轮，轮内全并行 |
+| 似然 | ELBO 下界；精确似然走 PF-ODE trace（7.3 §6.3），贵到不实用 | 精确 NLL（式 (5)） | 精确 NLL（式 (6)） | 无精确似然：迭代伪似然 ≠ 联合似然 |
+| 串行步数（$256^2$ 档） | 20–50 步 solver（7.4 §3）；蒸馏后 1–4 步（7.4 §5.6） | 256 步严格串行；KV cache 省重算不省依赖链 | $K = 10$ 步 | $T = 8$ 轮（甜点 8–12，论文口径），轮内全并行 |
 | 每步形态 | 全图并行前向 | 单 token 前向 + cache | 一整张 token map 并行 | 全位点并行预测 |
-| 可控性 / 编辑 | 连续 latent：CFG、img2img、inpainting 生态最完整（7.4 §4） | 条件 = 前缀；交错图文天然；编辑靠补全 | coarse-to-fine；in/out-painting 免微调（论文口径） | mask 即编辑：inpainting 是原生形态 |
+| 可控性 / 编辑 | 连续 latent：CFG（7.4 §4）与 img2img / inpainting 生态最完整 | 条件 = 前缀；交错图文天然；编辑靠补全 | coarse-to-fine；in/out-painting 免微调（论文口径） | mask 即编辑：inpainting 是原生形态 |
 | 与 LLM 组合性 | 外挂 text encoder + cross-attn / MMDiT 接口（7.6 §3/§7）；权重不共享 | 2.8 block 原样复用；serving/KV/投机采样零改动 | 同左（LLM 基建复用） | 双向 transformer：decoder-only LLM 的 KV cache/投机采样不直接适用 |
-| 质量现状证据（论文口径，2026-11-12） | SD3 8B 人类偏好超 SDXL 系；Imagen 立 DrawBench [B] | ImageNet $256^2$ FID 2.18 @ 3.1B（CFG） | ImageNet $256^2$ FID 1.73 @ 2B（VAR） | MaskGIT FID 6.18；MUSE 1.3s vs 3.7s（SD1.4）/ 9.1s（Imagen）[B] |
+| 质量现状证据（论文口径，2026-11-12） | SD3 8B 人类偏好超 SDXL 系；Imagen 立 DrawBench [B] | ImageNet $256^2$ FID 2.18 @ 3.1B（CFG） | ImageNet $256^2$ FID 1.73 @ 2B（VAR-re 变体；裸 d30 = 1.92） | MaskGIT FID 6.18；MUSE $512^2$ 1.3s / $256^2$ 0.5s（TPUv4），同表 Imagen $256^2$ 9.1s、SD v1.4 $512^2$ 3.7s（A100）[B] |
 
 **选型读法。** (a) 要精确似然与 LLM 基建复用 → AR 两型；(b) 要成熟控制生态与少步采样 → diffusion/FM（步数短板由 7.4 §5 的蒸馏族补）；(c) 要并行解码与编辑原生 → mask-predict。质量列说明一个未固化的格局：单看 ImageNet FID，AR 两型已压过同基准扩散（2.18 / 1.73 对 2.27）；开放 T2I 的人类偏好战场（DrawBench/GenEval 类口径）扩散仍占多数席位，但 Infinity 与 Emu3 的论文口径已把高分辨率 T2I 拉进 AR 射程。分野的变量在 tokenizer 与顺序设计，不在「扩散 vs AR」的口号上。
 
@@ -207,10 +207,10 @@ LlamaGen 证明了「AR 主干够」、VAR 证明了「顺序可以换」、Infi
 | Imagen 级联 | 式 (3) | $64 \to 256 \to 1024$ 像素空间三因子分解；noise conditioning augmentation 做误差隔离；T5-only（7.6 §4 消融） |
 | dynamic thresholding | 式 (4) | 分位数 $s$ 自适应压回 $[-1,1]$；像素空间大 $w$ 的前提（推导在 7.4 §4.4） |
 | LlamaGen | 式 (5)；FID 2.18 @ 3.1B（论文口径） | VQ f16、$K = 16384$、256 token；2.8 配方原样复用；精确似然 + P2 基建零改动 |
-| VAR next-scale | 式 (6)；FID 1.73 @ 2B（论文口径） | $K = 10$ 尺度、680 token、串行 10 步；coarse-to-fine 同构扩散频谱方向；scaling 幂律 |
+| VAR next-scale | 式 (6)；FID 1.73 @ 2B（-re 变体；裸 d30 = 1.92，论文口径） | $K = 10$ 尺度、680 token、串行 10 步；coarse-to-fine 同构扩散频谱方向；scaling 幂律 |
 | Infinity bitwise | 式 (7) | 词表 $2^d$、分类头 $O(d \cdot d_{model})$；bit 翻转自纠错治 exposure bias |
-| MaskGIT | 式 (8)；FID 6.18（论文口径） | $\gamma(t) = \cos(\pi t / 2)$、confidence remasking；8–64 轮对 256 步 |
-| MUSE [B] | 1.3s vs 3.7s / 9.1s（论文口径） | mask-predict 进 T2I 级联；Google 未开源（404 实测），不作代码锚点 |
+| MaskGIT | 式 (8)；FID 6.18（论文口径） | $\gamma(t) = \cos(\pi t / 2)$、confidence remasking；8 轮对 256 步（甜点 8–12 轮，论文口径） |
+| MUSE [B] | $512^2$ 1.3s / $256^2$ 0.5s（TPUv4）；同表 Imagen $256^2$ 9.1s、SD v1.4 $512^2$ 3.7s（A100）——跨硬件跨分辨率的量级证据（论文表 3 口径） | mask-predict 进 T2I 两级级联（$256^2$ base + $512^2$ superres）；Google 未开源（404 实测），不作代码锚点 |
 | Emu3 | $512^2$ = 4096 token、codebook 32768（论文口径） | 图视文统一 next-token；接口账消失、序列账视觉统治、tokenizer 账成系统上限 |
 | 三路线对照 | §9 表 | 似然 / 步数 / 每步形态 / 可控性 / LLM 组合性 / 质量证据 |
 
@@ -227,7 +227,7 @@ LlamaGen 证明了「AR 主干够」、VAR 证明了「顺序可以换」、Infi
 - [Podell et al., 2023](../references.md)：SDXL: Improving Latent Diffusion Models for High-Resolution Image Synthesis，arXiv:2307.01952，[A]（key: sdxl）——式 (1)(2) micro-conditioning、base+refiner 两阶段、2.6B U-Net 口径
 - [Saharia et al., 2022](../references.md)：Photorealistic Text-to-Image Diffusion Models with Deep Language Understanding，arXiv:2205.11487，[B]（key: imagen）——式 (3)(4) 级联分解与 dynamic thresholding、T5-only、noise conditioning augmentation、DrawBench（无官方代码，公式引论文）
 - [Sun et al., 2024](../references.md)：Autoregressive Model Beats Diffusion: Llama for Scalable Image Generation，arXiv:2406.06525，[A]（key: llamagen）——式 (5)「图像 = 另一种语言」论证、FID 2.18、tokenizer 档
-- [Tian et al., 2024](../references.md)：Visual Autoregressive Modeling: Scalable Image Generation via Next-Scale Prediction，arXiv:2404.02905，[A]（key: var）——式 (6) next-scale 分解、尺度序列与 680 token 账、scaling 幂律、FID 1.73、zero-shot 编辑
+- [Tian et al., 2024](../references.md)：Visual Autoregressive Modeling: Scalable Image Generation via Next-Scale Prediction，arXiv:2404.02905，[A]（key: var）——式 (6) next-scale 分解、尺度序列与 680 token 账、scaling 幂律、FID 1.73（-re 变体；裸 d30 = 1.92）、zero-shot 编辑
 - [Han et al., 2024](../references.md)：Infinity: Scaling Bitwise AutoRegressive Modeling for High-Resolution Image Synthesis，arXiv:2412.04431，[A]（key: infinity）——式 (7) bitwise 分类器、无限词表主张、bitwise self-correction
 - [Chang et al., 2022](../references.md)：MaskGIT: Masked Generative Image Transformer，arXiv:2202.04200，[A]（key: maskgit）——式 (8) mask schedule 与 confidence remasking、FID 6.18
 - [Chang et al., 2023](../references.md)：Muse: Text-To-Image Generation via Masked Generative Transformers，arXiv:2301.00704，[B]（key: muse）——mask-predict 进 T2I 系统与延迟对照（Google 未开源，不作代码锚点）
