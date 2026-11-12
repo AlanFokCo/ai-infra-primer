@@ -45,7 +45,7 @@ def build_labels(input_ids, response_spans, ignore_index=-100):
 
 ## 2. 多阶段配方：对齐 → 指令 → 偏好
 
-当代开放 VLM 的训练不是一次 loss 而是一条流水线：同一个式 (1)，换数据、换冻结开关、跑若干阶段。各家 report 的结构交集是三段（LLaVA 系、BLIP-2、Qwen2.5-VL、Molmo 的共同骨架；BLIP-2 的两阶段已在 8.2 §3.4 从 connector 视角拆过，本节从配方视角看全貌）：
+当代开放 VLM 的训练不是一次 loss 而是一条流水线：同一个式 (1)，换数据、换冻结开关、跑若干阶段。各家 report 的结构交集是三段（LLaVA 系、Qwen2.5-VL、Molmo 的共同骨架；BLIP-2 是两阶段前驱——表征学习 + 生成学习、不含指令与偏好阶段——已在 8.2 §3.4 从 connector 视角拆过，本节从配方视角看全貌）：
 
 ```
 stage 1 对齐             stage 2 指令微调                stage 3 偏好对齐
@@ -62,7 +62,7 @@ caption 数据             模板与 special token 定型        幻觉专项（
 
 ### 2.2 stage 2：指令微调——解冻 LLM
 
-解冻 LLM（与 connector 一起；ViT 多数家仍冻，Qwen 系例外——vision tower 参与训练，8.1 §5 冻结矩阵）。数据换成多任务指令混合：VQA、OCR、文档、grounding、图表、多轮对话，外加一份纯文本指令数据（LLaVA-1.5 的指令混合总量 665K 条、含纯文本份额，引原表）。
+解冻 LLM（与 connector 一起；ViT 在指令微调阶段各家均冻——Qwen2.5-VL 的 ViT 解冻发生在其多阶段预训练内部：预训练 phase 2 起解冻参与联合训练、post-training 再冻结，8.1 §5 口径，§2.4 表同步）。数据换成多任务指令混合：VQA、OCR、文档、grounding、图表、多轮对话，外加一份纯文本指令数据（LLaVA-1.5 的指令混合总量 665K 条、含纯文本份额，引原表）。
 
 两个数据教训是各家 report 的公约数。(a) **纯文本数据必须保留**：多模态混合里不放文本指令，LLM 原有的指令遵循与长文能力会退化——冻结派与解冻派都承认的遗忘风险，只是用不同方式付费（前者付融合深度，后者付文本数据配额）。(b) **全部任务统一灌进同一对话模板**：special token（`<image>`、轮次标记、角色标记）的用法在这一阶段定型——§3.3 将看到，这套模板从此就是模型的分布内格式。
 
@@ -78,7 +78,7 @@ caption 数据             模板与 special token 定型        幻觉专项（
 | --- | --- | --- | --- |
 | LLaVA-1.5 [A] | 558K caption；冻双塔、只训 MLP | 665K 指令混合；解冻 LLM | 无 |
 | LLaVA-OneVision [A] | 沿用前序 checkpoint | 单图 → 多图/视频渐进 SFT | （论文范围外） |
-| Qwen2.5-VL [A] | 多阶段预训练；ViT 参与训练 | 多任务 SFT | 偏好对齐（tech report 口径） |
+| Qwen2.5-VL [A] | 多阶段预训练（ViT 自 phase 2 起解冻参与） | 多任务 SFT（ViT 随 post-training 再冻结） | 偏好对齐（tech report 口径） |
 | Molmo [A] | caption 预训练（PixMo dense caption） | SFT（PixMo 混合） | （引论文原表） |
 
 读法：三段的分工是「先对齐空间（stage 1）、再学任务格式（stage 2）、最后校准行为偏好（stage 3）」——冻结开关逐段放开、数据从粗到精、可训参数量级逐段放大。阶段划得越细，对数据质量的容忍度越高：噪声最大的 web caption 只接触 connector，最精的偏好数据作用于全参数。一段式端到端配方不是不存在，而是把三笔风险（噪声污染、能力遗忘、偏好未校准）合并支付。
@@ -109,7 +109,7 @@ $$
 \rho = \frac{\left| A(y) \setminus S(x_{img}) \right|}{\left| A(y) \right|} \qquad (2)
 $$
 
-操作化两条路线：**判别探针**（问「图中有 X 吗」，统计 yes/no 准确率——可控、可自动评分，但只测存在性这一类断言）与**开放生成**（自由 caption 后标注断言真假——贴近部署形态、标注贵）。VCD 论文的评测协议兼用两者（[Leng et al., 2023](../references.md)，arXiv:2311.16922，[A]）。
+操作化两条路线：**判别探针**（问「图中有 X 吗」，统计 yes/no 准确率——可控、可自动评分，但只测存在性这一类断言）与**开放生成**（自由 caption 后标注断言真假——贴近部署形态、标注贵）。VCD 论文的评测全部落在判别路线：对象存在性探针 POPE 与综合评测 MME，均为 yes/no 判别式协议（[Leng et al., 2023](../references.md)，arXiv:2311.16922，[A]）。
 
 ### 4.2 机制假设：language prior 压过视觉证据
 
@@ -122,8 +122,10 @@ $$
 **符号**：右端是同一模型在视觉条件缺失下的输出分布。$G_t \approx 0$ 意味着第 $t$ 步的生成与闭眼无异——该位置的词是语言先验选的。压低 $G_t$ 的三个机制性因素（机制假设级表述：各论文的探针与消融方向一致，但「VLM 内部何时何地丢失视觉证据」没有闭合理论，本节不断言超出论文的结论）：
 
 (a) **监督的不对称**：式 (1) 只监督文本 token——caption 的文本先验（「街景常配车」「餐桌常配餐具」这类对象共现统计）是降低训练 loss 的合法 shortcut，视觉证据只是特征之一，先验在式 (1) 下不受任何惩罚；
-(b) **条件占比与稀释**：视觉段 $M$ 相对全序列小，decode 到长回答后段时文本前缀主导 attention（8.1 §4 的 token 账在生成侧的再现）；经验签名与此一致——VCD 论文报告回答越长、生成位置越靠后，幻觉断言占比越高（引论文口径）；
+(b) **条件占比与稀释**：视觉段 $M$ 相对全序列小，decode 到长回答后段时文本前缀主导 attention（8.1 §4 的 token 账在生成侧的再现）——「回答后段更易退化」的经典观察出自 CHAIR 系工作（非本章锚点文献，不挂引用、仅作背景）；
 (c) **数据的先验泄漏**：web caption 本身不完全接地（alt-text 与图像内容错位），先验从 stage 1 起就被写进 connector 与 LLM。
+
+VCD 论文的机制分析与 (a)(c) 同向：**视觉不确定性放大语言先验与统计偏差**——给输入图像逐级加噪（视觉不确定性增大）后，模型对高频对象、以及与图内对象高频共现的对象的幻觉倾向显著上升；先验的具体形态即训练语料中的对象分布不均与虚假共现相关（对照实验口径，[Leng et al., 2023](../references.md)，arXiv:2311.16922，[A]）。
 
 式 (3) 同时给出一个探针：逐位置算 $G_t$、找生成路径上 $G_t$ 塌陷的区间，就是「闭眼续写」的高发位。注意方向：$G_t \approx 0$ 推出该位置不接地，是幻觉的高发条件；反过来 $G_t$ 大并不保证 faithful（图像可以改变分布、但改向错误方向）——精确表述与反例构造留作练习 3。
 
@@ -194,7 +196,7 @@ tech report 的分数是「在作者的评测协议下」的数字：prompt 模�
 - [Li et al., 2024](../references.md)：LLaVA-OneVision: Easy Visual Task Transfer，arXiv:2408.03326，[A]（key: llava-onevision）——§2.2 渐进迁移配方（单图 → 多图/视频）、§2.4 配方对照
 - [Bai et al., 2025](../references.md)：Qwen2.5-VL Technical Report，arXiv:2502.13923，[A]（key: qwen2.5-vl）——§2.3 偏好对齐阶段、§2.4 多阶段配方口径
 - [Deitke et al., 2024](../references.md)：Molmo and PixMo: Open Weights and Open Data for State-of-the-Art Vision-Language Models，arXiv:2409.17146，[A]（key: molmo）——§2.2 dense caption 与 pointing 数据、§4.3 数据侧缓解
-- [Leng et al., 2023](../references.md)：Mitigating Object Hallucinations in Large Vision-Language Models through Visual Contrastive Decoding，arXiv:2311.16922，[A]（key: vcd）——§4.1 评测协议、§4.2 幻觉随回答长度升高、§4.3 VCD 式 (4) 与候选集截断
+- [Leng et al., 2023](../references.md)：Mitigating Object Hallucinations in Large Vision-Language Models through Visual Contrastive Decoding，arXiv:2311.16922，[A]（key: vcd）——§4.1 判别式评测协议（POPE / MME）、§4.2 视觉不确定性放大语言先验与统计偏差的机制分析、§4.3 VCD 式 (4) 与候选集截断
 - [Liu et al., 2023](../references.md)：Visual Instruction Tuning，arXiv:2304.08485，[A]（key: llava）——§2 两段配方（caption 对齐 + 指令微调）出处
 - [Liu et al., 2023](../references.md)：Improved Baselines with Visual Instruction Tuning，arXiv:2310.03744，[A]（key: llava-1.5）——§2.1/§2.2 的 558K/665K 数据口径
 - [Alayrac et al., 2022](../references.md)：Flamingo: a Visual Language Model for Few-Shot Learning，arXiv:2204.14198，[B]（key: flamingo）——§3.3 交错图文预训练数据与 few-shot 形态
