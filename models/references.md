@@ -270,19 +270,56 @@
 | infinity | Infinity: Scaling Bitwise AutoRegressive Modeling for High-Resolution Image Synthesis | Han et al. | arXiv:2412.04431 | [A] | 2026-11-12 | 7.7 |
 | maskgit | MaskGIT: Masked Generative Image Transformer | Chang et al. | arXiv:2202.04200 | [A] | 2026-11-12 | 7.7 |
 | muse | Muse: Text-To-Image Generation via Masked Generative Transformers（**Google 未开源**：google-research/muse 404 实测 2026-11-12，不作代码锚点） | Chang et al. | arXiv:2301.00704 | [B] | 2026-11-12 | 7.7 |
-| emu3 | Emu3: Next-Token Prediction is All You Need | Wang et al. | arXiv:2409.18869 | [A] | 2026-11-12 | 7.7 |
+| emu3 | Emu3: Next-Token Prediction is All You Need | Wang et al. | arXiv:2409.18869 | [A] | 2026-11-12 | 7.7, 8.5 |
 | imagen | Photorealistic Text-to-Image Diffusion Models with Deep Language Understanding（Google，无官方代码） | Saharia et al. | arXiv:2205.11487 | [B] | 2026-11-12 | 7.4, 7.6, 7.7 |
 | sdxl | SDXL: Improving Latent Diffusion Models for High-Resolution Image Synthesis | Podell et al. | arXiv:2307.01952 | [A] | 2026-11-12 | 7.7 |
 | var-repo | FoundationVision/VAR（官方；models/var.py、models/vqvae.py 走读锚点） | FoundationVision | https://github.com/FoundationVision/VAR | [A] | 2026-11-12 | 7.7 |
 | llamagen-repo | FoundationVision/LlamaGen（官方） | FoundationVision | https://github.com/FoundationVision/LlamaGen | [A] | 2026-11-12 | 7.7 |
 | infinity-repo | FoundationVision/Infinity（官方） | FoundationVision | https://github.com/FoundationVision/Infinity | [A] | 2026-11-12 | 7.7 |
-| emu3-repo | baaivision/Emu3（官方） | BAAI | https://github.com/baaivision/Emu3 | [A] | 2026-11-12 | 7.7 |
+| emu3-repo | baaivision/Emu3（官方） | BAAI | https://github.com/baaivision/Emu3 | [A] | 2026-11-12 | 7.7, 8.5 |
 | sdxl-hf | stabilityai/stable-diffusion-xl-base-1.0（HF；model_index.json 实测：StableDiffusionXLPipeline、双 text encoder CLIP-L+OpenCLIP-G） | Stability AI | https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0 | [A] | 2026-11-12 | 7.7 |
 
 ### Part 8 · Multimodal LLMs
 
 | key | 标题 | 作者 | arXiv ID / URL | 证据等级 | 核实日期 | 被引章节 |
 | --- | --- | --- | --- | --- | --- | --- |
+| llava | Visual Instruction Tuning | Liu et al. | arXiv:2304.08485 | [A] | 2026-11-12 | 8.1 |
+| llava-1.5 | Improved Baselines with Visual Instruction Tuning（MLP connector ablation 出处） | Liu et al. | arXiv:2310.03744 | [A] | 2026-11-12 | 8.2 |
+| flamingo | Flamingo: a Visual Language Model for Few-Shot Learning（**DeepMind 未开源**：无官方代码与权重，开放复现锚点走 open-flamingo-repo） | Alayrac et al. | arXiv:2204.14198 | [B] | 2026-11-12 | 8.1, 8.2 |
+| blip2 | BLIP-2: Bootstrapping Language-Image Pre-training with Frozen Image Encoders and Large Language Models（Q-Former 出处） | Li et al. | arXiv:2301.12597 | [A] | 2026-11-12 | 8.1, 8.2 |
+| qwen2-vl | Qwen2-VL: Enhancing Vision-Language Model's Perception of the World at Any Resolution（naive dynamic resolution + M-RoPE 出处） | Wang et al. | arXiv:2409.12191 | [A] | 2026-11-12 | 8.2 |
+| qwen2.5-vl | Qwen2.5-VL Technical Report（M-RoPE 绝对时间对齐、dynamic FPS、window attention vision tower 出处） | Bai et al. | arXiv:2502.13923 | [A] | 2026-11-12 | 8.1, 8.2, 8.3, 8.4 |
+| internvl | InternVL: Scaling up Vision Foundation Models and Aligning for Generic Visual-Linguistic Tasks（pixel shuffle 用法出处之一） | Chen et al. | arXiv:2312.14238 | [A] | 2026-11-12 | 8.2 |
+| internvl3 | InternVL3: Exploring Advanced Training and Test-Time Recipes for Open-Source Multimodal Models | Zhu et al. | arXiv:2504.10479 | [A] | 2026-11-12 | 8.1, 8.2 |
+| llava-onevision | LLaVA-OneVision: Easy Visual Task Transfer（AnyRes 承继、训练配方全开放） | Li et al. | arXiv:2408.03326 | [A] | 2026-11-12 | 8.2, 8.3, 8.4 |
+| pixtral | Pixtral 12B（native resolution + 2D RoPE 出处） | Agrawal et al. | arXiv:2410.07073 | [A] | 2026-11-12 | 8.2 |
+| molmo | Molmo and PixMo: Open Weights and Open Data for State-of-the-Art Vision-Language Models | Deitke et al. | arXiv:2409.17146 | [A] | 2026-11-12 | 8.3 |
+| minicpm-v | MiniCPM-V: A GPT-4V Level MLLM on Your Phone | Yao et al. | arXiv:2408.01800 | [A] | 2026-11-12 | 8.2 |
+| ovis | Ovis: Structural Embedding Alignment for Multimodal Large Language Model（visual embedding table 出处；后续代际见 Ovis2.5 tech report arXiv:2508.11737） | Lu et al. | arXiv:2405.20797 | [A] | 2026-11-12 | 8.2 |
+| vcd | Mitigating Object Hallucinations in Large Vision-Language Models through Visual Contrastive Decoding | Leng et al. | arXiv:2311.16922 ; https://github.com/DAMO-NLP-SG/VCD | [A] | 2026-11-12 | 8.3 |
+| apollo | Apollo: An Exploration of Video Understanding in Large Multimodal Models（**官方代码 repo 不存在、HF 原权重 Apollo-LMMs/Apollo-* 已下架（404，2026-11-12 实测）**——降为 [B]，只引论文 ablation 结论） | Zohar et al. | arXiv:2412.10360 ; https://apollo-lmms.github.io | [B] | 2026-11-12 | 8.4 |
+| chameleon | Chameleon: Mixed-Modal Early-Fusion Foundation Models（官方 repo 在、**权重撤回**；混合模态稳定性全套（QK-Norm/norm 重排/z-loss/dropout）出处） | Chameleon Team (Meta) | arXiv:2405.09818 ; https://github.com/facebookresearch/chameleon | [B] | 2026-11-12 | 8.5 |
+| transfusion | Transfusion: Predict the Next Token and Diffuse Images with One Multi-Modal Model（**Meta 未开源**：facebookresearch/Transfusion 404 实测 2026-11-12） | Zhou et al. | arXiv:2408.11039 | [B] | 2026-11-12 | 8.5 |
+| janus | Janus: Decoupling Visual Encoding for Unified Multimodal Understanding and Generation | Wu et al. | arXiv:2410.13848 | [A] | 2026-11-12 | 8.5 |
+| janus-pro | Janus-Pro: Unified Multimodal Understanding and Generation with Data and Model Scaling | Chen et al. | arXiv:2501.17811 | [A] | 2026-11-12 | 8.5 |
+| show-o | Show-o: One Single Transformer to Unify Multimodal Understanding and Generation | Xie et al. | arXiv:2408.12528 | [A] | 2026-11-12 | 8.5 |
+| show-o2 | Show-o2: Improved Native Unified Multimodal Models（代码在 showlab/Show-o 的 show-o2/ 子目录，无独立 repo） | Xie et al. | arXiv:2506.15564 | [A] | 2026-11-12 | 8.5 |
+| bagel | Emerging Properties in Unified Multimodal Pretraining（**BAGEL 出处论文——arXiv 标题不含 "BAGEL"，勿张冠李戴**；BAGEL-7B-MoT 7B active / 14B total） | Deng et al. | arXiv:2505.14683 | [A] | 2026-11-12 | 8.5 |
+| llava-repo | haotian-liu/LLaVA 官方 repo（llava/model 目录实测——input-level 拼接走读锚点） | LLaVA team | https://github.com/haotian-liu/LLaVA | [A] | 2026-11-12 | 8.1, 8.3 |
+| open-flamingo-repo | mlfoundations/open_flamingo（Flamingo 开放复现；open_flamingo/src/flamingo.py gated_cross_attn_layers 实测——gated xattn 走读锚点） | mlfoundations | https://github.com/mlfoundations/open_flamingo | [A] | 2026-11-12 | 8.1 |
+| qwen-vl-repo | QwenLM/Qwen3-VL（**QwenLM/Qwen2.5-VL 已 301 重定向至此**——系列 repo 归并，引用写新地址） | Qwen | https://github.com/QwenLM/Qwen3-VL | [A] | 2026-11-12 | 8.1, 8.4 |
+| qwen25vl-config | Qwen/Qwen2.5-VL-7B-Instruct config.json（HF 实测：rope_scaling={type: mrope, mrope_section [16,24,24]}、vision 32L/hidden 1280/patch 14/spatial_merge 2/window 112+fullattn [7,15,23,31]、LLM 28L/3584/28Q-4KV/ctx 128000/vocab 152064/rope_theta 1e6） | Qwen | https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct/blob/main/config.json | [A] | 2026-11-12 | 8.1, 8.2, 8.4 |
+| qwen25vl-modeling | transformers repo：Qwen2.5-VL modeling 代码（modeling_qwen2_5_vl.py；mrope_section split 与 get_rope_index (t,h,w) 三元组构造——M-RoPE 走读锚点） | HuggingFace | https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen2_5_vl/modeling_qwen2_5_vl.py | [A] | 2026-11-12 | 8.2 |
+| lavis-repo | salesforce/LAVIS（BLIP-2 官方训练代码；lavis/models/blip2_models/blip2_qformer.py 实测——Q-Former 三目标走读锚点） | Salesforce | https://github.com/salesforce/LAVIS | [A] | 2026-11-12 | 8.2 |
+| internvl-repo | OpenGVLab/InternVL 官方 repo（internvl_chat/internvl/model/internvl_chat/modeling_internvl_chat.py 实测：pixel_shuffle(scale_factor=downsample_ratio=0.5)、num_image_token=(H/p)²·r²——pixel shuffle 走读锚点） | OpenGVLab | https://github.com/OpenGVLab/InternVL | [A] | 2026-11-12 | 8.2 |
+| llava-next-repo | LLaVA-VL/LLaVA-NeXT 官方 repo（LLaVA-OneVision 代码家；README 实测含 llava_onevision 锚点） | LLaVA team | https://github.com/LLaVA-VL/LLaVA-NeXT | [A] | 2026-11-12 | 8.3, 8.4 |
+| molmo-repo | allenai/Molmo 官方 repo（模型 + PixMo 数据全开放） | AllenAI | https://github.com/allenai/Molmo | [A] | 2026-11-12 | 8.3 |
+| minicpm-v-repo | OpenBMB/MiniCPM-V 官方 repo | OpenBMB | https://github.com/OpenBMB/MiniCPM-V | [A] | 2026-11-12 | 8.2 |
+| ovis-repo | ATH-MaaS/Ovis（**AIDC-AI/Ovis 已 301 重定向至此**——组织改名，引用写新地址） | AIDC-AI | https://github.com/ATH-MaaS/Ovis | [A] | 2026-11-12 | 8.2 |
+| janus-repo | deepseek-ai/Janus 官方 repo（janus/models 目录实测；Janus 与 Janus-Pro 同 repo） | DeepSeek-AI | https://github.com/deepseek-ai/Janus | [A] | 2026-11-12 | 8.5 |
+| showo-repo | showlab/Show-o 官方 repo（**含 show-o2/ 子目录**——Show-o2 代码无独立 repo） | Show Lab | https://github.com/showlab/Show-o | [A] | 2026-11-12 | 8.5 |
+| bagel-repo | ByteDance-Seed/Bagel 官方 repo（README 原文「7B active parameters (14B total)」、MoT 架构） | ByteDance Seed | https://github.com/ByteDance-Seed/Bagel | [A] | 2026-11-12 | 8.5 |
+| chameleon-modeling | transformers repo：Chameleon modeling 代码（modeling_chameleon.py 实测存在；官方权重撤回——走读看结构、不对权重，[B] 口径） | HuggingFace | https://github.com/huggingface/transformers/blob/main/src/transformers/models/chameleon/modeling_chameleon.py | [B] | 2026-11-12 | 8.5 |
 
 ### Part 9 · Video Generation
 
@@ -509,3 +546,23 @@
 | mask-predict | 保留英文（mask-predict，掩码并行解码族） | 7.7 |
 | micro-conditioning | 微条件化（micro-conditioning） | 7.7 |
 | token map（VAR 语境） | token 图（token map） | 7.7 |
+| vision-language model (VLM) | 保留英文（VLM；视觉语言模型） | 8.1 |
+| connector / projector | 连接器（connector；亦称 projector） | 8.1 |
+| visual token | 视觉 token（visual token） | 8.1 |
+| token budget（视觉语境） | token 预算 | 8.1 |
+| gated cross-attention | 门控 cross-attention（gated xattn） | 8.1 |
+| perceiver resampler | 保留英文（Perceiver resampler） | 8.2 |
+| Q-Former | 保留英文（Q-Former） | 8.2 |
+| pixel shuffle | 保留英文（pixel shuffle，空间到通道重排） | 8.2 |
+| AnyRes | 保留英文（AnyRes，任意分辨率切图方案） | 8.2 |
+| naive dynamic resolution | 原生动态分辨率（naive dynamic resolution） | 8.2 |
+| M-RoPE (multimodal RoPE) | 保留英文（M-RoPE；(t,h,w) 三元组位置 id） | 8.2 |
+| loss masking（VLM 语境） | 损失掩码（loss masking） | 8.3 |
+| interleaved image-text | 交错图文（interleaved） | 8.3 |
+| object hallucination | 物体幻觉（object hallucination） | 8.3 |
+| visual contrastive decoding (VCD) | 视觉对比解码（VCD） | 8.3 |
+| dynamic FPS | 保留英文（dynamic FPS，动态帧率采样） | 8.4 |
+| temporal grounding | 时间定位（temporal grounding） | 8.4 |
+| unified multimodal model | 统一多模态模型（unified model，理解+生成同模型） | 8.5 |
+| mixture-of-transformers (MoT) | 保留英文（MoT） | 8.5 |
+| BOI / EOI token | 保留英文（BOI/EOI，begin/end-of-image 特殊 token） | 8.5 |
