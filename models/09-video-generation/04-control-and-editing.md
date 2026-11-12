@@ -6,7 +6,7 @@
 
 ## 1. I2V：条件注入公式家族
 
-I2V（image-to-video）的问题形式：给定条件图像 $I_c$（与文本 $c_{txt}$），生成以 $I_c$ 为首帧（或内容锚点）的视频。在 latent 侧（9.1），条件图像是 $z_c^{img} = s \cdot E(I_c) \in \mathbb{R}^{1 \times h \times w \times c}$——首帧特判约定（9.1 式 (2)）使单张图像与视频首帧共享同一 latent 空间，I2V 因此不需要任何新编码器。剩下的问题只有一个：这个 latent 怎么进 DiT。开放系统的答案是一个三件套公式家族，Wan2.1-I2V 是代码级证据最全的实例。
+I2V（image-to-video）的问题形式：给定条件图像 $I_c$（与文本 $c_{txt}$），生成以 $I_c$ 为首帧（或内容锚点）的视频。在 latent 侧（9.1），条件图像是 $z_c^{img} = s \cdot E(I_c) \in \mathbb{R}^{1 \times h \times w \times c}$（$s$：VAE scaling factor，9.1 §3 口径——与压缩率记号 $(\tau, s, s)$ 里的空间 $s$ 同名不同义）——首帧特判约定（9.1 式 (2)）使单张图像与视频首帧共享同一 latent 空间，I2V 因此不需要任何新编码器。剩下的问题只有一个：这个 latent 怎么进 DiT。开放系统的答案是一个三件套公式家族，Wan2.1-I2V 是代码级证据最全的实例。
 
 ### 1.1 latent concat + mask 通道
 
@@ -19,10 +19,10 @@ $$
 **符号**：$x_t \in \mathbb{R}^{t \times h \times w \times 16}$：当前去噪步的噪声 latent；$z_c$：条件 latent——锚点帧位填 $z_c^{img}$、其余位填零；$m$：逐 latent 帧的锚点指示（1 = 该帧由条件钉死，标准读法；官方未展开 mask 的逐位语义说明），空间维广播。给定锚点集合 $\mathcal{A} \subseteq \{0, \ldots, t-1\}$：
 
 $$
-z_c^{(j)} = \begin{cases} z_c^{img} & j \in \mathcal{A} \\ 0 & j \notin \mathcal{A} \end{cases}, \qquad m^{(j)} = \begin{cases} 1 & j \in \mathcal{A} \\ 0 & j \notin \mathcal{A} \end{cases} \qquad (2)
+z_c^{(j)} = \begin{cases} z_c^{img,(j)} & j \in \mathcal{A} \\ 0 & j \notin \mathcal{A} \end{cases}, \qquad m^{(j)} = \begin{cases} 1 & j \in \mathcal{A} \\ 0 & j \notin \mathcal{A} \end{cases} \qquad (2)
 $$
 
-**符号**：上标 $(j)$：第 $j$ 个 latent 帧。首帧 I2V 对应 $\mathcal{A} = \{0\}$。
+**符号**：上标 $(j)$：第 $j$ 个 latent 帧；$z_c^{img,(j)}$：第 $j$ 位锚点的条件图像 latent——锚点图按位替换，单图 I2V 是各位同图的特例，首尾帧形态两端各一张（§1.4）。首帧 I2V 对应 $\mathcal{A} = \{0\}$。
 
 ```
 输入侧（每个去噪步）                        通道维拼接
@@ -35,7 +35,7 @@ m    [t × h × w ×  4]  锚点 mask ─────┘         │
                                      X [N × d]  进时空 DiT（9.2）
 ```
 
-拼接后的 $\tilde x_t$ 过常规 patchify + 线性投影（9.2 §1），第一层权重从 $16 \times d$ 换成 $36 \times d$——这是唯一需要新参数的层。账（patch=1 等效口径、$d$ = 5,120 的 Wan 14B 档）：第一层参数增量 $20 \times 5120 \approx 1.0 \times 10^{5}$，相对 14B 主干约十万分之七；每 token 投影 FLOPs 增量 $2 \times 20 \times 5120$，乘 $N$ = 302,400 约 0.06 TFLOPs，对 9.2 §2.5 单层 2.06 PFLOPs 的总账是十万分之三。I2V 的成本全在数据与训练步数上，不在架构上。
+拼接后的 $\tilde x_t$ 过常规 patchify + 线性投影（9.2 §1），第一层权重从 $16 \times d$ 换成 $36 \times d$——这是唯一需要新参数的层。账（patch=1 等效口径、$d$ = 5,120 的 Wan 14B 档）：第一层参数增量 $20 \times 5120 \approx 1.0 \times 10^{5}$，相对 14B 主干约百万分之七；每 token 投影 FLOPs 增量 $2 \times 20 \times 5120$，乘 $N$ = 302,400 约 0.06 TFLOPs，对 9.2 §2.5 单层 2.06 PFLOPs 的总账是十万分之三。I2V 的成本全在数据与训练步数上，不在架构上。
 
 mask 占 4 通道而非 1 是 config 实测值，官方未说明缘由——机制读法（本书分析，不坐实）：多通道广播给「这是锚点帧」这个比特一份冗余编码，使它在投影进 $d$ 维后不易被 latent 特征淹没。
 
@@ -49,13 +49,13 @@ $$
 \hat z_c = z_c^{img} + \sigma_c\, \eta, \qquad \eta \sim \mathcal{N}(0, I) \qquad (3)
 $$
 
-**符号**：$\sigma_c$：条件噪声强度，按训练样本随机采样。像素级复制被噪声破坏后，条件帧唯一可用的角色是语义与构图锚点——模型被迫学「保留身份、重画细节」，恰是推理时需要的泛化方向；训练时见过的条件分布（带噪、有损）也覆盖了推理时的条件分布（用户图 ≠ 任何视频的真实首帧），train/test 的条件失配被同时缓解。
+**符号**：$\sigma_c$：条件噪声强度（加噪的调度细节以 Wan 论文原文为准）。像素级复制被噪声破坏后，条件帧唯一可用的角色是语义与构图锚点——模型被迫学「保留身份、重画细节」，恰是推理时需要的泛化方向；训练时见过的条件分布（带噪、有损）也覆盖了推理时的条件分布（用户图 ≠ 任何视频的真实首帧），train/test 的条件失配被同时缓解。
 
 ### 1.3 CLIP image embedding cross-attn
 
 第三件走语义通道：条件图像过 CLIP 视觉塔（[Radford et al., 2021](../references.md)，arXiv:2103.00020，[A]；训练机制见 6.2），取 image embedding（Wan 代码侧为 1280 维），经 MLP 投影到主干宽度后作为独立条件注入 cross-attention 子层。代码证据：wan/modules/model.py 实测 `clip_fea` 独立条件输入、`img_emb = MLPProj(1280, dim)`（[Wan-Video/Wan2.1](../references.md)，[A]）；diffusers 官方管线 WanImageToVideoPipeline 用 CLIPVisionModel image_encoder + AutoencoderKLWan（Wan2.1 README 官方示例口径）。
 
-两条图像条件通道的分工（机制读法）：latent concat 携带像素级身份——构图、颜色、边缘的精确位置，且只占首帧一个锚点位；CLIP embedding 携带语义级身份——「这是什么」，对空间错位鲁棒，且在全部去噪步的 cross-attn 里持续可读。前者管「首帧长得一样」，后者管「整段视频里主体还是它」。这套「像素通道 + 语义通道」的双条件与 7.7 SDXL 双文本编码器的分工同构：不同抽象层级的条件各走各的注入点；成本上两者都不到主干账的零头（9.2 §2.5：cross-attn 全部占 1.7%），不存在二选一的预算压力。
+两条图像条件通道的分工（机制读法）：latent concat 携带像素级身份——构图、颜色、边缘的精确位置，且只占首帧一个锚点位；CLIP embedding 携带语义级身份——「这是什么」，对空间错位鲁棒，且在全部去噪步的 cross-attn 里持续可读。前者管「首帧长得一样」，后者管「整段视频里主体还是它」。这套「像素通道 + 语义通道」的双条件与 7.6 §4 的多编码器分工同族：不同抽象层级的条件各出各的编码器、汇合进同一条件面；成本上两者都不到主干账的零头（9.2 §2.5：cross-attn 全部占 1.7%），不存在二选一的预算压力。
 
 ### 1.4 首尾帧控制
 
@@ -92,10 +92,10 @@ $$
 **从内外参构造。** 设帧 $f$ 的相机内参 $K \in \mathbb{R}^{3 \times 3}$、外参旋转 $R_f$ 与平移 $t_f$（世界系到相机系 $x_{cam} = R_f x + t_f$）。像素 $(u, v)$ 对应的射线：相机系里反投影、转到世界系取单位方向 $d_f$；相机光心在世界系的位置 $o_f$。Plücker 坐标把这条射线表示为 6 维向量：
 
 $$
-d_f(u,v) = \frac{R_f K^{-1} [u, v, 1]^{\top}}{\lVert R_f K^{-1} [u, v, 1]^{\top} \rVert}, \qquad o_f = -R_f^{\top} t_f, \qquad p_f(u,v) = \big(d_f(u,v),\; o_f \times d_f(u,v)\big) \in \mathbb{R}^{6} \qquad (5)
+d_f(u,v) = \frac{R_f^{\top} K^{-1} [u, v, 1]^{\top}}{\lVert R_f^{\top} K^{-1} [u, v, 1]^{\top} \rVert}, \qquad o_f = -R_f^{\top} t_f, \qquad p_f(u,v) = \big(d_f(u,v),\; o_f \times d_f(u,v)\big) \in \mathbb{R}^{6} \qquad (5)
 $$
 
-**符号**：$d_f$：世界系单位方向；$o_f$：相机光心（世界系）；$o_f \times d_f$：moment——射线与世界原点张成平面的法向。逐帧逐像素构造、下采样对齐 latent 网格，得条件张量 $P \in \mathbb{R}^{t \times h \times w \times 6}$。
+**符号**：$d_f$：世界系单位方向（相机系方向 $K^{-1}[u, v, 1]^{\top}$ 经逆旋转 $R_f^{\top}$ 转回世界系——与 w2c 约定自洽：$q_{world} = R_f^{\top}(q_{cam} - t_f)$）；$o_f$：相机光心（世界系）；$o_f \times d_f$：moment——射线与世界原点张成平面的法向。逐帧逐像素构造、下采样对齐 latent 网格，得条件张量 $P \in \mathbb{R}^{t \times h \times w \times 6}$。
 
 Plücker 表示的三个数学性质，各自对应一个工程收益：
 
@@ -103,7 +103,7 @@ Plücker 表示的三个数学性质，各自对应一个工程收益：
 2. **旋转与平移分置两半**：$d$ 不含平移（平移不进式 (5) 第一式），moment 含平移——$\lVert o \times d \rVert$ 恰为世界原点到射线的距离（$d$ 单位时）；推拉的平移量与环绕的旋转量在条件空间里占据不同通道，可区分、可复合。
 3. **与像素网格同形**：6 通道 dense map 直接对齐 latent 网格，「哪个像素走哪条射线」的对应关系由网格共享自动给出——不需要把相机矩阵压成一个全局向量再广播（那会丢掉全部逐像素对应）。6 通道相对 16 通道 latent 也便宜：条件通道的引入成本与 §1 同量级。
 
-CameraCtrl 的系统形态（论文口径）：Plücker 图序列经一个独立的相机编码器提取特征后注入基座；相机模块 plug-and-play——**不动基座权重**，与 §2 的「起点即原模型」同一纪律。MotionCtrl（[Wang et al., 2023](../references.md)，arXiv:2312.03641，[A]；官方 repo TencentARC/MotionCtrl）把控制面再扩一维：相机运动与物体运动统一控制——相机侧沿用射线表示，物体侧用轨迹条件（§4），两个条件通道可独立启用也可组合，覆盖「只动相机」「只动物体」「两者复合」三种工况。
+CameraCtrl 的系统形态（论文口径）：Plücker 图序列经一个独立的相机编码器提取特征后注入基座；相机模块 plug-and-play——**不动基座权重**，与 §2 的「起点即原模型」同一纪律。MotionCtrl（[Wang et al., 2023](../references.md)，arXiv:2312.03641，[A]；官方 repo TencentARC/MotionCtrl）把控制面再扩一维：相机运动与物体运动统一控制——相机侧以相机位姿序列为条件（内部构造未在本轮事实源展开，以论文为准），物体侧用轨迹条件（§4），两个条件通道可独立启用也可组合，覆盖「只动相机」「只动物体」「两者复合」三种工况。
 
 ## 4. 轨迹条件：drag point embedding
 
@@ -123,7 +123,7 @@ $$
 
 ### 5.1 DDIM inversion 推广到视频
 
-本节记号沿用 7.4 的 DDPM 离散步约定（$t$ 增大 = 噪声增大，$x_0$ 为数据端；与本章 FM 语境的 $t \in (0,1]$ 约定相差一个时间轴重标定）。7.4 式 (5) 的 DDIM 更新是可逆的——把下标方向反过来，就得到从数据端向噪声端的积分：
+本节记号沿用 7.4 的 DDPM 离散步约定（$t$ 增大 = 噪声增大，$x_0$ 为数据端；与全书 FM 记号——W4 约定页与 7.5 的 $t \in (0,1]$——相差一个时间轴重标定）。自本节起 $t$ 为扩散步号，与 §1–§4 的 latent 帧数同名不同义（9.2 亦有此双载，语境自明处不另立符号）。7.4 式 (5) 的 DDIM 更新是可逆的——把下标方向反过来，就得到从数据端向噪声端的积分：
 
 $$
 x_{t+1} = \sqrt{\bar\alpha_{t+1}}\; \hat x_0(x_t, t) + \sqrt{1 - \bar\alpha_{t+1}}\; \varepsilon_\theta(x_t, t), \qquad t:\; 0 \to T \qquad (7)
