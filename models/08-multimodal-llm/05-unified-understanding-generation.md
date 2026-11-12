@@ -1,6 +1,6 @@
 # 8.5 统一理解与生成（Unified Understanding and Generation）
 
-> 本章收口 Part 8：同一个模型同时做理解（image → text）与生成（text → image）。三条技术路线按「图像以什么形态进主干」分开——**路线 1 离散 token 全 AR**（Emu3 的「图像 = 语言」公式、Chameleon 的 early-fusion 与混合模态稳定性全套：QK-norm / norm 重排 / z-loss / token dropout、Janus 的解耦双 encoder 与表征冲突的公式化、Show-o 的 AR + 离散扩散混合目标）；**路线 2 连续 latent**（Transfusion 完整公式：$L = L_{LM} + \lambda L_{DDPM}$、同样本内 text causal + image 块内双向的 mask 矩阵、BOI/EOI、无 U-Net、Llama 式 1D RoPE——原文无 2D RoPE）；**路线 3 diffusion head**（LLM hidden state 驱动小型扩散头）；GPT-4o 生图 [C] 的已披露信息分析；收口于三路线对照总表（保真 / 编辑 / 训练稳定 / 推理成本 / 与 LLM scaling 兼容）| 前置：1.1（AR 分解与 NLL）、2.4（KV cache 账）、2.7（Pre-LN 梯度账、QK-Norm 式 (15a)(16)、reordered 摆放）、4.8（吸收态离散扩散式 (1)-(3)、无 KV cache 账）、6.3（VQ-VAE 式 (11)(14)、LFQ、离散 vs 连续选择表）、7.2（$L_{simple}$ 与 $\varepsilon$-参数化）、7.5（FM 目标）、7.7（Emu3 三笔账、MaskGIT 轮数账）、8.1（组件链、形态轴、token 预算账）、8.3（loss masking）| 锚点：Emu3 [A]（baaivision/Emu3）、Chameleon [B]（权重撤回；结构走读 transformers modeling_chameleon.py）、Janus / Janus-Pro [A]（deepseek-ai/Janus）、Show-o / Show-o2 [A]（showlab/Show-o，show-o2/ 子目录）、Bagel [A]（ByteDance-Seed/Bagel）、Transfusion [B]（Meta 未开源，facebookresearch/Transfusion 404 实测）
+> 本章收口 Part 8：同一个模型同时做理解（image → text）与生成（text → image）。三条技术路线按「图像以什么形态进主干」分开——**路线 1 离散 token 全 AR**（Emu3 的「图像 = 语言」公式、Chameleon 的 early-fusion 与混合模态稳定性全套：QK-norm / norm 重排 / z-loss / dropout、Janus 的解耦双 encoder 与表征冲突的公式化、Show-o 的 AR + 离散扩散混合目标）；**路线 2 连续 latent**（Transfusion 完整公式：$L = L_{LM} + \lambda L_{DDPM}$、同样本内 text causal + image 块内双向的 mask 矩阵、BOI/EOI、无 U-Net、Llama 式 1D RoPE——原文无 2D RoPE）；**路线 3 diffusion head**（LLM hidden state 驱动小型扩散头）；GPT-4o 生图 [C] 的已披露信息分析；收口于三路线对照总表（保真 / 编辑 / 训练稳定 / 推理成本 / 与 LLM scaling 兼容）| 前置：1.1（AR 分解与 NLL）、2.4（KV cache 账）、2.7（Pre-LN 梯度账、QK-Norm 式 (15a)(16)、reordered 摆放）、4.8（吸收态离散扩散式 (1)-(3)、无 KV cache 账）、6.3（VQ-VAE 式 (11)(14)、LFQ、离散 vs 连续选择表）、7.2（$L_{simple}$ 与 $\varepsilon$-参数化）、7.5（FM 目标）、7.7（Emu3 三笔账、MaskGIT 轮数账）、8.1（组件链、形态轴、token 预算账）、8.3（loss masking）| 锚点：Emu3 [A]（baaivision/Emu3）、Chameleon [B]（权重撤回；结构走读 transformers modeling_chameleon.py）、Janus / Janus-Pro [A]（deepseek-ai/Janus）、Show-o / Show-o2 [A]（showlab/Show-o，show-o2/ 子目录）、Bagel [A]（ByteDance-Seed/Bagel）、Transfusion [B]（Meta 未开源，facebookresearch/Transfusion 404 实测）
 
 ## 1. 问题定义：一个参数集，两个方向的条件分布
 
@@ -60,22 +60,22 @@ $$
 
 这笔税交得值不值，取决于税率：codebook $K$ 与压缩率 $f$ 把式 (4) 的预算定在哪一档，以及训练数据能否把码本用满（6.3 §3.4 的 collapse 死锁在大词表下更凶，LFQ 的熵正则正是为此存在，6.3 式 (23)）。§4 的 Janus 给出的是另一种回答：税不交了——理解与生成各用各的 encoder，统一的范围收缩到主干。
 
-## 3. Chameleon：early-fusion 的代价——混合模态稳定性全套
+## 3. Chameleon：早期融合（early-fusion）的代价——混合模态稳定性全套
 
-### 3.1 early-fusion 与它的失效面
+### 3.1 早期融合与它的失效面
 
-Chameleon（[Chameleon Team, 2024](../references.md)，arXiv:2405.09818，[B]——官方 repo 在、权重撤回；结构走读锚点 transformers 的 modeling_chameleon.py，[chameleon-modeling](../references.md)，看结构、不对权重）与 Emu3 同属式 (3) 的全 AR 离散路线，差别在训练起点与混合深度：Emu3 之外，Chameleon 是 early-fusion（早期融合）路线的代表——图文同词表、同序列、**从头训**，没有任何预训练单模态塔作为初始化资产（对照 §5 的 Show-o 从预训练 LLM 起步）。这使它成为「混合模态从头训练会发生什么」的最干净实验场，而论文给出的答案是：**会发散，且发散有结构**。
+Chameleon（[Chameleon Team, 2024](../references.md)，arXiv:2405.09818，[B]——官方 repo 在、权重撤回；结构走读锚点 transformers 的 modeling_chameleon.py，[chameleon-modeling](../references.md)，看结构、不对权重）与 Emu3 同属式 (3) 的全 AR 离散路线，差别在训练起点与混合深度：Emu3 之外，Chameleon 是早期融合（early-fusion）路线的代表——图文同词表、同序列、**从头训**，没有任何预训练单模态塔作为初始化资产（对照 §5 的 Show-o 从预训练 LLM 起步）。这使它成为「混合模态从头训练会发生什么」的最干净实验场，而论文给出的答案是：**会发散，且发散有结构**。论文对发散机制的表述（[B]，论文口径）：共享参数下各模态通过增大自身范数互相竞争，激活一旦超出 bf16 的有效表示范围即发散；去掉图像生成支路的纯文本对照训练不发散——发散是混合模态特有的现象（单模态语境下同类问题称 logit drift）。另一个可操作的观测：发散可晚至训练进度的 20–30% 才出现，而最后一层输出范数的失控增长与其强相关——监控输出范数可提前预警。
 
-把单一 CE 目标下的混合序列训练与纯文本训练对照，失效面集中在四个尺度自由度上，每一处都对应一味药：
+失效面集中在四个尺度自由度上，每一处都对应一味药：
 
 | 失效点 | 机制 | Chameleon 的药 |
 | --- | --- | --- |
 | attention logit 漂移 | 视觉 token 与文本 token 的表征分布不同，$q, k$ 范数随训练自由漂移 → 2.3 §3.4 的 softmax 饱和区 | QK-Norm（式 (5)） |
-| 残差主干尺度累加 | Pre-LN 恒等主干下层贡献沿深度加性堆积，两模态增量幅值分布不同加剧漂移 | norm 重排（式 (6)） |
-| 输出 logit 整体漂移 | softmax 对 logit 平移不变，$\log Z$ 无任何力约束；两个子词表先验频率悬殊推着整体尺度跑 | z-loss（式 (7)） |
-| 模态梯度份额失衡 | 视觉 token 占序列大头（7.7 §8 (b) 的序列账），loss 与梯度被视觉段淹没 | token dropout |
+| FFN block 范数增长 | Pre-LN 恒等主干下层贡献沿深度加性堆积，两模态增量幅值分布不同加剧漂移 | norm 重排（式 (6)） |
+| 输出 logit 整体平移 | softmax 对 logit 平移不变，$\log Z$ 无任何力约束——QK-Norm 管住了 attention 内部 softmax，管不住输出头 softmax 的 logit 漂移（论文口径） | z-loss（式 (7)） |
+| 一般性训练不稳（7B 实证） | 7B 去掉 dropout 的 ablation 训练即发散（论文 Figure 口径）；施加位置在 attention 与 FFN 子层输出之后 | dropout（§3.5） |
 
-四者全部为论文明载的混合模态稳定性技术（原文表述：query-key normalization、revised placement of layer norms、z-loss 与 dropout 类正则，"crucial for stable training in the mixed-modal setting"，[B]，论文口径）。下面逐个给机制账。
+四者全部为论文明载的混合模态稳定性技术（原文表述：query-key normalization、revised placement of layer norms、z-loss 与 dropout，"crucial for stable training in the mixed-modal setting"，[B]，论文口径）。下面逐个给机制账。
 
 ### 3.2 QK-Norm：把 logit 封顶从激活统计手里拿走
 
@@ -89,7 +89,7 @@ $$
 
 ### 3.3 norm 重排：给残差主干的加性增长上闸
 
-标准 Pre-LN（2.7 主线）的 block 是 $x_{l+1} = x_l + f_l(\mathrm{Norm}(x_l))$——主干是恒等映射，梯度高速路由此而来（2.7 的残差梯度恒等式），代价是主干方差沿深度加性累加：$\mathrm{Var}(x_L) \approx \mathrm{Var}(x_0) + \sum_l \mathrm{Var}(f_l)$。Chameleon 报告把归一化移到对子层输出起效的重排布局（原文 "revised placement of layer norms"，[B] 论文口径；与 2.7 §9 的 OLMo-2 reordered 摆放 $x + \mathrm{Norm}(f(x))$ 同族）：
+标准 Pre-LN（2.7 主线）的 block 是 $x_{l+1} = x_l + f_l(\mathrm{Norm}(x_l))$——主干是恒等映射，梯度高速路由此而来（2.7 的残差梯度恒等式），代价是主干方差沿深度加性累加：$\mathrm{Var}(x_L) \approx \mathrm{Var}(x_0) + \sum_l \mathrm{Var}(f_l)$。Chameleon 报告把归一化移到对子层输出起效的重排布局（原文 "revised placement of layer norms"，[B] 论文口径；原文采用的策略引自 Swin 系 block 内归一化工作，收益表述为约束 FFN block 的范数增长；结构与 2.7 §9 的 OLMo-2 reordered 摆放 $x + \mathrm{Norm}(f(x))$ 同族）：
 
 $$
 x_{l+1} = x_l + \mathrm{Norm}\left( f_l\left( x_l \right) \right) \qquad (6)
@@ -105,13 +105,19 @@ $$
 L_z = \mu \sum_{i \in \text{positions}} \left( \log Z_i \right)^{2}, \qquad Z_i = \sum_{v \in V} \exp\left( s_{i,v} \right) \qquad (7)
 $$
 
-**符号**：$\mu$：小权重；求和覆盖全部计 loss 位置。机制：$\log Z_i$ 被钉向 0，logit 的整体尺度被锁死，输出头无法靠「全体 logit 一起涨」来锐化分布——锐化只能靠相对差距，即真正的判别学习。混合模态加剧漂移的通道：$V = V_{\text{text}} \cup V_{\text{img}}$ 两个子词表的先验频率相差悬殊（视觉 code 的使用分布由 tokenizer 决定，与文本 Zipf 分布形状完全不同），bias 项学习推着整体 logit 水平跑，式 (7) 是这个通道的配重。
+**符号**：$\mu$：小权重，Chameleon 取 $10^{-5}$（论文口径：[B]）；求和覆盖全部计 loss 位置。机制：$\log Z_i$ 被钉向 0，logit 的整体尺度被锁死，输出头无法靠「全体 logit 一起涨」来锐化分布——锐化只能靠相对差距，即真正的判别学习。混合模态加剧漂移的通道：$V = V_{\text{text}} \cup V_{\text{img}}$ 两个子词表的先验频率相差悬殊（视觉 code 的使用分布由 tokenizer 决定，与文本 Zipf 分布形状完全不同），bias 项学习推着整体 logit 水平跑，式 (7) 是这个通道的配重。
 
-### 3.5 token dropout 与 ablation 证据
+### 3.5 dropout 与 ablation 证据：配方随规模重组
 
-token dropout 在训练时随机置弃一部分视觉 token（具体形式与比率引论文原句，[B]）。机制读法两条：(a) 相邻 patch 的 code 高度相关，随机遮挡迫使表征对视觉段的局部冗余不过拟合——与 BERT 的 mask 同族但方向相反（那里是预测被 mask 者，这里是丢弃条件）；(b) 视觉 token 数通常是同序列文本的十到百倍（7.7 §8 (b) 的序列账），dropout 等效于现场调低视觉 loss 的有效权重，是把模态梯度份额从数据手里收回来的旋钮。
+Chameleon 的 dropout 是标准的 Srivastava 式 dropout（[B]，论文口径）：**比率 0.1，施加在 attention 与 FFN 子层的输出之后，仅用于 Chameleon-7B 预训练**；SFT 阶段降为 0.05 并沿用预训练的 z-loss；Chameleon-34B 预训练不使用 dropout。它是针对子层激活的一般性正则，与模态无关——论文没有「随机置弃视觉 token」的 token 级设计，7B 的 ablation（去掉 dropout 训练即不稳，论文 Figure 口径）只证明它是 7B 稳定配方的必要成分。
 
-ablation 证据的结构（论文口径，[B]）比单项数字更重要：**稳定性措施随规模叠加而非互替**——小规模档 QK-Norm 即可稳住训练，规模上去后必须叠加 norm 重排与 z-loss / dropout；且发散被明确定位为混合模态特有的现象（纯文本对照不需要这套组合）。这条架构教训的寿命比模型长：把单模态 LLM 的稳定配方（2.7 §9 表）直接搬进统一模型是不成立的，每个尺度自由度都要单独上锁；Chameleon 论文公开的价值正在于这份失败模式清单。
+ablation 证据的结构（论文口径，[B]）比单项数字更重要——**配方随规模加重且重组，而不是简单叠加**：
+
+- **7B = QK-Norm + dropout + z-loss，三者缺一不可**。去掉 QK-Norm 或去掉 dropout 的对照实验训练即发散（论文 Figure 口径）；论文原文表述："For Chameleon-7B it was important to use both dropout and z-loss to achieve stability"。
+- **34B = QK-Norm + z-loss + norm 重排**。QK-Norm + dropout 的组合不足以稳定 34B，需要追加 §3.3 的归一化重排；而该重排与 dropout 同用效果不好，34B 因此不用 dropout——**norm 重排与 dropout 部分互替**：论文回溯发现 7B 在使用 norm 重排后也可以不用 dropout 稳定训练。两档共同点是 QK-Norm 不可省（原文："QK-norm is essential in both cases"）。
+- **混合模态特有**：去掉图像生成支路的纯文本对照不发散（§3.1 的发散机制即模态间范数竞争）。
+
+这条架构教训的寿命比模型长：把单模态 LLM 的稳定配方（2.7 §9 表）直接搬进统一模型不成立；每个尺度自由度都要单独上锁；且**锁定它们的配方本身随规模改组**——7B 的三件套到 34B 换掉一味。Chameleon 论文公开的价值正在于这份失败模式清单。
 
 ## 4. Janus / Janus-Pro：解耦编码器——表征冲突的公式化
 
@@ -138,7 +144,7 @@ $$
 E\left( x + \delta \right) \approx E(x) \qquad (8)
 $$
 
-**符号**：$\delta$：标签保持的像素扰动子空间。式 (8) 是 invariance（不变性）约束：理解梯度把 $E$ 推向**压扁** $\delta$ 方向——这部分信息是理解的噪声。
+**符号**：$\delta$：标签保持的像素扰动子空间。式 (8) 是不变性（invariance）约束：理解梯度把 $E$ 推向**压扁** $\delta$ 方向——这部分信息是理解的噪声。
 
 生成侧的编码器由 VQ 重建目标训练（6.3 式 (14)）：$\lVert x - D(E(x)) \rVert^{2}$ 小要求 $E(x)$ 是 $x$ 的近似充分统计量——扰动 $\delta$ 必须能从 $E(x + \delta)$ 读出来，否则重建项直接受损：
 
@@ -146,7 +152,7 @@ $$
 \left\| (x + \delta) - D\left( E(x + \delta) \right) \right\|^{2} \;\ll\; \left\| \delta \right\|^{2} \qquad (9)
 $$
 
-**符号**：式 (9) 是 sufficiency（充分性）约束：$E$ 必须**保持** $\delta$ 方向的可分辨性。互信息口径的同一对冲突：理解要 $I(z; y)$ 高而 $I(z; \delta)$ 可弃，生成要 $I(z; x)$ 逼近重建下界——同一个 $z$ 上两个互信息目标方向相反。共享 $E$ 的总梯度 $\nabla_E \left( L_{\text{und}} + \mu L_{\text{gen}} \right)$ 在 $\delta$ 子空间上符号相冲，这是「抽象层级冲突」的公式级含义；6.3 §7.4 的选择表（连续族为扩散而设、离散族为 AR 而设）是同一冲突在 tokenizer 层面的投影。
+**符号**：式 (9) 是充分性（sufficiency）约束：$E$ 必须**保持** $\delta$ 方向的可分辨性。互信息口径的同一对冲突：理解要 $I(z; y)$ 高而 $I(z; \delta)$ 可弃，生成要 $I(z; x)$ 逼近重建下界——同一个 $z$ 上两个互信息目标方向相反。共享 $E$ 的总梯度 $\nabla_E \left( L_{\text{und}} + \mu L_{\text{gen}} \right)$ 在 $\delta$ 子空间上符号相冲，这是「抽象层级冲突」的公式级含义；6.3 §7.4 的选择表（连续族为扩散而设、离散族为 AR 而设）是同一冲突在 tokenizer 层面的投影。
 
 实验证据（论文口径，[A]）：共享单一编码器的统一基线上理解与生成互相拖累，解耦后两端指标各自改善。注意论证边界：冲突证据只针对「单 encoder + 双任务」，不否定统一主干——Janus 的 LLM 仍由两个方向共享训练。代价也清楚：8.1 §2 的接口账部分回归（两个 encoder + 各自的 connector/tokenizer），系统从「一个 transformer」退回「一个主干 + 两副感官」；Janus-Pro 的 scaling 结果（论文口径）说明这个折中在数据与规模扩展下成立。
 
@@ -154,17 +160,17 @@ $$
 
 ### 5.1 混合目标：文本 CE + 图像去掩码
 
-Show-o（[Xie et al., 2024](../references.md)，arXiv:2408.12528，[A]；走读锚点 [showlab/Show-o](../references.md)）保留离散 token 形态，但给图像段换生成目标——文本照旧 AR，图像 token 走吸收态离散扩散（4.8 式 (1)-(3) 的 LLaDA/MaskGIT 族）：
+Show-o（[Xie et al., 2024](../references.md)，arXiv:2408.12528，[A]；走读锚点 [showlab/Show-o](../references.md)）保留离散 token 形态，但给图像段换生成目标——文本照旧 AR（论文称 NTP，next-token prediction），图像 token 走离散扩散（论文称 MTP，mask token prediction）。图像段的腐蚀过程是吸收-均匀混合（Absorbing-Uniform）离散扩散（论文 Eq 4-5）：每步转移矩阵 $Q_t = Q_t^{a} Q_t^{u}$，吸收分量以概率 $\alpha_t$ 把 token 换成 [MASK]，均匀分量以概率 $\beta_t$ 把非 [MASK] token 均匀扩散到词表的其余 code（逐 code 概率 $\nu_t = \beta_t / (K+1)$，$K$ 为视觉码本大小）——4.8 式 (1)-(3) 的纯吸收态是 $\beta_t = 0$ 的特例。记号防混：此处的 $\alpha_t$ 是**掩码概率**，与 4.8 式 (1) 的保留率 $\alpha_t$（$\alpha_0 = 1$ 为干净端）语义相反，各按所在论文的原文口径。总目标（论文 Eq 9-11）：
 
 $$
-L = L_{\text{AR}} + L_{\text{DM}}, \qquad L_{\text{AR}} = -\sum_{s \in \text{text}} \log p_\theta\left( u_s \mid u_{<s} \right) \qquad (10)
+L = L_{\text{MTP}} + \alpha\, L_{\text{NTP}}, \qquad L_{\text{NTP}} = -\sum_{i} \log p_\theta\left( v_i \mid v_{<i},\, u \right) \qquad (10)
 $$
 
 $$
-L_{\text{DM}} = \mathbb{E}_{t \sim U(0,1)} \; \frac{1}{t} \sum_{i:\, m_i = 1} \mathrm{CE}\left( u_i^{\text{img}},\; p_\theta\left( \cdot \mid \tilde{u} \right) \right) \qquad (11)
+L_{\text{MTP}} = -\sum_{j:\, m_j = 1} \log p_\theta\left( u_j \mid \tilde{u},\, v \right) \qquad (11)
 $$
 
-**符号**：$\tilde{u}$：图像段按掩码率 $t$ 独立替换为 [MASK] 后的序列；$m_i = 1$：被掩位置；$1/t$：线性调度权重（推导见 4.8 式 (3) 及其练习）。式 (11) 与 MaskGIT（7.7 式 (8)，[Chang et al., 2022](../references.md)，arXiv:2202.04200，[A]）同族，差在承载它的网络同时还是文本 AR 模型——同一个主干在两个模态段上执行两种目标。
+**符号**：$u = (u_1, \ldots, u_M)$：图像 token；$v = (v_1, \ldots, v_N)$：文本 token；$\tilde{u}$：腐蚀后的图像段，掩码率由时间步控制、调度跟随 MaskGIT / Muse 的采样策略（论文口径）；$m_j = 1$：被掩位置；$\alpha$：NTP 项的配平超参。式 (10)(11) 按本书 loss 约定取负对数似然（最小化），论文原文以最大化似然形式书写（Eq 9-11），两者同构。两个与 4.8 族口径的差异要钉准：(i) 式 (11) 是**裸 CE 求和、无 $1/t$ 权重**——4.8 式 (3) 的 $1/t$ 是纯吸收态加线性调度的 ELBO 特例，Show-o 的 MTP 直接对被掩位置的对数似然求和；(ii) 腐蚀不是「只进 [MASK]」，均匀分量让非掩 token 也会跳到其他 code。式 (11) 与 MaskGIT（7.7 式 (8)，[Chang et al., 2022](../references.md)，arXiv:2202.04200，[A]）同族，差在承载它的网络同时还是文本 AR 模型——同一个主干在两个模态段上执行两种目标。
 
 支撑这个混合的是 omni-attention（论文口径）：文本段 causal mask、图像段块内双向。这是「图像无天然顺序」的第二次出现——§6 的 Transfusion 在连续 latent 侧给出同一个 mask 设计，式 (15) 统一写出。与 Emu3 的对照因此精确：Emu3 让图像也服从严格 raster 序 AR（精确似然、$N$ 步串行）；Show-o 放弃图像段的精确似然，换迭代去掩码的并行解码——$T_r$ 轮全序列前向、每轮可提交任意多位置（4.8 的 decode 账与 7.7 的 MaskGIT 轮数账原样适用：甜点 8–12 轮，对照 raster AR 的 $N$ 步）。另一个结构性差别：Show-o 从预训练 LLM 权重初始化（论文口径），文本能力起步即高位，与 Emu3 / Chameleon 的从头训形成三对照——「借 LLM 资产」与「从头统一」是路线 1 内部的又一个分岔。
 
@@ -182,7 +188,7 @@ $$
 u = \left[ \ldots,\; E(s_a),\; \mathrm{BOI},\; \tilde{x}^{(1)}, \ldots, \tilde{x}^{(n)},\; \mathrm{EOI},\; E(s_{a+1}), \ldots \right] \qquad (12)
 $$
 
-**符号**：$E(s)$：文本 token 的 embedding 行；$\tilde{x}^{(j)} \in \mathbb{R}^{d}$：图像 patch latent（训练时为加噪版，见式 (13)）；BOI / EOI（begin/end-of-image）：词表里的普通 special token，位置按文本处理。主干是 Llama 式组件（SwiGLU、RMSNorm、RoPE 的标准配方，2.8）；**位置编码沿用 1D RoPE——原文未对图像 patch 引入 2D RoPE**（arXiv 全文无 rotary 位置编码的结构改动，[B] 口径），patch 按 raster 序排布，2D 结构全靠学。对照 8.2 §9：理解向 VLM 已经用 M-RoPE 把 2D 坐标搬进位置编码，Transfusion 站在同一个 tradeoff 的另一端。
+**符号**：$E(s)$：文本 token 的 embedding 行；$\tilde{x}^{(j)} \in \mathbb{R}^{d}$：图像 patch latent（训练时为加噪版，见式 (13)）；BOI / EOI（begin/end-of-image）：词表里的普通 special token，位置按文本处理。patch 进出主干的局部接口，论文给出两种选项——简单线性层，或小型 U-Net up/down 块（论文口径）；且进入线性层之前，每个 patch 向量先加上时间步 $t$ 的 embedding（论文 footnote 口径）——「无 U-Net」的准确含义是**去噪主干**不是独立的 U-Net 塔（§6.4），不否认 patch 接口处可选的小型 U-Net 块。主干是 Llama 式组件（SwiGLU、RMSNorm、RoPE 的标准配方，2.8）；**位置编码沿用 1D RoPE——原文未对图像 patch 引入 2D RoPE**（arXiv 全文无 rotary 位置编码的结构改动，[B] 口径），patch 按 raster 序排布，2D 结构全靠学。对照 8.2 §9：理解向 VLM 已经用 M-RoPE 把 2D 坐标搬进位置编码，Transfusion 站在同一个 tradeoff 的另一端。
 
 ```
 序列布局（式 (12)）：
@@ -199,7 +205,7 @@ $$
 x_t^{(j)} = \sqrt{\bar\alpha_t}\; x_0^{(j)} + \sqrt{1 - \bar\alpha_t}\; \varepsilon^{(j)} \qquad (13)
 $$
 
-**符号**：$x_0^{(j)}$：干净 patch latent；$t$：噪声水平，**同一图像的全部 patch 共享一个 $t$**（per-token 独立噪声水平的变体是后续工作，归 Part 9）；$x_t^{(j)}$ 经投影后占据式 (12) 的 patch 位置。
+**符号**：$x_0^{(j)}$：干净 patch latent；$t$：噪声水平，**同一图像的全部 patch 共享一个 $t$**（per-token 独立噪声水平的变体归 Part 9 展开）；$x_t^{(j)}$ 经投影后占据式 (12) 的 patch 位置。
 
 总目标是逐位置分配的异质组合：
 
@@ -250,8 +256,10 @@ $$
 2. 追加 n 个 patch 位置，初始化为纯噪声（连续记号的 t = 1 端，7.2 约定）
 3. T 步去噪循环：每步全 patch 并行过主干（块内双向，式 (15)）
    → 噪声头出 ε_θ → 按 7.2 §4.4 的反向更新改写 patch 输入
-4. 模型在去噪完成后的下一个位置产出 EOI（AR 位置）
-5. patch 序列 → VAE decoder → 像素；文本继续 AR
+4. 去噪过程结束后，由解码算法机械追加 EOI（论文口径："we append an EOI
+   token to the predicted image, and switch back to LM mode"——EOI 不是模型
+   采样产出），切回 LM 模式
+5. patch 序列 → VAE decoder → 像素；EOI 之后文本继续 AR decode
 ```
 
 「无 U-Net」的准确含义在此：7.6 的整套扩散塔（adaLN 调制、cross-attention 文本接口、独立参数）整体消失——去噪器就是主干自身，条件化就是前缀注意力。换来的是两个新账。(a) **patch 段无 cache**：每一步的 patch 输入 $x_t$ 都被改写，上一步的 K/V 全部失效，每步成本 ≈ patch 段的一次全量前向（4.8 的离散扩散同一笔账的连续版）。(b) **串行深度的换汇**：以主干前向的 token 位置数为单位（文本前缀 $S_0$ 一次 prefill 后走 cache），
@@ -299,9 +307,9 @@ GPT-4o 的原生生图能力证据等级 [C]：无正式论文、无公开架构
 | 问题定义 | 式 (1) | 同一 $\theta$ 承担 $p(y \mid x, c)$ 与 $p(x \mid c)$；形态冲突（8.1 §1）是路线分岔的根 |
 | 统一 AR | 式 (2)(3)；Emu3 $K$ = 32768、$512^{2}$ = 4096 token（7.7 口径） | 单词表并集、单 softmax、单 CE；接口账归零 |
 | VQ 瓶颈账 | 式 (4)：$I_{\text{img}} \le N \log_2 K$（Emu3 档 61440 bit/图） | 生成侧保真封顶 + 理解侧白付量化税 |
-| Chameleon 稳定性 | 式 (5)(6)(7) + token dropout | 四个失效点四味药：logit 封顶 / 主干方差截断 / $\log Z$ 锁 / 梯度份额；随规模叠加（[B] 论文口径） |
-| Janus 冲突论证 | 式 (8)(9)：invariance vs sufficiency | 同一 $z$ 上互信息目标相冲；解耦后双端改善（论文口径 [A]）；Janus-1.3B / Janus-Pro-7B（HF 实测） |
-| Show-o 混合目标 | 式 (10)(11) | 文本 CE + 图像 $1/t$ 加权去掩码 CE（4.8 式 (3) 族）；omni-attention = 式 (15) 同族 |
+| Chameleon 稳定性 | 式 (5)(6)(7)（$\mu = 10^{-5}$）+ dropout 0.1（子层输出后，7B；SFT 0.05；34B 不用） | 四失效点四味药：logit 封顶 / FFN 范数截断 / $\log Z$ 锁 / 一般正则；配方随规模重组：7B = QK-Norm+dropout+z-loss、34B = QK-Norm+z-loss+norm 重排，重排与 dropout 部分互替（[B] 论文口径） |
+| Janus 冲突论证 | 式 (8)(9)：不变性 vs 充分性 | 同一 $z$ 上互信息目标相冲；解耦后双端改善（论文口径 [A]）；Janus-1.3B / Janus-Pro-7B（HF 实测） |
+| Show-o 混合目标 | 式 (10)(11)：$L = L_{\text{MTP}} + \alpha L_{\text{NTP}}$ | 图像 MTP = 被掩位置裸 CE（无 $1/t$ 权重）；腐蚀为吸收-均匀混合（$\alpha_t$ 进 [MASK]、$\nu_t = \beta_t/(K+1)$ 均匀扩散）；omni-attention = 式 (15) 同族 |
 | Transfusion | 式 (12)(13)(14)(15)(16)(17) | BOI/EOI 包夹连续 patch；$L = L_{LM} + \lambda L_{DDPM}$ 一次前向两 loss；mask = causal 或同块；无泄漏命题式 (16)；1D RoPE（原文无 2D） |
 | diffusion head | 式 (17) 第三行 | 去噪循环移出主干；主干免疫 vs 条件带宽收窄；Bagel = 解耦编码器 + MoT 参数分工 + 主干内扩散（7B active / 14B total，README 口径） |
 | GPT-4o [C] | 无公式 | 官方自回归口径 + 行为兼容性分析；不断言实现 |
