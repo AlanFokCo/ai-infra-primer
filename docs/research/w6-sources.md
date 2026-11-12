@@ -21,7 +21,7 @@
 - latent 通道 $c$：CogVideoX/HunyuanVideo/Wan 均 16；Mochi 12；Wan2.2-TI2V-5B 高压缩 VAE 48；Open-Sora-Plan WFVAE 32。
 - attention FLOPs 账统一以 latent token 数 $N=t\cdot h\cdot w$（patch 边长 1 等效）记：full 3D $=O(N^2)$；factorized $=O(t\cdot(hw)^2 + hw\cdot t^2)$。
 
-### 扩散记号：沿用 W4 约定页（recap 关键三条）
+### 扩散记号：沿用 W4 约定页（前三条为 W4 recap，第 4 条为本 Part 增量）
 
 1. **$x_0$ = 数据端、$t=1$ = 纯噪声端；采样方向 $t:1\to0$**（Wan/CausVid 等视频论文亦用此向，个别论文 $t$ 大=噪声大与此一致）。
 2. 默认 ε-prediction；score↔ε 桥 $s_\theta = -\varepsilon_\theta/\sqrt{1-\bar\alpha_t}$。
@@ -80,7 +80,7 @@
 - 9.2：2408.06072 ✓ / 2412.03603 ✓ / 2503.20314 ✓ / Wan2.2 README ✓⟨verify 结案，[A] repo 一手⟩ / StepVideo 2502.10248 ✓ / LTX-Video 2501.00103 ✓（+`moviegen` [B]、`sora` [C]、`wan2.2-a14b-hf`、`open-sora-repo`、`ltx-video-repo`）
 - 9.3：Diffusion Forcing 2407.01392 ✓⟨verify 结案：repo=buoyancy99/diffusion-forcing⟩ / CausVid 2412.07772 ✓ / Self-Forcing 2506.08009 ✓ / Causal-Forcing 2602.02214 ✓⟨verify 结案⟩+CF++ 2605.15141 / rCM 2510.08431 ✓⟨verify 结案⟩+Causal-rCM 2606.25473（+`skyreels-v2` 2504.13074 **勘误**、`causvid-repo`、`self-forcing-repo`、`causal-forcing-repo`、`rcm-repo`、`skyreels-v2-repo`）
 - 9.4：ControlNet 2302.05543 ✓ / LoRA 2106.09685 ✓ / DreamBooth 2208.12242 ✓（[B] 降级说明见上）/ null-text 2211.09794 ✓⟨verify 结案：官方实现在 prompt-to-prompt repo⟩ / CameraCtrl 2404.02101 ✓⟨verify 结案⟩（+`motionctrl` 2312.03641、`controlnet-repo`、`cameractrl-repo`、`wan21-i2v-config`、`wan2.2` I2V）
-- 全部 21 个 arXiv ID（14 原列 + 7 新增定位/勘误/补录）+ 14 个 repo/配置锚点，2026-11-13 逐一实测。
+- 全部 23 个 arXiv ID（14 原列 + 9 新增定位/勘误/补录）+ 18 个 repo/配置锚点，2026-11-13 逐一实测。
 
 ## spec P9 锚点清单核对结果（Step 4 自检续，2026-11-13）
 
@@ -91,7 +91,7 @@
 
 ## references.md 本轮变更清单（2026-11-13）
 
-- Part 9 新增 40 条：26 篇论文/官方页面（`cogvideox`、`hunyuanvideo`、`wan`、`wan2.2`、`ltx-video`、`stepvideo-t2v`、`open-sora-2`、`open-sora-plan`、`wfvae`、`mochi` [C]、`moviegen` [B]、`sora` [C]、`diffusion-forcing`、`causvid`、`self-forcing`、`skyreels-v2`、`causal-forcing`、`causal-forcing-pp`、`rcm`、`causal-rcm`、`controlnet`、`lora`、`dreambooth` [B]、`null-text-inversion`、`cameractrl`、`motionctrl`）+ 14 个锚点（`cogvideo-repo`、`hunyuanvideo-repo`、`wan2.1-repo`、`open-sora-repo`、`open-sora-plan-repo`、`ltx-video-repo`、`causvid-repo`、`self-forcing-repo`、`causal-forcing-repo`、`rcm-repo`、`controlnet-repo`、`cameractrl-repo`、`cogvideox-config`、`hunyuanvideo-vae-config`、`wan21-i2v-config`、`wan2.2-a14b-hf`、`autoencoderkl-wan`、`skyreels-v2-repo`——共 18 条锚点，合计 44 条）。
+- Part 9 新增 44 条：26 篇论文/官方页面（`cogvideox`、`hunyuanvideo`、`wan`、`wan2.2`、`ltx-video`、`stepvideo-t2v`、`open-sora-2`、`open-sora-plan`、`wfvae`、`mochi` [C]、`moviegen` [B]、`sora` [C]、`diffusion-forcing`、`causvid`、`self-forcing`、`skyreels-v2`、`causal-forcing`、`causal-forcing-pp`、`rcm`、`causal-rcm`、`controlnet`、`lora`、`dreambooth` [B]、`null-text-inversion`、`cameractrl`、`motionctrl`）+ 18 个锚点（`cogvideo-repo`、`hunyuanvideo-repo`、`wan2.1-repo`、`open-sora-repo`、`open-sora-plan-repo`、`ltx-video-repo`、`causvid-repo`、`self-forcing-repo`、`causal-forcing-repo`、`rcm-repo`、`controlnet-repo`、`cameractrl-repo`、`cogvideox-config`、`hunyuanvideo-vae-config`、`wan21-i2v-config`、`wan2.2-a14b-hf`、`autoencoderkl-wan`、`skyreels-v2-repo`）。
 - 既有条目被引章节回写 2 处：`dmd2`（+9.3）、`ddim`（+9.4）。
 - spec ⟨verify⟩ 全部结案：Wan2.2（repo README 一手）✓、StepVideo 2502.10248 ✓、LTX 2501.00103 ✓、diffusion-forcing repo ✓、Causal-Forcing ✓、rCM ✓、CameraCtrl ✓、null-text ✓。
 - 勘误入册：SkyReels-V2 = 2504.13074（2504.02436 为 SkyReels-A2）。

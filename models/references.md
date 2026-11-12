@@ -342,7 +342,7 @@
 | self-forcing | Self Forcing: Bridging the Train-Test Gap in Autoregressive Video Diffusion（训练时自 rollout + KV cache + 视频级分布匹配消 exposure bias 出处） | Huang et al. | arXiv:2506.08009 | [A] | 2026-11-13 | 9.3 |
 | skyreels-v2 | SkyReels-V2: Infinite-length Film Generative Model（MLLM+多阶段预训练+RL+Diffusion Forcing 框架；**勘误：2504.02436 是 SkyReels-A2，勿用**） | Chen et al. | arXiv:2504.13074 | [A] | 2026-11-13 | 9.3 |
 | causal-forcing | Causal Forcing: Autoregressive Diffusion Distillation Done Right for High-Quality Real-Time Interactive Video Generation（Causal ODE 驱动 asymmetric DMD 初始化；2026-02） | Zhu et al. | arXiv:2602.02214 | [A] | 2026-11-13 | 9.3 |
-| causal-forcing-pp | Causal Forcing++ 技术报告（Causal Consistency Distillation 取代 ODE 配对数据；首个 frame-wise 1/2 步模型；2026-05） | Zhu et al. | arXiv:2605.15141 | [A] | 2026-11-13 | 9.3 |
+| causal-forcing-pp | Causal Forcing++: Scalable Few-Step Autoregressive Diffusion Distillation for Real-Time Interactive Video Generation（Causal Consistency Distillation 取代 ODE 配对数据；首个 frame-wise 1/2 步模型；2026-05） | Zhao et al. | arXiv:2605.15141 | [A] | 2026-11-13 | 9.3 |
 | rcm | Large Scale Diffusion Distillation via Score-Regularized Continuous-Time Consistency（rCM：sCM+score 正则、FA2 JVP kernel、≤14B 验证、1-4 步、无 GAN；ICLR 2026） | Zheng et al. | arXiv:2510.08431 | [A] | 2026-11-13 | 9.3 |
 | causal-rcm | Causal-rCM: A Unified Teacher-Forcing and Self-Forcing Open Recipe for Autoregressive Diffusion Distillation（teacher-forcing CM 与 self-forcing DMD 统一配方；2026-06） | Zheng et al. | arXiv:2606.25473 | [A] | 2026-11-13 | 9.3 |
 | controlnet | Adding Conditional Control to Text-to-Image Diffusion Models（可训练副本 + zero-conv 出处） | Zhang et al. | arXiv:2302.05543 | [A] | 2026-11-13 | 9.4 |
