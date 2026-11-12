@@ -22,7 +22,7 @@ $$\mathrm{seq} = \big[\ \underbrace{a_{k\Delta r_a : (k+1)\Delta r_a}}_{\text{au
 
 **符号**：$a_{i:j}$：第 $i$ 到 $j$ 个音频帧 token（audio 块）；$v$、$t$：区间 $I_k$ 内的视频帧与文本段；$\Delta$：交错区间长度（实现超参，本章不取具体数值）。式 (1) 的机制含义：同一时间窗内的多模态证据在序列中相邻，跨模态对齐从「全局软注意力里学」变成「局部邻接里读」。
 
-但序列邻接只是叙事顺序，模型感知「同时」要靠位置编码。8.2 §9 的 M-RoPE 把 position id 扩成三元组 $(t, h, w)$：文本三值同值、图像 $t$ 恒定 + $(h, w)$ 网格、视频 $t$ 按帧序递增，rotary 频段按 [16, 24, 24] 切三段各挂一轴（8.2 式 (14)-(17)，score 只含三轴相对位移的分段加权和）。Qwen2.5-Omni 的 **TMRoPE（Time-aligned Multimodal RoPE）** 是其直接扩展（原文：「a novel position embedding approach, named TMRoPE (Time-aligned Multimodal RoPE)」；Qwen3-Omni 沿用，原文：「extends M-RoPE by incorporating absolute temporal information」，[Xu et al., 2025a/2025b](../references.md)，arXiv:2503.20215 / arXiv:2509.17765，均 [A]）：把三元组的 $t$ 分量从「模态内帧序」改写为**绝对时间坐标**
+但序列邻接只是叙事顺序，模型感知「同时」要靠位置编码。8.2 §9 的 M-RoPE 把 position id 扩成三元组 $(t, h, w)$：文本三值同值、图像 $t$ 恒定 + $(h, w)$ 网格、视频 $t$ 按帧序递增，rotary 频段按 [16, 24, 24] 切三段各挂一轴（8.2 式 (14)-(17)，score 只含三轴相对位移的分段加权和）。Qwen2.5-Omni 的 **TMRoPE（Time-aligned Multimodal RoPE）** 是其直接扩展（原文：「a novel position embedding approach, named TMRoPE (Time-aligned Multimodal RoPE)」；Qwen3-Omni 沿用，原文：「extends M-RoPE by incorporating absolute temporal information」，[Xu et al., 2025a/2025b](../references.md)，arXiv:2503.20215 / arXiv:2509.17765，均 [A]）。差分要收窄：相对 Qwen2-VL 的 M-RoPE（视频 $t$ 按帧序递增，8.2 §9.1），TMRoPE 把三元组的 $t$ 分量改写为**绝对时间坐标**；相对 Qwen2.5-VL（其视频 $t$ 轴已与绝对秒数对齐，8.2 §9.1），增量在**音频流入轴、音/视共享同一 $t$ 坐标**：
 
 $$t = \left\lfloor \tau / \Delta_0 \right\rfloor \qquad (2)$$
 
@@ -107,6 +107,8 @@ $$g_{s,0} = c_s, \qquad g_{s,j} = f_{\text{depth}}\big( c_s,\, e_{s,0}, \ldots, 
 
 **符号**：深度序固定为 $x_{s,0} = w_s$（文本第 0 步）、$x_{s,j} = a^{m}_{s,j}$（$j = 1..K$）；$e_{s,j}$：深度第 $j$ 步已生成 token 的 embedding；$W_j$：第 $j$ 类 token 的输出头（文本头与各码本头分开）。
 
+计数口径说明（防与原文「over $K$ steps」对不上）：原文按音频码本计深度步数（$K = 8$ 步）；本章把文本头并列为深度第 0 步得 $Q' = 9$。两种读法功能等价——文本步是 $c_s$ 上的线性头（$g_{s,0} = c_s$ 直出，可不经 depth 前向），Depth Transformer 本体只跑 8 个码本步。
+
 把式 (5)(6) 代回式 (4)，模型流的条件因子全部换成「经 $c_s$ 瓶装」的形式：
 
 $$P\big( w_s, a^{m}_{s,1:K} \mid \mathbf{x}_{<s} \big) \;\longrightarrow\; P\big( w_s \mid c_s \big) \prod_{k=1}^{K} P\big( a^{m}_{s,k} \mid c_s,\, w_s,\, a^{m}_{s,<k} \big) \qquad (7)$$
@@ -179,7 +181,11 @@ $$P = \underbrace{\prod_t P\big( s_t \mid s_{<t} \big)}_{\text{semantic}}\ \time
 
 GLM-4-Voice（[Zeng et al., 2024](../references.md)，arXiv:2412.02612，[A]；repo [zai-org/GLM-4-Voice](../references.md)，[A]——THUDM 已 301 重定向至此）把 10.1 的 token 三旋钮拧到极简：单码本、12.5 Hz、175 bps 的**监督**语音 tokenizer（原文：「ultra-low bitrate (175bps), single-codebook speech tokenizer with 12.5Hz frame rate derived from an ASR model by incorporating a vector-quantized bottleneck into the encoder」）。bitrate 账按 10.1 式 (7) 复算：$175 / 12.5 = 14$ bit/帧 → $K = 2^{14} = 16384$，$1 \times 14 \times 12.5 = 175$ bps ✓；token rate = 12.5 tok/s。
 
-结构推论直接且重要：**$K = 1$ 时「一帧多码」问题整个消失**——没有层级依赖，RQ 的 Depth 级与 delay 交错都不需要，音频 token 流与文本 token 按块交错（文本/语音交错 token 的流式形态）即可交给标准 decoder-only 逐 token 建模；生成端回波形用 flow-matching decoder（FM recap 7.5）。代价写在 10.1 的账里：单码本 14 bit 要同时装内容与声学细节，重建保真的冗余度低于多码本方案——tokenizer 的 ASR 蒸馏出身（监督语义路线，同 10.1 §3 与 10.3 S3Tokenizer 一脉）正是用「内容优先」对冲这个瓶颈。与 Moshi 并排：同帧率（12.5 Hz）、同联合建模目标，结构差异全部来自 $K = 1$ vs $K = 8$ 这一个旋钮。
+结构推论直接且重要：**$K = 1$ 时「一帧多码」问题整个消失**——没有层级依赖，RQ 的 Depth 级与 delay 交错都不需要，音频 token 流与文本 token 按块交错（文本/语音交错 token 的流式形态）即可交给标准 decoder-only 逐 token 建模。交错的具体形态是式 (1) 在 $K = 1$、$r_a = 12.5$ Hz 的实例化——文本块与单码本音频 token 块按时间窗 $I_k$ 交错排布：
+
+$$\mathrm{seq} = \big[\, t_{I_k},\ a_{k\Delta r_a : (k+1)\Delta r_a} \,\big]_{k=0,1,\ldots}, \qquad r_a = 12.5\ \text{Hz} \qquad (10)$$
+
+**符号**：$t_{I_k}$：落在时间窗 $I_k$ 内的文本 token 段；$a_{i:j}$：同窗内的音频 token 段（每 80 ms 一个 token，每窗 $\Delta \times 12.5$ 个）。流式读法：音频块逐窗到达即消费、生成侧按窗交错产出文本与音频——块长 $\Delta$ 就是延迟粒度旋钮。生成端回波形用 flow-matching decoder（FM recap 7.5）。代价写在 10.1 的账里：单码本 14 bit 要同时装内容与声学细节，重建保真的冗余度低于多码本方案——tokenizer 的 ASR 蒸馏出身（监督语义路线，同 10.1 §3 与 10.3 S3Tokenizer 一脉）正是用「内容优先」对冲这个瓶颈。与 Moshi 并排：同帧率（12.5 Hz）、同联合建模目标，结构差异全部来自 $K = 1$ vs $K = 8$ 这一个旋钮。
 
 ### 5.3 一段式三例：Kimi-Audio / Step-Audio / LLaMA-Omni
 
@@ -195,7 +201,7 @@ GLM-4-Voice（[Zeng et al., 2024](../references.md)，arXiv:2412.02612，[A]；r
 
 **半双工（级联/turn-based）**。响应是对「已完成用户话语」的一次性条件生成：
 
-$$P\big( a^{m} \mid a^{u}_{\text{completed}} \big) \qquad (10)$$
+$$P\big( a^{m} \mid a^{u}_{\text{completed}} \big) \qquad (11)$$
 
 **符号**：$a^{u}_{\text{completed}}$：已完成的整段用户话语。「轮到谁」由系统逻辑裁决——生成由端点检测器的外部信号触发，模型本身不建模重叠与抢话；对话动力学全部在分布之外。
 
@@ -229,7 +235,7 @@ $$P\big( a^{m} \mid a^{u}_{\text{completed}} \big) \qquad (10)$$
 | 对齐机制 | 无需跨模态对齐（token 即词表成员）；代价是 codec 瓶颈损失不可恢复 | 连续-离散空间对齐由训练学出；多一道速率转换（帧堆叠，10.2 §9） |
 | 生成方向 | 原生：输出头直接吐 code → codec decoder | 不可原生：softmax 吐不出连续向量，仍要回到离散 codec 或扩散头（7.5） |
 | 流式延迟结构 | 帧率定栅格，生成架构（RQ/MTP/单码本）定帧内步数 | 理解侧看 encoder 块长与 adapter 下采样；生成侧仍归左列 |
-| 代表取点 | Moshi（双向全离散）[A]、GLM-4-Voice（双向全离散，$K = 1$）[A] | Qwen2.5/3-Omni（连续进、离散出）[A]、LLaMA-Omni（连续进）[A]、Kimi-Audio（连续进 + FM detokenizer 出）[A] |
+| 代表取点 | Moshi（双向全离散）[A]、GLM-4-Voice（双向全离散，$K = 1$）[A] | Qwen2.5/3-Omni（连续进、离散出）[A]、LLaMA-Omni（连续进）[A]、Kimi-Audio（FM detokenizer 出；输入侧形态 sources 未收）[A] |
 
 读表一句话：当代系统的收敛解几乎都是**混合**——理解侧走连续（保信息、复用强 encoder），生成侧走离散（复用 softmax 生成链、帧率可控）；全离散（Moshi、GLM-4-Voice）用 tokenizer 质量换结构统一，全双工与低帧率的收益已在 §4、§6 结清。adapter 的选择因此不是「哪种更好」，而是「信息瓶颈放在 tokenizer 里还是 alignment 训练里」——前者损失在编码时一次性付清且可量化（bitrate 账），后者损失在训练里分期支付且难审计。
 
@@ -248,13 +254,13 @@ GPT-4o 的语音交互为闭源系统，官方公开披露极少。按证据等�
 | RQ-Transformer | 式 (5) 求和嵌入 + 式 (6) 深度 9 步 + 式 (7) 瓶颈条件 | 长上下文因子 $Q^2 \to 1$（10 min：$1.3 \times 10^5 \to 7.5 \times 10^3$ 条 cache 读）；cache 增长慢 $17\times$ |
 | Inner Monologue | 式 (7) 文本第 0 位 + 式 (8) 强制对齐铺 pad | 内容规划显式化；文本头继承 Helium 7B 先验；delay 翻转得流式 ASR/TTS |
 | AudioLM 分层 | 式 (9)：semantic → coarse → fine | 帧外分层解「一帧多码」；[B] 无官方代码 |
-| GLM-4-Voice | 175 bps = $1 \times 14 \times 12.5$，$K = 16384$ | $K = 1$ 删去 Depth/delay 问题；FM decoder 回波形 |
-| Full-duplex | 式 (10) 半双工对照；静音为显式输出状态 | 预算表：2 帧 = 160 ms 理论 / 200 ms 实测（原文）；级联秒级（教学估算） |
+| GLM-4-Voice | 175 bps = $1 \times 14 \times 12.5$，$K = 16384$；式 (10) 交错实例化 | $K = 1$ 删去 Depth/delay 问题；FM decoder 回波形 |
+| Full-duplex | 式 (11) 半双工对照；静音为显式输出状态 | 预算表：2 帧 = 160 ms 理论 / 200 ms 实测（原文）；级联秒级（教学估算） |
 | 离散 vs 连续 | §7 表 | 混合为收敛解：连续进、离散出；瓶颈在 tokenizer 还是 alignment |
 
 ## 练习
 
-1.（推导）Multi-stream 联合分布与瓶颈。从展平序列 $(x_{1,1}, \ldots, x_{S,Q})$ 的链式法则出发：(a) 不重排 token 顺序，把 $\prod_{j} P(x_{s,j} \mid x_{<s,j})$ 按帧分组、再按 §4.2 的帧内固定序展开，证明式 (4) 是精确恒等式；(b) 设 $\mathcal{H}_s$ 为「$\mathbf{x}_{<s}$ 中且与 $x_{s,j}$ 相关」的全部变量，说明式 (7) 等价于引入瓶颈 $c_s$ 使 $\mathcal{H}_s \to c_s \to x_{s,j}$ 成马尔可夫链，并用互信息给出这个近似的上界表述（提示：$I(x_{s,j}; \mathcal{H}_s \mid c_s) = 0$ 当且仅当 $c_s$ 是充分统计量）；(c) 若帧内文本步移到音频步之后（深度序反转），联合分布的哪几个因子改变？这个改动在生成侧的语义后果是什么（结合 §4.4 回答）。
+1.（推导）Multi-stream 联合分布与瓶颈。从展平序列 $(x_{1,1}, \ldots, x_{S,Q})$ 的链式法则出发：(a) 不重排 token 顺序，把 $\prod_{j} P(x_{s,j} \mid x_{<s,j})$ 按帧分组、再按 §4.2 的帧内固定序展开，在 §4.2 的同帧跨流独立前提下证明式 (4) 由展平链式法则精确推出，并指出该前提在哪一步进入（哪两个因子的条件集各被删去哪一项）；(b) 设 $\mathcal{H}_s$ 为「$\mathbf{x}_{<s}$ 中且与 $x_{s,j}$ 相关」的全部变量，说明式 (7) 等价于引入瓶颈 $c_s$ 使 $\mathcal{H}_s \to c_s \to x_{s,j}$ 成马尔可夫链，并用互信息给出这个近似的上界表述（提示：$I(x_{s,j}; \mathcal{H}_s \mid c_s) = 0$ 当且仅当 $c_s$ 是充分统计量）；(c) 若帧内文本步移到音频步之后（深度序反转），联合分布的哪几个因子改变？这个改动在生成侧的语义后果是什么（结合 §4.4 回答）。
 
 2.（计算）延迟预算账。(a) Moshi 帧率若从 12.5 Hz 翻倍到 25 Hz，只考虑「攒帧 + 单帧生成」两项，理论端到端延迟变为多少？(b) 某级联系统：ASR chunk 320 ms（块首上界口径，10.2 §7）、LLM TTFT 250 ms、TTS 首包 150 ms、网络 50 ms，逐项给出端到端预算并与 Moshi 档对照；指出哪一项无法靠加 GPU 消掉、为什么。(c) Qwen3-Omni 档（12.5 Hz code、单帧即时合成）：只计入「首帧到达 + 首帧生成」的结构下界是多少 ms？与 (a) 的 25 Hz 档比较并解释差异来源。
 
