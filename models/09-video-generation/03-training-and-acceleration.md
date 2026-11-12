@@ -110,7 +110,7 @@ $$\nabla_\psi\, \mathrm{KL}\left( p_{\psi, t}\, \|\, p_{data, t} \right) = \math
 
 ### 3.3 数字账：50 → 4 步与延迟/吞吐
 
-论文端到端口径（10 秒 / 120 帧负载，[Yin et al., 2024](../references.md)，arXiv:2412.07772，[A]）：50 步 → 4 步；流式吞吐 9.4 FPS（frames per second）、首帧延迟 1.3 s；相对双向 teacher 160× 延迟削减、16× 吞吐提升；质量侧 VBench-Long 84.27。官方 repo 的释出基座是 Wan2.1-T2V-1.3B（README 口径：实现基于 Wan 模型族；4 步配置锚点 configs/wan_causal_dmd.yaml，[tianweiy/CausVid](../references.md)，[A]）。
+论文端到端口径（10 秒 / 120 帧负载，[Yin et al., 2024](../references.md)，arXiv:2412.07772，[A]）：50 步 → 4 步；流式吞吐 9.4 FPS（frames per second）、首帧延迟 1.3 s；160× 延迟削减 / 16× 吞吐提升是 vs CogVideoX-5B 的口径（论文口径）；vs 双向教师为 219.2 s → 1.3 s ≈ 169×、0.6 → 9.4 FPS ≈ 16×（Table 3，640×352）；质量侧 VBench-Long 84.27。官方 repo 的释出基座是 Wan2.1-T2V-1.3B（README 口径：实现基于 Wan 模型族；4 步配置锚点 configs/wan_causal_dmd.yaml，[tianweiy/CausVid](../references.md)，[A]）。
 
 两个加速比不在同一量纲：延迟是 time-to-first-frame（只付第一个 chunk 的 4 步），吞吐是稳态帧率（每个 chunk 4 步、历史走 cache）。步数比 12.5× 是两个数字共同的第一来源，剩余部分由 §4 的流式账分解。
 
@@ -242,7 +242,7 @@ $$L_{SF}(\theta) = \mathbb{E}_{x^{1:M} \sim q_\theta^{rollout}} \left[ \ell_{DM}
 
 | 系统（均 [A]） | arXiv（时间） | 初始化 | 主训练信号 | 步数 | 关键声明（出处口径） |
 | --- | --- | --- | --- | --- | --- |
-| CausVid | 2412.07772（2024-12） | 教师 ODE 配对回归（式 (4)） | 非对称 DMD（式 (5)(6)），无 GAN | 4 | 9.4 FPS、首帧延迟 1.3 s、160×/16× vs 双向教师、VBench-Long 84.27（论文） |
+| CausVid | 2412.07772（2024-12） | 教师 ODE 配对回归（式 (4)） | 非对称 DMD（式 (5)(6)），无 GAN | 4 | 9.4 FPS、首帧延迟 1.3 s、160×/16× vs CogVideoX-5B（vs 双向教师 ≈169×/16×，Table 3 640×352）、VBench-Long 84.27（论文） |
 | Self-Forcing | 2506.08009（2025-06） | 建于 CausVid（代码 + Wan2.1-1.3B 基座） | 自 rollout + 视频级分布匹配（式 (12)） | 4 步谱系（建于 CausVid 4 步代码，README 口径） | 消除 exposure bias（摘要口径） |
 | Causal-Forcing | 2602.02214（2026-02） | **Causal ODE 驱动 asymmetric DMD 初始化** | 非对称 DMD | chunk-wise / frame-wise | 官方 README 口径：同训练预算、同推理效率下视觉质量与运动动态显著超 Self-Forcing |
 | Causal-Forcing++ | 2605.15141（2026-05） | **causal consistency distillation 取代 ODE 配对数据** | 同上谱系 | 首个 frame-wise 1/2 步模型 | 官方 README/论文口径 |

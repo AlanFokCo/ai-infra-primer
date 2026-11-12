@@ -55,7 +55,7 @@ $$
 
 **符号**：$\sigma_c$：条件噪声强度（调度细节以原文为准）。出处是 SVD（[Blattmann et al., 2023](../references.md)，**[B]**——无官方代码，配方级断言按论文引用）：原文 §4.3「we concatenate a noise-augmented version of the conditioning frame channel-wise」、附录 D.5 明示加噪施加于 latent 空间（该用法原文上溯 Ho et al.）。机制读法：像素级复制被噪声破坏后，条件帧唯一可用的角色是语义与构图锚点——模型被迫学「保留身份、重画细节」，恰是推理时需要的泛化方向；训练时见过的条件分布（带噪、有损）也覆盖了推理时的条件分布（用户图 ≠ 任何视频的真实首帧），train/test 的条件失配被同时缓解。
 
-**回答二：数据侧过滤（Wan）。** Wan 的 I2V 配方（论文 §5.1.1，即 §1.1 的拼接 + mask + CLIP 三件套）本身不含 noise augmentation；它对首帧失配的回答在数据侧（论文 §5.1 原文口径）：用 SigLIP 特征（编码器本身见 6.1/8.5）的余弦相似度过滤训练对——「we retain only the videos with a similarity greater than a predefined threshold」，让「条件帧与视频内容一致」的样本在训练分布里占主导，从源头收窄失配。两种回答不互斥（本书分析）：加噪破坏复制捷径、过滤收窄条件分布，作用于同一失败模式的两端，可以叠加。
+**回答二：数据侧过滤（Wan）。** Wan 的 I2V 配方（论文 §5.1.1，即 §1.1 的拼接+mask 与 §1.3 的 CLIP）本身不含 noise augmentation；它对首帧失配的回答在数据侧（论文 §5.1 原文口径）：用 SigLIP 特征（编码器本身见 6.1/8.5）的余弦相似度过滤训练对——「we retain only the videos with a similarity greater than a predefined threshold」，让「条件帧与视频内容一致」的样本在训练分布里占主导，从源头收窄失配。两种回答不互斥（本书分析）：加噪破坏复制捷径、过滤收窄条件分布，作用于同一失败模式的两端，可以叠加。
 
 ### 1.3 CLIP image embedding cross-attn
 
@@ -223,7 +223,7 @@ I_1 ─► [段 1: p(V_1 | I_1, c_1)] ─► V_1 ─► last(Dec(V_1)) = I_2 ─
 ## 参考
 
 - [Team Wan, 2025](../references.md)：Wan: Open and Advanced Large-Scale Video Generative Models，arXiv:2503.20314，[A]（key: wan）——§1.1（§5.1.1：binary mask 语义、时间 stride 重排、新增投影层零初始化）、§1.2（§5.1：SigLIP 相似度数据过滤）
-- [Blattmann et al., 2023](../references.md)：Stable Video Diffusion（SVD），[B]（key: svd——**条目待 controller 收录**，arXiv ID 见 task-5-report 回写需求；无官方代码，配方按论文引用）——§1.2 noise augmentation 出处（§4.3 条件帧通道拼接加噪、附录 D.5 latent 空间施加）
+- [Blattmann et al., 2023](../references.md)：Stable Video Diffusion（SVD），arXiv:2311.15127，[B]（key: svd——无官方代码，配方按论文引用）——§1.2 noise augmentation 出处（§4.3 条件帧通道拼接加噪、附录 D.5 latent 空间施加）
 - [Alibaba, Wan-AI/Wan2.1-I2V-14B-720P config](../references.md)：[A]（key: wan21-i2v-config）——§1.1 `in_dim: 36` = 16+16+4
 - [Alibaba, Wan-Video/Wan2.1](../references.md)：[A]（key: wan2.1-repo）——§1.3 `clip_fea` 与 `img_emb = MLPProj(1280, dim)` 走读锚点
 - [Team Wan, Wan-Video/Wan2.2](../references.md)：[A]（key: wan2.2）——§1.1 T2V/I2V 同仓发布形态（无论文，官方 README 口径）

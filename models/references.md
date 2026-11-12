@@ -30,7 +30,6 @@
 ```
 | key | 标题 | 作者 | arXiv ID / URL | 证据等级 | 核实日期 | 被引章节 |
 | --- | --- | --- | --- | --- | --- | --- |
-| transformer | Attention Is All You Need | Vaswani et al. | arXiv:1706.03762 | [A] | 2026-11-10 | 2.1, 2.3, 2.4 |
 ```
 
 ## 条目
@@ -121,7 +120,7 @@
 | mistral-7b | Mistral 7B | Jiang et al. | arXiv:2310.06825 | [A] | 2026-11-10 | 4.2 |
 | gqa | GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints | Ainslie et al. | arXiv:2305.13245 | [B] | 2026-11-11 | 4.1, 5.1, 5.3, 5.6 |
 | deepseekv2 | DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model | DeepSeek-AI | arXiv:2405.04434 | [A] | 2026-11-11 | 4.1, 4.5, 5.2, 5.6 |
-| flashattention | FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness | Dao et al. | arXiv:2205.14135 | [A] | 2026-11-11 | 4.1 |
+| flashattention | FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness | Dao et al. | arXiv:2205.14135 | [A] | 2026-11-11 | 4.1, 9.2 |
 | fa2 | FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning | Dao | arXiv:2307.08691 | [A] | 2026-11-11 | 4.1 |
 | flash-attention-repo | FlashAttention 官方 repo（kernel 走读锚点） | Dao-AILab | https://github.com/Dao-AILab/flash-attention | [A] | 2026-11-11 | 4.1 |
 | nsa | Native Sparse Attention: Hardware-Aligned and Natively Trainable Sparse Attention | Yuan et al. | arXiv:2502.11089 | [B] | 2026-11-11 | 4.2 |
@@ -204,15 +203,15 @@
 | vit | An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale | Dosovitskiy et al. | arXiv:2010.11929 | [A] | 2026-11-12 | 6.1, 8.1 |
 | siglip | Sigmoid Loss for Language Image Pre-Training | Zhai et al. | arXiv:2303.15343 | [A] | 2026-11-12 | 6.1, 8.5 |
 | siglip2 | SigLIP 2: Multilingual Vision-Language Encoders with Improved Semantic Understanding, Localization, and Dense Features | Tschannen et al. | arXiv:2502.14786 | [A] | 2026-11-12 | 6.1 |
-| navit | Patch n' Pack: NaViT, a Vision Transformer for any Aspect Ratio and Resolution | Dehghani et al. | arXiv:2307.06304 | [A] | 2026-11-12 | 6.1 |
+| navit | Patch n' Pack: NaViT, a Vision Transformer for any Aspect Ratio and Resolution | Dehghani et al. | arXiv:2307.06304 | [A] | 2026-11-12 | 6.1, 9.2 |
 | swin | Swin Transformer: Hierarchical Vision Transformer using Shifted Windows | Liu et al. | arXiv:2103.14030 | [A] | 2026-11-12 | 6.1 |
-| clip | Learning Transferable Visual Models From Natural Language Supervision | Radford et al. | arXiv:2103.00020 | [A] | 2026-11-12 | 6.1, 6.2, 7.6, 8.1 |
+| clip | Learning Transferable Visual Models From Natural Language Supervision | Radford et al. | arXiv:2103.00020 | [A] | 2026-11-12 | 6.1, 6.2, 7.6, 8.1, 9.4 |
 | alignment-uniformity | Understanding Contrastive Representation Learning through Alignment and Uniformity on the Hypersphere | Wang & Isola | arXiv:2005.10242 | [A] | 2026-11-12 | 6.2 |
 | vae | Auto-Encoding Variational Bayes | Kingma & Welling | arXiv:1312.6114 | [A] | 2026-11-12 | 6.3, 7.1, 7.6 |
 | vq-vae | Neural Discrete Representation Learning | van den Oord et al. | arXiv:1711.00937 | [A] | 2026-11-12 | 6.3, 8.5 |
 | vqgan | Taming Transformers for High-Resolution Image Synthesis | Esser et al. | arXiv:2012.09841 | [A] | 2026-11-12 | 6.3, 8.5 |
-| magvit-v2 | Language Model Beats Diffusion -- Tokenizer is Key to Visual Generation | Yu et al. | arXiv:2310.05737 | [A] | 2026-11-12 | 6.3, 8.5 |
-| dc-ae | Deep Compression Autoencoder for Efficient High-Resolution Diffusion Models | Chen et al. | arXiv:2410.10733 | [A] | 2026-11-12 | 6.3, 7.6 |
+| magvit-v2 | Language Model Beats Diffusion -- Tokenizer is Key to Visual Generation | Yu et al. | arXiv:2310.05737 | [A] | 2026-11-12 | 6.3, 8.5, 9.1 |
+| dc-ae | Deep Compression Autoencoder for Efficient High-Resolution Diffusion Models | Chen et al. | arXiv:2410.10733 | [A] | 2026-11-12 | 6.3, 7.6, 9.1 |
 | vision-transformer-repo | google-research/vision_transformer（ViT 官方 JAX 实现；vit_jax/models_vit.py） | Google | https://github.com/google-research/vision_transformer | [A] | 2026-11-12 | 6.1 |
 | big-vision | google-research/big_vision（SigLIP/SigLIP 2/NaViT 官方训练代码；big_vision/models/vit.py） | Google | https://github.com/google-research/big_vision | [A] | 2026-11-12 | 6.1 |
 | clip-repo | openai/CLIP 官方 repo（模型与 zero-shot 协议） | OpenAI | https://github.com/openai/CLIP | [A] | 2026-11-12 | 6.2 |
@@ -238,24 +237,24 @@
 | score-sde-repo | yang-song/score_sde_pytorch（score-SDE 官方 PyTorch 实现） | Yang Song | https://github.com/yang-song/score_sde_pytorch | [A] | 2026-11-12 | 7.3 |
 | ddim | Denoising Diffusion Implicit Models | Song et al. | arXiv:2010.02502 | [A] | 2026-11-12 | 7.4, 9.4 |
 | classifier-guidance | Diffusion Models Beat GANs on Image Synthesis（classifier guidance 出处） | Dhariwal & Nichol | arXiv:2105.05233 | [A] | 2026-11-12 | 7.4, 7.6 |
-| cfg | Classifier-Free Diffusion Guidance | Ho & Salimans | arXiv:2207.12598 | [A] | 2026-11-12 | 7.4 |
-| consistency-models | Consistency Models | Song et al. | arXiv:2303.01469 | [A] | 2026-11-12 | 7.4 |
+| cfg | Classifier-Free Diffusion Guidance | Ho & Salimans | arXiv:2207.12598 | [A] | 2026-11-12 | 7.4, 9.3 |
+| consistency-models | Consistency Models | Song et al. | arXiv:2303.01469 | [A] | 2026-11-12 | 7.4, 9.3 |
 | lcm | Latent Consistency Models: Synthesizing High-Resolution Images with Few-Step Inference | Luo et al. | arXiv:2310.04378 | [A] | 2026-11-12 | 7.4 |
-| dmd | One-step Diffusion with Distribution Matching Distillation | Yin et al. | arXiv:2311.18828 | [A] | 2026-11-12 | 7.4 |
+| dmd | One-step Diffusion with Distribution Matching Distillation | Yin et al. | arXiv:2311.18828 | [A] | 2026-11-12 | 7.4, 9.3 |
 | dmd2 | Improved Distribution Matching Distillation for Fast Image Synthesis | Yin et al. | arXiv:2405.14867 | [A] | 2026-11-12 | 7.4, 9.3 |
-| rectified-flow | Flow Straight and Fast: Learning to Generate and Transfer Data with Rectified Flow | Liu et al. | arXiv:2209.03003 | [A] | 2026-11-12 | 7.4, 7.5 |
+| rectified-flow | Flow Straight and Fast: Learning to Generate and Transfer Data with Rectified Flow | Liu et al. | arXiv:2209.03003 | [A] | 2026-11-12 | 7.4, 7.5, 9.2, 9.3 |
 | dpm-solver | DPM-Solver: A Fast ODE Solver for Diffusion Probabilistic Model Sampling in Around 10 Steps | Lu et al. | arXiv:2206.00927 | [A] | 2026-11-12 | 7.4 |
 | progressive-distillation | Progressive Distillation for Fast Sampling of Diffusion Models（**v-prediction 参数化原始出处**；iDDPM 的 v 是方差插值系数，勿混） | Salimans & Ho | arXiv:2202.00512 | [A] | 2026-11-12 | 7.2, 7.4, 7.5 |
 | ddim-repo | ermongroup/ddim（DDIM 官方实现） | Song et al. | https://github.com/ermongroup/ddim | [A] | 2026-11-12 | 7.4 |
 | consistency-models-repo | openai/consistency_models（官方；cm/karras_diffusion.py、cm/losses.py 走读锚点） | OpenAI | https://github.com/openai/consistency_models | [A] | 2026-11-12 | 7.4 |
 | dmd2-repo | tianweiy/DMD2（DMD/DMD2 官方实现） | Yin et al. | https://github.com/tianweiy/DMD2 | [A] | 2026-11-12 | 7.4 |
 | common-diffusion | Common Diffusion Noise Schedules and Sample Steps are Flawed（rescaled CFG 出处；无官方 repo，HF 权重经论文脚注链——[B] 口径） | Shanchuan Lin et al. | arXiv:2305.08891 | [B] | 2026-11-12 | 7.4 |
-| flow-matching | Flow Matching for Generative Modeling | Lipman et al. | arXiv:2210.02747 | [A] | 2026-11-12 | 7.5 |
-| sd3 | Scaling Rectified Flow Transformers for High-Resolution Image Synthesis | Esser et al. | arXiv:2403.03206 | [A] | 2026-11-12 | 7.5, 7.6, 7.7 |
+| flow-matching | Flow Matching for Generative Modeling | Lipman et al. | arXiv:2210.02747 | [A] | 2026-11-12 | 7.5, 9.2, 9.3 |
+| sd3 | Scaling Rectified Flow Transformers for High-Resolution Image Synthesis | Esser et al. | arXiv:2403.03206 | [A] | 2026-11-12 | 7.5, 7.6, 7.7, 9.2 |
 | flow-matching-repo | facebookresearch/flow_matching（FM 官方库；flow_matching/path/、solver/、loss/ 包结构实测） | Meta | https://github.com/facebookresearch/flow_matching | [A] | 2026-11-12 | 7.5 |
 | sd3.5-repo | Stability-AI/sd3.5（SD3.5 官方推理代码；mmditx.py、sd3_impls.py——MMDiT 走读锚点） | Stability AI | https://github.com/Stability-AI/sd3.5 | [A] | 2026-11-12 | 7.5, 7.6, 7.7 |
 | ldm | High-Resolution Image Synthesis with Latent Diffusion Models | Rombach et al. | arXiv:2112.10752 | [A] | 2026-11-12 | 7.6 |
-| dit | Scalable Diffusion Models with Transformers | Peebles & Xie | arXiv:2212.09748 | [A] | 2026-11-12 | 7.6 |
+| dit | Scalable Diffusion Models with Transformers | Peebles & Xie | arXiv:2212.09748 | [A] | 2026-11-12 | 7.6, 9.2, 9.4 |
 | pixart-alpha | PixArt-α: Fast Training of Diffusion Transformer for Photorealistic Text-to-Image Synthesis | Chen et al. | arXiv:2310.00426 | [A] | 2026-11-12 | 7.6 |
 | pixart-sigma | PixArt-Σ: Weak-to-Strong Training of Diffusion Transformer for 4K Text-to-Image Generation | Chen et al. | arXiv:2403.04692 | [A] | 2026-11-12 | 7.6 |
 | sana | SANA: Efficient High-Resolution Image Synthesis with Linear Diffusion Transformers | Xie et al. | arXiv:2410.10629 | [A] | 2026-11-12 | 7.6 |
@@ -287,7 +286,7 @@
 | llava-1.5 | Improved Baselines with Visual Instruction Tuning（linear→MLP 为正文陈述、Q-Former 语料规模为 limitations 讨论——无 connector 消融表） | Liu et al. | arXiv:2310.03744 | [A] | 2026-11-12 | 8.1, 8.2, 8.3 |
 | flamingo | Flamingo: a Visual Language Model for Few-Shot Learning（**DeepMind 未开源**：无官方代码与权重，开放复现锚点走 open-flamingo-repo） | Alayrac et al. | arXiv:2204.14198 | [B] | 2026-11-12 | 8.1, 8.2, 8.3, 8.4 |
 | blip2 | BLIP-2: Bootstrapping Language-Image Pre-training with Frozen Image Encoders and Large Language Models（Q-Former 出处） | Li et al. | arXiv:2301.12597 | [A] | 2026-11-12 | 8.1, 8.2 |
-| qwen2-vl | Qwen2-VL: Enhancing Vision-Language Model's Perception of the World at Any Resolution（naive dynamic resolution + M-RoPE 出处） | Wang et al. | arXiv:2409.12191 | [A] | 2026-11-12 | 8.2, 8.4 |
+| qwen2-vl | Qwen2-VL: Enhancing Vision-Language Model's Perception of the World at Any Resolution（naive dynamic resolution + M-RoPE 出处） | Wang et al. | arXiv:2409.12191 | [A] | 2026-11-12 | 8.2, 8.4, 9.2 |
 | qwen2.5-vl | Qwen2.5-VL Technical Report（M-RoPE 绝对时间对齐、dynamic FPS、window attention vision tower 出处） | Bai et al. | arXiv:2502.13923 | [A] | 2026-11-12 | 8.1, 8.2, 8.3, 8.4 |
 | internvl | InternVL: Scaling up Vision Foundation Models and Aligning for Generic Visual-Linguistic Tasks（pixel shuffle 用法出处之一） | Chen et al. | arXiv:2312.14238 | [A] | 2026-11-12 | 8.2 |
 | internvl3 | InternVL3: Exploring Advanced Training and Test-Time Recipes for Open-Source Multimodal Models | Zhu et al. | arXiv:2504.10479 | [A] | 2026-11-12 | 8.1 |
@@ -327,12 +326,12 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | cogvideox | CogVideoX: Text-to-Video Diffusion Models with An Expert Transformer（3D causal VAE 8×8×4、expert-adaLN、3D full attention、3D RoPE 出处） | Yang et al. | arXiv:2408.06072 | [A] | 2026-11-13 | 9.1, 9.2 |
 | hunyuanvideo | HunyuanVideo: A Systematic Framework For Large Video Generative Models（13B+、Causal 3D VAE 4/8/16、Dual→Single-stream MMDiT、MLLM 文本编码器+token refiner） | Kong et al. | arXiv:2412.03603 | [A] | 2026-11-13 | 9.1, 9.2 |
-| wan | Wan: Open and Advanced Large-Scale Video Generative Models（Wan-VAE [1+T/4,H/8,W/8] 首帧仅空间压缩、umT5、FM+DiT 出处） | Team Wan | arXiv:2503.20314 | [A] | 2026-11-13 | 9.1, 9.2, 9.4 |
+| wan | Wan: Open and Advanced Large-Scale Video Generative Models（Wan-VAE [1+T/4,H/8,W/8] 首帧仅空间压缩、umT5、FM+DiT 出处） | Team Wan | arXiv:2503.20314 | [A] | 2026-11-13 | 9.1, 9.2, 9.3, 9.4 |
 | wan2.2 | Wan2.2 官方 repo README（SNR-split MoE：high/low-noise 双 expert、27B total/14B active、t_moe=SNR_min/2 阈值切换；Wan2.2-VAE 4×16×16——**无论文，表述引 README 原文**） | Team Wan | https://github.com/Wan-Video/Wan2.2 | [A] | 2026-11-13 | 9.1, 9.2, 9.4 |
 | ltx-video | LTX-Video: Realtime Video Latent Diffusion（1:192 压缩、32×32×8/token、patchify 挪入 VAE、<2B、H100 实时出处） | HaCohen et al. | arXiv:2501.00103 | [A] | 2026-11-13 | 9.1, 9.2 |
-| stepvideo-t2v | Step-Video-T2V Technical Report（30B、Video-VAE 16×16 空间+8×时间、3D full attention + FM、204 帧出处） | Ma et al. | arXiv:2502.10248 | [A] | 2026-11-13 | 9.2 |
+| stepvideo-t2v | Step-Video-T2V Technical Report（30B、Video-VAE 16×16 空间+8×时间、3D full attention + FM、204 帧出处） | Ma et al. | arXiv:2502.10248 | [A] | 2026-11-13 | 9.1, 9.2 |
 | open-sora-2 | Open-Sora 2.0: Training a Commercial-Level Video Generation Model in $200k（11B、Video DC-AE + MMDiT 出处） | Zheng et al. | arXiv:2503.09642 | [A] | 2026-11-13 | 9.1, 9.2 |
-| open-sora-plan | Open-Sora Plan: Open-Source Large Video Generation Model（v1.3 报告；v1.5 = 高压缩 WFVAE 8×8×8_32dim + SUV sparse DiT） | Lin et al. | arXiv:2412.00131 | [A] | 2026-11-13 | 9.1 |
+| open-sora-plan | Open-Sora Plan: Open-Source Large Video Generation Model（v1.3 报告；v1.5 = 高压缩 WFVAE 8×8×8_32dim + SUV sparse DiT） | Lin et al. | arXiv:2412.00131 | [A] | 2026-11-13 | 9.1, 9.2 |
 | wfvae | WF-VAE: Enhancing Video VAE by Wavelet-Driven Energy Flow for Latent Video Diffusion Model | Li et al. | arXiv:2411.17459 | [A] | 2026-11-13 | 9.1 |
 | mochi | Mochi 1 官方 repo（**无论文——[C] 口径只登记已披露信息**：AsymmDiT 10B、AsymmVAE 因果 8×8×6→12ch、单 T5-XXL；**genmoai/models 已 301 → genmoai/mochi**） | Genmo | https://github.com/genmoai/mochi | [C] | 2026-11-13 | 9.1, 9.2 |
 | moviegen | Movie Gen: A Cast of Media Foundation Models（30B transformer、73K video tokens=16s@16fps、FM；**Meta 未开源代码/权重**） | Polyak et al. | arXiv:2410.13720 | [B] | 2026-11-13 | 9.2, 9.3 |
@@ -351,12 +350,13 @@
 | null-text-inversion | Null-text Inversion for Editing Real Images using Guided Diffusion Models（官方实现在 google/prompt-to-prompt 的 null_text_w_ptp.ipynb） | Mokady et al. | arXiv:2211.09794 ; https://github.com/google/prompt-to-prompt | [A] | 2026-11-13 | 9.4 |
 | cameractrl | CameraCtrl: Enabling Camera Control for Text-to-Video Generation（**Plücker embedding 出处**——per-pixel 射线条件、plug-and-play 相机模块） | He et al. | arXiv:2404.02101 | [A] | 2026-11-13 | 9.4 |
 | motionctrl | MotionCtrl: A Unified and Flexible Motion Controller for Video Generation（相机+物体运动统一控制） | Wang et al. | arXiv:2312.03641 | [A] | 2026-11-13 | 9.4 |
+| svd | Stable Video Diffusion: Scaling Latent Video Diffusion Models to Large Datasets（noise augmentation 出处：§4.3 条件帧通道拼接加噪、附录 D.5 latent 空间施加，上溯 Ho et al.；**[B] 无官方代码**） | Blattmann et al. | arXiv:2311.15127 | [B] | 2026-11-13 | 9.4 |
 | cogvideo-repo | zai-org/CogVideo（**THUDM/CogVideo 已 301 重定向至此**——引用写新地址；sat/ 目录实测） | Z.ai | https://github.com/zai-org/CogVideo | [A] | 2026-11-13 | 9.1, 9.2 |
-| hunyuanvideo-repo | Tencent-Hunyuan/HunyuanVideo 官方 repo（hyvideo/modules/models.py 实测 rope_dim_list [16,56,56]——t/h/w 三轴 RoPE 走读锚点） | Tencent | https://github.com/Tencent-Hunyuan/HunyuanVideo | [A] | 2026-11-13 | 9.1, 9.2, 9.4 |
+| hunyuanvideo-repo | Tencent-Hunyuan/HunyuanVideo 官方 repo（hyvideo/modules/models.py 实测 rope_dim_list [16,56,56]——t/h/w 三轴 RoPE 走读锚点） | Tencent | https://github.com/Tencent-Hunyuan/HunyuanVideo | [A] | 2026-11-13 | 9.1, 9.2 |
 | wan2.1-repo | Wan-Video/Wan2.1 官方 repo（wan/modules/model.py 实测：rope_apply 频段切 [c−2⌊c/3⌋,⌊c/3⌋,⌊c/3⌋]、I2V clip_fea 条件注入——走读锚点） | Alibaba | https://github.com/Wan-Video/Wan2.1 | [A] | 2026-11-13 | 9.1, 9.2, 9.4 |
 | open-sora-repo | hpcaitech/Open-Sora 官方 repo（Open-Sora 2.0 代码家） | HPC-AI Tech | https://github.com/hpcaitech/Open-Sora | [A] | 2026-11-13 | 9.2 |
-| open-sora-plan-repo | PKU-YuanGroup/Open-Sora-Plan 官方 repo（WFVAE/SUV 走读锚点） | PKU-YuanGroup | https://github.com/PKU-YuanGroup/Open-Sora-Plan | [A] | 2026-11-13 | 9.1 |
-| ltx-video-repo | Lightricks/LTX-Video 官方 repo | Lightricks | https://github.com/Lightricks/LTX-Video | [A] | 2026-11-13 | 9.1, 9.2 |
+| open-sora-plan-repo | PKU-YuanGroup/Open-Sora-Plan 官方 repo（WFVAE/SUV 走读锚点） | PKU-YuanGroup | https://github.com/PKU-YuanGroup/Open-Sora-Plan | [A] | 2026-11-13 | 9.1, 9.2 |
+| ltx-video-repo | Lightricks/LTX-Video 官方 repo | Lightricks | https://github.com/Lightricks/LTX-Video | [A] | 2026-11-13 | 9.2 |
 | causvid-repo | tianweiy/CausVid 官方 repo（causvid/ 目录实测；configs/wan_causal_dmd.yaml 为 4 步配置锚点） | Yin et al. | https://github.com/tianweiy/CausVid | [A] | 2026-11-13 | 9.3 |
 | self-forcing-repo | guandeh17/Self-Forcing 官方 repo（建于 CausVid 代码 + Wan2.1 基座） | He et al. | https://github.com/guandeh17/Self-Forcing | [A] | 2026-11-13 | 9.3 |
 | causal-forcing-repo | thu-ml/Causal-Forcing 官方 repo（Causal Forcing/++ 代码与模型发布处） | Tsinghua et al. | https://github.com/thu-ml/Causal-Forcing | [A] | 2026-11-13 | 9.3 |
@@ -367,7 +367,7 @@
 | cogvideox-config | zai-org/CogVideoX-5b VAE/transformer config.json（HF 实测：temporal_compression 4、latent 16、scaling 0.7；transformer 42L/48 头/patch 2/text 4096=T5-XXL；**原 THUDM/CogVideoX-5b 已迁**） | Z.ai | https://huggingface.co/zai-org/CogVideoX-5b/blob/main/vae/config.json | [A] | 2026-11-13 | 9.1, 9.2 |
 | hunyuanvideo-vae-config | tencent/HunyuanVideo hunyuan-video-t2v-720p/vae/config.json（HF 实测：AutoencoderKLCausal3D、time_compression 4、latent 16、scaling 0.476986） | Tencent | https://huggingface.co/tencent/HunyuanVideo/blob/main/hunyuan-video-t2v-720p/vae/config.json | [A] | 2026-11-13 | 9.1 |
 | wan21-i2v-config | Wan-AI/Wan2.1-I2V-14B-720P config.json（HF 实测：in_dim 36 = 16 噪声+16 条件 latent+4 mask——I2V latent concat 物证） | Alibaba | https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-720P/blob/main/config.json | [A] | 2026-11-13 | 9.4 |
-| wan2.2-a14b-hf | Wan-AI/Wan2.2-T2V-A14B（HF 实测：**high_noise_model/ + low_noise_model/ 双 expert 目录**——SNR-split MoE 物证；各 expert config = WanModel dim 5120/40L/40H） | Alibaba | https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B | [A] | 2026-11-13 | 9.2 |
+| wan2.2-a14b-hf | Wan-AI/Wan2.2 HF 仓实测（**T2V-A14B：high_noise_model/ + low_noise_model/ 双 expert 目录**——SNR-split MoE 物证，各 expert config = WanModel dim 5120/40L/40H；**TI2V-5B：in_dim/out_dim 48**——高压缩 VAE 48 通道物证，dim 3072/30L/24H，9.1 引此口径） | Alibaba | https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B ; https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B | [A] | 2026-11-13 | 9.1, 9.2 |
 | autoencoderkl-wan | diffusers AutoencoderKLWan 实现（src/diffusers/models/autoencoders/autoencoder_kl_wan.py 实测：WanCausalConv3d 时间维 causal padding + feature caching——3D causal conv 走读锚点） | HuggingFace | https://github.com/huggingface/diffusers/blob/main/src/diffusers/models/autoencoders/autoencoder_kl_wan.py | [A] | 2026-11-13 | 9.1 |
 
 ### Part 10 · Audio & Speech
@@ -674,3 +674,21 @@
 | BOI / EOI token | 保留英文（BOI/EOI，begin/end-of-image 特殊 token） | 8.5 |
 | sufficiency（invariance 对偶） | 充分性（sufficiency） | 8.5 |
 | absorbing-uniform（离散扩散腐蚀语境） | 吸收-均匀混合（Absorbing-Uniform） | 8.5 |
+| causal conv3d / causal convolution | 因果卷积（causal conv3d） | 9.1 |
+| feature caching | 分块流式编解码（feature caching） | 9.1 |
+| spacetime patch / spacetime patchify | 时空 patch（spacetime patch）；patchify 沿用 6.1 | 9.2 |
+| factorized attention | 分解式 attention（factorized attention） | 9.2 |
+| bucketing（视频分辨率/时长语境） | 分桶（bucketing） | 9.2 |
+| bidirectional token refiner | 双向 token 精修器（bidirectional token refiner） | 9.2 |
+| step distillation | 步数蒸馏（step distillation） | 9.3 |
+| Diffusion Forcing | 保留英文（Diffusion Forcing） | 9.3 |
+| asymmetric distillation | 非对称蒸馏（asymmetric distillation） | 9.3 |
+| block-causal | 块因果（block-causal） | 9.3 |
+| gradient truncation | 梯度截断（gradient truncation） | 9.3 |
+| on-policy / off-policy | 保留英文（on-policy / off-policy） | 9.3 |
+| keyframe | 关键帧（keyframe） | 9.4 |
+| inversion（扩散编辑语境） | 反演（inversion）；DDIM inversion 保留英文 | 9.4 |
+| null-text inversion | 保留英文（null-text inversion） | 9.4 |
+| Plücker coordinates / ray embedding | 保留英文（Plücker 射线/坐标） | 9.4 |
+| noise augmentation | 保留英文（noise augmentation，条件帧加噪） | 9.4 |
+| zero-conv | 保留英文（zero-conv，零初始化 1×1 卷积） | 9.4 |

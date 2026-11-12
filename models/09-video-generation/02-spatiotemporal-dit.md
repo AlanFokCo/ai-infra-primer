@@ -139,7 +139,7 @@ expert adaLN 还继承了 adaLN-Zero 的初始化性质（7.6 式 (8) 的推导�
 
 HunyuanVideo 官方 README 口径为 13B+ 参数、开源模型中最大（[Kong et al., 2024](../references.md)，arXiv:2412.03603，[A]；该文 ar5iv 不可用，本章事实经官方 repo README 一手取证，[Tencent-Hunyuan/HunyuanVideo](../references.md)，[A]）。主干是 MMDiT 的一个变体：前段双流（视频 token 与文本 token 各自过独立参数的子层、attention 在拼接序列上联合计算——7.6 式 (10)-(12) 的同构形），后段单流（拼接后共享一套 QKV/MLP，退回 7.6 §3(c) 的 in-context 形态）——README §3.2 原文口径即「双流阶段各自独立 block、单流阶段拼接」。同一「double→single」思想在 FLUX 上只有 [C] 级披露（7.6 §7.3），HunyuanVideo 是它的开放 [A] 实例。
 
-参数账：双流段每个 block 为两模态各付一份 QKV/MLP（约 2× 单流 block 参数），单流段一份。把双倍参数预算只花在前段的读法：双流的意义是让文本流在去噪的前若干层被视频状态逐层修正（7.6 §7.1 的「双向」论证），这个修正完成后，后段不再需要维持两套独立表征几何——参数共享的 in-context 形态足够。层数切分点官方 README 未给数值，本章不杜撰。
+参数账：双流段每个 block 为两模态各付一份 QKV/MLP（约 2× 单流 block 参数），单流段一份。把双倍参数预算只花在前段的读法：双流的意义是让文本流在去噪的前若干层被视频状态逐层修正（7.6 §7.1 的「双向」论证），这个修正完成后，后段不再需要维持两套独立表征几何——参数共享的 in-context 形态足够。层数切分点官方 README 未给数值；代码默认 20 双流 + 40 单流（`mm_double_blocks_depth=20`、`mm_single_blocks_depth=40`，hyvideo/modules/models.py 实测）。
 
 为什么修正集中在「前段」说得通（本书机制分析）：transformer 的层序与表征抽象层级相关是跨模态反复出现的现象（3.3 的 ICL 讨论、4.7 的回路测量都建立在浅层局部/深层全局的分层上）。文本条件要影响的是视频的全局构图与运动规划——这些信息在去噪轨迹上恰恰是高噪声段（$t$ 大）定下的（§6.1 的 SNR 分工读法、7.5 §8 的 log-SNR 论据同向）。前段双流让文本表征在全局决策发生之前完成对齐，后段单流只负责把已定型的条件便宜地读下去。这个读法与 FLUX 的 double→single 同型，但 FLUX 只有 [C] 级披露，HunyuanVideo 把它做成了可对照代码的 [A] 实例。
 
@@ -303,9 +303,9 @@ Qwen2.5-VL:   [0‥15]  t 轴 16 | [16‥39] h 轴 24 | [40‥63] w 轴 24   折
 
 **Open-Sora 2.0**（[Zheng et al., 2025](../references.md)，arXiv:2503.09642，[A]；代码 [hpcaitech/Open-Sora](../references.md)）：11B、训练成本公开口径 \$200k，架构为 Video DC-AE + MMDiT——用深压缩 VAE（9.1 的 DC-AE 式 tradeoff）把 $N$ 压下来，再用 MMDiT 式双流（§4 谱系）做文本耦合。它回答的是「有限预算下怎么配」：压缩换 token 数、MMDiT 换文本质量。
 
-**LTX-Video**（[HaCohen et al., 2025](../references.md)，arXiv:2501.00103，[A]；[Lightricks/LTX-Video](../references.md)）：把路线走到另一端——压缩率 1:192（每 token 对应 32×32×8 像素块），并把 patchify 从 transformer 输入挪进 VAE 输入（VAE 直接吐出 token 网格）。768×512、121 帧的视频只有 $24 \times 16 \times 16 \approx 6.1$K token：$N$ 小两个数量级，full spatiotemporal self-attention（摘要原文）的二次项不再是约束，<2B 参数在 H100 上 5 秒视频 2 秒出（faster-than-real-time）。代价在 VAE 侧（9.1 的压缩-质量 tradeoff），不在 DiT 侧。
+**LTX-Video**（[HaCohen et al., 2025](../references.md)，arXiv:2501.00103，[A]；[Lightricks/LTX-Video](../references.md)）：把路线走到另一端——压缩率 1:192（每 token 对应 32×32×8 像素块），并把 patchify 从 transformer 输入挪进 VAE 输入（VAE 直接吐出 token 网格）。768×512、121 帧的视频只有 $24 \times 16 \times 16 \approx 6.1$K token：$N$ 小两个数量级，full spatiotemporal self-attention（摘要原文）的二次项不再是约束，2B 级（摘要口径）参数在 H100 上 5 秒视频 2 秒出（faster-than-real-time）。代价在 VAE 侧（9.1 的压缩-质量 tradeoff），不在 DiT 侧。
 
-**Mochi 1**（[Genmo](../references.md)，[C]——无论文，只登记 repo/README 已披露信息）：10B AsymmDiT——non-square QKV、视觉流宽度 ≈4× 文本流、逐模态独立 MLP，单 T5-XXL 文本编码；配套 AsymmVAE 因果压缩 8×8 空间 × 6× 时间 → 12 通道 latent。「视觉流 4× 宽」是 §7 对照表上参数分配轴的一个极端取点：文本侧只保留够用的读取容量。
+**Mochi 1**（[Genmo](../references.md)，[C]——无论文，只登记 repo/README 已披露信息）：10B AsymmDiT——non-square QKV、视觉流参数 ≈4× 文本流（更大 hidden 维度）、逐模态独立 MLP，单 T5-XXL 文本编码；配套 AsymmVAE 因果压缩 8×8 空间 × 6× 时间 → 12 通道 latent。「视觉流参数 ≈4× 文本流」是 §7 对照表上参数分配轴的一个极端取点：文本侧只保留够用的读取容量。
 
 **Movie Gen**（[Polyak et al., 2024](../references.md)，arXiv:2410.13720，[B]——Meta 未开源代码/权重，只按论文拆口径）：最大视频 transformer 30B、最大上下文 73K video token（= 16s@16fps）、FM 目标，另有同步音频生成。73K token 这个数值得放进 §2 的坐标系：它小于 Wan 720p 的等效 302K（patch 口径不同），但已足以让 full attention 的训练账必须配序列并行——长上下文在视频 DiT 里的单位不是文本 token，而是「分辨率 × 时长」的乘积预算。
 
@@ -319,8 +319,8 @@ Qwen2.5-VL:   [0‥15]  t 轴 16 | [16‥39] h 轴 24 | [40‥63] w 轴 24   折
 | Wan2.2-A14B [A]（官方 README） | 27B 总 / 14B 激活 | 同 Wan2.1（两 expert 各一套） | 同 Wan2.1 | 同 Wan2.1 | 同 Wan2.1 |
 | StepVideo-T2V [A] | 30B | 3D full | joint（双语文本编码器 ×2） | 双语 ×2 | — |
 | Open-Sora 2.0 [A] | 11B | MMDiT（Video DC-AE latent） | joint stream | — | — |
-| LTX-Video [A] | <2B | full spatiotemporal（$N$ ≈ 6K，VAE 内 patchify） | — | — | — |
-| Mochi [C] | 10B | AsymmDiT（视觉流 ≈4× 宽、non-square QKV） | joint（非对称） | 单 T5-XXL | — |
+| LTX-Video [A] | 2B 级 | full spatiotemporal（$N$ ≈ 6K，VAE 内 patchify） | — | — | — |
+| Mochi [C] | 10B | AsymmDiT（视觉流参数 ≈4× 文本流，更大 hidden 维度、non-square QKV） | joint（非对称） | 单 T5-XXL | — |
 | Movie Gen [B] | 30B | —（73K token 上下文，FM） | — | — | — |
 
 | 公式 | 内容 |

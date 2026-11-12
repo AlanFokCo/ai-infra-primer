@@ -66,7 +66,7 @@ V̂ ∈ R^{T×H×W×3}
 
 $$y[c_o, t, i, j] = \sum_{c_i} \sum_{a = 0}^{k_t - 1} \sum_{b = 0}^{k_h - 1} \sum_{d = 0}^{k_w - 1} w[c_o, c_i, a, b, d] \cdot \tilde{x}[c_i, t + a, i + b, j + d] \qquad (5)$$
 
-**符号**：$x$：输入特征，$[c_i, T, H, W]$；$\tilde{x}$：补零版本——时间维左侧补 $k_{t} - 1$ 帧、空间维两侧各补 $(k_{h} - 1)/2$ 与 $(k_{w} - 1)/2$（$k_{h}, k_{w}$ 取奇数），即 $\tilde{x}[\cdot, t', i', j'] = x[\cdot,\ t' - (k_{t} - 1),\ i' - (k_{h} - 1)/2,\ j' - (k_{w} - 1)/2]$，越界处为零；$w$：卷积核；$y$：输出特征。把补零代入求和指标：$y[\cdot, t, i, j]$ 在时间维只读第 $t - k_{t} + 1$ 至第 $t$ 帧、在空间维读以 $(i, j)$ 为中心的 $k_{h} \times k_{w}$ 邻域——时间感受野只向过去延伸（不多不少 $k_{t}$ 帧），空间感受野双向对称，与上文「空间维仍是对称 padding」一致。
+**符号**：$x$：输入特征，$[c_i, T, H, W]$；$\tilde{x}$：补零版本——时间维左侧补 $k_{t} - 1$ 帧、空间维两侧各补 $(k_{h} - 1)/2$ 与 $(k_{w} - 1)/2$（$k_{h}, k_{w}$ 取奇数），即 $\tilde{x}[\cdot, t', i', j'] = x[\cdot,\ t' - (k_{t} - 1),\ i' - (k_{h} - 1)/2,\ j' - (k_{w} - 1)/2]$，越界处为零；$w$：卷积核；$y$：输出特征。把补零代入求和指标：$y[\cdot, t, i, j]$ 在时间维只读第 $t - k_{t} + 1$ 至第 $t$ 帧、在空间维读以 $(i, j)$ 为中心的 $k_{h} \times k_{w}$ 邻域——时间感受野只向过去延伸（不多不少 $k_{t}$ 帧），空间感受野双向对称，与下文「空间维仍是对称 padding」一致。
 
 注意因果性只加在时间轴上：空间维仍是对称 padding。原因是两个维度的消费方式不同——DiT 对同一帧内的空间位置是双向可见的（9.2 的 full 3D attention 没有空间因果 mask），空间感受野向两个方向延伸没有泄漏问题；而时间轴承载的是「帧序」这个被生成范式（分块自回归、流式）依赖的语义，只有它需要单向约束。
 
@@ -139,7 +139,7 @@ scaling factor 是 VAE 与扩散之间的分布标定接口：$z' = s \cdot z$ �
 
 1. **通用档 $(4, 8, 8, 16)$ = 48× 是质量与收敛的安全区**（§5 的 CogVideoX ablation 边界），分歧全部发生在「要不要更狠」上。
 2. **深时间压缩的两种付账方式**：WFVAE 把时间压缩翻倍到 $\tau = 8$、代价是通道翻倍到 $c = 32$——数值压缩 $R$ 仍是 48× 不变，但 $N$ 的 $t$ 因子减半、attention 二次项省约 4×。这正是式 (3)(4) 两本账的分离实例：$N$ 按 $\tau s^{2}$ 缩、数值体积按 $3 \tau s^{2} / c$ 缩，$c$ 是兑换旋钮。WF-VAE 的做法是用小波分解组织时间信息流（[Li et al., 2024](../references.md)，arXiv:2411.17459，[A]；Open-Sora-Plan v1.3 报告 [Lin et al., 2024](../references.md)，arXiv:2412.00131，[A]；v1.5.0 配置为 [repo README](../references.md) 口径）。
-3. **LTX 把 patchify 挪进 VAE**：摘要原文「compression ratio of 1:192, with spatiotemporal downscaling of 32×32×8 pixels per token, enabled by relocating the patchifying operation from the transformer's input to the VAE's input」（[HaCohen et al., 2025](../references.md)，arXiv:2501.00103，[A]）——transformer 输入侧不再有独立 patchify，VAE 直接吐出「32×32×8 像素/token」的网格；由 $3 \cdot 8 \cdot 32^{2} / 192 = 128$ 反推 latent 通道。token 网格与通用档相比：$\tau s^{2}$ 从 256 涨到 8192，同一段视频的 $N$ 缩到 $1/32$。这笔交易的结构是：VAE 变深（一次性编解码成本），换 DiT 在每个去噪步上都省的二次项——去噪步数越多，交易越划算。换到的是端到端速度：<2B 参数的 DiT 在 H100 上 2 秒生成 5 秒 768×512@24fps 视频，快于实时（论文摘要口径）。
+3. **LTX 把 patchify 挪进 VAE**：摘要原文「compression ratio of 1:192, with spatiotemporal downscaling of 32×32×8 pixels per token, enabled by relocating the patchifying operation from the transformer's input to the VAE's input」（[HaCohen et al., 2025](../references.md)，arXiv:2501.00103，[A]）——transformer 输入侧不再有独立 patchify，VAE 直接吐出「32×32×8 像素/token」的网格；由 $3 \cdot 8 \cdot 32^{2} / 192 = 128$ 反推 latent 通道。token 网格与通用档相比：$\tau s^{2}$ 从 256 涨到 8192，同一段视频的 $N$ 缩到 $1/32$。这笔交易的结构是：VAE 变深（一次性编解码成本），换 DiT 在每个去噪步上都省的二次项——去噪步数越多，交易越划算。换到的是端到端速度：2B 级参数的 DiT 在 H100 上 2 秒生成 5 秒 768×512@24fps 视频，快于实时（论文摘要口径）。
 4. **StepVideo 把两个旋钮同时拧狠**：$(8, 16, 16)$——空间 $s = 16$ 与 Wan2.2 同档、时间 $\tau = 8$ 与 WFVAE 同档（[Ma et al., 2025](../references.md)，arXiv:2502.10248，[A]；摘要口径，$c$ 未登记）。$\tau s^{2} = 2048$，同段视频的 $N$ 是通用档的 $1/8$；它服务的负载是 30B 主干、最长 204 帧——长时长预算正是从 token 账里省出来的。注意 $\tau s^{2} = 2048$ 恰与 §5 撞墙的 CogVideoX E 档同密度；摘要口径未披露其 $c$ 与训练配方，该密度下收敛可行的条件本书无从登记。
 5. **Mochi 的口径差**（[Genmo, Mochi 1 repo](../references.md)，[C]）：AsymmVAE 因果压缩 8×8 空间 × 6× 时间 → 12 通道，README 称「总压缩 128×」；按数值体积算得 $6 \cdot 8^{2} \cdot 3 / 12 = 96$ 倍，两处口径之差官方未说明——本书以机制参数 $(6, 8, 8, 12)$ 为准。表中所有「—」同理：事实源未登记的数字不推测、不补全。Open-Sora 2.0 行填的是族名而非参数：Video DC-AE 表明它属于深压缩系（§5），但其 $(\tau, s, s)$ 与 $c$ 未在事实源登记，留空。读这张表时把证据等级一起读：Wan2.2 行是官方 README 一手（无论文），Mochi 行是 [C]——只登记已披露信息。
 
@@ -202,7 +202,7 @@ DC-AE 式回答：把压缩率继续推高同时保住重建，需要专门的�
 - [Team Wan, 2025](../references.md)：Wan: Open and Advanced Large-Scale Video Generative Models，arXiv:2503.20314，[A]（key: wan）——§4.1.1 Wan-VAE：首帧仅空间压缩（following MagViT-v2）、$[1+T/4, H/8, W/8]$、GroupNorm→RMSNorm
 - [Yu et al., 2023](../references.md)：Language Model Beats Diffusion -- Tokenizer is Key to Visual Generation，arXiv:2310.05737，[A]（key: magvit-v2）——首帧特判约定的源头（6.3/8.5 已拆，本章只引兼容机制）
 - [Team Wan, Wan2.2 官方 repo README](../references.md)：[A]（key: wan2.2）——Wan2.2-VAE 4×16×16（总 64×）、TI2V-5B 叠 patchify 后 token 网格 4×32×32、5B dense 720P@24fps；无论文，表述引 README 原文
-- [HaCohen et al., 2025](../references.md)：LTX-Video: Realtime Video Latent Diffusion，arXiv:2501.00103，[A]（key: ltx-video）——1:192、32×32×8 pixels/token、patchify 挪入 VAE、<2B、H100 上 2 秒生成 5 秒 768×512@24fps
+- [HaCohen et al., 2025](../references.md)：LTX-Video: Realtime Video Latent Diffusion，arXiv:2501.00103，[A]（key: ltx-video）——1:192、32×32×8 pixels/token、patchify 挪入 VAE、2B 级（摘要口径）、H100 上 2 秒生成 5 秒 768×512@24fps
 - [Ma et al., 2025](../references.md)：Step-Video-T2V Technical Report，arXiv:2502.10248，[A]（key: stepvideo-t2v）——Video-VAE 16×16 空间 + 8× 时间（摘要口径）
 - [Zheng et al., 2025](../references.md)：Open-Sora 2.0: Training a Commercial-Level Video Generation Model in \$200k，arXiv:2503.09642，[A]（key: open-sora-2）——Video DC-AE + MMDiT，DC-AE 式深压缩的视频官方实例
 - [Lin et al., 2024](../references.md)：Open-Sora Plan: Open-Source Large Video Generation Model，arXiv:2412.00131，[A]（key: open-sora-plan）——v1.3 报告；v1.5.0 配置以 repo README 为准
