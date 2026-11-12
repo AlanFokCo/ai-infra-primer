@@ -25,7 +25,7 @@ $$
 
 - 墙二（KV cache，2.4 式 (9)）：按 Qwen2.5-VL-7B 的 LLM 形态（28 层、4 KV 头、$d_{head}$ = 128、bf16，[Qwen2.5-VL-7B config](../references.md)，[A]）每 token 占 $2 \times 28 \times 4 \times 128 \times 2$ B = 57,344 B；15,360 个视觉 token ≈ 0.88 GB，86,400 个 ≈ 4.95 GB——单请求的 KV 预算被视觉段独占一头。
 - 墙一（prefill 的 $O(T^{2})$）：$T$ = 86,400、$d$ = 3,584 代入单层 $2T^{2}d \approx 5.4 \times 10^{13}$ FLOPs，28 层合计 $\approx 1.5 \times 10^{15}$——已是旗舰卡秒级的理想下界，还没算视觉塔本身的前向。
-- 墙三（softmax 熵稀释）：15K 级视觉 token 摊在同一行归一化里，目标位置的 logit 优势预算随 $\ln T$ 涨（4.6 式 (4) 口径）——长视频「看得见但注意不到」与长文本同机制。
+- 墙三（softmax 熵稀释）：15K 级视觉 token 摊在同一行归一化里，目标位置所需的 logit 优势随 $\ln T$ 增长（4.6 式 (5) 口径）——长视频「看得见但注意不到」与长文本同机制。
 
 视频因此不是一个新模态问题，而是 4.6 长上下文问题的一个快速实例：它是把 $T$ 抬进 $10^{4}$–$10^{5}$ 档最便宜的途径——一秒钟视频就能产生数百上千个 token。全章的技术地图就是对式 (1) 两个因子的操作：§2 动 $F$（帧从哪来），§4 动 $M$ 与 $F \to$ token 的换算（token 在哪省），§3 解决动 $F$ 之后位置编码的一致性，§5-§8 处理极端 $T$ 与输出、数据、评测。
 
@@ -48,7 +48,7 @@ F/τ_p 组 × N 个 patch ──ViT──► F/τ_p × N 特征 token
 
 帧采样器（frame sampler）决定式 (1) 的 $F$，两条规则各有一个结构性缺陷。
 
-**uniform frame-count（均匀取 $F$ 帧）**：无论片长，均匀取 $F$ 帧，采样间隔 $\Delta t = T / F$ 随片长线性变稀。混叠账：要分辨时长 $\delta$ 的事件，相邻采样间隔必须 $\Delta t \lesssim \delta$，即
+**uniform frame-count（均匀取 $F$ 帧）**：无论片长，均匀取 $F$ 帧，采样间隔 $\Delta t = T / F$ 随片长线性变稀。混叠账：要保证时长 $\delta$ 的事件至少被一个采样帧覆盖，采样间隔必须不大于事件时长（$\Delta t \le \delta$），即
 
 $$
 F \;\ge\; \frac{T}{\delta} \qquad (2)
@@ -63,6 +63,8 @@ fps^{*} = \min\!\left( fps_{max},\; \frac{S_{budget} - S_{text}}{T \cdot M} \rig
 $$
 
 **符号**：$S_{budget}$：context 总预算；$S_{text}$：文本侧预留；$M$：每帧 token 数。式 (3) 引出一个连锁问题：$fps$ 变成片长 $T$ 的函数——同一模型对 10 秒片用 2 fps、对 10 分钟片被迫降到 0.2 fps。若位置编码按帧序号计数，「相邻两个采样帧」在 10 秒片里对应 0.5 秒物理时间、在 10 分钟片里对应 5 秒：同一位置间隔对应相差 10 倍的物理间隔。模型要从位置差读出「过了多久」，就得先知道本片的 fps——而这个信息不在任何 token 里。这是帧序号位置编码与 dynamic FPS 的组合内在地监督不一致，也是 §3 绝对时间编码要消掉的东西。
+
+实证侧的对照实验支持同一方向：Apollo 在控制测试时帧数的条件下消融两种采样规则（[Zohar et al., 2024](../references.md)，arXiv:2412.10360，[B]，Finding 2），fps 采样在训练与推理两侧均优于 uniform frame-count，且差距可归因于训练阶段的采样方式而非测试时的帧数差异。
 
 Qwen2.5-VL 走 dynamic FPS 路线：采样率按片长与预算动态调整（[Bai et al., 2025](../references.md)，arXiv:2502.13923，[A]；官方实现见 [QwenLM/Qwen3-VL repo](../references.md)，[A]——Qwen2.5-VL 系列 repo 已归并），并用下一节的绝对时间编码把位置语义从「帧序号」换成「秒」。
 
@@ -87,7 +89,7 @@ $$
 
 误差至多 1 个 id（两次取整各贡献至多 1/2），与 fps 无关。对照帧序号规则：同一对事件的 id 差 $= (t_b - t_a) \cdot fps$——正是式 (3) 里随片长漂移的那个 fps。RoPE 的 score 只含相对位移（8.2 式 (17) 的 $t$ 段项 $B_j(q, k; (t_n - t_m)\,\theta_j)$），所以「模型从 attention 相位读到的时间差」在两条规则下分别正比于帧数差与秒数差。dynamic FPS 下，前者是一把随片长漂移的尺子，后者是固定尺子——绝对时间编码的存在理由就是把采样率从位置语义里消掉。
 
-对事件定位（temporal grounding，时序定位）的意义具体有三层：
+对时间定位（temporal grounding）的意义具体有三层：
 
 1. **监督一致**：定位数据的标注以秒为单位（§6 的输出格式），文本侧的时间数字与位置侧的 $t$-id 共用同一时钟——标注「12.0 s」对应的相位差恒为 $12\nu$。若用帧序号 + dynamic FPS，同一标注在不同片长下对应不同相位差，定位监督自带噪声。
 2. **分辨率摆对了位置**：8.2 式 (15) 的频段切分把最高频的 16 个通道分给 $t$ 轴（mrope_section [16,24,24]，[Qwen2.5-VL-7B config](../references.md)，[A]）——高频通道对小的 $\Delta t$ 最敏感，局部时间次序的分辨率最高，恰好是「事件 A 在事件 B 前半秒」这类判断需要的粒度。
@@ -123,7 +125,7 @@ $$
 
 ### 4.3 位置三：connector 侧 temporal queries（resampler 定长瓶颈）
 
-可学 $B$ 个 query 对全部 $F \cdot M$ 个视觉 token 做 cross-attention，输出定长——8.2 式 (8) 的视频用法：Flamingo 即把 $F$ 帧特征拼上时间位置编码后一起当 K/V（[Alayrac et al., 2022](../references.md)，arXiv:2204.14198，[B]，DeepMind 未开源，公式引论文）。成本对照：resampler 每层 $O(B \cdot F \cdot M \cdot d)$，把二次项挡在 LLM 之外；输出 $B$ 个（或按时间段各 $B$ 个）token，视觉段长度与片长解耦——长视频预算的最激进方案。代价沿用 8.2 §3.4 的容量-数据账：取舍函数要从零学，且视频版多了一维自由度——「选哪些瞬间」与「瞬间里选哪些区域」耦合，训练信号比图像瓶颈更稀。Apollo 的设计空间 ablation 覆盖了时间压缩方式与每帧 token 预算的权衡（[Zohar et al., 2024](../references.md)，arXiv:2412.10360，[B]），方向性结论：固定 token 预算下，用每帧 token 换时间覆盖（帧数）是划算方向——具体档位数字引论文原表。
+可学 $B$ 个 query 对全部 $F \cdot M$ 个视觉 token 做 cross-attention，输出定长——8.2 式 (8) 的视频用法：Flamingo 即把 $F$ 帧特征拼上时间位置编码后一起当 K/V（[Alayrac et al., 2022](../references.md)，arXiv:2204.14198，[B]，DeepMind 未开源，公式引论文）。成本对照：resampler 每层 $O(B \cdot F \cdot M \cdot d)$，把二次项挡在 LLM 之外；输出 $B$ 个（或按时间段各 $B$ 个）token，视觉段长度与片长解耦——长视频预算的最激进方案。代价沿用 8.2 §3.4 的容量-数据账：取舍函数要从零学，且视频版多了一维自由度——「选哪些瞬间」与「瞬间里选哪些区域」耦合，训练信号比图像瓶颈更稀。Apollo 的设计空间 ablation 覆盖了这一位置的两个问题（[Zohar et al., 2024](../references.md)，arXiv:2412.10360，[B]，论文 Table 1 与 Fig. 4 口径）：其一，压缩方式上 Perceiver resampler 在降每帧 token 时优于 average pooling 类对照（Finding 6）；其二，预算分配上每秒 token 数（tps）与 fps 之间存在 tradeoff——8–32 tokens/帧区间在各档 fps 下均取得强性能，且性能对 fps 本身的依赖很弱，每帧 token 数与 tps 是更具决定性的变量（Finding 3）。
 
 三位置对照：
 
@@ -139,7 +141,7 @@ $$
 
 与本书既有机制的对应是直接的：$S_k$ 就是 4.3 线性注意力「固定大小状态」的语义版——把 $O(T)$ 的记忆换成 $O(1)$ 的有损压缩；chunking 则把 KV cache（墙二）的上界钉在 chunk 长度上，与 4.6 §3 的分块思想同源。三个机制难点没有便宜解：(a) 写入目标决定记忆内容——状态容量有限，在线取舍比 §4.3 的离线瓶颈更苛刻（写入时看不到未来）；(b) 状态漂移——压缩误差在 Update 链上累积，长程依赖随链长退化；(c) 评测缺位——流式能力的基准建设落后于离线视频基准，§8 的分档与对照检查同构适用。本节无收录条目（本轮研究未找到合用的开放论文锚点），按 w5-sources 降级口径只给机制描述，不引具体系统与数字。
 
-## 6. 输出格式：temporal grounding 与时间戳
+## 6. 输出格式：时间定位与时间戳
 
 视频特有的输出类型是时间：给定 query（「进球发生在什么时候」），模型要产出时间段 $[t_s, t_e]$。连续时间挤进离散文本通道有两套方案。
 
@@ -153,20 +155,22 @@ $$
 
 **符号**：$\Delta$：桶宽；词表增加 $\lceil T_{max}/\Delta \rceil$ 行 embedding。生成从「逐位回归」变成「桶分类」：每个时间戳一个 token、一次 softmax 决策；代价是精度天花板 $\Delta/2$ 与量程上限 $T_{max}$ 都写死在词表里。
 
+输入侧有一组相关实证：Apollo 消融了帧/clip 之间的 token 整合方式（[Zohar et al., 2024](../references.md)，[B]，Finding 7）——在不同 clip 的视觉 token 之间插入文本时间戳（直接写起止秒数）总体最优，胜过可学分隔 token，论文归因于无需为新 token 学 embedding。注意这是输入侧整合的结论，与输出侧时间戳方案正交；但它说明文本形式的时间戳在 VLM 里并非天然劣势。
+
 与 §3 的咬合是设计要点：无论哪套文本方案，监督一致性都来自**文本时钟与位置时钟同源**。Qwen2.5-VL 把绝对时间编码与时戳监督配套——输入侧 $t$-id 按秒推进（式 (4)），训练数据含带时间标注的定位与时戳描述任务（[Bai et al., 2025](../references.md)，[A]，具体数据格式引 tech report 原文）；若位置侧仍用帧序号，文本里同一个「12.5 s」在不同 fps 下对应不同的位置相位差，输出侧方案再好也补不上输入侧的尺子漂移。
 
 ## 7. 视频-图像训练数据混合
 
 结构事实先摆出来：在 $(t, h, w)$ 三元组下，**图像就是 $T = 1$ 的视频**——8.2 式 (14) 的图像支是视频支 $\tau_f$ 恒定的退化。同一套管线、同一套位置系统，图像 batch 与视频 batch 可以在一个训练流里混合，无需任何架构改造。LLaVA-OneVision 把这种同构直接用作课程：单图 → 多图 → 视频三阶段（[Li et al., 2024](../references.md)，[A]；阶段划分与数据配比引论文原文）——多图与视频在序列结构上只差「帧间是否有时间语义」，视频阶段因此是在已训好的多图能力上叠加时间监督，而不是从零学视觉。
 
-混合的机制账有两面。视频侧：相邻帧近重复，单位 token 的信息多样性低于图像——视频 token 便宜地提供时间监督（变化、因果、计数），但静态感知监督被稀释；图像侧：每张图独立采样，静态多样性高，是低成本的高密度视觉监督。两边的 ablation 方向一致：LLaVA-OneVision 的课程设计（图像先行打底）与 Apollo 的数据配比实验（[Zohar et al., 2024](../references.md)，[B]）都报告图像-视频混合优于纯视频训练；Apollo 同时给出固定 token 预算下帧数与每帧 token 的权衡方向（§4.3 已引）。定性规则：图像数据保住静态能力与分辨率敏感任务，视频数据提供时间技能，视频占比过高时静态基准回退（Apollo 论文口径的方向性结论，具体配比数字引原表）。
+混合的机制账有两面。视频侧：相邻帧近重复，单位 token 的信息多样性低于图像——视频 token 便宜地提供时间监督（变化、因果、计数），但静态感知监督被稀释；图像侧：每张图独立采样，静态多样性高，是低成本的高密度视觉监督。Apollo 的数据配比消融（[Zohar et al., 2024](../references.md)，[B]，Finding 10，论文 Fig. 6 口径）给的是混合内部的配比结论而非「混合 vs 纯视频」的比较——各臂均为文本/图像/多图/视频的混合数据：文本占 10–14% 是必要的硬约束（低于 7% 或抬到 25% 都掉点，论文解读为缓解灾难性遗忘）；其余模态之间略偏视频（slightly video-heavy）的混合在其视频基准套件上最优，论文对该结果的机制解读恰好落在图像一侧——这种配比让模型能学到质量更高、多样性更强的图像数据。LLaVA-OneVision 的课程设计（单图先行打底，再上多图与视频，[Li et al., 2024](../references.md)，[A]）提供的是另一条证据线：图像阶段建立的静态能力是视频阶段的地基——注意这是课程顺序的论据，与配比消融回答的是两个问题。
 
 ## 8. 视频评测方法论
 
 视频评测比图像评测多一个必须主动防守的失效模式：静态捷径——模型不看时序也能答对。任务类型学先行：
 
 - **整体理解**（MCQA / open-ended QA）：多选题的局限与 8.3 同源（选项偏置、猜测基线），视频版额外叠加静态捷径。
-- **时序定位**（temporal grounding）：输出时间段，指标 mIoU 与 Recall@IoU=$\theta$：
+- **时间定位**：输出时间段，指标 mIoU 与 Recall@IoU=$\theta$：
 
 $$
 \mathrm{IoU}(A, B) = \frac{|A \cap B|}{|A \cup B|}, \qquad \mathrm{mIoU} = \frac{1}{K}\sum_{k=1}^{K} \mathrm{IoU}(A_k, B_k) \qquad (9)
@@ -178,7 +182,7 @@ $$
 
 静态捷径用两个对照实验防守，应作为任何「时序理解」结论的前置检查：(a) **单帧对照**——只给中间一帧（或任意一帧）回答，若分数不降，题目测的是静态感知而非时间理解；(b) **乱序对照**——保持帧集合不变、打乱时序，若分数不降，模型没有使用时序信息。两个对照不过，「视频理解能力」的声称不成立——与 8.3「claimed vs 真实能力」同一方法论，视频版只是把检查的维度从模态换到时间。
 
-第二道防线是时长分档：claimed vs effective 的视频版（4.6 §5 的 RULER 方法论平移）。模型卡片声明支持 $F_{max}$ 帧 / $T_{max}$ 分钟，不等于各时长档行为达标——按视频时长分档报告性能（Apollo 的评测部分即按分档组织，[Zohar et al., 2024](../references.md)，[B]，论文口径），曲线在哪个档崩坏，effective 视频长度就到哪。评测读数因此永远要配两个脚注：帧是怎么采样的（§2）、每帧多少 token（§1）——同一 benchmark 在不同采样档位下的分数不可比。
+第二道防线是时长分档：claimed vs effective 的视频版（4.6 §5 的 RULER 方法论平移）。模型卡片声明支持 $F_{max}$ 帧 / $T_{max}$ 分钟，不等于各时长档行为达标——按视频时长分档报告单模型性能曲线，曲线在哪个档崩坏，effective 视频长度就到哪。这里有一处反面证据值得登记：Apollo 的基准分析发现时长分档在成熟基准上可能近乎冗余——Video-MME 短/长视频组的模型性能相关达 $R^{2} = 0.94$，LongVideoBench 各时长组间 $R^{2} > 0.92$（[Zohar et al., 2024](../references.md)，[B]，论文 Sec. 2 口径）；其自建的 ApolloBench 因此按任务维度（时间推理、感知等）而非时长档组织。两组读数对象不同——$R^{2}$ 测的是跨模型的排名相关，claimed vs effective 查的是单模型在窗缘的崩坏——冗余结论不取消分档检查，但提示分档之间的「新信息」可能比直觉少。评测读数因此永远要配两个脚注：帧是怎么采样的（§2）、每帧多少 token（§1）——同一 benchmark 在不同采样档位下的分数不可比。
 
 ## 总结
 
@@ -190,8 +194,8 @@ $$
 | 时间压缩 | 式 (6) 3D patch（$\tau_p$=2，encoder 也省）；式 (7) 时空 pooling（只省 LLM 侧）；resampler 定长 $B$ | 三位置「谁付钱」对照表（§4 末） |
 | 流式长视频 | chunk + 循环 memory（无收录条目，机制描述） | $S_k$ = 4.3 固定状态的语义版；三难点：在线写入取舍 / 漂移 / 评测缺位 |
 | 输出格式 | 式 (8) 分桶 special token（误差 ≤ $\Delta/2$）vs 数字文本 | 文本时钟与位置时钟同源是监督一致的根 |
-| 数据混合 | 图像 = $T{=}1$ 视频（8.2 式 (14) 退化） | 课程：单图→多图→视频 [A]；混合优于纯视频（Apollo [B] 方向性） |
-| 评测 | 式 (9) mIoU / R@IoU；单帧与乱序对照；时长分档 | 静态捷径检查是时序结论的前置；claimed ≠ effective（4.6 平移） |
+| 数据混合 | 图像 = $T{=}1$ 视频（8.2 式 (14) 退化） | 课程：单图→多图→视频 [A]；配比消融：文本 10–14% 为硬约束、视觉侧略偏视频最优（Apollo Finding 10，[B]） |
+| 评测 | 式 (9) mIoU / R@IoU；单帧与乱序对照；时长分档 | 静态捷径检查是时序结论的前置；claimed ≠ effective（4.6 平移）；时长分档的跨模型相关 $R^{2}$ = 0.94（Apollo，[B]）提示其边际信息有限 |
 
 ## 练习
 
@@ -205,7 +209,7 @@ $$
 - [Bai et al., 2025](../references.md)：Qwen2.5-VL Technical Report，arXiv:2502.13923，[A]（key: qwen2.5-vl）——§2 dynamic FPS、§3 绝对时间编码、§4.1 temporal patch $\tau_p$ = 2、§6 时戳监督数据口径
 - [Wang et al., 2024](../references.md)：Qwen2-VL: Enhancing Vision-Language Model's Perception of the World at Any Resolution，arXiv:2409.12191，[A]（key: qwen2-vl）——§3 帧序号规则对照、M-RoPE 原始出处
 - [Li et al., 2024](../references.md)：LLaVA-OneVision: Easy Visual Task Transfer，arXiv:2408.03326，[A]（key: llava-onevision）——§4.2 encoder 后下采样视频管线、§7 单图→多图→视频课程
-- [Zohar et al., 2024](../references.md)：Apollo: An Exploration of Video Understanding in Large Multimodal Models，arXiv:2412.10360，[B]（key: apollo）——§4.3/§7 设计空间 ablation 方向性结论、§8 时长分档评测（代码与权重已下架，只引论文结论）
+- [Zohar et al., 2024](../references.md)：Apollo: An Exploration of Video Understanding in Large Multimodal Models，arXiv:2412.10360，[B]（key: apollo）——§2 Finding 2（fps 采样优于 uniform）、§4.3 Finding 3/6（tps-fps tradeoff 与 8–32 tokens/帧最优带、Perceiver resampler 占优）、§6 Finding 7（clip 间文本时间戳整合最优）、§7 Finding 10（文本 10–14% + 略偏视频混合）、§8 时长组相关性（$R^{2}$ = 0.94 / >0.92）；代码与权重已下架，只引论文结论
 - [Alayrac et al., 2022](../references.md)：Flamingo: a Visual Language Model for Few-Shot Learning，arXiv:2204.14198，[B]（key: flamingo）——§4.3 视频 resampler（$F$ 帧 + 时间位置编码作 K/V）
 - [Qwen, Qwen2.5-VL-7B-Instruct config.json](../references.md)：[A]（key: qwen25vl-config）——ctx 128000、28L/4KV/$d_{head}$ 128、mrope_section [16,24,24]、spatial_merge 2
 - [Qwen, QwenLM/Qwen3-VL repo](../references.md)：[A]（key: qwen-vl-repo）——dynamic FPS 官方实现（原 Qwen2.5-VL repo 已 301 归并）
