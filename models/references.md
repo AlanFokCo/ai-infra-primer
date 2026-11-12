@@ -480,3 +480,30 @@
 | PatchGAN | 保留英文（PatchGAN） | 6.3 |
 | residual vector quantization (RVQ) | 残差向量量化（RVQ） | 6.3 |
 | lookup-free quantization (LFQ) | 保留英文（LFQ） | 6.3 |
+| forward process / reverse process | 前向过程（加噪）/ 反向过程（采样） | 7.1 |
+| mode dropping | 模式坍缩（mode dropping） | 7.1 |
+| noise schedule | 噪声调度（noise schedule） | 7.2 |
+| ε-prediction / x₀-prediction / v-prediction | 保留英文（ε/x₀/v-prediction，三种预测参数化） | 7.2 |
+| posterior（扩散语境 q(x_{t−1}|x_t,x_0)） | 后验（posterior） | 7.2 |
+| score function | 分数函数（score） | 7.3 |
+| score matching / denoising score matching (DSM) | 分数匹配 / 去噪分数匹配（DSM） | 7.3 |
+| probability flow ODE (PF-ODE) | 概率流 ODE（PF-ODE） | 7.3 |
+| reverse-time SDE | 逆时 SDE（reverse-time SDE） | 7.3 |
+| guidance scale (w) | 引导强度（guidance scale，w） | 7.4 |
+| classifier guidance / classifier-free guidance (CFG) | 分类器引导 / 保留英文（CFG，免分类器引导） | 7.4 |
+| consistency model | 一致性模型（consistency model） | 7.4 |
+| distillation（扩散加速语境） | 蒸馏（distillation） | 7.4 |
+| NFE (network function evaluations) | 保留英文（NFE，采样网络评估次数） | 7.4 |
+| flow matching (FM) | 保留英文（flow matching，FM） | 7.5 |
+| rectified flow | 保留英文（rectified flow） | 7.5 |
+| velocity field | 速度场（velocity field） | 7.5 |
+| logit-normal（t 采样语境） | 保留英文（logit-normal 采样） | 7.5 |
+| timestep shift | 时间步偏移（timestep shift） | 7.5 |
+| latent diffusion | 潜空间扩散（latent diffusion） | 7.6 |
+| conditioning（扩散语境） | 条件化（conditioning） | 7.6 |
+| adaLN / adaLN-Zero | 保留英文（adaLN / adaLN-Zero） | 7.6 |
+| multi-aspect bucketing | 保留英文（multi-aspect bucketing，多宽高比分桶） | 7.6 |
+| next-scale prediction | 下一尺度预测（next-scale prediction） | 7.7 |
+| mask-predict | 保留英文（mask-predict，掩码并行解码族） | 7.7 |
+| micro-conditioning | 微条件化（micro-conditioning） | 7.7 |
+| token map（VAR 语境） | token 图（token map） | 7.7 |

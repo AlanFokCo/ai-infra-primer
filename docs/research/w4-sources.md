@@ -93,3 +93,62 @@ latent 记号 $z$、压缩率 f8/f32、scale factor 0.18215（LDM yaml 出处）
 - **rectified flow**（`rectified-flow`，arXiv:2209.03003，Xingchao Liu，本轮核实）：reflow 拉直 + 1-rectified flow 出处；详拆在 7.5，本章只在蒸馏语境引「reflow→few-step」。
 - **DPM-Solver**（`dpm-solver`，arXiv:2206.00927，Cheng Lu，本轮核实）：半线性结构 + 指数积分 + Taylor 展开的高阶 ODE solver 出处（~10 NFE）。
 - 写作注意：CFG 完整推导是本章关键推导之一（evaluator 强制复推清单含 7.4 CFG）；few-step 现状表的数字（4-step/1-step FID）一律引 DMD/DMD2/LCM 论文原表，标日期。
+
+## 7.5 Flow Matching
+
+- **FM**（`flow-matching`，arXiv:2210.02747，Lipman，本轮核实）：FM 目标与 conditional FM 定理出处。**注意原论文约定 x₁=数据、x₀=噪声——与本书记号相反**，首次引用出映射框（见约定页 Lipman 映射框），此后全书用本书记号。
+- **rectified flow**（`rectified-flow`，2209.03003，7.4 已收录，被引章节含 7.5）：线性路径 $x_t=(1-t)x_0+t\varepsilon$、目标速度 $\varepsilon-x_0$ 出处。
+- **SD3**（`sd3`，arXiv:2403.03206，Esser，本轮核实；ar5iv 全文实证：**rectified flow ×96、logit-normal ×5、resolution/timestep shift ×8**——spec 7.5 的 logit-normal t 采样与 resolution-dependent shift 两处公式均在本文）：MMDiT 架构 + FM 训练的现代参考；模型权重 gated（W3 已记），推理代码走 `sd3.5-repo`。
+- 锚点：`flow-matching-repo`（facebookresearch/flow_matching，200；包结构实测 `flow_matching/path/`、`solver/`、`loss/`——conditional path 与 solver 走读锚点）；`sd3.5-repo`（Stability-AI/sd3.5，200；`mmditx.py`、`sd3_impls.py` 实测——MMDiT 前向走读锚点）。
+- 写作注意：本章是关键推导章（evaluator 强制复推清单含 7.5 FM）；conditional FM 定理推导按约定页记号重述（Lipman 原公式先映射再引）；diffusion↔FM 统一表的两列参数化换算用约定页 ᾱ 映射。
+
+## 7.6 Latent Diffusion、DiT 与 MMDiT
+
+- **LDM**（`ldm`，arXiv:2112.10752，Rombach，本轮核实）：latent 空间扩散 + cross-attention conditioning 出处；f8/4ch/0.18215 数值口径 W3 已锁（`autoencoderkl` + LDM yaml，勿重查）。锚点 `latent-diffusion-repo`（CompVis/latent-diffusion，200；`ldm/models/diffusion/ddpm.py`、`ddim.py` 实测——U-Net conditioning 注入走读锚点）。
+- **DiT**（`dit`，arXiv:2212.09748，Peebles & Xie，本轮核实）：latent patchify + **adaLN-Zero**（gate 零初始化）+ Gflops↔FID scaling 出处。锚点 `dit-repo`（facebookresearch/DiT，200；`models.py` 在根目录，实测——adaLN-Zero 走读锚点）。
+- **SD3 / MMDiT**（`sd3` + `sd3.5-repo`，见 7.5）：text/image 双流 + 联合 attention 出处；FLUX double→single stream 变体标 [C]（`flux-repo`，官方推理代码 200，HF 权重 gated——W3 口径沿用）。
+- **PixArt-α**（`pixart-alpha`，arXiv:2310.00426，Junsong Chen，本轮核实——spec ⟨verify⟩ 结案：标题含 *Fast Training*）：三阶段训练（像素→文本对齐→高分辨率美学）+ T5-XL(4B) 条件出处。**PixArt-Σ**（`pixart-sigma`，arXiv:2403.04692，本轮核实）：weak-to-strong 4K 出处。锚点 `pixart-repo`（PixArt-alpha/PixArt-alpha，200——spec ⟨verify⟩ 结案，repo 名即 org 名，含两代代码）。
+- **SANA**（`sana`，arXiv:2410.10629，Enze Xie，本轮核实；ar5iv 全文实证：**DC-AE ×14、linear attention ×22**——spec「SANA = Linear DiT + DC-AE f32」口径成立）：线性 attention 进扩散（呼应 4.3）+ 深压缩 latent。锚点 `sana-repo`（NVlabs/Sana，200——spec ⟨verify⟩ 结案；configs/ 目录实测）。
+- 锚点补充：`sgm-repo`（Stability-AI/generative-models，200；`sgm/modules/diffusionmodules/` 实测——SDXL/SD3 训练侧 U-Net/MMDiT 走读锚点）。
+- 写作注意：adaLN-Zero 推导、MMDiT 联合 attention 公式走读、latent token 账（64× 削减）是本章三个关键推导；T5-XXL 为什么有帮助的 ablation 数据引 SD3/PixArt 原表，不新造数字。
+
+## 7.7 T2I 系统拆解与 AR 生图
+
+- **SD3**（`sd3` + `sd3.5-repo`，recap 7.5/7.6）：现代开放参考实现定位。
+- **SDXL**（`sdxl`，arXiv:2307.01952，Podell，本轮核实——spec ⟨verify⟩ 结案：标题 *SDXL: Improving Latent Diffusion Models for High-Resolution Image Synthesis*）：base+refiner 两阶段、micro-conditioning（original-size/crop-coords）出处。锚点 `sdxl-hf`（stabilityai/stable-diffusion-xl-base-1.0，hf-mirror 实测 200：`StableDiffusionXLPipeline`、双 text encoder CLIP-L + OpenCLIP-G）+ `sgm-repo`。
+- **Imagen**（`imagen`，arXiv:2205.11487，Saharia，本轮核实，**[B]**：Google 论文、无官方代码）：级联 64→256→1024、T5-XXL-only encoder、dynamic thresholding 出处——写作只引论文公式，不引实现。
+- **LlamaGen**（`llamagen`，arXiv:2406.06525，Peize Sun，本轮核实——spec ⟨verify⟩ 结案；摘要实证「apply original next-token prediction paradigm of LLMs to visual generation」「vanilla autoregressive models, e.g., Llama, without inductive biases」）：图像 = 另一种语言的论证直接引摘要口径。锚点 `llamagen-repo`（FoundationVision/LlamaGen，200）。
+- **VAR**（`var`，arXiv:2404.02905，Keyu Tian，本轮核实）：next-scale prediction（K 个分辨率 token map r₁..r_K）与 scaling law 出处。锚点 `var-repo`（FoundationVision/VAR，200；`models/var.py`、`models/vqvae.py` 实测——next-scale 解码走读锚点）。
+- **Infinity**（`infinity`，arXiv:2412.04431，Jian Han，本轮核实——spec ⟨verify⟩ 结案；摘要实证：**「bitwise token prediction framework with an infinite-vocabulary tokenizer & classifier and bitwise self-correction mechanism」「theoretically scaling the tokenizer vocabulary size to infinity」**——bitwise/无限 vocab 机制成立）：锚点 `infinity-repo`（FoundationVision/Infinity，200）。
+- **MaskGIT**（`maskgit`，arXiv:2202.04200，Huiwen Chang，本轮核实）：迭代并行解码 + confidence remasking 出处；mask ratio schedule γ(t)=cos(πt/2) 公式写作时引论文原文。
+- **MUSE**（`muse`，arXiv:2301.00704，Huiwen Chang，本轮核实，**[B]**——**google-research/muse 404 实测 2026-11-12，Google 未开源，spec 先例：不作代码锚点**）：mask-predict 进 T2I 系统、级联 + VQ tokens 出处。
+- **Emu3**（`emu3`，arXiv:2409.18869，Xinlong Wang，本轮核实）：图/视/文全 next-token 统一出处。锚点 `emu3-repo`（baaivision/Emu3，200）。
+- 写作注意：diffusion vs AR vs mask-predict 对照总表的「质量现状证据」列一律引各论文原表并标日期；LlamaGen/VAR 的 tokenizer 账 recap → 6.3（VQ-VAE/MAGVIT-v2），勿重推。
+
+## spec P7 Sources 清单核对结果（Step 4 自检，2026-11-12）
+
+- 7.1：VAE 1312.6114 ✓（W3 收录，被引 +7.1）/ GAN 1406.2661 ✓ / Glow 1807.03039 ✓ / DDPM 2006.11239 ✓
+- 7.2：DDPM 2006.11239 ✓ / iDDPM 2102.09672 ✓（+`ddpm-repo`、`ddpm-pytorch` 教学参照）
+- 7.3：score-SDE 2011.13456 ✓ / EDM 2206.00364 ✓ / **Vincent 2011 = Neural Computation 23(7) DOI 10.1162/NECO_a_00142 ✓（spec「JMLR」勘误）**（+`score-sde-repo`）
+- 7.4：DDIM 2010.02502 ✓ / classifier guidance 2105.05233 ✓ / CFG 2207.12598 ✓ / consistency 2303.01469 ✓ / LCM 2310.04378 ✓⟨verify 结案⟩ / DMD 2311.18828 ✓⟨verify⟩ / DMD2 2405.14867 ✓⟨verify⟩ / rectified flow 2209.03003 ✓ / DPM-Solver 2206.00927 ✓（+`ddim-repo`、`consistency-models-repo`、`dmd2-repo`）
+- 7.5：FM 2210.02747 ✓ / rectified flow 2209.03003 ✓ / SD3 2403.03206 ✓（+`flow-matching-repo`、`sd3.5-repo`）
+- 7.6：LDM 2112.10752 ✓ / DiT 2212.09748 ✓ / SD3 2403.03206 ✓ / PixArt-α 2310.00426 ✓ / PixArt-Σ 2403.04692 ✓ / SANA 2410.10629 ✓（+`dit-repo`、`latent-diffusion-repo`、`sgm-repo`、`flux-repo` [C]、`sana-repo`⟨verify 结案⟩、`pixart-repo`⟨verify 结案⟩、`dc-ae` 被引 +7.6）
+- 7.7：VAR 2404.02905 ✓ / LlamaGen 2406.06525 ✓⟨verify⟩ / Infinity 2412.04431 ✓⟨verify⟩ / MaskGIT 2202.04200 ✓ / MUSE 2301.00704 ✓ [B]（无官方代码，google-research/muse 404）/ Emu3 2409.18869 ✓ / Imagen 2205.11487 ✓ [B] / SDXL 2307.01952 ✓⟨verify⟩（+`var-repo`、`llamagen-repo`、`infinity-repo`、`emu3-repo`、`sdxl-hf`）
+- 全部 31 个 arXiv ID（含 vae/dc-ae 两个 W3 条目）+ 18 个非 arXiv 锚点 grep references.md 命中（2026-11-12 机械核对）。
+
+## references.md 本轮变更清单（2026-11-12）
+
+- Part 7 新增 49 条：31 篇论文（`gan`、`glow`、`ddpm`、`iddpm`、`score-sde`、`edm`、`vincent-2011`、`ddim`、`classifier-guidance`、`cfg`、`consistency-models`、`lcm`、`dmd`、`dmd2`、`rectified-flow`、`dpm-solver`、`flow-matching`、`sd3`、`ldm`、`dit`、`pixart-alpha`、`pixart-sigma`、`sana`、`var`、`llamagen`、`infinity`、`maskgit`、`muse` [B]、`emu3`、`imagen` [B]、`sdxl`）+ 18 个代码/权重锚点（`ddpm-repo`、`ddpm-pytorch` 教学参照、`score-sde-repo`、`ddim-repo`、`consistency-models-repo`、`dmd2-repo`、`flow-matching-repo`、`sd3.5-repo`、`dit-repo`、`latent-diffusion-repo`、`sgm-repo`、`flux-repo` [C]、`sana-repo`、`pixart-repo`、`var-repo`、`llamagen-repo`、`infinity-repo`、`emu3-repo`、`sdxl-hf`）。
+- 既有条目被引章节回写 2 处：`vae`（+7.1）、`dc-ae`（+7.6）。
+- 术语表新增 26 条 P7 术语（首次出现章节 7.1–7.7）。
+- spec ⟨verify⟩ 项全部结案：LCM/DMD/DMD2 标题核实 ✓；NVlabs/Sana 与 PixArt-alpha repo 存在 ✓；FoundationVision/VAR+LlamaGen+Infinity 三 repo 存在 ✓；Infinity bitwise 无限 vocab 摘要实证 ✓；SDXL 标题核实 ✓；Vincent 2011 期刊出处勘误（Neural Computation 非 JMLR）✓。
+
+## 通用注意事项（P7 写作 agent 必读）
+
+1. **先收录后引用**：正文只能引用 references.md 已收录条目；本轮新增条目核实日期统一 2026-11-12。
+2. **约定页是唯一记号口径**：x₀=数据、t=1=噪声、q(x_t|x₀)=N(√ᾱ_t x₀,(1−ᾱ_t)I)、采样 t:1→0、rectified flow 目标速度 ε−x₀；Lipman 原文 x₁=数据——7.5 出一次映射框后全书不混写。
+3. **标题与贡献勿张冠李戴**：classifier guidance 论文标题是 *Diffusion Models Beat GANs on Image Synthesis*；GAN 的 arXiv 标题是复数 *Generative Adversarial Networks*；GAN loss 分量属 DMD2 不属 DMD（与 spec 9.2 口径一致）；consistency models 与 LCM 是两篇（前者像素空间、后者 latent 空间蒸馏）。
+4. **[B]/[C] 写作约束**：`muse`、`imagen` 为 [B]（Google 论文无官方代码，公式可引、实现细节不断言）；`flux-repo` 为 [C]（官方推理代码，HF 权重 gated——W3 口径）；`ddpm-pytorch` 为教学参照（代码对照用，勿当官方实现）。
+5. **W3 已锁定数值直接沿用（勿重查）**：SD-VAE f8/4ch/0.18215（LDM yaml 出处）、FLUX VAE 16ch/0.3611/0.1159、SD3/FLUX VAE 16ch 家族口径。
+6. **数字引用一律标日期并回原表**：few-step 现状表（7.4）、DiT Gflops↔FID（7.6）、T5-XXL ablation（7.6）、三路线对照表质量列（7.7）的数字全部引论文原表，不凭记忆写。
+7. **arXiv API 用 https**：http:// 会 hang（本轮实测）；间歇 0 字节重试即可。
