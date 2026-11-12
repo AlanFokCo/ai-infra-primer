@@ -163,7 +163,7 @@ Monte Carlo 视角之外还有一个覆盖度视角：负样本池同时是 $p_{
 这一渐近结构有严格形式（[Wang & Isola, 2020](../references.md)，arXiv:2005.10242，[A]，Theorem 1 的记号翻译）：负样本数 $M \to \infty$ 时，
 
 $$
-L_{\mathrm{row}} - \log M \;\longrightarrow\; -\frac{1}{\tau}\, \mathbb{E}_{(v, t) \sim p_{\mathrm{pos}}}\left[ \langle v, t \rangle \right] + \mathbb{E}_{v}\left[ \log \mathbb{E}_{t'}\left[ \exp\left( \langle v, t' \rangle / \tau \right) \right] \right] \qquad (13)
+L_{\mathrm{row}} - \log M \;\to\; -\frac{1}{\tau}\, \mathbb{E}_{(v, t) \sim p_{\mathrm{pos}}}\left[ \langle v, t \rangle \right] + \mathbb{E}_{v}\left[ \log \mathbb{E}_{t'}\left[ \exp\left( \langle v, t' \rangle / \tau \right) \right] \right] \qquad (13)
 $$
 
 **符号**：$p_{\mathrm{pos}}$：正样本对分布。第一项是 alignment（正样本对内积越大越好），第二项是逐 anchor 的 log-partition——压它等价于让 anchor 与随机样本尽量不像，即球面上的 uniformity。该文同时证明：球面均匀分布是这类 pairwise 能量泛函的最小化者，uniformity 项的地板就是「均匀」。「大 batch 提升 uniformity」的机制链条至此完整：$B$ 大 → 式 (13) 第二项的 Monte Carlo 估计更准 → uniformity 目标被真正优化而不是被估计噪声稀释。CLIP 的 $B$ = 32768（论文 §3）正是这个账的工程落点；代价同样直接——$B$ 个样本的 embedding 必须全部可见才能算分母（6.1 §7 的归一化耦合），32768 对的双塔前向加跨卡 all-gather 构成 CLIP 训练成本的大头。
