@@ -18,8 +18,8 @@
 | Llama-3.1-8B | 8.03B | 32 | 4096 | 32/8 | 128 | GQA-8 | — | RMSNorm | 128256 | 131072 | $5\times10^{5}$ | llama-3.1-8b-config [A] |
 | Llama-3.1-70B | ≈70.6B | 80 | 8192 | 64/8 | 128 | GQA-8 | — | RMSNorm | 128256 | 131072 | $5\times10^{5}$ | llama-3.1-70b-config [A] |
 | Llama-3.1-405B | 405B | 126 | 16384 | 128/8 | 128 | GQA-8 | — | RMSNorm | 128256 | 131072 | $5\times10^{5}$ | llama3 [A]（架构表） |
-| Llama-4 Scout | 109B/17B（blog 口径） | 48 | 5120 | 40/8 | 128 | GQA-8 + iRoPE 3:1 + chunk 8192 | 16 top-1（层层） | RMSNorm | 202048 | 10485760 | $5\times10^{5}$（+llama3 式 f16） | llama-4 [W] |
-| Llama-4 Maverick | 400B/17B（blog 口径） | 48 | 5120 | 40/8 | 128 | GQA-8 + iRoPE 3:1 + chunk 8192 | 128 top-1（隔层） | RMSNorm | 202048 | 1048576 | $5\times10^{5}$ | llama-4 [W] |
+| Llama-4 Scout | 109B/17B（blog 口径） | 48 | 5120 | 40/8 | 128 | GQA-8 + iRoPE 3:1 + chunk 8192 | 16+1 top-1（层层） | RMSNorm | 202048 | 10485760 | $5\times10^{5}$（+llama3 式 f16） | llama-4 [W] |
+| Llama-4 Maverick | 400B/17B（blog 口径） | 48 | 5120 | 40/8 | 128 | GQA-8 + iRoPE 3:1 + chunk 8192 | 128+1 top-1（隔层） | RMSNorm | 202048 | 1048576 | $5\times10^{5}$ | llama-4 [W] |
 
 表注三件事。其一，**口径**：Llama-1/2 各行的层数、宽度、头数与参数量出自各自论文的架构表（[Touvron et al., 2023a](../references.md)，arXiv:2302.13971，[A]；[Touvron et al., 2023b](../references.md)，arXiv:2307.09288，[A]）；Llama-3.1-8B/70B 为 config 实测（8.03B 即 2.8 式 (7) 对账到个位的值，70B 行参数量按同口径推算）；**405B 的 config 未公开**（gated 且无公开镜像），该行数字引 herd paper 架构表（[Grattafiori et al., 2024](../references.md)，arXiv:2407.21783，[A]），无法与 config 互证——谱系里唯一的证据缺口。其二，Llama-4 两行的 config 字段经 unsloth 镜像实测（2026-11-12，meta-llama gated），total/active 参数引官方 blog 原文口径（[Meta, Llama-4 blog + config](../references.md)，[W]）；norm/activation 等未单列字段以官方 repo 的模型定义为准（[Meta, llama-models repo](../references.md)，[A]）。其三，active 参数照抄 blog 口径（17B），不自行换算——其精确构成是 §7 的开放问题 3。
 
@@ -69,11 +69,11 @@ $$
 | MHA-64（反事实） | 2.5 MiB | 10 GiB | 320 GiB |
 | GQA-8（实装） | 320 KiB | 1.25 GiB | 40 GiB |
 
-70B 权重 bf16 约 138 GB：MHA 下 $B = 32$ 的 cache 是权重的 2.3 倍，GQA-8 把它压到 0.3 倍。式 (1) 里 $L, D$ 由架构定、$T, B$ 由负载定，$H_{kv}$ 是架构侧唯一能动的因子——GQA 就是把这个因子从 64 拧到 8，cache 与其读取带宽同步除 8（decode 的 cache 读取在分母里的位置见 2.4 式 (12)，机制展开归 4.1 §3）。
+70B 权重 bf16 约 138 GB：MHA 下 $B = 32$ 的 cache（320 GiB ≈ 344 GB）是权重的约 2.5 倍，GQA-8 把它压到 0.3 倍。式 (1) 里 $L, D$ 由架构定、$T, B$ 由负载定，$H_{kv}$ 是架构侧唯一能动的因子——GQA 就是把这个因子从 64 拧到 8，cache 与其读取带宽同步除 8（decode 的 cache 读取在分母里的位置见 2.4 式 (12)，机制展开归 4.1 §3）。
 
 代价写在表示里：$g = 8$ 个 Q 头共享一对 K/V，K 侧行空间从 64 份塌到 8 份（4.1 §2 的透镜账）。GQA 论文的 T5 族 uptraining 对照给出 Pareto 形态：GQA-8 质量与 MHA 基线几乎重合、decode 速度接近 MQA，故取 8 KV 头为中间点（[Ainslie et al., 2023](../references.md)，arXiv:2305.13245，[B]，质量/速度对照为其 Table 1 / Fig 6 口径；更左端的外推是本书按机制标注，4.1 §3 已声明边界）。同论文还给出 retro-fit 路径：从 MHA checkpoint 组内 mean-pool 初始化 + 约 5% 预训练算力续训（[B]，论文口径）——Llama-2 70B 是否走 uptraining 论文未声明，本书不断言；这条路径的存在性是 §8 的一个论据。
 
-为什么只有 70B 上 GQA：7B 在 $T = 4096$ 的 MHA cache 是每序列 2 GiB，对 13.4 GB 权重，$B = 8$ 才追平；70B 是 10 GiB 对 138 GB，$B$ 一到两位数 cache 就反客为主。cache 压力 $\propto L \cdot T \cdot B$，旗舰的 $L$ 翻倍、且它是服务成本的主要承担者——墙先撞到谁，谁就先换。Llama-3.1 把 GQA-8 普及到 8B，是同一笔账在更长窗口（131072）下对小模型也到期：8B 满窗 MHA 反事实 cache 64 GiB、GQA-8 后 16 GiB（2.4 §5 的实例行）。
+为什么只有 70B 上 GQA：7B 在 $T = 4096$ 的 MHA cache 是每序列 2 GiB（≈2.15 GB），对 13.4 GB 权重，$B = 7$ 起反超；70B 是 10 GiB 对 138 GB，$B$ 一到两位数 cache 就反客为主。cache 压力 $\propto L \cdot T \cdot B$，旗舰的 $L$ 翻倍、且它是服务成本的主要承担者——墙先撞到谁，谁就先换。Llama-3.1 把 GQA-8 普及到 8B，是同一笔账在更长窗口（131072）下对小模型也到期：8B 满窗 MHA 反事实 cache 64 GiB、GQA-8 后 16 GiB（2.4 §5 的实例行）。
 
 ## 4. Llama-3.1：vocab 与 ctx 的两笔账
 
@@ -128,7 +128,7 @@ Llama-4 没有论文。本节证据分级：架构事实以 Scout/Maverick 的 c
 
 | 字段 | Llama-3.1 | Llama-4 Scout / Maverick | 技术原因 |
 | --- | --- | --- | --- |
-| FFN | dense SwiGLU | 16 / 128 experts、top-1 | 参数-算力解耦，式 (5)(6) |
+| FFN | dense SwiGLU | 16 / 128 routed experts + 1 shared、top-1 | 参数-算力解耦，式 (5)(6) |
 | MoE 频率 | — | 层层（step 1）/ 隔层（step 2） | 路由影响面折中，§5.1 |
 | 位置编码 | 全层 RoPE | 3:1 iRoPE + chunk 8192 + 对数温度 | 式 (7)(8)，§5.2 |
 | ctx | 131072 | 10485760 / 1048576 | chunk + NoPE 层 +（Scout）llama3 式 scaling f16 |
@@ -136,15 +136,15 @@ Llama-4 没有论文。本节证据分级：架构事实以 Scout/Maverick 的 c
 | vocab | 128256 | 202048 | 同式 (2)(3) 的账；tokenizer 构成未公开 [W] |
 | $d$ / 层数 | 4096–16384 / 32–126 | 统一 5120 / 48 | MoE 下容量由 expert 数承担，不再靠加深加宽 |
 
-### 5.1 MoE：16/128 experts、top-1、层层与隔层
+### 5.1 MoE：16/128 routed + 1 shared、top-1、层层与隔层
 
-MoE 层把 dense FFN 换成 $N_e$ 份 expert 加 router（4.5 式 (1)(2) 的记法）；Llama-4 取 top-1，每 token 的 FFN 输出为
+MoE 层把 dense FFN 换成 $N_e$ 份 routed expert 加 router，Llama-4 在此基础上再加一份常驻 shared expert——官方 blog 明写「each token is sent to both the shared expert and one routed expert」（Scout 16 / Maverick 128 routed，各配 1 shared，[W]；官方 modeling 代码同证），即 4.5 §3.1 的 shared expert 结构。每 token 的 FFN 输出为
 
 $$
-y \;=\; \sum_{i \in \mathrm{Top1}(s(x))} g_i(x) \, E_i(x) \;=\; g_{i^{*}}(x) \, E_{i^{*}}(x) \qquad (5)
+y \;=\; \sum_{i \in \mathrm{Top1}(s(x))} g_i(x) \, E_i(x) + E_{s}(x) \;=\; g_{i^{*}}(x) \, E_{i^{*}}(x) + E_{s}(x) \qquad (5)
 $$
 
-**符号**：$x \in \mathbb{R}^{d}$：层输入；$E_i$：第 $i$ 份 SwiGLU expert（中间维 8192，config 字段 intermediate_size）；$s(x)$：router 打分；$g_{i^{*}}$：选中者的归一化门控权重。top-1 是 Switch 路线（4.5 §2.3，[Fedus et al., 2021](../references.md)，arXiv:2101.03961，[A]）：dispatch 决策、通信与 combine 对照 top-2 各减半；其「等算力下质量不降」是 Switch 论文在其规模与设置下的对照结论，向 128 experts 的外推无公开证据（§7 开放问题 2）。
+**符号**：$x \in \mathbb{R}^{d}$：层输入；$E_i$：第 $i$ 份 routed SwiGLU expert（中间维 8192，config 字段 intermediate_size）；$E_{s}$：常驻 shared expert，不经路由、不乘门控；$s(x)$：router 打分；$g_{i^{*}}$：选中者的归一化门控权重。top-1 是 Switch 路线（4.5 §2.3，[Fedus et al., 2021](../references.md)，arXiv:2101.03961，[A]）：dispatch 决策、通信与 combine 对照 top-2 各减半；其「等算力下质量不降」是 Switch 论文在其规模与设置下的对照结论，向 128 experts 的外推无公开证据（§7 开放问题 2）。router 侧的打分形态则部分可见：config 有 `router_aux_loss_coef = 0.001`（4.5 §2 的 aux loss 路线，非 V3 式 aux-loss-free）与 jitter = 0.0（无探索噪声），官方实现的亲和度为 sigmoid（4.5 §3.2 同族）。
 
 解耦账用激活参数占比表示（官方 blog 口径，[W]）：
 
@@ -154,7 +154,7 @@ $$
 
 **符号**：$N_{\mathrm{act}}, N_{\mathrm{tot}}$：每 token 激活参数与总参数（blog 口径照抄）；$\rho_{\mathrm{act}}$ 是整机参数占比，与 4.5 的层内稀疏度 $\rho = (k + K_s)/N_e$ 是两个口径，勿混。机制定位即 1.2 式 (9) 的 $C \approx 6 N_{\mathrm{act}} D$：FLOPs 跟着 17B 走，容量摊薄跟着 109B/400B 走。Maverick 的 4.3% 与 DeepSeek-V3 的 37B/671B（≈5.5%）同量级——高稀疏是 2025 前后旗舰 MoE 的公共工作点（跨家对照归 5.6）。
 
-Scout 与 Maverick 的第二个差异在 MoE 频率：Scout 的 `interleave_moe_layer_step = 1`，48 层层层 MoE；Maverick 的 step = 2，24 层 MoE 与 24 层 dense FFN 交替。隔层设计的机制读法：dense 层是每 token 必过的容量地板，不经过 router——4.5 §4 的路由病理（塌缩、均衡失控）影响面被限制在一半层内；代价是同 expert 数下 routed 容量减半，Maverick 用 128 experts（Scout 的 8 倍）补回，总量反而更大。两种点法孰优无公开对照，[W] 下只登记结构。
+Scout 与 Maverick 的第二个差异在 MoE 频率：Scout 的 `interleave_moe_layer_step = 1`，48 层层层 MoE；Maverick 的 step = 2，24 层 MoE 与 24 层 dense FFN 交替。隔层设计的机制读法：dense 层是每 token 必过的容量地板，不经过 router——4.5 §4 的路由病理（塌缩、均衡失控）影响面被限制在一半层内；代价是同 expert 数下 routed 容量减半，Maverick 用 128 个 routed expert（Scout 的 8 倍）补回，总量反而更大。两种点法孰优无公开对照，[W] 下只登记结构。
 
 ### 5.2 iRoPE：3:1 无 RoPE 层、chunk 8192 与对数温度
 
@@ -165,7 +165,7 @@ Llama-4 文本侧 48 层 = 12 × 4 层周期（no_rope_layers 3:1）
 ┌─ RoPE 层 ×3 ── 在 8192 chunk 内打分：相对位移恒 < 8192，RoPE 不出域
 │       Q/K 旋转（rope_theta 5e5；Scout 另叠 llama3 式 scaling，factor 16、original 8192）
 └─ NoPE 层 ×1 ── 全局可见集；score 乘对数温度 m(t)（式 (8)），补偿长程熵稀释
-FFN 侧（与层型正交）：Scout 层层 16 experts top-1；Maverick 隔层 128 experts top-1
+FFN 侧（与层型正交）：Scout 层层 16+1 top-1；Maverick 隔层 128+1 top-1
 ```
 
 机制链条分两环。第一环，RoPE 层的打分只依赖相对位移（2.5 式 (13)）：
@@ -215,14 +215,14 @@ projector ──► 与文本 token 同一 embedding 空间 ──► 同一条 
 | num_key_value_heads | 8 | $H_{kv}$；式 (1) 的 cache 因子（GQA-8，$g = 5$） |
 | head_dim | 128 | $D$；**显式字段**（$5120/40$ 恰好整除，仍按 2.8 §8 误解一的口径先查显式值） |
 | intermediate_size | 8192 | expert FFN 中间维；式 (5) 的 $E_i$ 尺寸 |
-| num_local_experts | 16 | $N_e$；Scout 16 / Maverick 128 |
-| num_experts_per_tok | 1 | top-1；式 (5) 的 cases 塌成单项（注意：是 top-1，不是 top-2） |
+| num_local_experts | 16 | routed expert 数 $N_e$；Scout 16 / Maverick 128（另各配 1 份常驻 shared，式 (5) 的 $E_s$） |
+| num_experts_per_tok | 1 | routed 侧 top-1；式 (5) 第一项塌成单项（注意：是 top-1，不是 top-2；shared 恒激活不在此字段） |
 | interleave_moe_layer_step | 1 | 层层 MoE；Maverick 为 2（隔层） |
 | no_rope_layers | [1,1,1,0,...] | iRoPE 3:1；式 (7)(8) 的层型分工 |
 | attention_chunk_size | 8192 | RoPE 层 chunk 宽；式 (7) 的域界 |
 | attn_temperature_tuning / attn_scale | true / 0.1 | 式 (8) 的开关与 $\alpha$ |
 | floor_scale | 8192 | 式 (8) 的 $T_c$：对数温度的 chunk 粒度除数 |
-| use_qk_norm | true（Scout；Maverick 无） | q/k 投影后各过一次 RMSNorm（2.7 §7 的 QK-Norm 变体）；Maverick 未启用 |
+| use_qk_norm | true（Scout；Maverick 无） | q/k 投影后各过一次 RMSNorm（2.7 §7 的 QK-Norm 变体，仅 RoPE 层）；Maverick 未启用 |
 | rope_theta | 500000 | RoPE base；式 (4) 的 $\lambda_{\max} \approx 2.6\times10^{6}$ |
 | rope_scaling | llama3 式，factor 16，original 8192 | 4.6 §2 的 $\eta_j$ 曲线；基窗 $8192 \times 16 = 131072$ |
 | max_position_embeddings | 10485760 | claimed ctx；effective 存疑（§7 问题 5） |
@@ -230,13 +230,13 @@ projector ──► 与文本 token 同一 embedding 空间 ──► 同一条 
 
 顶层与视觉侧：`architectures = Llama4ForConditionalGeneration`（early fusion 的 config 级证据，§5.3）；`vision_config` = 34 层 / hidden 1408 / patch 14 / `pixel_shuffle_ratio = 0.5` / 16 heads（token 账见 §5.3 图）。
 
-按 2.8 式 (6) 的口径起算（每 expert 三矩阵 $3 \times 5120 \times 8192 \approx 125.8$M）：routed experts 合计 $16 \times 48 \times 125.8\text{M} \approx 96.6$B；attention 每层 62.9M（Q 26.2M + K/V 10.5M + O 26.2M），48 层约 3.0B；embedding 加输出头 2.07B——config 字段能锁定的部分约 101.7B，对 blog 的 109B 差约 7B 量级。这个差额正是练习 4 的对象：它提示存在 config 需要进一步核对的常驻结构（如每层的共享 FFN 与 vision tower），blog 未逐项拆解——[W] 边界下，「读到能提出可判定的假说」就是 config 精读的终点。
+按 2.8 式 (6) 的口径起算（每 expert 三矩阵 $3 \times 5120 \times 8192 \approx 125.8$M；shared expert 按同尺寸计）：routed experts 合计 $16 \times 48 \times 125.8\text{M} \approx 96.6$B，shared expert $48 \times 125.8\text{M} \approx 6.0$B；attention 每层 62.9M（Q 26.2M + K/V 10.5M + O 26.2M），48 层约 3.0B；embedding 加输出头 2.07B——合计约 107.7B，加 vision tower（34 层、$d$ = 1408，按 $12d^{2}$ 速算 ≈ 0.8B）与 projector、norm 增益，对 blog 的 109B 闭合到约 1B 余量。active 侧同样闭合：attention 3.0B + 每 token 1 routed + 1 shared（$2 \times 6.0$B）+ embedding/输出头 2.07B ≈ 17.2B ≈ blog 的 17B——「17B active」的口径由此可读为文本侧每 token 激活参数，不含 vision tower。两个 blog 数字同时对上，是这套字段读法的自洽性检验；剩余余量的逐项归属见练习 4。
 
 ## 7. 技术开放问题清单
 
 1. **405B config 未公开**：谱系表 405B 行引 herd paper 架构表，无法与 config 互证；其 rms_norm_eps、rope_scaling 等字段级细节无公开实测渠道。
-2. **Llama-4 的 router 均衡机制不可见**：config 只锁定 top-1 与 expert 数；aux loss、aux-loss-free 偏置或其他控制器（4.5 §2–§3 的工具箱）哪个在训，无 paper 可查。128 experts top-1 的塌缩控制是开放问题。
-3. **109B/17B 的精确构成**：§6 的起算（约 101.7B）与 blog 总额之间的差额指向常驻共享结构与 vision tower 的入账方式；17B active 是否含 shared FFN、vision tower 是否计入，官方未拆解。练习 4 把账算到可判定。
+2. **Llama-4 router 的训练侧行为不可见**：打分形态是可见的——config 有 `router_aux_loss_coef = 0.001`（aux loss 路线）与 jitter = 0.0，官方实现用 sigmoid 亲和度；但 128 routed experts top-1 下的实际负载分布、塌缩控制效果与 aux loss 系数的调度过程无 paper / 训练日志可查。
+3. **109B/17B 的余量归属**：shared expert 的存在性已由官方 blog（「each token is sent to both」）与官方 modeling 代码锁定，§6 的账据此把两个 blog 数字闭合到约 1B 余量；剩余未锁定项 = shared expert 的中间维是否恰等于 routed 的 8192（本账按等尺寸起算）、vision tower 与 projector 是否计入 blog 的 total 口径。字段级核对即可闭合，属练习 4。
 4. **iRoPE 超参无 ablation**：3:1 比例、chunk 8192、$\alpha = 0.1$ 各自的贡献没有公开对照；式 (8) 的温度机制是与 4.6 稀释账一致的重构，待实证。
 5. **10M 的 effective context**：Scout 的 10485760 是 claimed 口径；按 4.6 §5 的方法论，needle 类测试之外需要 RULER 类多任务复核，目前无第三方结果。
 6. **Scout 有 rope_scaling、Maverick 无**：同代同 base 的两个旗舰在长窗工具上取不同配置，官方未解释；与 10M / 1M 窗的定位差异联动。
@@ -253,7 +253,7 @@ projector ──► 与文本 token 同一 embedding 空间 ──► 同一条 
 | Llama-2 70B GQA-8 | 式 (1)：cache 2.5 MiB → 320 KiB/token；$B$ = 32 时 320 → 40 GiB | MHA 的 64 份 K/V 行空间 | 行空间塌到 8 份；GQA-8 为 Pareto 中间点（[B] 论文口径） |
 | Llama-3.1 vocab 128K | 式 (2) $2Vd$（8B 占 13.1% / 405B 占 1.0%）；式 (3) token −19.5% | 32K SentencePiece | 长尾冷启动；小模型的参数占比 |
 | Llama-3.1 ctx 128K | 式 (4)：base $5\times10^{5}$、$\lambda_{\max}$ ≈ 2.6M；六阶段 800B tokens | 4K 窗 | 扩窗训练预算；405B cache 63 GiB/seq（GQA 为前提） |
-| Llama-4 MoE top-1 | 式 (5)(6)：17B 激活 / 109B、400B 总参 [W] | dense FFN | router 均衡机制不可见；top-1 外推无公开对照 |
+| Llama-4 MoE top-1 | 式 (5)(6)：16/128 routed + 1 shared；17B 激活 / 109B、400B 总参 [W] | dense FFN | router 训练侧行为不可见；top-1 外推无公开对照 |
 | Llama-4 iRoPE | 式 (7) 相对位移界 + 式 (8) $m(t)$ ≈ 1.72 @10M | 全层 RoPE | 超参无 ablation；10M 仅 claimed 口径 |
 | Llama-4 early fusion | patch 14 + ps 0.5：448² 图 = 256 tokens | adapter 式 late fusion | 图像 token 付全层账；训练配方未公开 [W] |
 
@@ -262,7 +262,7 @@ projector ──► 与文本 token 同一 embedding 空间 ──► 同一条 
 1.（计算）用式 (1) 重算 Llama-2-70B：若把 GQA-8 换成 GQA-2（$H_{kv} = 2$），$T = 4096$、$B = 64$ 时 cache 总量对 138 GB 权重的比值是多少？再算 Llama-3.1-405B 在 $T = 131072$、$B = 4$ 下 GQA-8 与反事实 MHA-128 的 cache 总量，验证「63 GiB × 4」与「约 3.9 TiB」两个数字。
 2.（计算）词表账的规模扫描：对 $d \in \{4096, 8192, 16384\}$ 三档（对应 8B/70B/405B 宽），分别算 $V$ = 32000 与 128256 的 $2Vd$ 及其占该档总参数（8.03B / 70.6B / 405B）的比例；结合式 (3)，给出「词表升级在 per-byte FLOPs 上何时回本」的定性结论——假设层部分 per-token FLOPs 不变。
 3.（推导）式 (8) 的对数温度与 4.6 §1.3 的 $\Delta \ge \ln T$：设 NoPE 层可见集为 $T$，目标 key 相对随机 key 的 score 优势为 $\Delta_0$。证明：乘性温度 $m$ 把「目标份额不被稀释」所需的 $\Delta_0$ 界降为 $\ln T / m$；并指出这一补偿对「多个候选 key 的 score 接近」的情形为何不成立（乘性缩放保持 score 差的相对比例）。
-4.（代码 / 对账）按 §6 的起算口径写一段参数对账脚本（教学用，非优化实现）：输入 Scout 的 config 字段（48 层、$d$ = 5120、40 Q / 8 KV、$D$ = 128、expert 中间维 8192、16 experts、$V$ = 202048），输出 routed + attention + embedding 的合计；然后逐项加入「每层一份与 expert 同尺寸的常驻 FFN」（+6.0B）与 vision tower（34 层、$d$ = 1408，按 $12d^{2}$ 速算 ≈ 0.8B），验证两个 blog 数字（109B total、17B active）能否同时闭合，并写下该假说的可判定检验（应去 config / 权重清单里查哪个字段名）。
+4.（代码 / 对账）按 §6 的口径写一段参数对账脚本（教学用，非优化实现）：输入 Scout 的 config 字段（48 层、$d$ = 5120、40 Q / 8 KV、$D$ = 128、expert 中间维 8192、16 routed + 1 shared、$V$ = 202048），逐项加出 routed experts + shared experts + attention + embedding/输出头 + vision tower（34 层、$d$ = 1408，按 $12d^{2}$ 速算），验证两个 blog 数字（109B total、17B active）闭合到约 1B 余量；再回答两个字段级问题：(a) shared expert 的中间维在 config / 权重清单里叫什么、是否恰等于 routed 的 8192；(b) 用 safetensors 索引核对 blog 的 109B 是否计入了 vision tower 与 projector。
 
 ## 参考
 
