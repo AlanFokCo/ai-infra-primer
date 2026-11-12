@@ -20,7 +20,7 @@ $$
 
 **符号**：$[\psi_t]_{*}$：pushforward 算子，即随机变量 $x \sim p_0$ 经映射 $\psi_t$ 变换后的分布；$p_t$：$t$ 时刻的边际密度。
 
-生成建模的目标由此改写为：找一个速度场 $u_t$，使 $p_0 = p_{data}$（数据端）而 $p_1 = \mathcal{N}(0, I)$（纯噪声端）。采样时从 $x_1 \sim \mathcal{N}(0, I)$ 出发沿式 (1) 反向积分（$t: 1 \to 0$）即得数据样本。用速度场参数化的这类生成模型称为 continuous normalizing flow（CNF，连续归一化流）：
+生成建模的目标由此改写为：找一个速度场 $u_t$，使 $p_0 = p_{\mathrm{data}}$（数据端）而 $p_1 = \mathcal{N}(0, I)$（纯噪声端）。采样时从 $x_1 \sim \mathcal{N}(0, I)$ 出发沿式 (1) 反向积分（$t: 1 \to 0$）即得数据样本。用速度场参数化的这类生成模型称为 continuous normalizing flow（CNF，连续归一化流）：
 
 ```
 t: 0（数据端）────────────────► 1（噪声端）     采样方向相反：t: 1 → 0
@@ -86,20 +86,20 @@ $$
 **符号**：$t$ 先按某分布（均匀或 §8 的 logit-normal）采样；$x$ 按 $t$ 时刻的真实边际 $p_t$ 采样；$u_t(x)$：生成 $p_t$ 这族密度的真实速度场（§1）。
 
 > **约定映射框（Lipman 原文 ↔ 本书，本章只出这一次）**：FM 原论文约定 **$x_1$ = 数据、$x_0$ = 噪声**，路径从 $t = 0$（噪声）演化到 $t = 1$（数据），与本书相反。映射关系为
-> $$x_0^{\text{Lipman}} = \varepsilon\ (\text{本书噪声}),\qquad x_1^{\text{Lipman}} = x_0\ (\text{本书数据}),\qquad t^{\text{Lipman}} = 1 - t$$
+> $$x_0^{\text{Lipman}} = \varepsilon\ (\text{noise}),\qquad x_1^{\text{Lipman}} = x_0\ (\text{data}),\qquad t^{\text{Lipman}} = 1 - t$$
 > 速度场随之反号：$u^{\text{Lipman}}(x, t_L) = -u_{1 - t_L}(x)$（因 $dx/dt_L = -dx/dt$）。本书此后一律用 $x_0$ = 数据、$t = 1$ = 噪声端重述，不再混写。
 
 式 (7) 的困难在于 $u_t(x)$ 不可解。真实边际是数据分布沿路径的混合
 
 $$
-p_t(x) = \int p_t(x \mid x_0)\, p_{data}(x_0)\, dx_0 \qquad (8)
+p_t(x) = \int p_t(x \mid x_0)\, p_{\mathrm{data}}(x_0)\, dx_0 \qquad (8)
 $$
 
-**符号**：$p_t(x \mid x_0)$：从单个数据点 $x_0$ 出发的条件路径（人为设计、闭式，§5）；$p_{data}$ 未知，只有样本。
+**符号**：$p_t(x \mid x_0)$：从单个数据点 $x_0$ 出发的条件路径（人为设计、闭式，§5）；$p_{\mathrm{data}}$ 未知，只有样本。
 
 $p_t$ 本身是无闭式的混合密度，而连续性方程式 (3) 里的 $u_t$ 又依赖 $p_t$ 的时空结构——直接解出 $u_t$ 无从谈起。直观地看，$x$ 处在 $t$ 时刻可能来自许多不同的 $x_0$，每个来源推着不同的条件速度，真实的 $u_t(x)$ 是这些来源的某种平均。
 
-一个能手算的最小例子把这层「平均」坐实。取两点数据集 $p_{data} = \frac{1}{2}\delta(x_0 - a) + \frac{1}{2}\delta(x_0 + a)$，线性路径（§6 预告）$x_t = (1-t) x_0 + t\varepsilon$。$t$ 时刻的边际是两个高斯的等权混合 $\frac{1}{2}\mathcal{N}((1-t)a, t^2) + \frac{1}{2}\mathcal{N}(-(1-t)a, t^2)$；在 $x = 0$ 处两个来源完全对称，后验各占一半、条件速度 $\varepsilon \mp a$ 平均后互相抵消，$u_t(0) = \mathbb{E}[\varepsilon] = 0$——轨迹在此处必须减速让路。靠近 $x = (1-t)a$ 处后验压倒性偏向 $+a$ 来源，$u_t(x) \approx \mathbb{E}[\varepsilon \mid x] - a$ 恢复单源速度。边际场处处是后验加权平均，而 weights 随 $x$ 连续变化——这正是「直线条件路径」叠加出「弯曲边际轨迹」的机制（§10 的曲率账由此而来），也是 $u_t$ 必须依赖 $p_{data}$ 全部信息的直接证据：它含后验 $p(x_0 \mid x_t)$，后验含数据分布。
+一个能手算的最小例子把这层「平均」坐实。取两点数据集 $p_{\mathrm{data}} = \frac{1}{2}\delta(x_0 - a) + \frac{1}{2}\delta(x_0 + a)$，线性路径（§6 预告）$x_t = (1-t) x_0 + t\varepsilon$。$t$ 时刻的边际是两个高斯的等权混合 $\frac{1}{2}\mathcal{N}((1-t)a, t^2) + \frac{1}{2}\mathcal{N}(-(1-t)a, t^2)$；在 $x = 0$ 处两个来源完全对称，后验各占一半、条件速度 $\varepsilon \mp a$ 平均后互相抵消，$u_t(0) = \mathbb{E}[\varepsilon] = 0$——轨迹在此处必须减速让路。靠近 $x = (1-t)a$ 处后验压倒性偏向 $+a$ 来源，$u_t(x) \approx \mathbb{E}[\varepsilon \mid x] - a$ 恢复单源速度。边际场处处是后验加权平均，而 weights 随 $x$ 连续变化——这正是「直线条件路径」叠加出「弯曲边际轨迹」的机制（§10 的曲率账由此而来），也是 $u_t$ 必须依赖 $p_{\mathrm{data}}$ 全部信息的直接证据：它含后验 $p(x_0 \mid x_t)$，后验含数据分布。
 
 式 (7) 因此是一个「目标函数写得出来、逐点目标值算不出来」的回归——和 7.2 推导前 $L_{vlb}$ 的处境同构，解法也同构：找一个期望相同（梯度相同）但可采样的替代目标。这就是 conditional FM 定理。
 
@@ -113,7 +113,7 @@ $p_t$ 本身是无闭式的混合密度，而连续性方程式 (3) 里的 $u_t$
 条件速度场是设计出来的、闭式可算（§5 给出 Gaussian 族的显式公式）。**conditional FM 目标**直接回归它：
 
 $$
-L_{CFM}(\theta) = \mathbb{E}_{t,\; x_0 \sim p_{data},\; x \sim p_t(\cdot \mid x_0)} \left\| v_\theta(x, t) - u_t(x \mid x_0) \right\|^2 \qquad (9)
+L_{CFM}(\theta) = \mathbb{E}_{t,\; x_0 \sim p_{\mathrm{data}},\; x \sim p_t(\cdot \mid x_0)} \left\| v_\theta(x, t) - u_t(x \mid x_0) \right\|^2 \qquad (9)
 $$
 
 **符号**：期望可采样：抽数据点 $x_0$、按闭式条件路径采 $x$、算条件速度——三项全可行。
@@ -125,17 +125,17 @@ $$
 **第一步：定义边际速度场并验证它生成 $p_t$。** 定义
 
 $$
-u_t(x) \;=\; \int u_t(x \mid x_0)\, \frac{p_t(x \mid x_0)\, p_{data}(x_0)}{p_t(x)}\, dx_0 \;=\; \mathbb{E}\left[ u_t(x \mid x_0)\, \middle|\, x_t = x \right] \qquad (10)
+u_t(x) \;=\; \int u_t(x \mid x_0)\, \frac{p_t(x \mid x_0)\, p_{\mathrm{data}}(x_0)}{p_t(x)}\, dx_0 \;=\; \mathbb{E}\left[ u_t(x \mid x_0) \mid x_t = x \right] \qquad (10)
 $$
 
-**符号**：被积权重 $p_t(x \mid x_0) p_{data}(x_0) / p_t(x)$ 即后验 $p(x_0 \mid x_t = x)$（Bayes，分母是式 (8) 的边际）——边际速度场 = 条件速度场对「可能来源 $x_0$」的后验平均，印证 §3 的直觉。
+**符号**：被积权重 $p_t(x \mid x_0) p_{\mathrm{data}}(x_0) / p_t(x)$ 即后验 $p(x_0 \mid x_t = x)$（Bayes，分母是式 (8) 的边际）——边际速度场 = 条件速度场对「可能来源 $x_0$」的后验平均，印证 §3 的直觉。
 
 验证 $(p_t, u_t)$ 满足式 (3)：对式 (8) 求 $\partial_t$，代入 (C1) 再整理：
 
 $$
 \begin{aligned}
-\partial_t p_t(x) &= \int \partial_t p_t(x \mid x_0)\, p_{data}(x_0)\, dx_0 = -\int \nabla \cdot \left( p_t(x \mid x_0)\, u_t(x \mid x_0) \right) p_{data}(x_0)\, dx_0 \\
-&= -\nabla \cdot \left( \int u_t(x \mid x_0)\, p_t(x \mid x_0)\, p_{data}(x_0)\, dx_0 \right) = -\nabla \cdot \left( p_t(x)\, u_t(x) \right)
+\partial_t p_t(x) &= \int \partial_t p_t(x \mid x_0)\, p_{\mathrm{data}}(x_0)\, dx_0 = -\int \nabla \cdot \left( p_t(x \mid x_0)\, u_t(x \mid x_0) \right) p_{\mathrm{data}}(x_0)\, dx_0 \\
+&= -\nabla \cdot \left( \int u_t(x \mid x_0)\, p_t(x \mid x_0)\, p_{\mathrm{data}}(x_0)\, dx_0 \right) = -\nabla \cdot \left( p_t(x)\, u_t(x) \right)
 \end{aligned} \qquad (11)
 $$
 
@@ -158,9 +158,9 @@ $$
 $$
 \begin{aligned}
 \mathbb{E}_{x \sim p_t}\langle v_\theta(x, t), u_t(x) \rangle &= \int \langle v_\theta(x, t),\, p_t(x)\, u_t(x) \rangle\, dx \\
-&= \int \left\langle v_\theta(x, t),\, \int u_t(x \mid x_0)\, p_t(x \mid x_0)\, p_{data}(x_0)\, dx_0 \right\rangle dx \\
-&= \iint \langle v_\theta(x, t),\, u_t(x \mid x_0) \rangle\, p_t(x \mid x_0)\, p_{data}(x_0)\, dx_0\, dx \\
-&= \mathbb{E}_{x_0 \sim p_{data},\; x \sim p_t(\cdot \mid x_0)}\langle v_\theta(x, t), u_t(x \mid x_0) \rangle
+&= \int \left\langle v_\theta(x, t),\, \int u_t(x \mid x_0)\, p_t(x \mid x_0)\, p_{\mathrm{data}}(x_0)\, dx_0 \right\rangle dx \\
+&= \int \int \langle v_\theta(x, t),\, u_t(x \mid x_0) \rangle\, p_t(x \mid x_0)\, p_{\mathrm{data}}(x_0)\, dx_0\, dx \\
+&= \mathbb{E}_{x_0 \sim p_{\mathrm{data}},\; x \sim p_t(\cdot \mid x_0)}\langle v_\theta(x, t), u_t(x \mid x_0) \rangle
 \end{aligned} \qquad (14)
 $$
 
@@ -240,10 +240,10 @@ $$
 采样是纯 ODE 积分，方向 $t: 1 \to 0$。Euler 离散（步长 $h = 1/K$）：
 
 $$
-x_{k+1} = x_k - h\, v_\theta(x_k, t_k), \qquad t_k = 1 - k h,\quad k = 0, \ldots, K-1,\quad x_0^{(K)} = \varepsilon \sim \mathcal{N}(0, I) \qquad (23)
+x^{(k+1)} = x^{(k)} - h\, v_\theta(x^{(k)}, t_k), \qquad t_k = 1 - k h,\quad k = 0, \ldots, K-1,\quad x^{(0)} = \varepsilon \sim \mathcal{N}(0, I) \qquad (23)
 $$
 
-**符号**：$x_k$：第 $k$ 步的状态（下标为步数序号，非时间）；每步一次网络评估，共 $K$ 次 NFE。确定性采样——给定 $x_1 = \varepsilon$，输出唯一；更高阶求解器（Heun 等，7.4）同骨架换更新式。
+**符号**：$x^{(k)}$：第 $k$ 步的状态（上标为步数序号，与时间下标区分——初值 $x^{(0)} = \varepsilon$ 即噪声端 $x_1$，终态 $x^{(K)}$ 落在数据端 $t = 0$）；每步一次网络评估，共 $K$ 次 NFE。确定性采样——给定 $x_1 = \varepsilon$，输出唯一；更高阶求解器（Heun 等，7.4）同骨架换更新式。
 
 教学用参考实现（非优化实现；对照锚点：FM 官方库 [facebookresearch/flow_matching](../references.md) 的 `flow_matching/path/` 提供条件路径、`loss/` 提供 CFM 损失、`solver/` 提供 ODE 积分器，[A]）：
 
@@ -261,7 +261,7 @@ def rf_loss(v_net, x0, t_sampler):
 
 def rf_sample(v_net, shape, K):
     """教学用，非优化实现。Euler 积分 t: 1 → 0，共 K 次 NFE。"""
-    x = torch.randn(shape)                         # x_1 = ε
+    x = torch.randn(shape)                         # 初值 x^(0) = ε（时间 t = 1 噪声端）
     h = 1.0 / K
     for k in range(K):
         t = 1 - k * h
@@ -303,7 +303,7 @@ $$
 \hat x_0 = x_t - t\, v_\theta, \qquad \hat\varepsilon = x_t + (1 - t)\, v_\theta, \qquad v_\theta = \frac{\varepsilon_\theta - x_t}{1 - t} \qquad (25)
 $$
 
-**符号**：前两式由 $v = \varepsilon - x_0$ 与 $x_t = x_0 + tv$ 联立解出；第三式把 $\varepsilon_\theta$ 代入 $v = (\varepsilon - x_t)/(1-t)$（由 $\varepsilon - x_0 = \varepsilon - (x_t - t\varepsilon)/(1-t) = (\varepsilon - x_t)/(1-t)$）得到。换算只含加乘、无除以小量（$1 - t$ 在数据端外有界），数值行为干净。
+**符号**：前两式由 $v = \varepsilon - x_0$ 与 $x_t = x_0 + tv$ 联立解出；第三式把 $\varepsilon_\theta$ 代入 $v = (\varepsilon - x_t)/(1-t)$（由 $\varepsilon - x_0 = \varepsilon - (x_t - t\varepsilon)/(1-t) = (\varepsilon - x_t)/(1-t)$）得到。前两式（$v \to (\hat x_0, \hat\varepsilon)$ 方向）只含加乘、无除法；第三式（$\varepsilon \to v$ 方向）含 $1/(1-t)$，退化点在**噪声端** $t \to 1$——该方向只用于参数化之间的离线换算，不进训练与采样的计算图，且 $t$ 采样在端点邻域本就截断（§5 的 $\sigma_{\min}$ 注记），数值行为干净。
 
 **v-prediction 的位置。** 7.2 式 (27) 的 v-prediction（[Salimans & Ho, 2022](../references.md)，arXiv:2202.00512，[A]）$v = \sqrt{\bar\alpha_t}\, \varepsilon - \sqrt{1 - \bar\alpha_t}\, x_0$ 在 VP 路径上恰是条件速度场的缩放版。把 VP 路径的条件速度式 (17) 用 7.2 式 (28) 的反解 $x_0 = \sqrt{\bar\alpha}\, x_t - \sqrt{1-\bar\alpha}\, v$、$\varepsilon = \sqrt{1-\bar\alpha}\, x_t + \sqrt{\bar\alpha}\, v$ 代入：
 
@@ -417,7 +417,7 @@ rectified flow 在这条账上的优势来自目标结构：条件目标 $\varep
 ## 练习
 
 1.（推导）补全式 (5) 的矩阵引理：对可逆 $J(t)$，证明 $\frac{d}{dt} \log |\det J| = \operatorname{tr}(J^{-1} \frac{dJ}{dt})$（提示：对 $\det J = \exp(\operatorname{tr} \log J)$ 求导，或用 $\det(I + \delta M) = 1 + \delta\, \operatorname{tr} M + O(\delta^2)$ 做一阶展开）；再由式 (4) 推出式 (5)，并说明为什么式 (6) 的积分符号是「加散度」而非「减散度」（注意 $\log p_t = \log p_0 - \log|\det J_t|$ 的符号链）。
-2.（推导）证明 CFM 与 FM 的损失差恰为条件速度的方差：$L_{CFM}(\theta) - L_{FM}(\theta) = \mathbb{E}_{t, x \sim p_t}\left[ \mathbb{E}\left[ \|u_t(x \mid x_0) - u_t(x)\|^2 \,\middle|\, x_t = x \right] \right]$（提示：对 $\|v - u_c\|^2$ 在条件期望下用「均值 + 偏差」分解 $u_c = u_t(x) + (u_c - u_t(x))$，交叉项归零）。由此说明：(a) 差距与 $\theta$ 无关（定理的另一证法）；(b) 为什么 $L_{CFM}$ 的数值不能跨路径比较。
+2.（推导）证明 CFM 与 FM 的损失差恰为条件速度的方差：$L_{CFM}(\theta) - L_{FM}(\theta) = \mathbb{E}_{t, x \sim p_t}\left[ \mathbb{E}\left[ \|u_t(x \mid x_0) - u_t(x)\|^2 \mid x_t = x \right] \right]$（提示：对 $\|v - u_c\|^2$ 在条件期望下用「均值 + 偏差」分解 $u_c = u_t(x) + (u_c - u_t(x))$，交叉项归零）。由此说明：(a) 差距与 $\theta$ 无关（定理的另一证法）；(b) 为什么 $L_{CFM}$ 的数值不能跨路径比较。
 3.（计算）logit-normal 与 shift 的网格账：(a) 由式 (28) 证明 $m = 0, s = 1$ 时 $\pi_{ln}(t)$ 关于 $t = 1/2$ 对称，并算 $\pi_{ln}(0.5)$、$\pi_{ln}(0.1)$、$\pi_{ln}(0.9)$ 的相对比例，与均匀分布对比中段权重；(b) 验证式 (29)：由 $\log \mathrm{SNR} = -2\,\operatorname{logit}(t)$ 推出其分布参数；(c) 取 $s = 3$，计算 $t' = st/(1 + (s-1)t)$ 在 $t \in \{0.1, 0.3, 0.5, 0.7, 0.9\}$ 的值，画（或描述）平移前后 $t$ 网格的偏移方向。
 4.（代码）教学用，非优化实现：二维 two-moons 数据上的 rectified flow。(a) 用 §6 的 `rf_loss` 训练一个小型 MLP（$t$ 经 sinusoidal embedding 拼接输入），$t$ 均匀采样；(b) 用 `rf_sample` 分别取 $K \in \{1, 2, 8, 64\}$ 采样，与数据散点对比——观察 $K = 1$ 的样本落在何处（提示：直线外推的端点偏差 = 边际轨迹的弯曲量）；(c) 把 $t$ 采样换成 logit-normal$(0, 1)$（式 (27)），固定 $K = 8$ 比较样本质量；(d) 选做：实现一轮 reflow——用 (a) 的模型从 $\varepsilon$ 生成 $\hat x_0$，以 $(\hat x_0, \varepsilon)$ 为新端点对重训，再比较 $K = 1$。
 
