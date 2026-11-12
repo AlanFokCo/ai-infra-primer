@@ -199,11 +199,11 @@ $$
 \mathrm{SNR}_t = \frac{\cos^2\left( \pi t / 2T \right)}{\sin^2\left( \pi t / 2T \right)}, \qquad \log \mathrm{SNR}_t = 2 \log \cos\left( \frac{\pi t}{2T} \right) - 2 \log \sin\left( \frac{\pi t}{2T} \right)
 $$
 
-对 $u = \pi t / 2T$ 求导：$\frac{d}{du} \log \mathrm{SNR} = -2 \frac{\sin u}{\cos u} - 2 \frac{\cos u}{\sin u} = -\frac{2}{\sin u \cos u} = -\frac{4}{\sin(2u)}$——中点 $u = \pi/4$ 处斜率 $-4$ 最平（$\sin(2u) \le 1$ 故斜率绝对值 $\ge 4$，最小值在中点）且中段近似匀速，两端斜率发散、变化趋于平缓。带 $s = 0.008$ 时 $\mathrm{SNR}_t = \cos^2(u_t) / (\sin^2(u_t) - \sin^2(u_0))$（由 $\cos^2 a - \cos^2 b = \sin^2 b - \sin^2 a$ 化简），$\sin^2(u_0) \approx 1.5 \times 10^{-4}$ 只在 $t$ 极小时偏离上式形状。一句话对比：linear-β 的 log-SNR 前半程掉得更急（$t = 500$ 已 −10.7 dB，同期 cosine 仍在 0 dB 附近）、尾部却留着 $\bar\alpha_T > 0$ 的残余以有限斜率收场；cosine 中段匀速、两端陡，尾部斜率发散恰好把 $\bar\alpha$ 在 $t = T$ 压到 0。同样的 1000 步，cosine 的 $\Delta_t \log \mathrm{SNR}$ 分布更均匀——联系式 (25)（$w_t \approx \frac{1}{2} \Delta_t \log \mathrm{SNR}$），cosine 的严格 ELBO 权重本身就更平。
+对 $u = \pi t / 2T$ 求导：$\frac{d}{du} \log \mathrm{SNR} = -2 \frac{\sin u}{\cos u} - 2 \frac{\cos u}{\sin u} = -\frac{2}{\sin u \cos u} = -\frac{4}{\sin(2u)}$——由 $\sin(2u) \le 1$ 知斜率绝对值 $\ge 4$，最小值 $4$ 在中点 $u = \pi/4$ 处取得，中段近似匀速；两端斜率发散，是整条曲线最陡的部分。带 $s = 0.008$ 时 $\mathrm{SNR}_t = \cos^2(u_t) / (\sin^2(u_t) - \sin^2(u_0))$（由 $\cos^2 a - \cos^2 b = \sin^2 b - \sin^2 a$ 化简），$\sin^2(u_0) \approx 1.5 \times 10^{-4}$ 只在 $t$ 极小时偏离上式形状。一句话对比：linear-β 的 log-SNR 前半程掉得更急（$t = 500$ 已 −10.7 dB，同期 cosine 仍在 0 dB 附近）、尾部却留着 $\bar\alpha_T > 0$ 的残余以有限斜率收场；cosine 中段匀速、两端陡，尾部斜率发散恰好把 $\bar\alpha$ 在 $t = T$ 压到 0。同样的 1000 步，cosine 的 $\Delta_t \log \mathrm{SNR}$ 分布更均匀——联系式 (25)（$w_t \approx \frac{1}{2} \Delta_t \log \mathrm{SNR}$），cosine 的严格 ELBO 权重本身就更平。
 
 **频谱读法**。式 (6) 在傅里叶域逐频率成立（傅里叶变换是正交线性变换，保持各向同性高斯的独立性，噪声谱不混合）：$\hat x_t(f) = \sqrt{\bar\alpha_t}\, \hat x_0(f) + \sqrt{1 - \bar\alpha_t}\, \hat\varepsilon(f)$，其中 $\hat\varepsilon(f)$ 各频率等功率（白噪声 = 平谱）。自然图像的功率谱随频率快速衰减、能量集中在低频（经验事实），于是对每个 $t$ 存在交叉频率 $f_c(t)$：$\bar\alpha_t \cdot P_{\mathrm{img}}(f_c) = (1 - \bar\alpha_t) \cdot P_{\varepsilon}$，$f > f_c$ 的频段信噪比小于 1，信息已被淹没。$t$ 增大 $\Rightarrow$ $f_c$ 单调下移——**加噪是从高频到低频的逐层淹没，去噪反过来：先恢复低频构图与色块，后恢复高频纹理**。这也解释了生成中途图像「先成形、后出细节」的普遍观察。
 
-schedule 的好坏由此可以量化。linear 的 log-SNR 两端陡、中段缓，$t = 500$（半程）时 SNR 已掉到 −10.7 dB；且尾部在 $\bar\alpha_T = 4.04 \times 10^{-5} > 0$ 处收场——末端 $\sqrt{\bar\alpha_T} = 0.0064$，已低于 8-bit 图像在 $[-1, 1]$ 标度下的一个量化台阶 $1/127.5 \approx 0.0078$：从 $t = 979$ 起残余信号就低于量化台阶，**最后 21 步对 32×32 图像几乎没有可恢复信息，链的长度被浪费**。cosine 把信息破坏摊匀：半程时 SNR 仍在 0 dB 附近，且 $\bar\alpha_t$ 恰在 $t = T$ 归零（低于量化台阶的只剩最后 5 步），1000 步步步有活干。iDDPM 的动机正是此：linear schedule 对高分辨率图像过早、过快地销毁信息，cosine schedule 在其论文实验中改善 log-likelihood（[Nichol & Dhariwal, 2021](../references.md)，[A]），随后成为标准选项之一。
+schedule 的好坏由此可以量化。linear 的 log-SNR 两端陡、中段缓，$t = 500$（半程）时 SNR 已掉到 −10.7 dB；且尾部在 $\bar\alpha_T = 4.04 \times 10^{-5} > 0$ 处收场——末端 $\sqrt{\bar\alpha_T} = 0.0064$，已低于 8-bit 图像在 $[-1, 1]$ 标度下的一个量化台阶 $1/127.5 \approx 0.0078$：从 $t = 979$ 起到 $T$ 的 22 步残余信号都低于量化台阶，**对 32×32 图像几乎没有可恢复信息，链的长度被浪费**。cosine 把信息破坏摊匀：半程时 SNR 仍在 0 dB 附近，且 $\bar\alpha_t$ 恰在 $t = T$ 归零（低于量化台阶的只有从 $t = 995$ 起的 6 步），1000 步步步有活干。iDDPM 的动机正是此：linear schedule 对高分辨率图像过早、过快地销毁信息，cosine schedule 在其论文实验中改善 log-likelihood（[Nichol & Dhariwal, 2021](../references.md)，[A]），随后成为标准选项之一。
 
 另外记一个后面要用的数字：linear schedule 下 $\bar\alpha_T = 4.04 \times 10^{-5}$，即 $q(x_T \mid x_0) \approx \mathcal{N}(0, I)$ 到很高精度——这给了模型端点 $p(x_T) = \mathcal{N}(0, I)$ 的合法性，§4.1 的 $L_T$ 项将因此近似为零。
 
@@ -358,7 +358,7 @@ $$
 L_{\mathrm{vlb}} = \mathbb{E}_q\left[ \log \frac{q(x_T \mid x_0)}{p(x_T)} + \sum_{t=2}^{T} \log \frac{q(x_{t-1} \mid x_t, x_0)}{p_\theta(x_{t-1} \mid x_t)} - \log p_\theta(x_0 \mid x_1) \right]
 $$
 
-最后一步把 $T$ 层期望压回单层。和第 $t$ 项的 $\log(q(x_{t-1} \mid x_t, x_0) / p_\theta(x_{t-1} \mid x_t))$ 只依赖 $(x_{t-1}, x_t, x_0)$，对 $q(x_{1:T} \mid x_0)$ 的期望按塔性质先对「除 $(x_{t-1}, x_t)$ 外的所有中间变量」积分——联合里只剩 $q(x_{t-1}, x_t \mid x_0) = q(x_{t-1} \mid x_t, x_0)\, q(x_t \mid x_0)$。再对内层 $x_{t-1}$ 的期望认出 KL 的定义：
+最后一步把 $T$ 层期望压回单层：第 $t$ 项的 $\log(q(x_{t-1} \mid x_t, x_0) / p_\theta(x_{t-1} \mid x_t))$ 只依赖 $(x_{t-1}, x_t, x_0)$，故对 $q(x_{1:T} \mid x_0)$ 的期望可按塔性质先对「除 $(x_{t-1}, x_t)$ 外的所有中间变量」积分——联合里只剩 $q(x_{t-1}, x_t \mid x_0) = q(x_{t-1} \mid x_t, x_0)\, q(x_t \mid x_0)$。再对内层 $x_{t-1}$ 的期望认出 KL 的定义：
 
 $$
 \mathbb{E}_{q(x_t \mid x_0)} \mathbb{E}_{q(x_{t-1} \mid x_t, x_0)}\left[ \log \frac{q(x_{t-1} \mid x_t, x_0)}{p_\theta(x_{t-1} \mid x_t)} \right] = \mathbb{E}_{q(x_t \mid x_0)}\left[ \mathrm{KL}\left( q(x_{t-1} \mid x_t, x_0)\, \| \, p_\theta(x_{t-1} \mid x_t) \right) \right]
@@ -384,7 +384,7 @@ $$
 p_\theta(x_0 \mid x_1) = \prod_{i=1}^{d} \int_{\delta_{-}(x_0^i)}^{\delta_{+}(x_0^i)} \mathcal{N}\left( x;\ \mu_\theta^i(x_1, 1),\ \sigma_1^2 \right) dx
 $$
 
-**符号**：$\delta_{+}(x) = x + 1/127.5$（$x = 1$ 时取 $+\infty$）、$\delta_{-}(x) = x - 1/127.5$（$x = -1$ 时取 $-\infty$）：以真值为中心、宽 $2/127.5 = 1/127.5$ 的量化 bin；积分把连续密度折成离散概率。$t = 1$ 步噪声极小（$\beta_1 = 10^{-4}$），$\mu_\theta(x_1, 1) \approx x_1$，此项近似「$x_1$ 落回正确 bin」的对数概率，实现上直接可算，不参与下面 $\varepsilon$ 化简。
+**符号**：$\delta_{+}(x) = x + 1/255$（$x = 1$ 时取 $+\infty$）、$\delta_{-}(x) = x - 1/255$（$x = -1$ 时取 $-\infty$）：以真值为中心、半宽 $1/255$、全宽 $2/255 = 1/127.5$ 的量化 bin——相邻像素级的间距恰好是 $1/127.5$，bin 无缝平铺。积分把连续密度折成离散概率。$t = 1$ 步噪声极小（$\beta_1 = 10^{-4}$），$\mu_\theta(x_1, 1) \approx x_1$，此项近似「$x_1$ 落回正确 bin」的对数概率，实现上直接可算，不参与下面 $\varepsilon$ 化简。
 
 ### 4.2 高斯 KL 闭式：从 $L_{t-1}$ 到 $\varepsilon$ 回归
 
