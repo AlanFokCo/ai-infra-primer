@@ -35,7 +35,7 @@ $$
 
 参数账直接读：式 (2) 共 $d_v d_{llm} + d_{llm}^{2}$ 个参数——注意现代组合里 $d_{llm} > d_v$，$d_{llm}^{2}$ 项占大头，简写 $2\, d_v d_{llm}$ 只在 $d_{llm} \approx d_v$ 时成立。代一档真实宽度——$d_v$ = 1024（ViT-L/14）、$d_{llm}$ = 4096——$1024 \times 4096 + 4096^{2} \approx 21$ M，相对 7B 级 LLM 本体仍是千分位级。等长映射 $M = N$：CLIP-336 网格的 576 个 token 原数进 LLM。
 
-LLaVA-1.5 论文的 ablation 表给了一个此后成为默认结论的对比（[Liu et al., 2023](../references.md)，[A]，引原表）：在其数据规模（caption 预训练 558K 条 + 指令微调 665K 条，约 1.2M 总量）下，(a) 线性换成 2 层 MLP 稳定提升；(b) 更复杂的 connector——Q-Former 类——在该预算下不占优。结论 (b) 的机制论证放到 §3.4：Q-Former 的 32-token 瓶颈要求先把「从 576 个 patch 里选哪些信息」这个选择函数学进约 1.9 亿参数，而 BLIP-2 把这个函数训出来用了 129M 图文对——与 1.2M 差两个数量级。容量与数据不匹配时，瓶颈不是压缩而是纯损失。**小数据下 MLP 够、Q-Former 不划算**，其反面同样成立：数据到 1 亿级、且要求冻结双塔不动预训练资产时，Q-Former 的账翻正（§3.4）。
+LLaVA-1.5 论文给了两点此后成为默认口径的陈述（[Liu et al., 2023](../references.md)，[A]）：(a) 线性 projector 换成 2 层 MLP 是 improved baseline 的有效组成（正文陈述，非消融表）；(b) Q-Former 类 resampler 方案的训练语料在数亿级，在其约 1.2M 的数据规模（caption 预训练 558K 条 + 指令微调 665K 条）下两层 MLP 已够（limitations 讨论口径，非表内消融行）。结论 (b) 的机制论证放到 §3.4：Q-Former 的 32-token 瓶颈要求先把「从 576 个 patch 里选哪些信息」这个选择函数学进约 1.9 亿参数，而 BLIP-2 把这个函数训出来用了 129M 图文对——与 1.2M 差两个数量级。容量与数据不匹配时，瓶颈不是压缩而是纯损失。**小数据下 MLP 够、Q-Former 不划算**，其反面同样成立：数据到 1 亿级、且要求冻结双塔不动预训练资产时，Q-Former 的账翻正（§3.4）。
 
 等长族的一个变体是软查表。Ovis 把 connector 做成一张 visual embedding table：连续 patch 特征先经 visual tokenizer 映成「视觉词表」上的概率分布，再按分布对可学 embedding 表取期望——与文本侧的查表对齐在结构层完成，故称 structural embedding alignment（[Lu et al., 2024](../references.md)，arXiv:2405.20797，[A]；官方 repo 现为 ATH-MaaS/Ovis，[Ovis repo](../references.md)，[A]）。token 数仍是 $M = N$，变的是对齐机制：从「线性层学映射」换成「分布匹配一张可学表」。
 
@@ -122,7 +122,7 @@ $$
 
 两阶段的分工对应 §1 的自由度：stage 1 学自由度 (ii)——把 $N$ 选成 $B$ 的取舍函数；stage 2 学自由度 (i)(iii)——把这 $B$ 个表征翻译进冻结 LLM 的 embedding 空间。LLM 全程冻结：BLIP-2 的设计目标是「不动预训练资产」，代价就是取舍函数必须由 connector 独力承担。
 
-现在把 §2 的 ablation 结论收回到机制上。Q-Former 的可训容量约 1.9 亿参数（queries + 12 层共享 self-attn + 隔层 cross-attn + FFN，论文口径），要学到的函数是「从 576 个 patch 表征里提取哪 32 个」——这个选择函数没有任何结构先验，queries 的初值对输入内容无感知，全部靠 ITC/ITM/ITG 的梯度从 129M 对里塑造。对照 MLP（式 (2)）：约 $10^{7}$ 参数、逐 token 结构固定、学的只是空间对齐——自由度 (ii) 干脆不做（$M = N$），把取舍问题推给下游 LLM 用 attention 自行解决。LLaVA-1.5 的 1.2M 条数据训不动前者、足够训后者，其 ablation 表结论（MLP 为 academic 预算下的最优 connector，[Liu et al., 2023](../references.md)，[A]）就是这条容量-数据匹配账的实验签名。**两族没有绝对优劣，只有「数据规模 × 是否允许动 LLM」坐标系下的相对划算**——这条坐标系会原样出现在 §11 的决策表里。
+现在把 §2 的两点口径收回到机制上。Q-Former 的可训容量约 1.9 亿参数（queries + 12 层共享 self-attn + 隔层 cross-attn + FFN，论文口径），要学到的函数是「从 576 个 patch 表征里提取哪 32 个」——这个选择函数没有任何结构先验，queries 的初值对输入内容无感知，全部靠 ITC/ITM/ITG 的梯度从 129M 对里塑造。对照 MLP（式 (2)）：约 $10^{7}$ 参数、逐 token 结构固定、学的只是空间对齐——自由度 (ii) 干脆不做（$M = N$），把取舍问题推给下游 LLM 用 attention 自行解决。LLaVA-1.5 的 1.2M 条数据训不动前者、足够训后者，其 discussion 口径（Q-Former 类方案训练语料在数亿级、1.2M 规模下两层 MLP 已够，[Liu et al., 2023](../references.md)，[A]）就是这条容量-数据匹配账的论文侧印证。**两族没有绝对优劣，只有「数据规模 × 是否允许动 LLM」坐标系下的相对划算**——这条坐标系会原样出现在 §11 的决策表里。
 
 ## 4. Perceiver resampler（Flamingo）：变长进、定长出
 
@@ -363,7 +363,7 @@ $$
 | 概念 | 公式 / 数值 | 要点 |
 | --- | --- | --- |
 | connector 契约 | $v = \phi(z_{img})$，式 (1) | 三自由度：维度对齐 / token 数变换 / 表征翻译 |
-| MLP projector | 式 (2) | 等长 $M = N$；$d_v d_{llm} + d_{llm}^{2}$ 参数（1024/4096 档 ≈ 21M）；LLaVA-1.5 ablation：academic 数据下最优 [A] |
+| MLP projector | 式 (2) | 等长 $M = N$；$d_v d_{llm} + d_{llm}^{2}$ 参数（1024/4096 档 ≈ 21M）；LLaVA-1.5 正文+讨论口径：academic 数据规模下 MLP 已够 [A] |
 | Q-Former | 式 (3)-(7)：共享 self-attn + 隔层 XAttn、三 mask、ITC/ITM/ITG | $M = B$ = 32 定长瓶颈；约 1.9 亿参数需 129M 对训练；小数据不划算的容量-数据账（§3.4） |
 | Perceiver resampler | 式 (8) | $M = B$ = 64 与 $N$ 无关；cross-attn $O(BNd)$ 挡住二次项；Flamingo [B] |
 | pixel shuffle | 式 (9)(10)：$M = N r^{2}$、通道 ×$1/r^{2}$ | 拼接无损、取舍在投影；InternVL $r$ = 0.5、Qwen spatial_merge 2；LLM 端二次项 ×1/16 |
@@ -384,7 +384,7 @@ $$
 ## 参考
 
 - [Li et al., 2023](../references.md)：BLIP-2: Bootstrapping Language-Image Pre-training with Frozen Image Encoders and Large Language Models，arXiv:2301.12597，[A]（key: blip2）——§3 Q-Former 结构、三目标式 (5)(6)(7)、两阶段与 $B$ = 32、129M 对、约 1.9 亿参数
-- [Liu et al., 2023](../references.md)：Improved Baselines with Visual Instruction Tuning，arXiv:2310.03744，[A]（key: llava-1.5）——§2 MLP connector 与数据规模 ablation（558K + 665K）
+- [Liu et al., 2023](../references.md)：Improved Baselines with Visual Instruction Tuning，arXiv:2310.03744，[A]（key: llava-1.5）——§2 MLP connector 与数据规模口径（558K + 665K；linear→MLP 为正文陈述、Q-Former 语料规模为 limitations 讨论，均非消融表）
 - [Liu et al., 2023](../references.md)：Visual Instruction Tuning，arXiv:2304.08485，[A]（key: llava）——§2 线性 projector 出处
 - [Alayrac et al., 2022](../references.md)：Flamingo: a Visual Language Model for Few-Shot Learning，arXiv:2204.14198，[B]（key: flamingo）——§4 Perceiver resampler（$B$ = 64）
 - [Wang et al., 2024](../references.md)：Qwen2-VL: Enhancing Vision-Language Model's Perception of the World at Any Resolution，arXiv:2409.12191，[A]（key: qwen2-vl）——§8 naive dynamic resolution、§9 M-RoPE 出处
