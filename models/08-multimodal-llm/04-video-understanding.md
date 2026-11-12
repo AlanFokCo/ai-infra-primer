@@ -1,6 +1,6 @@
 # 8.4 视频理解（Video Understanding）
 
-> 视频理解的第一笔账是乘法：$F$ 帧 × 每帧 $M$ 个 token（1 min @ 1 fps × 256 = 15,360 级），直接压进 LLM 的 context 硬预算，4.6 的长上下文四堵墙原样适用；全章按「帧从哪来（uniform vs dynamic FPS 采样）、token 在哪省（时间压缩的三个位置：3D patch / 时空 pooling / temporal queries resampler）、时间怎么读（Qwen2.5-VL 绝对时间编码进 M-RoPE $t$ 轴）、答案怎么写（时间戳分桶方案）」展开，收口于视频-图像混合训练的机制账与视频评测方法论（静态捷径检查、时长分档） | 前置：2.4（KV cache 式 (9)）、2.5（RoPE）、4.6（长上下文四笔账、claimed vs effective 方法论）、6.1（ViT patchify $N = HW/p^{2}$）、8.1（token 预算账）、8.2（connector 四族、pixel shuffle 式 (9)(10)、M-RoPE 式 (14)-(17) 与 `get_rope_index`） | 锚点：Qwen2.5-VL（dynamic FPS + 绝对时间编码官方实现）[A]、Qwen2.5-VL-7B config（ctx 128000 实测）[A]、QwenLM/Qwen3-VL repo [A]、transformers Qwen2.5-VL modeling [A]、LLaVA-OneVision（单图→多图→视频课程）[A]、Apollo（视频 LMM 设计空间 ablation）[B——代码与权重已下架，只引论文结论]、Flamingo（视频 resampler）[B]
+> 视频理解的第一笔账是乘法：$F$ 帧 × 每帧 $M$ 个 token（1 min @ 1 fps × 256 = 15,360 级），直接压进 LLM 的 context 硬预算，4.6 的长上下文四堵墙原样适用；全章按「帧从哪来（uniform vs dynamic FPS 采样）、token 在哪省（时间压缩的三个位置：3D patch / 时空 pooling / temporal queries resampler）、时间怎么读（Qwen2.5-VL 绝对时间编码进 M-RoPE $t$ 轴）、答案怎么写（时间戳分桶方案）」展开，收口于视频-图像混合训练的机制账与视频评测方法论（静态捷径检查、时长分档） | 前置：2.4（KV cache 式 (9)）、2.5（RoPE）、4.6（长上下文四笔账、claimed vs effective 方法论）、6.1（ViT patchify $N = HW/p^{2}$）、8.1（token 预算账）、8.2（connector 四族、pixel shuffle 式 (9)(10)、M-RoPE 式 (14)-(17) 与 `get_rope_index`） | 锚点：Qwen2.5-VL（dynamic FPS + 绝对时间编码官方实现）[A]、Qwen2.5-VL-7B config（ctx 128000 实测）[A]、QwenLM/Qwen3-VL repo [A]、transformers Qwen2.5-VL modeling [A]、LLaVA-OneVision（单图→OneVision 混合两阶段课程）[A]、Apollo（视频 LMM 设计空间 ablation）[B——代码与权重已下架，只引论文结论]、Flamingo（视频 resampler）[B]
 
 ## 1. 视频 = 图像 × 时间：总预算账
 
@@ -161,9 +161,9 @@ $$
 
 ## 7. 视频-图像训练数据混合
 
-结构事实先摆出来：在 $(t, h, w)$ 三元组下，**图像就是 $T = 1$ 的视频**——8.2 式 (14) 的图像支是视频支 $\tau_f$ 恒定的退化。同一套管线、同一套位置系统，图像 batch 与视频 batch 可以在一个训练流里混合，无需任何架构改造。LLaVA-OneVision 把这种同构直接用作课程：单图 → 多图 → 视频三阶段（[Li et al., 2024](../references.md)，[A]；阶段划分与数据配比引论文原文）——多图与视频在序列结构上只差「帧间是否有时间语义」，视频阶段因此是在已训好的多图能力上叠加时间监督，而不是从零学视觉。
+结构事实先摆出来：在 $(t, h, w)$ 三元组下，**图像就是 $T = 1$ 的视频**——8.2 式 (14) 的图像支是视频支 $\tau_f$ 恒定的退化。同一套管线、同一套位置系统，图像 batch 与视频 batch 可以在一个训练流里混合，无需任何架构改造。LLaVA-OneVision 把这种同构直接用作课程：场景维度上两阶段——先单图阶段（3.2M 单图指令数据），随后 OneVision 阶段把 1.6M 混合样本同训（350K 视频 + 560K 多图 + 800K 单图复用采样，未引入新单图数据；[Li et al., 2024](../references.md)，[A]，论文 Sec. 4–5 与 Table 1 口径；完整训练流程在此之前另有对齐与知识学习的前置 stage，与场景课程正交）。设计要点在于**视频不独占阶段**：多图与视频在同一阶段混合训练，跨场景迁移于阶段内部完成——论文把视频能力明确归因于图像到视频的 task transfer。序列结构同构（多图与视频只差「帧间是否有时间语义」）解释了这种混合为什么便宜：零架构改造，迁移收益直接落在视频侧。
 
-混合的机制账有两面。视频侧：相邻帧近重复，单位 token 的信息多样性低于图像——视频 token 便宜地提供时间监督（变化、因果、计数），但静态感知监督被稀释；图像侧：每张图独立采样，静态多样性高，是低成本的高密度视觉监督。Apollo 的数据配比消融（[Zohar et al., 2024](../references.md)，[B]，Finding 10，论文 Fig. 6 口径）给的是混合内部的配比结论而非「混合 vs 纯视频」的比较——各臂均为文本/图像/多图/视频的混合数据：文本占 10–14% 是必要的硬约束（低于 7% 或抬到 25% 都掉点，论文解读为缓解灾难性遗忘）；其余模态之间略偏视频（slightly video-heavy）的混合在其视频基准套件上最优，论文对该结果的机制解读恰好落在图像一侧——这种配比让模型能学到质量更高、多样性更强的图像数据。LLaVA-OneVision 的课程设计（单图先行打底，再上多图与视频，[Li et al., 2024](../references.md)，[A]）提供的是另一条证据线：图像阶段建立的静态能力是视频阶段的地基——注意这是课程顺序的论据，与配比消融回答的是两个问题。
+混合的机制账有两面。视频侧：相邻帧近重复，单位 token 的信息多样性低于图像——视频 token 便宜地提供时间监督（变化、因果、计数），但静态感知监督被稀释；图像侧：每张图独立采样，静态多样性高，是低成本的高密度视觉监督。Apollo 的数据配比消融（[Zohar et al., 2024](../references.md)，[B]，Finding 10，论文 Fig. 6 口径）给的是混合内部的配比结论而非「混合 vs 纯视频」的比较——各臂均为文本/图像/多图/视频的混合数据：文本占 10–14% 是必要的硬约束（低于 7% 或抬到 25% 都掉点，论文解读为缓解灾难性遗忘）；其余模态之间略偏视频（slightly video-heavy）的混合在其视频基准套件上最优，论文对该结果的机制解读恰好落在图像一侧——这种配比让模型能学到质量更高、多样性更强的图像数据。LLaVA-OneVision 的课程设计（单图阶段先行，随后多图与视频在 OneVision 阶段混合同训，[Li et al., 2024](../references.md)，[A]）提供的是另一条证据线：单图阶段建立的静态能力是后续混合阶段的地基——注意这是课程顺序的论据，与配比消融回答的是两个问题。
 
 ## 8. 视频评测方法论
 
@@ -194,7 +194,7 @@ $$
 | 时间压缩 | 式 (6) 3D patch（$\tau_p$=2，encoder 也省）；式 (7) 时空 pooling（只省 LLM 侧）；resampler 定长 $B$ | 三位置「谁付钱」对照表（§4 末） |
 | 流式长视频 | chunk + 循环 memory（无收录条目，机制描述） | $S_k$ = 4.3 固定状态的语义版；三难点：在线写入取舍 / 漂移 / 评测缺位 |
 | 输出格式 | 式 (8) 分桶 special token（误差 ≤ $\Delta/2$）vs 数字文本 | 文本时钟与位置时钟同源是监督一致的根 |
-| 数据混合 | 图像 = $T{=}1$ 视频（8.2 式 (14) 退化） | 课程：单图→多图→视频 [A]；配比消融：文本 10–14% 为硬约束、视觉侧略偏视频最优（Apollo Finding 10，[B]） |
+| 数据混合 | 图像 = $T{=}1$ 视频（8.2 式 (14) 退化） | 课程两阶段：单图阶段 → OneVision 混合阶段（视频+多图+单图复用同训，[A]）；配比消融：文本 10–14% 为硬约束、视觉侧略偏视频最优（Apollo Finding 10，[B]） |
 | 评测 | 式 (9) mIoU / R@IoU；单帧与乱序对照；时长分档 | 静态捷径检查是时序结论的前置；claimed ≠ effective（4.6 平移）；时长分档的跨模型相关 $R^{2}$ = 0.94（Apollo，[B]）提示其边际信息有限 |
 
 ## 练习
@@ -208,7 +208,7 @@ $$
 
 - [Bai et al., 2025](../references.md)：Qwen2.5-VL Technical Report，arXiv:2502.13923，[A]（key: qwen2.5-vl）——§2 dynamic FPS、§3 绝对时间编码、§4.1 temporal patch $\tau_p$ = 2、§6 时戳监督数据口径
 - [Wang et al., 2024](../references.md)：Qwen2-VL: Enhancing Vision-Language Model's Perception of the World at Any Resolution，arXiv:2409.12191，[A]（key: qwen2-vl）——§3 帧序号规则对照、M-RoPE 原始出处
-- [Li et al., 2024](../references.md)：LLaVA-OneVision: Easy Visual Task Transfer，arXiv:2408.03326，[A]（key: llava-onevision）——§4.2 encoder 后下采样视频管线、§7 单图→多图→视频课程
+- [Li et al., 2024](../references.md)：LLaVA-OneVision: Easy Visual Task Transfer，arXiv:2408.03326，[A]（key: llava-onevision）——§4.2 encoder 后下采样视频管线、§7 单图阶段→OneVision 混合阶段课程（3.2M 单图；1.6M 混合 = 350K 视频 + 560K 多图 + 800K 单图复用）
 - [Zohar et al., 2024](../references.md)：Apollo: An Exploration of Video Understanding in Large Multimodal Models，arXiv:2412.10360，[B]（key: apollo）——§2 Finding 2（fps 采样优于 uniform）、§4.3 Finding 3/6（tps-fps tradeoff 与 8–32 tokens/帧最优带、Perceiver resampler 占优）、§6 Finding 7（clip 间文本时间戳整合最优）、§7 Finding 10（文本 10–14% + 略偏视频混合）、§8 时长组相关性（$R^{2}$ = 0.94 / >0.92）；代码与权重已下架，只引论文结论
 - [Alayrac et al., 2022](../references.md)：Flamingo: a Visual Language Model for Few-Shot Learning，arXiv:2204.14198，[B]（key: flamingo）——§4.3 视频 resampler（$F$ 帧 + 时间位置编码作 K/V）
 - [Qwen, Qwen2.5-VL-7B-Instruct config.json](../references.md)：[A]（key: qwen25vl-config）——ctx 128000、28L/4KV/$d_{head}$ 128、mrope_section [16,24,24]、spatial_merge 2
