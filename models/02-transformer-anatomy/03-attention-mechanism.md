@@ -7,7 +7,7 @@
 attention 的骨架是一套按内容查表的检索结构。给定查询向量 $q$ 与 $T$ 个候选键 $k_1, \ldots, k_T$（各配一个值 $v_s$），最直接的检索是硬选择：
 
 $$
-j^{\ast } = \operatorname{arg\thinspace max}_{s} \hspace{5mu} \langle q, k_s \rangle, \qquad o = v_{j^{\ast }} \qquad (1)
+j^{\ast } = \mathrm{arg\thinspace max}_{s} \hspace{5mu} \langle q, k_s \rangle, \qquad o = v_{j^{\ast }} \qquad (1)
 $$
 
 **符号**： $q \in \mathbb{R}^{d_k}$：query，当前位置要找什么； $k_s \in \mathbb{R}^{d_k}$：key，位置 $s$ 广告的内容； $v_s \in \mathbb{R}^{d_k}$：value，位置 $s$ 被选中后交付的内容； $\langle \cdot, \cdot \rangle$：内积。

@@ -122,10 +122,10 @@ s_{t,s,h} = \frac{\left\langle q_{t,h}^{C},\thinspace k_{s,h}^{C} \right\rangle 
 $$
 
 $$
-o_{t,h} = \sum_{s=1}^{t} p_{t,s,h} \thinspace v_{s,h}^{C}, \qquad o_t = W^{O} \thinspace \operatorname{concat}_h \left( o_{t,h} \right) \qquad (10)
+o_{t,h} = \sum_{s=1}^{t} p_{t,s,h} \thinspace v_{s,h}^{C}, \qquad o_t = W^{O} \thinspace \mathrm{concat}_h \left( o_{t,h} \right) \qquad (10)
 $$
 
-**符号**： $p_{t,s,h}$：式 (9) 的 score 经 causal mask 与逐行 softmax 后的权重（2.4 式 (7) 同口径）； $`\operatorname{concat}_h`$：沿头维拼接， $o_t \in \mathbb{R}^{d}$； $W^{O} \in \mathbb{R}^{d \times H d_v}$。
+**符号**： $p_{t,s,h}$：式 (9) 的 score 经 causal mask 与逐行 softmax 后的权重（2.4 式 (7) 同口径）； $`\mathrm{concat}_h`$：沿头维拼接， $o_t \in \mathbb{R}^{d}$； $W^{O} \in \mathbb{R}^{d \times H d_v}$。
 
 式 (9) 即 2.5 式 (17) 的 partial RoPE 分解：128 维 nope 内积位置盲、64 维 rope 内积只含 $t - s$——§4.1 的冲突被「拆开」绕开：压缩通道上的 $k^{C}$ 从头到尾不旋转，旋转通道上的 $k^{R}$ 从头到尾不压缩。
 

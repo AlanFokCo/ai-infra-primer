@@ -156,7 +156,7 @@ $$
 LongRoPE（[Ding et al., 2024](../references.md)，arXiv:2402.13753，[B]：无官方代码，按论文拆）的观察：PI / NTK / YaRN 都是 $\eta_j$ 的低参数参数化（常数、单参数指数、三段 ramp），没有理由相信最优曲线落在这些族里。它把每通道的压缩率变成独立搜索变量：
 
 $$
-\eta^{\ast } = \operatorname{arg\thinspace min}_{\eta \in \Lambda}\ \mathrm{PPL}_{sW}\left( D_{\mathrm{val}};\ \mathrm{RoPE}(\theta_j / \eta_j) \right), \qquad \Lambda = \left\lbrace \eta : \eta_0 = 1,\ \eta_j \le \eta_{j+1},\ \eta_{d/2-1} \approx s \right\rbrace \qquad (15)
+\eta^{\ast } = \mathrm{arg\thinspace min}_{\eta \in \Lambda}\ \mathrm{PPL}_{sW}\left( D_{\mathrm{val}};\ \mathrm{RoPE}(\theta_j / \eta_j) \right), \qquad \Lambda = \left\lbrace \eta : \eta_0 = 1,\ \eta_j \le \eta_{j+1},\ \eta_{d/2-1} \approx s \right\rbrace \qquad (15)
 $$
 
 **符号**： $`\mathrm{PPL}_{sW}(D_{\mathrm{val}}; \cdot)`$：目标窗长下验证集困惑度；约束集 $\Lambda$ 的三条—— $\eta_0$ = 1、单调不减、最慢通道吃满 $s$——直接来自 §1.4 的两端失效分析（快通道不动、压缩率随波长不降序没有意义）。搜索用进化算法在 $d/2$ 维空间进行；论文报告了 2048K 级扩展与短窗性能的恢复步骤（为短窗重新搜一组因子，[B] 论文口径）。
@@ -165,7 +165,7 @@ $$
 
 ### 2.5 dual-chunk attention：不动频率，重编号位置
 
-§2.1–2.4 全部在频率轴上做文章。dual-chunk attention（双块注意力，DCA；Qwen2.5-1M 报告采用并复述其三段结构，原始出处为 An et al. 的同名工作；[Yang et al., 2025](../references.md)，arXiv:2501.15383，[A]）走正交的一维：RoPE 频率原样，改的是喂给它的位置编号——目标是任意长序列的相对编号永不超出预训练窗 $W$。记 chunk 宽 $S$（ $S < W$）、位置 $i$ 的块号 $c_i = \operatorname{floor}(i / S)$、块内偏移 $r_i = i\ \mathrm{mod}\ S$。
+§2.1–2.4 全部在频率轴上做文章。dual-chunk attention（双块注意力，DCA；Qwen2.5-1M 报告采用并复述其三段结构，原始出处为 An et al. 的同名工作；[Yang et al., 2025](../references.md)，arXiv:2501.15383，[A]）走正交的一维：RoPE 频率原样，改的是喂给它的位置编号——目标是任意长序列的相对编号永不超出预训练窗 $W$。记 chunk 宽 $S$（ $S < W$）、位置 $i$ 的块号 $c_i = \mathrm{floor}(i / S)$、块内偏移 $r_i = i\ \mathrm{mod}\ S$。
 
 key 侧编号逐块循环：
 
@@ -274,7 +274,7 @@ effective 侧只有行为测量能填。读法收束全章：claimed 回答的�
 | PI | $\eta_j = s$，式 (7) | 常数曲线；快通道过度压缩；需小预算续训校准 [B] |
 | NTK-aware | $base \to base \cdot s^{d/(d-2)}$， $\eta_j = s^{2j/(d-2)}$，式 (9)(10) | 端点 $\eta_0$ = 1、 $\eta_{d/2-1}$ = $s$；纯频率重参数化 |
 | YaRN | $r_j = W / \lambda_j$ 三段 ramp 式 (12)(13)；温度 $\sqrt{1/t} = 0.1 \ln s + 1$ 式 (14) | DeepSeek-V3： $W$ = 4096、 $s$ = 40、 $\alpha$ = 1、 $\beta$ = 32 → 9 通道全压、11 通道不动、12 通道 ramp； $1/t \approx 1.87$ |
-| LongRoPE | $`\operatorname{arg\thinspace min}_{\eta} \mathrm{PPL}_{sW}`$，约束 $\eta_0$ = 1 且单调不减，式 (15) | 逐维搜索；[B] 证据边界 |
+| LongRoPE | $`\mathrm{arg\thinspace min}_{\eta} \mathrm{PPL}_{sW}`$，约束 $\eta_0$ = 1 且单调不减，式 (15) | 逐维搜索；[B] 证据边界 |
 | dual-chunk | key 编号 $j\ \mathrm{mod}\ S$ + query 三张表，式 (16)–(18) | 塌缩块身份、保块内顺序；编号上界为常数 $W - 1$（与 $T$ 无关）；Qwen2.5-1M：base $10^{7}$ + DCA + YaRN 温度 |
 | Ring Attention | 序列维 $P$ 段环流 + online softmax | 数学逐点不变；通信实现归 cluster 维度 |
 | 训练配方 | staged extension + 长文档上采样 | Llama-3.1：六阶段 8K→128K、约 800B token（论文口径）；V3：两阶段，扩窗 119K H800 GPU-hours |

@@ -153,7 +153,7 @@ $$
 **MAS**：对齐 $A$ 是潜变量，VITS 不走 10.2 式 (6) 的边缘化（对全部对齐求和），而是取硬最优——在单调对齐集合上搜使后验样本在先验下似然最大的那条：
 
 $$
-A^{\ast } = \operatorname{arg\thinspace max}_{A \in \mathcal{A}_{\mathrm{mono}}} \sum_{t=1}^{T} \log \mathcal{N}\left( z_t;\thinspace \mu_{a(t)},\thinspace \sigma_{a(t)}^2 \right) \qquad (13)
+A^{\ast } = \mathrm{arg\thinspace max}_{A \in \mathcal{A}_{\mathrm{mono}}} \sum_{t=1}^{T} \log \mathcal{N}\left( z_t;\thinspace \mu_{a(t)},\thinspace \sigma_{a(t)}^2 \right) \qquad (13)
 $$
 
 **符号**： $`\mathcal{A}_{\mathrm{mono}}`$：单调对齐集合——每帧恰好指派一个音素、音素下标随帧不减，等价于给每个音素分配正整数时长 $d_u \ge 1$ 且 $\sum_u d_u = T$； $a(t)$：帧 $t$ 被指派的音素； $z_t$：后验采样的第 $t$ 帧 latent。

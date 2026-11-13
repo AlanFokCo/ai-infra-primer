@@ -307,7 +307,7 @@ $$
 $$
 
 $$
-\mathcal{L}(\theta), \quad \operatorname{arg\thinspace min}_{\theta} \mathcal{L}(\theta), \quad x \stackrel{\mathrm{def}}{=} y, \quad \underbrace{\frac{1}{n} \sum_{i=1}^{n} L_i}_{\text{mean}}, \quad \overbrace{x_1 + \cdots + x_n}^{n}, \quad A \times B, \quad A \setminus B, \quad A \oplus B, \quad A \oslash B, \quad \forall x, \quad \exists y, \quad x_1, \ldots, x_n, \quad \vdots, \quad \ddots
+\mathcal{L}(\theta), \quad \mathrm{arg\thinspace min}_{\theta} \mathcal{L}(\theta), \quad x \stackrel{\mathrm{def}}{=} y, \quad \underbrace{\frac{1}{n} \sum_{i=1}^{n} L_i}_{\text{mean}}, \quad \overbrace{x_1 + \cdots + x_n}^{n}, \quad A \times B, \quad A \setminus B, \quad A \oplus B, \quad A \oslash B, \quad \forall x, \quad \exists y, \quad x_1, \ldots, x_n, \quad \vdots, \quad \ddots
 $$
 ```
 
@@ -330,12 +330,12 @@ $$
 $$
 
 $$
-\mathcal{L}(\theta), \quad \operatorname{arg\thinspace min}_{\theta} \mathcal{L}(\theta), \quad x \stackrel{\mathrm{def}}{=} y, \quad \underbrace{\frac{1}{n} \sum_{i=1}^{n} L_i}_{\text{mean}}, \quad \overbrace{x_1 + \cdots + x_n}^{n}, \quad A \times B, \quad A \setminus B, \quad A \oplus B, \quad A \oslash B, \quad \forall x, \quad \exists y, \quad x_1, \ldots, x_n, \quad \vdots, \quad \ddots
+\mathcal{L}(\theta), \quad \mathrm{arg\thinspace min}_{\theta} \mathcal{L}(\theta), \quad x \stackrel{\mathrm{def}}{=} y, \quad \underbrace{\frac{1}{n} \sum_{i=1}^{n} L_i}_{\text{mean}}, \quad \overbrace{x_1 + \cdots + x_n}^{n}, \quad A \times B, \quad A \setminus B, \quad A \oplus B, \quad A \oslash B, \quad \forall x, \quad \exists y, \quad x_1, \ldots, x_n, \quad \vdots, \quad \ddots
 $$
 
 预期结果：五行全部渲染；`\left...\right` 定界符随内容伸缩，`\left. \right|` 只显示右竖线；`\underbrace`/`\overbrace` 带上下标注；`\dfrac` 大分式、`\tfrac` 小分式；`\operatorname{arg\thinspace min}` 显示直立算子名。
 
-**2026-11-13 复核**：初版用例实测两处失败——`\operatorname*`（星号变体）在 GitHub 的 MathJax 配置下报「The following macros are not allowed: operatorname」，**星号变体禁用、一律用 `\operatorname`**；`\left\{ x \right\}` 中 `\{` 被反转义为 `{` 导致 `\left{` 报「Missing or unrecognized delimiter for \left」——花括号一律用 `\lbrace`/`\rbrace` 形式（本用例已更新）。
+**2026-11-13 复核**：初版用例实测两处失败——`\operatorname*` 报「The following macros are not allowed: operatorname」；**当日三轮复核（浏览器端全章巡检）更正：`\operatorname` 全系被组件按子串禁用，非仅星号变体——函数名一律用 `\mathrm`**（本用例已改为 `\mathrm` 形式）；`\left\{ x \right\}` 中 `\{` 被反转义为 `{` 导致 `\left{` 报「Missing or unrecognized delimiter for \left」——花括号一律用 `\lbrace`/`\rbrace` 形式（本用例已更新）。
 
 ### P16 · 大写箭头 / 间距 / 二项式 / `\Pr`（基础命令，[M2] 直接证据；`\binom` 族亦见 [M1]）
 
@@ -514,7 +514,7 @@ $$
 | P12a-e | 行内 `$...$` 与中文/中文标点相邻、`$` 内侧空格（边界） | a/d/e 不渲染，b/c 渲染 | 符合预期 ✓（a/d/e 为故意失败对照例；规则已由 P22-P24 扩展为完整边界规则） |
 | P13 | 基础函数/关系与运算符：`\ln`、`\sin`、`\cos`、`\tanh`、`\min`、`\max`、`\sup`、`\inf`、`\neq`、`\pm`、`\cdot`、`\odot`、`\otimes`、`\qquad` | 渲染 | 渲染正常 ✓ |
 | P14 | 希腊字母小写常用集 26 个 + 大写 9 个（基础命令，[M2] 直接证据） | 渲染 | 渲染正常 ✓ |
-| P15 | 关系/箭头/近似；`\dfrac`/`\tfrac`/`\int`/`\oint`/`\bigcup`/`\bigcap`；`\partial`/`\nabla`/修饰符号；`\left...\right` 伸缩定界符；`\mathcal`/`\operatorname*`/`\stackrel`/`\underbrace`/`\overbrace`/`\times`/`\setminus`/`\forall`/`\exists`/`\oplus`/`\oslash`/省略号/`\,`（基础命令，[M2] 直接证据） | 渲染；`\operatorname*` 重点复核 | 两处失败已处置：`\operatorname*` 报 macros are not allowed（禁用星号变体）；`\left\{` 因反转义报缺定界符（改用 `\left\lbrace`）；其余渲染正常 ✓ |
+| P15 | 关系/箭头/近似；`\dfrac`/`\tfrac`/`\int`/`\oint`/`\bigcup`/`\bigcap`；`\partial`/`\nabla`/修饰符号；`\left...\right` 伸缩定界符；`\mathcal`/`\operatorname*`/`\stackrel`/`\underbrace`/`\overbrace`/`\times`/`\setminus`/`\forall`/`\exists`/`\oplus`/`\oslash`/省略号/`\,`（基础命令，[M2] 直接证据） | 渲染；`\operatorname*` 重点复核 | 两处失败已处置：`\operatorname` 全系被组件禁用（三轮复核更正，改用 `\mathrm`）；`\left\{` 因反转义报缺定界符（改用 `\left\lbrace`）；其余渲染正常 ✓ |
 | P16 | 大写箭头（`\Rightarrow` 等 5 个）；间距 `\:`、`\;`、`\!`（`\,` 见 P15）；`\binom`/`\dbinom`/`\tbinom`；`\Pr`（基础命令，[M2] 直接证据） | 渲染 | 源码层面渲染但内容被反转义破坏：`\,`→`,`、`\;`→`;`、`\!`→`!`（间距变标点）——三种写法禁用，替代为 `\thinspace`/`\hspace{5mu}`/`\negthinspace`；其余渲染正常 ✓ |
 | P17 | `\big` / `\Big` / `\bigg` / `\Bigg` 固定尺寸定界符（基础命令，[M2] 直接证据；2026-11-11 随 W1 波末白名单收编补入） | 渲染且尺寸逐档递增 | 渲染正常 ✓ |
 | P18 | `\lceil` / `\rceil` / `\ne` / `\leftarrow` / `\cup` / `\circ` / `\perp` / `\square` 补充符号复合用例（基础命令，[M2] 直接证据；2026-11-12 随 W2 波末白名单收编补入） | 渲染 | 渲染正常 ✓ |
@@ -537,4 +537,4 @@ $$
 | --- | --- | --- | --- |
 | 2026-11-13 | Codex（gh api 渲染管线 + agent-browser 检视 MathJax 输出） | P1-P19 全部核对；P12a/d/e 按预期不渲染（规则成立）、P12b/c 与其余用例渲染正常；新发现并处置三处：反转义陷阱（`\{`/`\|`/`\,`/`\;`/`\!`/`\%`/`\#`）、`*` 强调冲突、`\operatorname*` 被禁——STYLE_GUIDE §3/§3.1 已更新，全书 51 章已回改 | 失败项及处置见 P11/P15/P16 行与 §3；新增 P20/P21 复核通过 |
 | 2026-11-13（二轮） | Codex（全书 51 章渲染 HTML 残差扫描 + 临时 gist 边界探测 ×2） | 一轮修复后残差 144 处全部归因并修复：开口前字符白名单收窄为「空白/行首/`(`/元素边界」（P22）、闭口后禁跟字母数字（P23）、backtick 形式边界豁免（P24）、结构限制（P25）；新增 `scripts/lint-math-boundary.py` 机械检查，51 章 + README + references 全过 | 失败写法已回改全书：连字复合词 36 处改 backtick、算符/标点前补空格 19 处、单位收进 `\text{}` 12 处、区间合并 7 处、结构修复 7 处（行内矩阵改 display、`$>128$`、内容尾部空格、嵌套圆括号、表格范数 `\Vert`、表格裸 `|` ×2） |
-| 2026-11-13（三轮） | Codex（agent-browser 浏览器端全章复核 + math-renderer 组件源码分析） | 发现并定位客户端独有失败类：公式内 `<` 紧跟 ASCII 字母被组件二次 HTML 解析吞掉（式 (3)(4) 等 5 处/章量级）；全机替换为 `\lt` 共 113 处（17 章），lint 检查项同步收编 | 修复后经真实组件注入验证渲染通过，51 章浏览器端 flash-error 清零复核 |
+| 2026-11-13（三轮） | Codex（agent-browser 浏览器端全章复核 + math-renderer 组件源码分析） | 发现并定位客户端独有失败类：公式内 `<` 紧跟 ASCII 字母被组件二次 HTML 解析吞掉（式 (3)(4) 等 5 处/章量级）；全机替换为 `\lt` 共 113 处（17 章）；同轮浏览器端全 51 章巡检另发现 `\operatorname` 全系被组件禁用（66 处改 `\mathrm`，18 章，P15 初判「仅星号变体被禁」一并更正）；lint 检查项同步收编（lt + macro 两类） | 修复后经真实组件注入验证渲染通过，51 章浏览器端复检 flash-error 清零 |

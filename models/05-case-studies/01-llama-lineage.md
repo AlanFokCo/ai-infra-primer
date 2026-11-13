@@ -179,10 +179,10 @@ $$
 第二环，NoPE 层在 $T$ 达千万级的可见集上遭遇熵稀释：4.6 §1.3 的账——目标 key 所需的 logit 优势随 $\ln T$ 增长， $\Delta \ge \ln T$。Llama-4 的补偿是对 NoPE 层乘一个随位置对数增长的温度（公式形态以官方实现为准，[W]）：
 
 $$
-m(t) = 1 + \alpha \ln\negthinspace\left(1 + \operatorname{floor}\negthinspace\left( \frac{t}{T_c} \right)\right), \qquad \alpha = 0.1,\hspace{5mu}\hspace{5mu} T_c = 8192 \qquad (8)
+m(t) = 1 + \alpha \ln\negthinspace\left(1 + \mathrm{floor}\negthinspace\left( \frac{t}{T_c} \right)\right), \qquad \alpha = 0.1,\hspace{5mu}\hspace{5mu} T_c = 8192 \qquad (8)
 $$
 
-**符号**： $t$：query 位置； $\operatorname{floor}(t / T_c)$：chunk 序号。在 Scout 满窗 $t \approx 1.05\times10^{7}$ 处， $m \approx 1 + 0.1 \ln(1281) \approx 1.72$。score 整体放大 $m$ 倍，等效于把可用的 $\Delta$ 预算放大同一倍数——对 $\ln T$ 稀释的一阶补偿。乘性温度不是加性 nat 的精确等价（它同时放大全部 score 差，峰值与噪声一起锐化），这是它的机制边界。诚实声明：3:1 比例、chunk 尺寸、 $\alpha = 0.1$ 三个超参均无公开 ablation，式 (8) 与上文的机制读法是与 2.5/4.6 机制一致的重构，不是论文结论（[W]）。
+**符号**： $t$：query 位置； $\mathrm{floor}(t / T_c)$：chunk 序号。在 Scout 满窗 $t \approx 1.05\times10^{7}$ 处， $m \approx 1 + 0.1 \ln(1281) \approx 1.72$。score 整体放大 $m$ 倍，等效于把可用的 $\Delta$ 预算放大同一倍数——对 $\ln T$ 稀释的一阶补偿。乘性温度不是加性 nat 的精确等价（它同时放大全部 score 差，峰值与噪声一起锐化），这是它的机制边界。诚实声明：3:1 比例、chunk 尺寸、 $\alpha = 0.1$ 三个超参均无公开 ablation，式 (8) 与上文的机制读法是与 2.5/4.6 机制一致的重构，不是论文结论（[W]）。
 
 Scout 另有 `rope_scaling = {rope_type: llama3, factor: 16, original_max_position_embeddings: 8192}`：llama3 型压缩——慢通道压缩、快通道不动，属 4.6 §2 统一压缩率曲线 $\eta_j$ 所收四族（PI / NTK-aware / YaRN / LongRoPE）之外的另一条参数化——把 RoPE 层的基窗标定到 $8192 \times 16 = 131072$，恰与 3.1 的窗口对齐。Maverick 的 rope_scaling 为 null。两者差异的官方解释缺失，与 10M / 1M 窗的定位差异联动（§7 开放问题 6）。10M 这个数字本身按 4.6 §5 的方法论只能算 claimed context：无第三方 RULER 类评测复核，effective context 存疑（§7 开放问题 5）。
 

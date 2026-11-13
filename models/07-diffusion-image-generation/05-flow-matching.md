@@ -54,13 +54,13 @@ $$
 
 **符号**： $\partial u_t / \partial x$：速度场在当前位置的 $d \times d$ Jacobian；式 (4) 是 $J_t$ 的线性 ODE，初值 $J_0 = I$。
 
-再用 Jacobi 恒等式（矩阵行列式对参数的导数公式；练习 1 推导）：对可逆矩阵值函数 $J(t)$， $\frac{d}{dt} \log |\det J| = \operatorname{tr}\left( J^{-1} \frac{dJ}{dt} \right)$。代入式 (4)（ $J^{-1}$ 与 $\partial u/\partial x \cdot J$ 的迹按循环性合并）：
+再用 Jacobi 恒等式（矩阵行列式对参数的导数公式；练习 1 推导）：对可逆矩阵值函数 $J(t)$， $\frac{d}{dt} \log |\det J| = \mathrm{tr}\left( J^{-1} \frac{dJ}{dt} \right)$。代入式 (4)（ $J^{-1}$ 与 $\partial u/\partial x \cdot J$ 的迹按循环性合并）：
 
 $$
-\frac{d}{dt} \log \left| \det J_t(x) \right| = \operatorname{tr}\left( \frac{\partial u_t}{\partial x}\bigg|_{\psi_t(x)} \right) = \nabla \cdot u_t\left( \psi_t(x) \right) \qquad (5)
+\frac{d}{dt} \log \left| \det J_t(x) \right| = \mathrm{tr}\left( \frac{\partial u_t}{\partial x}\bigg|_{\psi_t(x)} \right) = \nabla \cdot u_t\left( \psi_t(x) \right) \qquad (5)
 $$
 
-**符号**： $\operatorname{tr}$：矩阵的迹；末一等号用「Jacobian 的迹 = 散度」。式 (5) 称 instantaneous change of variables（瞬时变量替换）：对数体积元沿轨迹的变化率恰是速度场的散度——局部膨胀则密度稀释，收缩则浓缩。把它沿轨迹从 $0$ 积到 $1$（注意 $\log p_t(\psi_t(x)) = \log p_0(x) - \log|\det J_t(x)|$ 的符号），得精确似然：
+**符号**： $\mathrm{tr}$：矩阵的迹；末一等号用「Jacobian 的迹 = 散度」。式 (5) 称 instantaneous change of variables（瞬时变量替换）：对数体积元沿轨迹的变化率恰是速度场的散度——局部膨胀则密度稀释，收缩则浓缩。把它沿轨迹从 $0$ 积到 $1$（注意 $\log p_t(\psi_t(x)) = \log p_0(x) - \log|\det J_t(x)|$ 的符号），得精确似然：
 
 $$
 \log p_0(x) = \log p_1\left( \psi_1(x) \right) + \int_{0}^{1} \nabla \cdot u_t\left( \psi_t(x) \right) dt \qquad (6)
@@ -73,7 +73,7 @@ $$
 - **散度本身**。 $\nabla \cdot u_t = \sum_{i=1}^{d} \partial u_{t,i} / \partial x_i$ 含 $d$ 个偏导，对每个 $(x, t)$ 求值需要 $d$ 次 Jacobian-向量积（每次约一次反向传播的开销）。图像 latent $d$ 在 $10^4$ 量级，精确散度即每点上万次反传。
 - **沿轨迹积分**。式 (6) 的积分要用 ODE solver 数值走完整条 $[0, 1]$ 轨迹，每个积分步都要重新算一次散度——总开销 = 积分步数 × 每步散度开销。
 
-工程上的标准近似是 Hutchinson 迹估计：对任意方阵 $A$， $`\operatorname{tr}(A) = \mathbb{E}_{z \sim \mathcal{N}(0, I)}\left[ z^{\top} A z \right]`$（由 $\mathbb{E}[z z^{\top}] = I$ 即得）。每个探针 $z$ 只要一次向量-Jacobian 积， $K$ 个探针把方差降到 $1/K$ 量级——但引入的随机性使对数似然变成有噪声的估计，且每步仍要常数次额外反传。结论是：CNF 的精确似然「可算但贵」，按最大似然直接训练 CNF（目标含式 (6)，每步优化都要付这笔账）在大 $d$ 上不切实际。7.3 会把同一公式用在 diffusion 的 probability-flow ODE 上做离线 NLL 评估（评估一次可以忍，训练每步都付不能忍）；而 §3 的 flow matching 正是「绕开式 (6)、不碰散度」的训练路线。
+工程上的标准近似是 Hutchinson 迹估计：对任意方阵 $A$， $`\mathrm{tr}(A) = \mathbb{E}_{z \sim \mathcal{N}(0, I)}\left[ z^{\top} A z \right]`$（由 $\mathbb{E}[z z^{\top}] = I$ 即得）。每个探针 $z$ 只要一次向量-Jacobian 积， $K$ 个探针把方差降到 $1/K$ 量级——但引入的随机性使对数似然变成有噪声的估计，且每步仍要常数次额外反传。结论是：CNF 的精确似然「可算但贵」，按最大似然直接训练 CNF（目标含式 (6)，每步优化都要付这笔账）在大 $d$ 上不切实际。7.3 会把同一公式用在 diffusion 的 probability-flow ODE 上做离线 NLL 评估（评估一次可以忍，训练每步都付不能忍）；而 §3 的 flow matching 正是「绕开式 (6)、不碰散度」的训练路线。
 
 ## 3. FM 目标：回归一个「写出来、算不出」的速度场
 
@@ -320,24 +320,24 @@ $$
 **logit-normal 采样。** 取
 
 $$
-t = \operatorname{sigmoid}(u), \qquad u \sim \mathcal{N}(m, s^2) \qquad (27)
+t = \mathrm{sigmoid}(u), \qquad u \sim \mathcal{N}(m, s^2) \qquad (27)
 $$
 
-**符号**： $\operatorname{sigmoid}(u) = 1/(1 + e^{-u})$； $m, s$ 控制钟形中心与宽度；SD3 主模型取 $m = 0$、 $s = 1$。变量替换得 $t$ 的密度：
+**符号**： $\mathrm{sigmoid}(u) = 1/(1 + e^{-u})$； $m, s$ 控制钟形中心与宽度；SD3 主模型取 $m = 0$、 $s = 1$。变量替换得 $t$ 的密度：
 
 $$
-\pi_{ln}(t) = \frac{1}{s\sqrt{2\pi}}\hspace{5mu} \frac{1}{t(1-t)}\hspace{5mu} \exp\left( -\frac{\left( \operatorname{logit}(t) - m \right)^2}{2 s^2} \right), \qquad \operatorname{logit}(t) = \log \frac{t}{1-t} \qquad (28)
+\pi_{ln}(t) = \frac{1}{s\sqrt{2\pi}}\hspace{5mu} \frac{1}{t(1-t)}\hspace{5mu} \exp\left( -\frac{\left( \mathrm{logit}(t) - m \right)^2}{2 s^2} \right), \qquad \mathrm{logit}(t) = \log \frac{t}{1-t} \qquad (28)
 $$
 
 **符号**： $1/(t(1-t))$ 是 sigmoid 导数的倒数（Jacobi 因子），两端趋于零处密度归零——质量集中在中间段。
 
-为什么中间段重要，用 log-SNR 坐标看最清楚。线性路径的 $\log \mathrm{SNR}(t) = 2\log(1-t) - 2\log t = -2\thinspace\operatorname{logit}(t)$，故式 (27) 等价于
+为什么中间段重要，用 log-SNR 坐标看最清楚。线性路径的 $\log \mathrm{SNR}(t) = 2\log(1-t) - 2\log t = -2\thinspace\mathrm{logit}(t)$，故式 (27) 等价于
 
 $$
 \log \mathrm{SNR} \sim \mathcal{N}\left( -2m,\hspace{5mu} 4s^2 \right) \qquad (29)
 $$
 
-**符号**：logit-normal 的 $t$ 采样 = 在 log-SNR 轴上放一个高斯。而均匀采 $t$ 时 $\operatorname{logit}(t)$ 的密度 $\propto t(1-t)$、质量被摊到 $|logit|$ 很大的两端——即 SNR 极高（近纯数据，回归残差在绝对尺度上微小）与 SNR 极低（近纯噪声，边际场近似只指向数据均值、任务退化）的区间。图像的语义结构（构图、物体、文字）是在 $\mathrm{SNR} \approx 1$ 的中段被决定的（对照 7.2 §2.3 的频谱读法：交叉频率 $f_c$ 扫过主要能量带的过程发生在中段），把样本预算压在中段 = 把网络容量压在感知上最敏感的噪声水平。SD3 论文对均匀、logit-normal、mode 加权等方案做了对照实验，主模型采用 logit-normal $(0, 1)$（[Esser et al., 2024](../references.md)，[A]）。
+**符号**：logit-normal 的 $t$ 采样 = 在 log-SNR 轴上放一个高斯。而均匀采 $t$ 时 $\mathrm{logit}(t)$ 的密度 $\propto t(1-t)$、质量被摊到 $|logit|$ 很大的两端——即 SNR 极高（近纯数据，回归残差在绝对尺度上微小）与 SNR 极低（近纯噪声，边际场近似只指向数据均值、任务退化）的区间。图像的语义结构（构图、物体、文字）是在 $\mathrm{SNR} \approx 1$ 的中段被决定的（对照 7.2 §2.3 的频谱读法：交叉频率 $f_c$ 扫过主要能量带的过程发生在中段），把样本预算压在中段 = 把网络容量压在感知上最敏感的噪声水平。SD3 论文对均匀、logit-normal、mode 加权等方案做了对照实验，主模型采用 logit-normal $(0, 1)$（[Esser et al., 2024](../references.md)，[A]）。
 
 **分辨率相关的 timestep shift。** 分辨率升高后，同样的 $t$ 变得「更不禁噪」——像素数增加而自然图像高度冗余，固定噪声水平下可恢复的信息总量随像素数上升，去噪任务相对变易。SD3 的应对是把采样时刻向噪声端平移：
 
@@ -350,10 +350,10 @@ $$
 式 (30) 的形状不是任意拍的：算一下赔率（odds）， $1 - t' = (1 - t)/(1 + (s-1)t)$，故
 
 $$
-\frac{t'}{1 - t'} = s \cdot \frac{t}{1 - t} \qquad \Longleftrightarrow \qquad \operatorname{logit}(t') = \operatorname{logit}(t) + \log s \qquad (31)
+\frac{t'}{1 - t'} = s \cdot \frac{t}{1 - t} \qquad \Longleftrightarrow \qquad \mathrm{logit}(t') = \mathrm{logit}(t) + \log s \qquad (31)
 $$
 
-**符号**：shift = logit 空间的常数平移。结合式 (29)（线性路径上 $\log \mathrm{SNR} = -2\thinspace\operatorname{logit}(t)$），shift 在 log-SNR 轴上是 $\log \mathrm{SNR} \to \log \mathrm{SNR} - 2\log s$ 的整体下移——把整条训练/采样的噪声档位曲线向「更噪」平移一个由分辨率决定的常量。这与式 (27) 的 logit-normal 是同坐标系的操作：两者都在 logit/log-SNR 轴上是线性运算，复合顺序不影响解读（先采 $t$ 再平移到 $t'$ 送进训练/采样）。
+**符号**：shift = logit 空间的常数平移。结合式 (29)（线性路径上 $\log \mathrm{SNR} = -2\thinspace\mathrm{logit}(t)$），shift 在 log-SNR 轴上是 $\log \mathrm{SNR} \to \log \mathrm{SNR} - 2\log s$ 的整体下移——把整条训练/采样的噪声档位曲线向「更噪」平移一个由分辨率决定的常量。这与式 (27) 的 logit-normal 是同坐标系的操作：两者都在 logit/log-SNR 轴上是线性运算，复合顺序不影响解读（先采 $t$ 再平移到 $t'$ 送进训练/采样）。
 
 ## 9. diffusion↔FM 统一表
 
@@ -410,15 +410,15 @@ rectified flow 在这条账上的优势来自目标结构：条件目标 $\varep
 | 线性路径 | $x_t = (1-t) x_0 + t\varepsilon$，式 (20)；目标 $\varepsilon - x_0$，式 (21) | 条件轨迹直线、恒速 |
 | RF 训练/采样 | $L_{RF}$ 式 (22)；Euler $x \leftarrow x - h v_\theta$， $t: 1 \to 0$，式 (23) | 确定性、 $K$ 次 NFE |
 | DDPM↔FM 映射 | $\bar\alpha = (1-t)^2/((1-t)^2 + t^2)$，式 (24)； $\hat x_0 = x_t - t v$、 $\hat\varepsilon = x_t + (1-t) v$，式 (25) | 同族两坐标；v-prediction = VP 路径 FM（式 (26)） |
-| logit-normal | $t = \operatorname{sigmoid}(u)$， $u \sim \mathcal{N}(0, 1)$，式 (27)(28) | = log-SNR 上的高斯，式 (29)；压中段 |
+| logit-normal | $t = \mathrm{sigmoid}(u)$， $u \sim \mathcal{N}(0, 1)$，式 (27)(28) | = log-SNR 上的高斯，式 (29)；压中段 |
 | timestep shift | $t' = st / (1 + (s-1)t)$，式 (30) | 分辨率升 → 向噪声端移；SD3 $1024^2$ 取 $s = 3$ |
 | 少步的几何账 | 局部误差 $= \frac{h^2}{2}(\partial_t v + (v\cdot\nabla)v)$，式 (32) | 直轨迹 → 大步长 → 蒸馏友好 |
 
 ## 练习
 
-1.（推导）补全式 (5) 的矩阵引理：对可逆 $J(t)$，证明 $\frac{d}{dt} \log |\det J| = \operatorname{tr}(J^{-1} \frac{dJ}{dt})$（提示：对 $\det J = \exp(\operatorname{tr} \log J)$ 求导，或用 $\det(I + \delta M) = 1 + \delta\thinspace \operatorname{tr} M + O(\delta^2)$ 做一阶展开）；再由式 (4) 推出式 (5)，并说明为什么式 (6) 的积分符号是「加散度」而非「减散度」（注意 $\log p_t = \log p_0 - \log|\det J_t|$ 的符号链）。
+1.（推导）补全式 (5) 的矩阵引理：对可逆 $J(t)$，证明 $\frac{d}{dt} \log |\det J| = \mathrm{tr}(J^{-1} \frac{dJ}{dt})$（提示：对 $\det J = \exp(\mathrm{tr} \log J)$ 求导，或用 $\det(I + \delta M) = 1 + \delta\thinspace \mathrm{tr} M + O(\delta^2)$ 做一阶展开）；再由式 (4) 推出式 (5)，并说明为什么式 (6) 的积分符号是「加散度」而非「减散度」（注意 $\log p_t = \log p_0 - \log|\det J_t|$ 的符号链）。
 2.（推导）证明 CFM 与 FM 的损失差恰为条件速度的方差： $`L_{CFM}(\theta) - L_{FM}(\theta) = \mathbb{E}_{t, x \sim p_t}\left[ \mathbb{E}\left[ \Vert u_t(x \mid x_0) - u_t(x)\Vert^2 \mid x_t = x \right] \right]`$（提示：对 $\Vert v - u_c\Vert^2$ 在条件期望下用「均值 + 偏差」分解 $u_c = u_t(x) + (u_c - u_t(x))$，交叉项归零）。由此说明：(a) 差距与 $\theta$ 无关（定理的另一证法）；(b) 为什么 $L_{CFM}$ 的数值不能跨路径比较。
-3.（计算）logit-normal 与 shift 的网格账：(a) 由式 (28) 证明 $m = 0, s = 1$ 时 $\pi_{ln}(t)$ 关于 $t = 1/2$ 对称，并算 $\pi_{ln}(0.5)$、 $\pi_{ln}(0.1)$、 $\pi_{ln}(0.9)$ 的相对比例，与均匀分布对比中段权重；(b) 验证式 (29)：由 $\log \mathrm{SNR} = -2\thinspace\operatorname{logit}(t)$ 推出其分布参数；(c) 取 $s = 3$，计算 $t' = st/(1 + (s-1)t)$ 在 $t \in \lbrace0.1, 0.3, 0.5, 0.7, 0.9\rbrace$ 的值，画（或描述）平移前后 $t$ 网格的偏移方向。
+3.（计算）logit-normal 与 shift 的网格账：(a) 由式 (28) 证明 $m = 0, s = 1$ 时 $\pi_{ln}(t)$ 关于 $t = 1/2$ 对称，并算 $\pi_{ln}(0.5)$、 $\pi_{ln}(0.1)$、 $\pi_{ln}(0.9)$ 的相对比例，与均匀分布对比中段权重；(b) 验证式 (29)：由 $\log \mathrm{SNR} = -2\thinspace\mathrm{logit}(t)$ 推出其分布参数；(c) 取 $s = 3$，计算 $t' = st/(1 + (s-1)t)$ 在 $t \in \lbrace0.1, 0.3, 0.5, 0.7, 0.9\rbrace$ 的值，画（或描述）平移前后 $t$ 网格的偏移方向。
 4.（代码）教学用，非优化实现：二维 two-moons 数据上的 rectified flow。(a) 用 §6 的 `rf_loss` 训练一个小型 MLP（ $t$ 经 sinusoidal embedding 拼接输入）， $t$ 均匀采样；(b) 用 `rf_sample` 分别取 $K \in \lbrace1, 2, 8, 64\rbrace$ 采样，与数据散点对比——观察 $K = 1$ 的样本落在何处（提示：直线外推的端点偏差 = 边际轨迹的弯曲量）；(c) 把 $t$ 采样换成 logit-normal $(0, 1)$（式 (27)），固定 $K = 8$ 比较样本质量；(d) 选做：实现一轮 reflow——用 (a) 的模型从 $\varepsilon$ 生成 $\hat x_0$，以 $(\hat x_0, \varepsilon)$ 为新端点对重训，再比较 $K = 1$。
 
 ## 参考

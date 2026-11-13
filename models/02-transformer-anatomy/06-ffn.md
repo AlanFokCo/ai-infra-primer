@@ -46,10 +46,10 @@ $\mathrm{ReLU}(x) = \max(0, x)$：正半轴恒等、负半轴归零。作为门�
 GELU（Gaussian Error Linear Unit）把硬门换成标准正态 CDF 软门（[Hendrycks & Gimpel, 2016](../references.md)，arXiv:1606.08415，[B]）：
 
 $$
-\mathrm{GELU}(x) = x \thinspace \Phi(x), \qquad \Phi(x) = \frac{1}{2}\left(1 + \operatorname{erf}\left(\frac{x}{\sqrt{2}}\right)\right) \qquad (2)
+\mathrm{GELU}(x) = x \thinspace \Phi(x), \qquad \Phi(x) = \frac{1}{2}\left(1 + \mathrm{erf}\left(\frac{x}{\sqrt{2}}\right)\right) \qquad (2)
 $$
 
-**符号**： $\Phi$：标准正态分布的累积分布函数（CDF）， $\Phi(x) \in (0, 1)$； $\operatorname{erf}$：误差函数。
+**符号**： $\Phi$：标准正态分布的累积分布函数（CDF）， $\Phi(x) \in (0, 1)$； $\mathrm{erf}$：误差函数。
 
 论文的构造视角：给输入乘一个随机 0/1 门 $m \sim \mathrm{Bernoulli}(\Phi(x))$——门以依赖输入的概率抽样，输入越大越可能被放行；取期望得 $\mathbb{E}[x \cdot m] = x\thinspace\Phi(x)$。GELU 就是这个随机门的期望化：dropout 的门与输入独立，GELU 的门概率由输入自身决定。期望化之后得到一个确定性光滑函数，两端渐近分明： $x \to +\infty$ 时 $\Phi \to 1$、退化为恒等； $x \to -\infty$ 时 $\Phi \to 0$，但任何有限 $x$ 处不精确为零。
 

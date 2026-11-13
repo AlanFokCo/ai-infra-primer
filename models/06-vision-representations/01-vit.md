@@ -119,7 +119,7 @@ $$
 把 2.5 式 (12) 的块对角旋转按轴分组：head 维 $d_k$ 切两半，前半的 $d_k/4$ 个频率通道用 $h$ 坐标旋转、后半用 $w$ 坐标旋转：
 
 $$
-R_{h,w} = \operatorname{diag}\left( R(h\theta_0), \ldots, R\negthinspace\left(h\theta_{d_k/4-1}\right),\hspace{5mu} R(w\theta_0), \ldots, R\negthinspace\left(w\theta_{d_k/4-1}\right) \right) \qquad (7)
+R_{h,w} = \mathrm{diag}\left( R(h\theta_0), \ldots, R\negthinspace\left(h\theta_{d_k/4-1}\right),\hspace{5mu} R(w\theta_0), \ldots, R\negthinspace\left(w\theta_{d_k/4-1}\right) \right) \qquad (7)
 $$
 
 **符号**： $R(\varphi)$：2.5 式 (9) 的 2D 旋转块； $\theta_j = base^{-4j/d_k}$：频率 schedule（每轴 $d_k/4$ 个通道，指数分母相应换成 $d_k/2$ 维子空间，即 $base^{-4j/d_k}$）。2.5 的三条引理逐块继承（每块仍是独立 2D 旋转），内积不变性因此升级为两轴版：

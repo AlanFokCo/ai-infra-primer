@@ -11,11 +11,18 @@
   range  $A$–$B$ / $A$-$B$ 区间写法（第二段开口紧贴 dash 不解析，应合并为 $A\\text{–}B$）
   lt     公式内不允许 < 紧跟 ASCII 字母（math-renderer 组件二次 HTML 解析会把 <t...
          吞作标签，报 Extra open brace or missing close brace）；写 \\lt
+  macro  GitHub math-renderer 禁用宏（\\operatorname、\\phantom、\\colorbox 等，命中即整个公式报错）；函数名用 \\mathrm
 代码围栏与多行 display 块内部不检查。
 退出码：0 通过，1 有违规。
 """
 import re
 import sys
+
+BANNED_MACROS = ('DeclareMathOperator', 'DeclarePairedDelimiters', 'renewtagform', 'newtagform',
+                 'colorbox', 'fcolorbox', 'hphantom', 'vphantom', 'phantom', 'operatorname',
+                 'Newextarrow', 'definecolor', 'mathchoice', 'unicode', 'mmlToken')
+
+BAN_PAT = re.compile(r'\\(?:' + '|'.join(BANNED_MACROS) + r')')  # 与组件 includes() 子串判定一致
 
 
 def scan_line(line):
@@ -100,6 +107,8 @@ def check_line(line, fname, lineno, problems):
             problems.append((fname, lineno, 'matrix', text[:50]))
         if re.search(r'<(?=[A-Za-z])', inner):
             problems.append((fname, lineno, 'lt', text[:50]))
+        if BAN_PAT.search(inner):
+            problems.append((fname, lineno, 'macro', text[:50]))
         if in_table and re.search(r'(?<!\\)\|', inner):
             problems.append((fname, lineno, 'pipe', text[:50]))
         prev = ''
@@ -141,6 +150,8 @@ def check_file(path):
         if in_display:
             if re.search(r'<(?=[A-Za-z])', line):
                 problems.append((path, lineno, 'lt', line.strip()[:50]))
+            if BAN_PAT.search(line):
+                problems.append((path, lineno, 'macro', line.strip()[:50]))
             continue
         check_line(line, path, lineno, problems)
     return problems

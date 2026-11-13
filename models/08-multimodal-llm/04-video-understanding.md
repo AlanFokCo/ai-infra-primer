@@ -76,7 +76,7 @@ Qwen2.5-VL 走 dynamic FPS 路线：采样率按片长与预算动态调整（[B
 - 绝对时间规则（Qwen2.5-VL，[Bai et al., 2025](../references.md)，[A]）： $t$-id 与帧的真实秒数对齐，
 
 $$
-\tau_f = \operatorname{round}\left( t_f \cdot \nu \right) \qquad (4)
+\tau_f = \mathrm{round}\left( t_f \cdot \nu \right) \qquad (4)
 $$
 
 **符号**： $t_f$：第 $f$ 个采样帧的绝对时刻（秒）； $\nu$： $t$-id 速率，即每秒多少个位置 id——实测 $\nu = 2$（HF config `tokens_per_second = 2`，[qwen25vl-config](../references.md)，[A]；tech report 只给机制表述、未给数值常数）。
@@ -84,7 +84,7 @@ $$
 式 (4) 的直接后果是**间隔不变性**：两个事件位于绝对时刻 $t_a < t_b$，无论采样率取多少，
 
 $$
-\tau_b - \tau_a = \operatorname{round}(t_b\thinspace \nu) - \operatorname{round}(t_a\thinspace \nu) \approx \nu\thinspace(t_b - t_a) \qquad (5)
+\tau_b - \tau_a = \mathrm{round}(t_b\thinspace \nu) - \mathrm{round}(t_a\thinspace \nu) \approx \nu\thinspace(t_b - t_a) \qquad (5)
 $$
 
 误差至多 1 个 id（两次取整各贡献至多 1/2），与 fps 无关。对照帧序号规则：同一对事件的 id 差 $= (t_b - t_a) \cdot fps$——正是式 (3) 里随片长漂移的那个 fps。RoPE 的 score 只含相对位移（8.2 式 (17) 的 $t$ 段项 $B_j(q, k; (t_n - t_m)\thinspace\theta_j)$），所以「模型从 attention 相位读到的时间差」在两条规则下分别正比于帧数差与秒数差。dynamic FPS 下，前者是一把随片长漂移的尺子，后者是固定尺子——绝对时间编码的存在理由就是把采样率从位置语义里消掉。
@@ -150,7 +150,7 @@ $$
 **方案二：分桶 special token（special token 化）**。把 $[0, T_{max}]$ 量化进词表，新 token $\langle t_k \rangle$ 对应时刻
 
 $$
-t_k = k \cdot \Delta, \qquad k(t) = \operatorname{round}(t / \Delta), \qquad \text{量化误差} \le \Delta / 2 \qquad (8)
+t_k = k \cdot \Delta, \qquad k(t) = \mathrm{round}(t / \Delta), \qquad \text{量化误差} \le \Delta / 2 \qquad (8)
 $$
 
 **符号**： $\Delta$：桶宽；词表增加 $\lceil T_{max}/\Delta \rceil$ 行 embedding。生成从「逐位回归」变成「桶分类」：每个时间戳一个 token、一次 softmax 决策；代价是精度天花板 $\Delta/2$ 与量程上限 $T_{max}$ 都写死在词表里。
@@ -190,7 +190,7 @@ $$
 | --- | --- | --- |
 | 总预算账 | 式 (1) $S_{vid} = F \cdot M$；1min@1fps×256 = 15,360；KV 57,344 B/token（0.88 GB @ 15K） | 视频是把 $T$ 抬进 $10^{4}\text{–}10^{5}$ 最快的途径；4.6 四堵墙原样适用 |
 | 帧采样 | uniform：式 (2) $F \ge T/\delta$；dynamic：式 (3) $`fps^{*}`$ | 固定 $F$ ⇒ 分辨率随片长退化；固定 fps ⇒ fps 成片长函数，帧序号编码尺子漂移 |
-| 绝对时间编码 | 式 (4) $\tau_f = \operatorname{round}(t_f \nu)$、式 (5) 间隔不变性（误差 ≤1 id） | 采样率从位置语义消掉；定位监督一致； $t$ 段高频通道承细粒度时差；节奏可读（Qwen2.5-VL [A]） |
+| 绝对时间编码 | 式 (4) $\tau_f = \mathrm{round}(t_f \nu)$、式 (5) 间隔不变性（误差 ≤1 id） | 采样率从位置语义消掉；定位监督一致； $t$ 段高频通道承细粒度时差；节奏可读（Qwen2.5-VL [A]） |
 | 时间压缩 | 式 (6) 3D patch（ $\tau_p$=2，encoder 也省）；式 (7) 时空 pooling（只省 LLM 侧）；resampler 定长 $B$ | 三位置「谁付钱」对照表（§4 末） |
 | 流式长视频 | chunk + 循环 memory（无收录条目，机制描述） | $S_k$ = 4.3 固定状态的语义版；三难点：在线写入取舍 / 漂移 / 评测缺位 |
 | 输出格式 | 式 (8) 分桶 special token（误差 ≤ $\Delta/2$）vs 数字文本 | 文本时钟与位置时钟同源是监督一致的根 |
@@ -200,7 +200,7 @@ $$
 ## 练习
 
 1.（计算）帧预算。context 预算 128,000、文本预留 4,096，视觉段可用 123,904 token。求下列配置下可进 context 的最长视频时长：(a) $M$ = 256、无时间压缩、2 fps；(b) 同 (a) 但输入侧 3D patch $\tau_p$ = 2（每帧 token 减半）；(c) $M$ = 144、0.5 fps。另算 (a) 档下视觉段的 KV cache 占用（Qwen2.5-VL-7B 形态：28 层、4 KV 头、 $d_{head}$ = 128、bf16，2.4 式 (9) 口径）。
-2.（推导）式 (5) 的误差界与对照。(a) 由 $|\operatorname{round}(x) - x| \le 1/2$ 证明 $|\Delta\tau - \nu\thinspace\Delta t| \le 1$；(b) 写出帧序号规则下同一对事件的 id 差，说明它如何随式 (3) 的 $`fps^{*}`$ 变化；(c) 设 $\nu\thinspace\Delta t = 3$，构造取整导致 id 差为 2 与为 4 的 $(t_a, t_b)$ 实例各一。
+2.（推导）式 (5) 的误差界与对照。(a) 由 $|\mathrm{round}(x) - x| \le 1/2$ 证明 $|\Delta\tau - \nu\thinspace\Delta t| \le 1$；(b) 写出帧序号规则下同一对事件的 id 差，说明它如何随式 (3) 的 $`fps^{*}`$ 变化；(c) 设 $\nu\thinspace\Delta t = 3$，构造取整导致 id 差为 2 与为 4 的 $(t_a, t_b)$ 实例各一。
 3.（计算）压缩位置的成本账。 $F$ = 600 帧、每帧 ViT 前向成本 $E$、LLM 视觉段 attention 成本按二次项主导记 $q(T) = 2T^{2}d$（每层）， $M$ = 256、 $d$ = 3,584、28 层。比较三方案的视觉相关总成本（encoder 侧 + LLM 视觉段 attention）：(a) 3D patch $\tau_p$ = 2；(b) encoder 后 pooling $c_t$ = 2；(c) 不压缩。指出「encoder 成本 ≫ LLM 视觉段成本」与相反情形各自的最优压缩位置。
 4.（代码）教学实现 dynamic FPS 采样器 + 时间戳分桶（教学用，非优化实现）：给定片长 $T$（秒）、 $S_{budget}$、 $S_{text}$、 $M$、 $fps_{max}$，按式 (3) 求 $`fps^{*}`$ 并输出采样帧时刻列表与对应 $t$-id（式 (4)， $\nu$ 为参数）；断言三条：(i) 相邻 id 差 ≈ $`\nu / fps^{*}`$；(ii) 同一物理事件处在两段不同片长视频里（不同 $`fps^{*}`$）的 id 差相同（误差 ≤ 1）；(iii) 式 (8) 分桶 bin/unbin 往返误差 ≤ $\Delta/2$。
 

@@ -163,7 +163,7 @@ $$
 **Selection（选择细粒度）**。细粒度块（块长 $l'$、不重叠）的重要性分数从 compression 支路的真实 attention 权重聚合而来（对齐情形 $l = d = l'$ 时直接复用 $`p^{cmp}_t`$；一般情形对重叠的压缩块求和），取 top-$`n`$ 块、用块内**原始** K/V 算精确 attention：
 
 $$
-p^{slc}_t[j] = \sum_{i:\ \mathrm{block}_i\thinspace \cap\thinspace \mathrm{sel}_j \neq \varnothing} p^{cmp}_t[i], \qquad \mathcal{I}_t = \operatorname{TopN}\left( p^{slc}_t,\ n \right) \qquad (9)
+p^{slc}_t[j] = \sum_{i:\ \mathrm{block}_i\thinspace \cap\thinspace \mathrm{sel}_j \neq \varnothing} p^{cmp}_t[i], \qquad \mathcal{I}_t = \mathrm{TopN}\left( p^{slc}_t,\ n \right) \qquad (9)
 $$
 
 $$
@@ -215,7 +215,7 @@ $$
 **选择与主路**。取分数最高的 $K$ 个位置，MLA 只在选中集上算：
 
 $$
-\mathcal{S}_t = \operatorname{TopK}\left( \lbrace I_{t,s}\rbrace_{s < t},\ K \right), \qquad K = 2048 \qquad (13)
+\mathcal{S}_t = \mathrm{TopK}\left( \lbrace I_{t,s}\rbrace_{s < t},\ K \right), \qquad K = 2048 \qquad (13)
 $$
 
 **符号**： $K$ = 2048 为 sparse 训练阶段每 query 的选中数（论文原文口径）。主路即 4.1 式 (9)(10) 的 MLA，求和域从 $\lbrace1..t\rbrace$ 换成 $`\mathcal{S}_t`$。
@@ -244,7 +244,7 @@ $$
 MoBA（[Lu et al., 2025](../references.md)，arXiv:2502.13189，**[B]：官方 repo MoonshotAI/MoBA 仅代码、无开放权重，本节公式按论文拆**）把 MoE 的路由结构搬进可见集选择：历史分块、块即「专家」、query 对每块打分、top-$`k`$ 块入选。历史序列按块长 $n_b$ 切块，打分用块内 key 的均值池化向量：
 
 $$
-\bar{k}_i = \frac{1}{n_b} \sum_{k \in \mathrm{block}_i} k, \qquad s_i = \langle q_t,\ \bar{k}_i \rangle, \qquad \mathcal{I}_t = \operatorname{TopK}\left( \lbrace s_i\rbrace,\ k \right) \qquad (15)
+\bar{k}_i = \frac{1}{n_b} \sum_{k \in \mathrm{block}_i} k, \qquad s_i = \langle q_t,\ \bar{k}_i \rangle, \qquad \mathcal{I}_t = \mathrm{TopK}\left( \lbrace s_i\rbrace,\ k \right) \qquad (15)
 $$
 
 $$

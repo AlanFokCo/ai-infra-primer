@@ -189,7 +189,7 @@ AnyRes 的思路：不硬 resize 整图，而是把原图切成若干块，每�
 **网格选择规则**（实现口径：LLaVA-NeXT 的 `select_best_resolution`，`llava/mm_utils.py`，[LLaVA-NeXT repo](../references.md)，[A]）。预定义候选网格集 $\mathcal{G} = \lbrace (r_h, r_w) \rbrace$（行×列分块数）。对图像 $(H, W)$ 与候选 $(r_h, r_w)$，画布为 $(r_h S, \hspace{5mu} r_w S)$，等比缩放图像使其恰好放进画布，并定义两个键：
 
 $$
-s = \min\negthinspace\left( \frac{r_h S}{H},\hspace{5mu} \frac{r_w S}{W} \right), \quad H' = \operatorname{floor}(sH),\hspace{5mu} W' = \operatorname{floor}(sW), \quad e = \min\negthinspace\left( H' W',\hspace{5mu} HW \right), \quad \rho = r_h r_w S^{2} - e \qquad (11)
+s = \min\negthinspace\left( \frac{r_h S}{H},\hspace{5mu} \frac{r_w S}{W} \right), \quad H' = \mathrm{floor}(sH),\hspace{5mu} W' = \mathrm{floor}(sW), \quad e = \min\negthinspace\left( H' W',\hspace{5mu} HW \right), \quad \rho = r_h r_w S^{2} - e \qquad (11)
 $$
 
 **符号**： $e$：effective resolution——缩放后面积与原图面积取小（等比缩放不增像素， $e$ 即真正落进画布的源信息量）； $\rho$：wasted resolution——画布面积中未被有效像素填满的部分。选择规则是**字典序**：先取 $e$ 最大的候选，平局再取 $\rho$ 最小者——「最小浪费」只是平局后的第二键。读法：第一键让切块后的可用像素总量最大（分辨率信息优先），第二键才压 padding 虚账。两键会与「单看利用率」的规则分叉：800×1200 的图在 (1,2) 与 (2,2) 之间，字典序选出 (2,2)（ $e$ = 301056 > 169344），而利用率 $e / (r_h r_w S^{2})$ 键会选 (1,2)（0.75 > 0.67）——写作口径按实现取前者。
@@ -267,7 +267,7 @@ $$
 **符号**： $K_t, K_h, K_w$：分配给时间/行/列轴的旋转块数。频率 schedule 与 2.5 式 (16) 同一条几何级数： $\theta_j = base^{-2j/d_h}$， $j \in \lbrace0, \ldots, 63\rbrace$， $base$ = $10^{6}$（config 的 `rope_theta`）——三段共用同一条级数，只是角度来源的坐标不同。token $s$ 的旋转矩阵：
 
 $$
-R^{(s)} = \operatorname{diag}\Big( \underbrace{R(t_s \theta_0), \ldots, R(t_s \theta_{15})}_{\text{t-section: } 16},\ \underbrace{R(h_s \theta_{16}), \ldots, R(h_s \theta_{39})}_{\text{h-section: } 24},\ \underbrace{R(w_s \theta_{40}), \ldots, R(w_s \theta_{63})}_{\text{w-section: } 24} \Big) \in \mathbb{R}^{128 \times 128} \qquad (16)
+R^{(s)} = \mathrm{diag}\Big( \underbrace{R(t_s \theta_0), \ldots, R(t_s \theta_{15})}_{\text{t-section: } 16},\ \underbrace{R(h_s \theta_{16}), \ldots, R(h_s \theta_{39})}_{\text{h-section: } 24},\ \underbrace{R(w_s \theta_{40}), \ldots, R(w_s \theta_{63})}_{\text{w-section: } 24} \Big) \in \mathbb{R}^{128 \times 128} \qquad (16)
 $$
 
 **符号**： $R(\varphi)$：2.5 式 (9) 的 2D 旋转块。 $q/k$ 左乘 $R^{(s)}$ 后按常例算 score， $v$ 不旋转（2.5 §4.3 的理由原样成立）。实现注记：HF 代码按 half-split 约定把三段模式复制到前后两半维再成对旋转（2.5 §4.8 的配对约定），公式层与式 (16) 等价。

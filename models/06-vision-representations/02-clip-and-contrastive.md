@@ -125,7 +125,7 @@ def clip_infonce(v, t, log_logit_scale):
 式 (2) 里 $\tau$ 只做一件事：把 $\cos\theta \in [-1, 1]$ 的有界相似度缩放成 logit。但 softmax 对尺度极敏感，这个标量是训练稳定的第一变量。先把两个极限钉死（形式与 1.1 式 (9) 的采样温度相同，但角色不同：这里的 $\tau$ 在 loss 内部、是可学参数，不是推理期的分布整形旋钮）：
 
 $$
-\tau \to 0^{+}:\quad p_{i\cdot} \to \text{one-hot}\left( \operatorname{arg\thinspace max}_j\hspace{5mu} S_{ij} \right); \qquad \tau \to \infty:\quad p_{ij} \to \frac{1}{B} \qquad (9)
+\tau \to 0^{+}:\quad p_{i\cdot} \to \text{one-hot}\left( \mathrm{arg\thinspace max}_j\hspace{5mu} S_{ij} \right); \qquad \tau \to \infty:\quad p_{ij} \to \frac{1}{B} \qquad (9)
 $$
 
 代回式 (8) 读两端。 $\tau \to \infty$： $p_{ij} \approx 1/B$ 均匀分摊，推力摊平到全部负样本，且式 (8) 前还乘 $1/\tau$——梯度幅度趋于 0，目标被均匀化压死，学不动。 $\tau \to 0^{+}$：概率质量全压到当前最难的负样本上（除非正样本已是 argmax），排斥信号极度尖锐再乘 $1/\tau$ 放大——hard negative mining 的极限形态，梯度方差与 $\exp$ 的数值压力同时爆炸。可学 $\tau$ 让模型自己在这两端之间选工作点。

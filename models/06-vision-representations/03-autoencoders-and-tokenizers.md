@@ -155,7 +155,7 @@ loss = −log p_θ(x|z)（≈ MSE） + β·KL（式 (7)，闭式无采样）
 VQ-VAE（[van den Oord et al., 2017](../references.md)，arXiv:1711.00937，[A]）把 §2 的连续 $z$ 换成离散符号。三件套：encoder $E$ 输出连续 latent $z_e = E(x) \in \mathbb{R}^{h \times w \times d_e}$；codebook（码本） $E_{cb} = \lbrace e_k \rbrace_{k=1}^{K}$， $e_k \in \mathbb{R}^{d_e}$，共 $K$ 个 entry；量化器在每个空间位点独立做最近邻查表：
 
 $$
-k^{\ast }(i, j) = \operatorname{argmin}_{k}\hspace{5mu} \left\Vert z_e(i, j) - e_k \right\Vert_{2}, \qquad z_q(i, j) = e_{k^{\ast }(i, j)} \qquad (11)
+k^{\ast }(i, j) = \mathrm{argmin}_{k}\hspace{5mu} \left\Vert z_e(i, j) - e_k \right\Vert_{2}, \qquad z_q(i, j) = e_{k^{\ast }(i, j)} \qquad (11)
 $$
 
 **符号**： $z_e(i, j) \in \mathbb{R}^{d_e}$：位点 $(i, j)$ 的 encoder 输出； $z_q(i, j)$：量化后的 latent，即被选中的 codebook entry。
@@ -164,7 +164,7 @@ decoder 只吃量化结果： $\hat{x} = D(z_q)$。量化之后，图像的表�
 
 ### 3.2 straight-through estimator：梯度拷贝推导
 
-式 (11) 的 $\operatorname{argmin}$ 不可微，且断得很干净：在 $z_e$ 的几乎所有取值处，微小扰动不改变最近邻编号， $\partial z_q / \partial z_e = 0$；在切换面上偏导无定义。反向传播到 $z_q$ 为止——decoder 与重建项有梯度，encoder 与 codebook 之外的参数一分梯度都收不到。
+式 (11) 的 $\mathrm{argmin}$ 不可微，且断得很干净：在 $z_e$ 的几乎所有取值处，微小扰动不改变最近邻编号， $\partial z_q / \partial z_e = 0$；在切换面上偏导无定义。反向传播到 $z_q$ 为止——decoder 与重建项有梯度，encoder 与 codebook 之外的参数一分梯度都收不到。
 
 straight-through estimator（STE，直通估计器）的构造只有一步：定义一个前向值等于 $z_q$、反向雅可比等于恒等的替代节点，
 
@@ -288,10 +288,10 @@ $$
 把 §3.4 的 collapse 问题再往前推一层：既然死锁的根源是「entry 要先离数据近、才会被选中」，能不能干脆取消查表？MAGVIT-v2 的 LFQ（lookup-free quantization，免查表量化，[Yu et al., 2023](../references.md)，arXiv:2310.05737，[A]）把量化压到逐维符号：
 
 $$
-q(z)_i = \operatorname{sign}(z_i) \in \lbrace -1, +1 \rbrace, \qquad i = 1, \ldots, d \qquad (22)
+q(z)_i = \mathrm{sign}(z_i) \in \lbrace -1, +1 \rbrace, \qquad i = 1, \ldots, d \qquad (22)
 $$
 
-**符号**： $z \in \mathbb{R}^{d}$：encoder 输出（单 latent 位点展平）； $q(z) \in \lbrace -1, +1 \rbrace^{d}$：量化结果。codebook 不再是一张可学表，而是超立方体的顶点集 $\lbrace -1, +1 \rbrace^{d}$——隐式 codebook，大小 $2^{d}$，位点的 token id 就是 sign 模式的二进制编号。没有最近邻检索（lookup-free 的名字由此来），量化是逐维独立的一次符号函数；STE 照旧： $q^{\mathrm{ST}} = z + \mathrm{sg}[\operatorname{sign}(z) - z]$，梯度拷贝同式 (12)(13)。
+**符号**： $z \in \mathbb{R}^{d}$：encoder 输出（单 latent 位点展平）； $q(z) \in \lbrace -1, +1 \rbrace^{d}$：量化结果。codebook 不再是一张可学表，而是超立方体的顶点集 $\lbrace -1, +1 \rbrace^{d}$——隐式 codebook，大小 $2^{d}$，位点的 token id 就是 sign 模式的二进制编号。没有最近邻检索（lookup-free 的名字由此来），量化是逐维独立的一次符号函数；STE 照旧： $q^{\mathrm{ST}} = z + \mathrm{sg}[\mathrm{sign}(z) - z]$，梯度拷贝同式 (12)(13)。
 
 代价： $2^{d}$ 个顶点里能被 argmin「自然选中」的概念不复存在——没有距离几何，使用率必须由目标函数显式管理。LFQ 的熵正则由两项组成。对第 $i$ 维，样本 $z$ 诱导一个 Bernoulli： $p_i(z) = (z_i + 1)/2$（设 $z_i$ 经有界化落在 $[-1, 1]$， $p_i$ 是「第 $i$ 维取 $+1$」的软概率——该参数化是实现层的操作化写法：原文的 $q(z_i)$ 保持抽象分布记号，官方 magvit 实现按顶点距离的负值过 softmax 得概率再算熵，数值细节以实现为准），其熵 $H(p) = -p \log p - (1 - p) \log(1 - p)$。记 batch 大小 $B$、batch 聚合概率 $`\bar{p}_i = \frac{1}{B} \sum_{b=1}^{B} p_i(z^{(b)})`$，则
 

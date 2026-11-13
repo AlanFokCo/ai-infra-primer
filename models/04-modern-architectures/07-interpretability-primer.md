@@ -108,14 +108,14 @@ h ∈ R^d ─► encoder（ReLU / TopK / 门控）─► z ∈ R^n（稀疏：L0
 
 L1 的已知副作用：惩罚正比于幅度，把全部非零 $z_i$ 系统性压小（shrinkage），重构幅度随之偏低（练习 3 推导标量版）。两个变体族针对这一点：
 
-- **TopK（k-SAE）**：去掉 L1，硬约束稀疏度—— $z = \operatorname{TopK}(W_{\mathrm{enc}} h + b_{\mathrm{enc}})$ ，每位置只保留最大的 $k$ 个分量、其余置零。 $L_0 \equiv k$ ，超参 $\lambda$ 消失，幅度不被压缩；代价是稀疏度对每个位置一视同仁。
+- **TopK（k-SAE）**：去掉 L1，硬约束稀疏度—— $z = \mathrm{TopK}(W_{\mathrm{enc}} h + b_{\mathrm{enc}})$ ，每位置只保留最大的 $k$ 个分量、其余置零。 $L_0 \equiv k$ ，超参 $\lambda$ 消失，幅度不被压缩；代价是稀疏度对每个位置一视同仁。
 - **门控（gating）/ JumpReLU**：把「是否激活」与「激活多强」拆成两条路径，
 
 $$
-z = \operatorname{H}\left( W_g h + b_g \right) \odot \mathrm{ReLU}\left( W_m h + b_m \right) \qquad (8)
+z = \mathrm{H}\left( W_g h + b_g \right) \odot \mathrm{ReLU}\left( W_m h + b_m \right) \qquad (8)
 $$
 
-**符号**： $\operatorname{H}$ ：逐分量单位阶跃（ $\operatorname{H}(u) = 1$ 当 $u > 0$ ，否则 $0$ ），梯度经 straight-through 估计器回传；稀疏惩罚只加在门路径上，magnitude 路径（ $W_m$ ）不受 L1 压缩。JumpReLU 是单投影特化：共用 $a = W_{\mathrm{enc}} h + b_{\mathrm{enc}}$ 、逐特征学阈值 $\theta$ ， $z = a \odot \operatorname{H}(a - \theta)$ 。Gemma Scope 采用的就是 JumpReLU 形态（[Lieberum et al., 2024](../references.md)，arXiv:2408.05147，[A]）。
+**符号**： $\mathrm{H}$ ：逐分量单位阶跃（ $\mathrm{H}(u) = 1$ 当 $u > 0$ ，否则 $0$ ），梯度经 straight-through 估计器回传；稀疏惩罚只加在门路径上，magnitude 路径（ $W_m$ ）不受 L1 压缩。JumpReLU 是单投影特化：共用 $a = W_{\mathrm{enc}} h + b_{\mathrm{enc}}$ 、逐特征学阈值 $\theta$ ， $z = a \odot \mathrm{H}(a - \theta)$ 。Gemma Scope 采用的就是 JumpReLU 形态（[Lieberum et al., 2024](../references.md)，arXiv:2408.05147，[A]）。
 
 实证锚点。Gemma Scope [A]：在 Gemma 2（9B 与 2B）全部层、逐层三个挂载点（residual stream、attention 输出、MLP 输出）训练 JumpReLU SAE，宽度档从 16K 到 1M 特征、多档稀疏度，全套开放；配套训练与分析库 SAELens（[Bloom et al.](../references.md)，[A]，decoderesearch/SAELens）。其 monosemanticity 实证：训出的 SAE 特征中「对单一概念族选择性响应」的比例远高于以 neuron 为单位的基线——单义坐标是学出来的，不是模型的原生坐标。
 

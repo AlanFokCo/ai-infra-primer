@@ -28,7 +28,7 @@ tokenizer 的训练是一次性的、先于 LM 训练的压缩问题求解；一
 BPE（byte-pair encoding）用于 NLP 分词的形式来自 Sennrich et al.（[Sennrich et al., 2016](../references.md)，arXiv:1508.07909，[A]）。输入是按词（或预切分单元）统计好频次的语料；初始切分把每个单元拆成基元符号（字符或 byte），然后循环 merge：统计相邻对频次，把最高频的一对焊成新符号加入词表，并重写语料。每轮的形式化：
 
 $$
-n(a, b) = \sum_{w} n(w) \cdot \text{＃}_{w}(a, b), \qquad (a^{\ast }, b^{\ast }) = \operatorname{arg\thinspace max}_{(a, b)} \hspace{5mu} n(a, b) \qquad (1)
+n(a, b) = \sum_{w} n(w) \cdot \text{＃}_{w}(a, b), \qquad (a^{\ast }, b^{\ast }) = \mathrm{arg\thinspace max}_{(a, b)} \hspace{5mu} n(a, b) \qquad (1)
 $$
 
 **符号**： $n(w)$ ：词 $w$ 的出现次数；$`\#_w(a, b)`$ ： $w$ 的当前切分中相邻对 $(a, b)$ 的出现次数。词表初始为基元集，每轮 +1，直到达到预算 $V$ 。每条 merge 的学习顺序编号即它的优先级（rank），编码时要靠它（见下）。
@@ -142,7 +142,7 @@ $$
 编码（推理）时不再边缘化，取最可能切分：
 
 $$
-\hat{z} = \operatorname{arg\thinspace max}_{z \in S(x)} \hspace{5mu} p(z) \qquad (5)
+\hat{z} = \mathrm{arg\thinspace max}_{z \in S(x)} \hspace{5mu} p(z) \qquad (5)
 $$
 
 格上的 Viterbi 解码与式 (4) 同形、把求和换成 max： $\delta_i = \max_{j} \hspace{5mu} \delta_j \thinspace p(x_{j+1:i})$ 。

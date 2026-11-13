@@ -87,10 +87,10 @@ $$
 T5 把相对位置离散成 32 个桶（bucket）、每桶一个可学标量，共 $32 \times H$ 个参数，原实现跨层共享（[Raffel et al., 2019](../references.md)，arXiv:1910.10683，[A]）。分桶规则（双向版，max_distance = 128）：正负方向各分 16 个桶号；每个方向上，偏移 0–7 各占一桶（精确区），8–128 按对数刻度分入其余 8 桶（log 区），超过 128 一律落末桶。单方向桶号：
 
 $$
-\mathrm{bucket}(\Delta) = \begin{cases} \Delta, & \Delta < 8 \\ 8 + \operatorname{floor}\left( \dfrac{\ln(\Delta / 8)}{\ln 16} \times 8 \right), & 8 \le \Delta \le 128 \\ 15, & \Delta > 128 \end{cases} \qquad (6)
+\mathrm{bucket}(\Delta) = \begin{cases} \Delta, & \Delta < 8 \\ 8 + \mathrm{floor}\left( \dfrac{\ln(\Delta / 8)}{\ln 16} \times 8 \right), & 8 \le \Delta \le 128 \\ 15, & \Delta > 128 \end{cases} \qquad (6)
 $$
 
-**符号**： $\Delta = |i - j|$； $\operatorname{floor}$ 为向下取整；方向位再加 16 区分正负。 $\Delta$ = 128 时对数项恰好取满 8、被 cap 到 15，与 $\Delta > 128$ 同桶。
+**符号**： $\Delta = |i - j|$； $\mathrm{floor}$ 为向下取整；方向位再加 16 区分正负。 $\Delta$ = 128 时对数项恰好取满 8、被 cap 到 15，与 $\Delta > 128$ 同桶。
 
 log 区的桶边界有闭式： $\Delta = 8 \cdot 2^{k/2}$（ $k = 1, \ldots, 8$），即 11.3、16、22.6、32、45.3、64、90.5、128——每个桶比前一个宽约 $\sqrt{2}$ 倍：整数 $\Delta$ 下 $[8, 11]$ 落桶 8、 $[12, 15]$ 落桶 9、 $[16, 22]$ 落桶 10、 $[23, 31]$ 落桶 11、 $[32, 45]$ 落桶 12、 $[46, 63]$ 落桶 13、 $[64, 90]$ 落桶 14、 $[91, 128]$ 落桶 15。
 
@@ -165,10 +165,10 @@ $$
 $d$ 维（ $d$ 偶数）的做法：切成 $d/2$ 个 2 维块，第 $j$ 块以角速度 $\theta_j$ 旋转角度 $m\theta_j$：
 
 $$
-R_m = \operatorname{diag}\left( R(m\theta_0),\ R(m\theta_1),\ \ldots,\ R(m\theta_{d/2-1}) \right) \in \mathbb{R}^{d \times d} \qquad (12)
+R_m = \mathrm{diag}\left( R(m\theta_0),\ R(m\theta_1),\ \ldots,\ R(m\theta_{d/2-1}) \right) \in \mathbb{R}^{d \times d} \qquad (12)
 $$
 
-**符号**： $\operatorname{diag}$ 为块对角； $\theta_0 > \theta_1 > \cdots > \theta_{d/2-1}$ 的取法在 §4.5。三条引理逐块继承： $R_m^{\top} R_m = I$（每块正交）； $R_m^{\top} = R_{-m}$； $R_a R_b = R_{a+b}$（每块群性质，块间不串）。
+**符号**： $\mathrm{diag}$ 为块对角； $\theta_0 > \theta_1 > \cdots > \theta_{d/2-1}$ 的取法在 §4.5。三条引理逐块继承： $R_m^{\top} R_m = I$（每块正交）； $R_m^{\top} = R_{-m}$； $R_a R_b = R_{a+b}$（每块群性质，块间不串）。
 
 ```
 R_m 结构（d = 8 示意，θ_0 > θ_1 > θ_2 > θ_3）          频率轴（log 刻度）
@@ -208,10 +208,10 @@ $$
 实部、虚部逐一对上 $R(\varphi)\thinspace q_j$ 的两个坐标。于是 RoPE 的复数写法是逐通道乘相位： $`\tilde{q}_j \mapsto e^{i m \theta_j} \tilde{q}_j`$——工程实现里预存的 cos/sin 两张表，就是复数 $e^{i m \theta_j}$ 的实部与虚部分开存放。实内积式 (13) 则是 Hermitian 内积的实部：
 
 $$
-\langle R_m\thinspace q,\ R_n\thinspace k \rangle = \operatorname{Re} \sum_{j=0}^{d/2-1} \left( e^{i m \theta_j} \tilde{q}_j \right) \overline{\left( e^{i n \theta_j} \tilde{k}_j \right)} = \operatorname{Re} \sum_{j=0}^{d/2-1} \tilde{q}_j\thinspace \overline{\tilde{k}_j}\thinspace e^{i (m - n) \theta_j} \qquad (15)
+\langle R_m\thinspace q,\ R_n\thinspace k \rangle = \mathrm{Re} \sum_{j=0}^{d/2-1} \left( e^{i m \theta_j} \tilde{q}_j \right) \overline{\left( e^{i n \theta_j} \tilde{k}_j \right)} = \mathrm{Re} \sum_{j=0}^{d/2-1} \tilde{q}_j\thinspace \overline{\tilde{k}_j}\thinspace e^{i (m - n) \theta_j} \qquad (15)
 $$
 
-逐步：第一步逐块代入复数写法；第二步共轭把 $e^{i n \theta_j}$ 翻成 $e^{-i n \theta_j}$，与前一因子合并为 $e^{i(m-n)\theta_j}$。等价性验证： $`\tilde{q}_j \overline{\tilde{k}_j} = (q_{2j} k_{2j} + q_{2j+1} k_{2j+1}) + i (q_{2j+1} k_{2j} - q_{2j} k_{2j+1})`$，记为 $A_j + i B_j$； $\operatorname{Re}\left[(A_j + i B_j) e^{i(m-n)\theta_j}\right] = A_j \cos\left((m-n)\theta_j\right) - B_j \sin\left((m-n)\theta_j\right) = A_j \cos\left((n-m)\theta_j\right) + B_j \sin\left((n-m)\theta_j\right)$，逐项等于式 (13) 第 $j$ 块。∎
+逐步：第一步逐块代入复数写法；第二步共轭把 $e^{i n \theta_j}$ 翻成 $e^{-i n \theta_j}$，与前一因子合并为 $e^{i(m-n)\theta_j}$。等价性验证： $`\tilde{q}_j \overline{\tilde{k}_j} = (q_{2j} k_{2j} + q_{2j+1} k_{2j+1}) + i (q_{2j+1} k_{2j} - q_{2j} k_{2j+1})`$，记为 $A_j + i B_j$； $\mathrm{Re}\left[(A_j + i B_j) e^{i(m-n)\theta_j}\right] = A_j \cos\left((m-n)\theta_j\right) - B_j \sin\left((m-n)\theta_j\right) = A_j \cos\left((n-m)\theta_j\right) + B_j \sin\left((n-m)\theta_j\right)$，逐项等于式 (13) 第 $j$ 块。∎
 
 复数视角是波长账（§4.5）与外推缩放族（4.6）的公共语言：RoPE 就是每个频率通道把 q、k 之间的相对相位转过 $(m - n)\theta_j$。
 
