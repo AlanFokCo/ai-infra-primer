@@ -62,7 +62,7 @@ const isRefs = path.startsWith(`${base}/models/references`);
     </main>
     <footer class="site-footer" data-pagefind-ignore>
       <span class="colophon">
-        {stats.chapters} 章 · {stats.parts} Part · {(stats.totalCjk / 10000).toFixed(1)} 万字 · {stats.formulas ?? '—'} 式
+        {stats.chapters} 章 · {stats.parts} Part · {(stats.totalCjk / 10000).toFixed(1)} 万字 · {(stats.formulas ?? 0).toLocaleString('en-US')} 式
       </span>
       <span>构建期 KaTeX 渲染 · 由 GitHub Actions 自动部署</span>
       <span style="margin-left:auto">
