@@ -248,7 +248,7 @@ $$
 
 ## 8. Chunkwise 并行：WY 表示与 kernel 锚点
 
-delta-rule 族的递推含连乘 $\prod_t (I - \beta_t k_t k_t^{\top})$，没有式 (9) 那种封闭 parallel 形；纯 recurrent 训练又在 $T$ 维串行、matmul 利用率坍塌。DeltaNet 论文的并行化借自数值线性代数的 WY 表示（blocked Householder 的标准工具）： $C$ 个秩一 downdate 的连乘恰是一次秩-$C$ 修正——
+delta-rule 族的递推含连乘 $\prod_t (I - \beta_t k_t k_t^{\top})$，没有式 (9) 那种封闭 parallel 形；纯 recurrent 训练又在 $T$ 维串行、matmul 利用率坍塌。DeltaNet 论文的并行化借自数值线性代数的 WY 表示（blocked Householder 的标准工具）： $C$ 个秩一 downdate 的连乘恰是一次秩-$`C`$ 修正——
 
 $$
 \prod_{t=1}^{C} \left( I - \beta_t k_t k_t^{\top} \right) = I - K W K^{\top}, \qquad K = \begin{bmatrix} k_1 & \cdots & k_C \end{bmatrix} \in \mathbb{R}^{d_k \times C},\quad W \in \mathbb{R}^{C \times C} \ \text{triangular} \qquad (17)
@@ -260,7 +260,7 @@ $$
 W_{jj} = \beta_j, \qquad W_{1:j-1,\thinspace j} = -\beta_j\thinspace W_{1:j-1,\thinspace 1:j-1} \left( K_{1:j-1}^{\top} k_j \right)
 $$
 
-回代得出（与 blocked Householder 的向前消元同构；推导留作练习 2(b)）。每列一次 $K^{\top}k_j$（ $O(Cd_k)$）加一次三角 matvec（ $O(C^{2})$），构造 $W$ 总代价 $O(C^{2}d_k)$，相对块内主项不涨价。结论先行记住：**擦除连乘可预先压缩成一次秩-$C$ 修正，串行由此变块并行**；反向传播版本与完整推导见 DeltaNet 论文。
+回代得出（与 blocked Householder 的向前消元同构；推导留作练习 2(b)）。每列一次 $K^{\top}k_j$（ $O(Cd_k)$）加一次三角 matvec（ $O(C^{2})$），构造 $W$ 总代价 $O(C^{2}d_k)$，相对块内主项不涨价。结论先行记住：**擦除连乘可预先压缩成一次秩-$`C`$ 修正，串行由此变块并行**；反向传播版本与完整推导见 DeltaNet 论文。
 
 有了 $W$，chunk 内全部工作 matmul 化：块末状态 $S_i = S_{i-1}(I - KWK^{\top}) +$（块内写入项）是 $d_v \times d_k$ 级 matmul；块内输出 = 块初状态对 $C$ 个 query 的读出 $+$ 块内修正（ $C \times C$ 级 matmul）。每块 $O\left( C^{2}(d_k + d_v) + Cd_kd_v \right)$，全序列对 $T$ 线性； $C$ 典型取 64 档。GDN/KDA 把同一骨架套在式 (14)(16) 上（ $\alpha$ 折进块内衰减因子；KDA 走 §7 的 DPLR 特化）。
 
@@ -337,7 +337,7 @@ $$
 | GDN | 式 (14) | $\alpha$ 遗忘 $+$ $(I - \beta kk^{\top})$ 擦除 $+$ $vk^{\top}$ 写入 |
 | GDN-2 | 式 (15) | channel-wise erase $b_t$（key 侧）/ write $w_t$（value 侧）解耦；回退链 KDA → GDN → RetNet |
 | KDA | 式 (16) | $\mathrm{diag}(\alpha_t)$ key 侧逐通道遗忘（ $\alpha_t \in \mathbb{R}^{d_k}$）；DPLR 转移 |
-| chunkwise | 式 (17) | WY： $C$ 个秩一 downdate $=$ 秩-$C$ 修正；fla kernel 锚点 |
+| chunkwise | 式 (17) | WY： $C$ 个秩一 downdate $=$ 秩-$`C`$ 修正；fla kernel 锚点 |
 | S6 | 式 (18)(19)(20) | ZOH： $\bar{A} = e^{\Delta A}$、 $\bar{B} \approx \Delta B$；selectivity 使卷积形失效 |
 | SSD 对偶 | $\gamma^{\thinspace t-s}\langle q_t, k_s\rangle$ 半可分 | SSM $=$ linear attention 的另一参数化 |
 | 回忆上界 | $SK = V$ 命题 | 精确联想 $\le d_k$ 对 / 头；SNR $\sim d_k/(n-1)$；hybrid 动机（4.4） |

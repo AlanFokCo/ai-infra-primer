@@ -376,7 +376,7 @@ VE 情形下 $\sigma(t)$ 就是式 (15) 的 $\sigma(t)$ 本身，无需换算。
 
 在此坐标上，EDM 把设计空间拆成互不纠缠的三轴：
 
-1. **网络预处理（preconditioning）**：不让裸网络 $F_\theta$ 直接当去噪器，而是包一层代数外壳 $D_\theta(x; \sigma) = c_{\mathrm{skip}}(\sigma)\thinspace x + c_{\mathrm{out}}(\sigma)\thinspace F_\theta\negthinspace\left( c_{\mathrm{in}}(\sigma)\thinspace x;\ c_{\mathrm{noise}}(\sigma) \right)$。系数由「 $F_\theta$ 的输入与回归目标都保持单位方差」这一要求反解出来： $c_{\mathrm{skip}} = \sigma_d^2 / (\sigma^2 + \sigma_d^2)$、 $c_{\mathrm{out}} = \sigma \sigma_d / \sqrt{\sigma^2 + \sigma_d^2}$、 $c_{\mathrm{in}} = 1/\sqrt{\sigma^2 + \sigma_d^2}$、 $c_{\mathrm{noise}} = \ln(\sigma) / 4$（ $\sigma_d$：数据标准差，EDM 取 $0.5$；时间条件的嵌入改成噪声尺度的对数）。端点读法： $\sigma \to 0$ 时 $D_\theta \to x$（恒等旁路接管，网络不用学「复制输入」）； $\sigma \to \infty$ 时 $D_\theta \to c_{\mathrm{out}} F_\theta$（网络全权）。7.2 §5.1 的三种预测参数化是这个外壳的特例位置—— $\varepsilon$/$x_0$/$v$ 之争在 EDM 坐标下变成「 $c_{\mathrm{skip}}$ 与 $c_{\mathrm{out}}$ 怎么随 $\sigma$ 分配」一个连续问题。
+1. **网络预处理（preconditioning）**：不让裸网络 $F_\theta$ 直接当去噪器，而是包一层代数外壳 $D_\theta(x; \sigma) = c_{\mathrm{skip}}(\sigma)\thinspace x + c_{\mathrm{out}}(\sigma)\thinspace F_\theta\negthinspace\left( c_{\mathrm{in}}(\sigma)\thinspace x;\ c_{\mathrm{noise}}(\sigma) \right)$。系数由「 $F_\theta$ 的输入与回归目标都保持单位方差」这一要求反解出来： $c_{\mathrm{skip}} = \sigma_d^2 / (\sigma^2 + \sigma_d^2)$、 $c_{\mathrm{out}} = \sigma \sigma_d / \sqrt{\sigma^2 + \sigma_d^2}$、 $c_{\mathrm{in}} = 1/\sqrt{\sigma^2 + \sigma_d^2}$、 $c_{\mathrm{noise}} = \ln(\sigma) / 4$（ $\sigma_d$：数据标准差，EDM 取 $0.5$；时间条件的嵌入改成噪声尺度的对数）。端点读法： $\sigma \to 0$ 时 $D_\theta \to x$（恒等旁路接管，网络不用学「复制输入」）； $\sigma \to \infty$ 时 $D_\theta \to c_{\mathrm{out}} F_\theta$（网络全权）。7.2 §5.1 的三种预测参数化是这个外壳的特例位置—— $\varepsilon$/$`x_0`$/$`v`$ 之争在 EDM 坐标下变成「 $c_{\mathrm{skip}}$ 与 $c_{\mathrm{out}}$ 怎么随 $\sigma$ 分配」一个连续问题。
 2. **损失权重 $\lambda(\sigma)$ 与 $\sigma$ 采样分布**：§3 式 (11) 已证明权重是自由度；EDM 选 $\lambda(\sigma) = 1/c_{\mathrm{out}}(\sigma)^2$ 使有效回归误差跨 $\sigma$ 均匀，并配 log-normal 形的 $\sigma$ 采样密度——「哪些噪声水平值得更多训练样本」成为显式旋钮（7.5 的 logit-normal $t$ 采样是同一思想在 FM 坐标的版本）。
 3. **采样器**：确定性 PF-ODE + Heun 二阶方法（预测-校正梯形步，每步 2 次 NFE、局部截断误差比 Euler 低一阶）作默认——同样的网络，求解器阶数是纯粹的质量/NFE 旋钮，留给 7.4 对账。
 
@@ -393,7 +393,7 @@ EDM 的结论是机制性的：schedule、参数化、权重、求解器在方�
 | DSM | 式 (5)；Vincent 等价式 (6) | 条件 score 回归 ≡ 边缘 score 回归（同梯度） |
 | 关键恒等式 | $`\nabla \log q_t = \mathbb{E}_{q(x_0 \mid x_t)}[\nabla \log q(x_t \mid x_0)]`$，式 (7) | 边缘 score = 条件 score 的后验均值 |
 | 高斯核靶 | $\nabla \log q(x_t \mid x_0) = -\varepsilon/\sqrt{1-\bar\alpha_t}$，式 (8) | 回归靶 = 注入噪声，训练免费 |
-| score↔$\varepsilon$ | $s_\theta = -\varepsilon_\theta / \sqrt{1-\bar\alpha_t}$，式 (9) | 逐点代数换算 |
+| score↔ $\varepsilon$ | $s_\theta = -\varepsilon_\theta / \sqrt{1-\bar\alpha_t}$，式 (9) | 逐点代数换算 |
 | Tweedie | $\mathbb{E}[x_0 \mid x_t] = (x_t + (1-\bar\alpha_t) s_\theta)/\sqrt{\bar\alpha_t}$，式 (10) | $x_0$-prediction = 后验均值 |
 | VP-SDE | $dx = -\frac{1}{2}\beta x\thinspace dt + \sqrt{\beta}\thinspace dW$，式 (13)； $\bar\alpha(t) = e^{-\int_0^t \beta}$，式 (14) | DDPM 链的扩散极限；边缘一致 |
 | VE-SDE | $dx = \sqrt{d\sigma^2/dt}\thinspace dW$，式 (15) | $f = 0$；方差膨胀 |

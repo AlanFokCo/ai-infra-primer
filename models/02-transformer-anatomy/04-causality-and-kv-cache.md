@@ -260,7 +260,7 @@ $B$ 小时权重项主导分母， $I \approx B$ ——这是 1.2 §10「拼命�
 | KV 可缓存性 | 前缀不可变命题，式 (6)(7) | $k_s, v_s$ 与未来无关（对层归纳）； $q$ 只服务本行、零复用故不缓存 |
 | decode 复杂度 | $2NT + 2LT^{2}d$ ，式 (8) | 与并行前向 FLOPs 恒等；省的是重算与墙钟，不是 FLOPs |
 | cache size | $2 L H_{kv} d_{\mathrm{head}} T B b$ ，式 (9) | 8B @128K = 16 GiB；70B = 40 GiB；MHA 反事实 64 GiB；MQA（ $H_{kv}$ = 1）2 GiB |
-| 算术强度 | prefill $\approx T_p$ 式 (10)；decode 式 (11)(12) | decode $I \approx 1$–$2.5 \ll$ ridge ⇒ memory-bound；batch 收益被 cache 读取封顶 |
+| 算术强度 | prefill $\approx T_p$ 式 (10)；decode 式 (11)(12) | decode $I \approx 1\text{–}2.5 \ll$ ridge ⇒ memory-bound；batch 收益被 cache 读取封顶 |
 | teacher forcing | 无泄漏命题 | 并行第 $t$ 位 logits ≡ 串行第 $t$ 步；exposure bias 另属 training |
 
 ## 练习

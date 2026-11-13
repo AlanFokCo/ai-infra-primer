@@ -147,9 +147,9 @@ $$
 S = X W_g \in \mathbb{R}^{T \times N_e}, \qquad p_{t, e} = \frac{e^{S_{t,e}}}{\sum_{t'=1}^{T} e^{S_{t',e}}} \qquad (13)
 $$
 
-**符号**： $X \in \mathbb{R}^{T \times d}$：一个 batch（或序列）的 token 表示；softmax 沿 token 轴归一（逐 expert 一列）。expert $e$ 取 $p_{\cdot, e}$ 的 top-$C$ 个 token， $C = kT/N_e$。**天然均衡**：每个 expert 恰好处理 $C$ 个 token，负载均衡由构造保证、辅助损失整项删除。代价转移到 token 侧：一个 token 可被 0 到 $N_e$ 个 expert 选中，per-token 计算量不再恒定。
+**符号**： $X \in \mathbb{R}^{T \times d}$：一个 batch（或序列）的 token 表示；softmax 沿 token 轴归一（逐 expert 一列）。expert $e$ 取 $p_{\cdot, e}$ 的 top-$`C`$ 个 token， $C = kT/N_e$。**天然均衡**：每个 expert 恰好处理 $C$ 个 token，负载均衡由构造保证、辅助损失整项删除。代价转移到 token 侧：一个 token 可被 0 到 $N_e$ 个 expert 选中，per-token 计算量不再恒定。
 
-**自回归不适配**的机制原因：expert 的 top-$C$ 竞争横跨全序列，token $t$ 是否被 expert $e$ 选中依赖其他（包括未来）token 的分数。训练时整序列可见，没有问题；decode 时未来 token 尚不存在，要么路由决策随序列增长而翻悔（破坏 prefix 一致性、KV cache 失效），要么把竞争窗口限制在历史内（论文给 AR 场景的补救，牺牲均衡的精确性）。expert choice 的主场因此在 encoder 与非自回归场景；decoder-only LLM 的主流仍是 token-choice。
+**自回归不适配**的机制原因：expert 的 top-$`C`$ 竞争横跨全序列，token $t$ 是否被 expert $e$ 选中依赖其他（包括未来）token 的分数。训练时整序列可见，没有问题；decode 时未来 token 尚不存在，要么路由决策随序列增长而翻悔（破坏 prefix 一致性、KV cache 失效），要么把竞争窗口限制在历史内（论文给 AR 场景的补救，牺牲均衡的精确性）。expert choice 的主场因此在 encoder 与非自回归场景；decoder-only LLM 的主流仍是 token-choice。
 
 ## 3. DeepSeek 线：细粒度、共享与无辅助损失路由
 
@@ -310,7 +310,7 @@ $$
 
 ## 7. 系统接口：expert 并行与 all-to-all 预告
 
-MoE 的稀疏激活把 dense 层换成跨设备分发问题：expert 分片到不同卡（expert parallelism，EP—— $N_{\mathrm{tot}}$ 的内存账使分片成为容量前提而非优化选项），每 token 的隐状态发往其 top-$k$ expert 所在设备、算完收回——dispatch 与 combine 两次 all-to-all。通信账（每 token 每 MoE 层，bf16，按逐 expert 发送的上界口径）： $2 \cdot k \cdot d \cdot b = 2 \times 8 \times 7168 \times 2 \approx 229$ KB（V3 口径），乘 58 个 MoE 层。node-limited routing（§3.2，每 token $\le 4$ 个目标节点）把 all-to-all 的扇出从「全设备」压成有界子集——路由规则直接为通信服务。负载不均的系统化身是热点卡（straggler）： $f_i$ 不均不只是统计问题，还是尾延迟问题，这是均衡回路的第二层动机。进一步主题——all-to-all 的带宽与拓扑、计算-通信重叠（DualPipe）、expert 并行的负载再均衡（EPLB）、EP 与张量并行的切分权衡——全部归 cluster 维度；本章交付的接口量是路由数学（式 (1)–(18)）加两个数：每 token 每 MoE 层 $2kd$ 字节的通信上界、 $\le M$ 节点的扇出上界。
+MoE 的稀疏激活把 dense 层换成跨设备分发问题：expert 分片到不同卡（expert parallelism，EP—— $N_{\mathrm{tot}}$ 的内存账使分片成为容量前提而非优化选项），每 token 的隐状态发往其 top-$`k`$ expert 所在设备、算完收回——dispatch 与 combine 两次 all-to-all。通信账（每 token 每 MoE 层，bf16，按逐 expert 发送的上界口径）： $2 \cdot k \cdot d \cdot b = 2 \times 8 \times 7168 \times 2 \approx 229$ KB（V3 口径），乘 58 个 MoE 层。node-limited routing（§3.2，每 token $\le 4$ 个目标节点）把 all-to-all 的扇出从「全设备」压成有界子集——路由规则直接为通信服务。负载不均的系统化身是热点卡（straggler）： $f_i$ 不均不只是统计问题，还是尾延迟问题，这是均衡回路的第二层动机。进一步主题——all-to-all 的带宽与拓扑、计算-通信重叠（DualPipe）、expert 并行的负载再均衡（EPLB）、EP 与张量并行的切分权衡——全部归 cluster 维度；本章交付的接口量是路由数学（式 (1)–(18)）加两个数：每 token 每 MoE 层 $2kd$ 字节的通信上界、 $\le M$ 节点的扇出上界。
 
 ## 总结
 

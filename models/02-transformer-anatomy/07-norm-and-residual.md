@@ -248,7 +248,7 @@ $$
 
 式 (16) 的硬封顶是现代变体的**逐 head 口径**（Gemma 3 的粒度；原文形式的上界是 $|g|$ 本身）： $d_k = 128$ 时 logit 幅度被钉死在 11.3 以内。全维变体（OLMo 2）下，拆分后每 head 范数只在平均意义上为 $\sqrt{d_k}$（ $\sum_h \lVert q_h \rVert^{2} = d$），逐 head 最坏界松到 $H\sqrt{d_k}$——封顶仍成立，但按典型值而非逐 head 硬界理解。可学增益会把上界乘上 $\gamma^{2}$，但**增长本身被关进了参数里**：logit 失控从「激活统计的自由漂移」变成「增益向量的学习问题」，尺度小、可监控。
 
-失控的速度可以量化：2.3 式 (7) 的口径下 logit 标准差正比于 $\lVert q \rVert \thinspace \lVert k \rVert / \sqrt{d_k}$， $q, k$ 范数同乘 $g$ 则 logit 幅度乘 $g^{2}$。初始化时 std $\approx 1$； $g^{2} \approx \sqrt{d_k} = 11.3$、即 $g \approx 3.4$ 时 std 回到 11 量级——即 2.3 §3.2 未缩放情形（ $\sigma_s \approx 11$、行内最大差距 $\Delta \approx 40$ nat、 $p_{\max} \approx 0.8$–$0.94$）的饱和区，梯度再被饱和亏空压制。式 (16) 把这个自由度从激活统计中拿走，饱和回归的唯一通道只剩增益 $\gamma$ 的学习。
+失控的速度可以量化：2.3 式 (7) 的口径下 logit 标准差正比于 $\lVert q \rVert \thinspace \lVert k \rVert / \sqrt{d_k}$， $q, k$ 范数同乘 $g$ 则 logit 幅度乘 $g^{2}$。初始化时 std $\approx 1$； $g^{2} \approx \sqrt{d_k} = 11.3$、即 $g \approx 3.4$ 时 std 回到 11 量级——即 2.3 §3.2 未缩放情形（ $\sigma_s \approx 11$、行内最大差距 $\Delta \approx 40$ nat、 $p_{\max} \approx 0.8\text{–}0.94$）的饱和区，梯度再被饱和亏空压制。式 (16) 把这个自由度从激活统计中拿走，饱和回归的唯一通道只剩增益 $\gamma$ 的学习。
 
 这就是 attention logits 爆炸的结构性解法，与 2.3 的初始化缩放互补： $\sqrt{d_k}$ 管出生，QK-Norm 管终生。采用记录：Henry et al. 原文（[B]）；ViT-22B 为同路线的早期大规模实例；OLMo 2 的全维变体（[A]，见上）；**Gemma 3 以 QK-norm 取代 Gemma 2 的 soft-capping**（原文表述为直接替代，[Gemma Team, 2025](../references.md)，arXiv:2503.19786，[A]），且在每个子层前后各放一次 RMSNorm（pre + post RMSNorm）——即 $`x + \mathrm{RMSNorm}_{\mathrm{post}}(\mathrm{Attn}(\mathrm{RMSNorm}_{\mathrm{pre}}(x)))`$ 的双层夹法。归属边界再划一次：Gemma 2 没有 QK-norm，它的 logit 稳定器只有 §8 的 soft-capping。
 
@@ -298,7 +298,7 @@ def rmsnorm(x, weight, eps=1e-6):             # x: [B, T, d]；教学用，非�
 | LN Jacobian 引理 | $J = \frac{1}{\sigma}(P - \hat{x}\hat{x}^{\top}/d)$，式 (10)(11) | rank $d-2$； $\lVert J \rVert = O(\sqrt{d}/\lVert x \rVert)$：反向增益反比输入范数 |
 | Xiong Theorem 1 | 式 (13) | Post-LN $O(d\sqrt{\ln d})$ 与 $L$ 无关 / Pre-LN $O(d\sqrt{\ln d / L})$；扩展分析：Post-LN 近输出大、向输入衰减（非浅层爆炸）⟹ warmup 数学必然 |
 | DeepNorm | $\alpha = (2L)^{1/4}$、 $\beta = (8L)^{-1/4}$（encoder-only / decoder-only 同式），式 (14)(14a) | 更新界条件 $2L(v^{2}+w^{2})/\alpha^{2}=1$ 出 $\alpha/\beta = \Theta(\sqrt{L})$； $\alpha\beta = 1/\sqrt{2}$ 是解的后果；warmup 写成架构常数 |
-| QK-Norm | 原文 $s = g\langle q/\lVert q \rVert, k/\lVert k \rVert \rangle$（逐 head ℓ2 + 可学 $g$，式 (15)）；现代变体 RMSNorm + $1/\sqrt{d_k}$，式 (15a)(16) | 上界：原文 $|g|$ 本身；变体 $\sqrt{d_k}$（逐 head 口径，OLMo 2 全维变体最坏 $H\sqrt{d_k}$）；Gemma 3 取代 Gemma 2 的 soft-capping |
+| QK-Norm | 原文 $s = g\langle q/\lVert q \rVert, k/\lVert k \rVert \rangle$（逐 head ℓ2 + 可学 $g$，式 (15)）；现代变体 RMSNorm + $1/\sqrt{d_k}$，式 (15a)(16) | 上界：原文 $\|g\|$ 本身；变体 $\sqrt{d_k}$（逐 head 口径，OLMo 2 全维变体最坏 $H\sqrt{d_k}$）；Gemma 3 取代 Gemma 2 的 soft-capping |
 | soft-capping | $z' = c\tanh(z/c)$，attn 50.0 / final 30.0，式 (17) | 仅 Gemma 2；导数处处非零 vs clip 界外零梯度；Gemma 3 已弃用 |
 
 ## 练习

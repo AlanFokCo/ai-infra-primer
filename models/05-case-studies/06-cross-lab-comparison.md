@@ -78,7 +78,7 @@ $$
 | 维度 | MLA（DeepSeek-V3.2、K2 系） | linear+full hybrid（Qwen3-Next、Kimi Linear / K3 系） | 纯 GQA（GLM-4.6、Llama-4 系） |
 | --- | --- | --- | --- |
 | cache 斜率 | 576 元素 = 1.125 KiB/层（61 层 → 68.6 KiB/token） | full 层斜率 × $1/(r{+}1)$ + linear 定长状态；full 层因家而异：Qwen3-Next 2 KiB/层（GQA，3:1 → 24 KiB/token）、Kimi Linear 1.125 KiB/层（MLA+NoPE，→ 7.9 KiB/token） | 4 KiB/层（48–92 层 → 192–368 KiB/token） |
-| 计算 | decode 打分在 $128{+}64$ = 192 维上进行； $W^{UK}$/$W^{UV}$ 吸收使 up-projection 不进 decode 内循环（4.1）；prefill/训练多付 down+up 投影 | full 层打分（GQA 或 MLA，因家而异）× 少数层；linear 层每 token 定常 $\approx 4 H d_v d_k$ FLOPs，与 $T$ 无关（4.4 §7） | 与 MHA 同形、 $g$ 倍省 cache 读取与 KV 投影 FLOPs；无额外结构开销 |
+| 计算 | decode 打分在 $128{+}64$ = 192 维上进行； $W^{UK}$/$`W^{UV}`$ 吸收使 up-projection 不进 decode 内循环（4.1）；prefill/训练多付 down+up 投影 | full 层打分（GQA 或 MLA，因家而异）× 少数层；linear 层每 token 定常 $\approx 4 H d_v d_k$ FLOPs，与 $T$ 无关（4.4 §7） | 与 MHA 同形、 $g$ 倍省 cache 读取与 KV 投影 FLOPs；无额外结构开销 |
 | 实现复杂度 | 吸收重写 + decoupled RoPE（RoPE×低秩冲突是设计起点，4.1 §4）+ 专用 kernel | 双 mixer kernel（chunkwise linear + full）+ 层型调度 + 双 cache 管理（定长 + 线性） | MHA 的 reshape 级推广，任何 FlashAttention 族 kernel 直接支持 |
 
 三个维度的读法各一句。**cache 维**：MLA 压斜率（每层的单价）、hybrid 压层数（付单价的层数）、纯 GQA 不压斜率靠 chunk 重排可见窗——1M 窗下三者的整窗账 68.6 GiB / 24 GiB / 192+ GiB 已在 §2.2 的图上排开。**计算维**：MLA 的吸收技巧把 decode 内循环压到 576 维 latent 上做（数学上与原式精确等价，4.1），代价是 prefill 与训练侧多一串投影、以及 kernel 需要认识这套重写；hybrid 把 decode 算力变成「大固定项 + 小线性项」，1M 处 full 层打分仍是全模型算力主项（4.4 §7 的两千倍对照）；纯 GQA 的算力侧无任何新机制，省多少完全由 $g$ 决定。**实现复杂度维**：GQA 最低（reshape 级）、MLA 居中（一套重写 + 一种 kernel）、hybrid 最高（两套 mixer、两种 cache、层型装配）——transformers 的 `modeling_qwen3_next.py` 对 GDN 层直接调 fla 库的 `chunk_gated_delta_rule` 而不自研（5.3 §4.3，[fla-org](../references.md)，[A]），就是这条复杂度账单的具体一笔。
@@ -161,7 +161,7 @@ report 的价值分布极不均匀；五步按信息密度排序，每步配一�
 | --- | --- | --- | --- |
 | 对照总表 | 五家旗舰全 MoE；attention 五落点互不重合；ctx 跨 64 倍 | §1 表（11 列 × 5 行） | 回收 5.1–5.5 |
 | MoE 收敛 | 式 (1)：服务认 $N_{\mathrm{act}}$、容量认 $N_{\mathrm{tot}}$ | $\rho$ 谱 15.6% → 3.7%；FLOPs 倍数 8.5×–56× | 4.5 |
-| subquadratic 收敛 | 式 (2)：纯 GQA @1M = 192–368 GiB/序列；attention 打分 @1M ≈ $10^{12}$ FLOPs/token | 四家三条出路（GLM 留对照）：压读取（DSA 64×）/ 压层数（hybrid ÷$(r{+}1)$）/ 压可见窗（chunk） | 4.2 / 4.4 / 5.1 |
+| subquadratic 收敛 | 式 (2)：纯 GQA @1M = 192–368 GiB/序列；attention 打分 @1M ≈ $10^{12}$ FLOPs/token | 四家三条出路（GLM 留对照）：压读取（DSA 64×）/ 压层数（hybrid ÷ $(r{+}1)$）/ 压可见窗（chunk） | 4.2 / 4.4 / 5.1 |
 | MTP 收敛 | 式 (3)： $\alpha$ = 85–90% → $\mathbb{E}$ ≈ 1.85–1.9 → 约 1.8× TPS | 草稿白捡 + 无损 + 正交；三家明装（GLM 为整件 MoE 层变体）、Llama-4 与 K2/K3 无签名 | 4.5 §6、5.4 §2.4 |
 | 分歧 | MLA 压斜率（1.125 KiB/层）/ hybrid 压层数（24 KiB/token）/ 纯 GQA 靠 chunk（4 KiB/层） | cache / 计算 / 实现复杂度三维表 | 4.1 / 4.4 |
 | 方法论 | config 字段字典（19 行）+ modeling 三落点路径 + report 五步 + 30 min checklist | §4 四件工具 | 可迁移 |

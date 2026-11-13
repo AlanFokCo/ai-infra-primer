@@ -117,7 +117,7 @@ Kimi K3（arXiv:2607.24653，[A]；权重全量发布）把 4.3-4.4 的 KDA 主�
 
 三笔对账。其一，Kimi Linear 的斜率比 7/27 = 25.9% 即 cache 减少 74.1%——论文摘要「up to −75%」的来源就是 3:1 交错的层数比，不是额外的压缩技术。其二，固定项在线性项面前很快退场：Kimi Linear 的每层交叉点约 1 MiB / 1152 B ≈ 910 token，全模型口径约 2600 token 后线性项主导——hybrid 的真实收益是「斜率 ÷ (r+1)」，窗越长兑现越足；反过来，短窗（千 token 内）部署下 hybrid 的内存优势基本不兑现，这时它买到的是 decode 算力与吞吐。其三，decode 吞吐同向放大：1M 上下文下 Kimi Linear 每 token 的 full 层 cache 读取约 7.9 GiB，全 MLA 反事实约 30 GiB（KDA 层每 token 另读 20 × 1 MiB 定长状态，与 $T$ 无关）——读取比值约 3.9× 且随 $T$ 继续拉大；论文实测 6.3×（Fig 1(b)）还包含 kernel 与算力侧因素，按论文口径引。
 
-decode 算力账顺带登记（§1 的第二笔斜率）。linear 层每 token 读出加写入约 $4 H d_v d_k$：Qwen3-Next 每 GDN 层 $4 \times 32 \times 128 \times 128 \approx 2.1$M FLOPs，固定；full 层每 token 打分约 $4 H_q d_{\mathrm{head}} T$ = $4 \times 16 \times 256 \times T$ ≈ $16 T$ K FLOPs， $T$ = 262,144 时约 4.3G FLOPs——单层 full 的打分已是单层 GDN 的两千倍，且差距随 $T$ 线性拉大。hybrid 把 decode 的逐 token 算力同样变成「大固定项 + 小线性项」，这是 6.3× 吞吐数字在内存账之外的另一半账面来源。
+decode 算力账顺带登记（§1 的第二笔斜率）。linear 层每 token 读出加写入约 $4 H d_v d_k$：Qwen3-Next 每 GDN 层 $4 \times 32 \times 128 \times 128 \approx 2.1\text{M}$ FLOPs，固定；full 层每 token 打分约 $4 H_q d_{\mathrm{head}} T$ = $4 \times 16 \times 256 \times T$ ≈ $16 T$ K FLOPs， $T$ = 262,144 时约 4.3G FLOPs——单层 full 的打分已是单层 GDN 的两千倍，且差距随 $T$ 线性拉大。hybrid 把 decode 的逐 token 算力同样变成「大固定项 + 小线性项」，这是 6.3× 吞吐数字在内存账之外的另一半账面来源。
 
 ## 8. 质量边界与设计空间
 

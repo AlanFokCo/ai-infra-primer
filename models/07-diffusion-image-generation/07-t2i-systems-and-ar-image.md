@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | 表示空间 | f8 16ch VAE latent： $1024^2$ 像素 → $128^2$ latent 网格 | 6.3 §7.2 |
 | 生成目标 | rectified flow： $z_t = (1-t) z_0 + t \varepsilon$，回归目标速度 $\varepsilon - z_0$ | 7.5 §6 |
-| $t$ 的采样分布 | logit-normal$(0, 1)$ = log-SNR 轴上的高斯，质量压中段 | 7.5 §8 |
+| $t$ 的采样分布 | logit-normal $(0, 1)$ = log-SNR 轴上的高斯，质量压中段 | 7.5 §8 |
 | 分辨率 shift | $t' = s t / (1 + (s-1) t)$， $1024^2$ 档取 $s = 3$ | 7.5 §8 |
 | 主干 | MMDiT：图文双流各自 QKV/MLP/adaLN + 拼接序列联合 attention | 7.6 §7.1 |
 | 训练稳定化 | QK-norm：per-head RMSNorm 把 logit 上界钉在 $\sqrt{d_h}$ | 7.6 §7.2 |

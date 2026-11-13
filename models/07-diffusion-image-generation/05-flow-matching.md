@@ -1,6 +1,6 @@
 # 7.5 Flow Matching 与直线生成路径（Flow Matching and Rectified Flow）
 
-> 本章把生成建模从「逐步去噪的马尔可夫链」改写为「沿速度场积分一条 ODE」：CNF 的 pushforward 密度与精确似然的 trace 公式及其成本账、FM 目标 $L_{FM}$、conditional FM 定理完整推导（条件速度场回归与边际速度场回归梯度恒等——期望交换是关键步）、Gaussian 条件路径的速度场闭式、rectified flow 线性路径与目标速度 $\varepsilon - x_0$、与 DDPM $\varepsilon$-prediction 的同族映射、logit-normal $t$ 采样与分辨率相关 timestep shift（SD3）、diffusion↔FM 统一表 | 前置：7.1（家族坐标与约定）、7.2（DDPM 全链推导、 $L_{simple}$、 $\varepsilon$/$x_0$/$v$ 参数化）、7.3（score 与 probability-flow ODE） | 锚点：Flow Matching [A]（arXiv:2210.02747）、rectified flow [A]（arXiv:2209.03003）、SD3 [A]（arXiv:2403.03206）；facebookresearch/flow_matching [A]、Stability-AI/sd3.5 [A]
+> 本章把生成建模从「逐步去噪的马尔可夫链」改写为「沿速度场积分一条 ODE」：CNF 的 pushforward 密度与精确似然的 trace 公式及其成本账、FM 目标 $L_{FM}$、conditional FM 定理完整推导（条件速度场回归与边际速度场回归梯度恒等——期望交换是关键步）、Gaussian 条件路径的速度场闭式、rectified flow 线性路径与目标速度 $\varepsilon - x_0$、与 DDPM $\varepsilon$-prediction 的同族映射、logit-normal $t$ 采样与分辨率相关 timestep shift（SD3）、diffusion↔FM 统一表 | 前置：7.1（家族坐标与约定）、7.2（DDPM 全链推导、 $L_{simple}$、 $\varepsilon$/$`x_0`$/$`v`$ 参数化）、7.3（score 与 probability-flow ODE） | 锚点：Flow Matching [A]（arXiv:2210.02747）、rectified flow [A]（arXiv:2209.03003）、SD3 [A]（arXiv:2403.03206）；facebookresearch/flow_matching [A]、Stability-AI/sd3.5 [A]
 
 ## 1. CNF：把生成分布写成一条 ODE 的 pushforward
 
@@ -337,7 +337,7 @@ $$
 \log \mathrm{SNR} \sim \mathcal{N}\left( -2m,\hspace{5mu} 4s^2 \right) \qquad (29)
 $$
 
-**符号**：logit-normal 的 $t$ 采样 = 在 log-SNR 轴上放一个高斯。而均匀采 $t$ 时 $\operatorname{logit}(t)$ 的密度 $\propto t(1-t)$、质量被摊到 $|logit|$ 很大的两端——即 SNR 极高（近纯数据，回归残差在绝对尺度上微小）与 SNR 极低（近纯噪声，边际场近似只指向数据均值、任务退化）的区间。图像的语义结构（构图、物体、文字）是在 $\mathrm{SNR} \approx 1$ 的中段被决定的（对照 7.2 §2.3 的频谱读法：交叉频率 $f_c$ 扫过主要能量带的过程发生在中段），把样本预算压在中段 = 把网络容量压在感知上最敏感的噪声水平。SD3 论文对均匀、logit-normal、mode 加权等方案做了对照实验，主模型采用 logit-normal$(0, 1)$（[Esser et al., 2024](../references.md)，[A]）。
+**符号**：logit-normal 的 $t$ 采样 = 在 log-SNR 轴上放一个高斯。而均匀采 $t$ 时 $\operatorname{logit}(t)$ 的密度 $\propto t(1-t)$、质量被摊到 $|logit|$ 很大的两端——即 SNR 极高（近纯数据，回归残差在绝对尺度上微小）与 SNR 极低（近纯噪声，边际场近似只指向数据均值、任务退化）的区间。图像的语义结构（构图、物体、文字）是在 $\mathrm{SNR} \approx 1$ 的中段被决定的（对照 7.2 §2.3 的频谱读法：交叉频率 $f_c$ 扫过主要能量带的过程发生在中段），把样本预算压在中段 = 把网络容量压在感知上最敏感的噪声水平。SD3 论文对均匀、logit-normal、mode 加权等方案做了对照实验，主模型采用 logit-normal $(0, 1)$（[Esser et al., 2024](../references.md)，[A]）。
 
 **分辨率相关的 timestep shift。** 分辨率升高后，同样的 $t$ 变得「更不禁噪」——像素数增加而自然图像高度冗余，固定噪声水平下可恢复的信息总量随像素数上升，去噪任务相对变易。SD3 的应对是把采样时刻向噪声端平移：
 
@@ -369,12 +369,12 @@ $$
 | 边际场结构 | 式 (19)： $\frac{\dot\alpha}{\alpha} x + \sigma(\frac{\dot\alpha\sigma}{\alpha} - \dot\sigma)\thinspace s_t(x)$（= PF-ODE，7.3） | 同式 (19)，linear 特例 $u_t = -\frac{1}{1-t}(x + t\thinspace s_t(x))$ |
 | 采样 |  ancestral（随机）或 DDIM/ODE solver（7.4） | 纯 ODE 积分 $t: 1 \to 0$，式 (23) |
 | 精确似然 | PF-ODE + trace 公式（7.3） | 同一 trace 公式，式 (6) |
-| $t$ 采样分布 | 均匀（ $L_{simple}$ 口径） | logit-normal$(0,1)$ + shift，式 (27)(30)（SD3） |
+| $t$ 采样分布 | 均匀（ $L_{simple}$ 口径） | logit-normal $(0,1)$ + shift，式 (27)(30)（SD3） |
 | 训练是否需积分 | 否（闭式 $x_t$ 直达） | 否（simulation-free，同左） |
 
 读表要点：「扩散 vs FM」之争在模型类层面是空的——统一在式 (15)；真实的差异集中在三处可操作的设计上：schedule 形状（VP vs 线性）、回归目标的坐标（ $\varepsilon$ vs 速度）、 $t$ 的加权（均匀 vs logit-normal + shift）。SD3 = 线性路径 + 速度回归 + logit-normal/shift + MMDiT 主干（7.6），正是把这张表右列取全的系统实现。
 
-统一表管不到的两件事也登记一下，防过度外推：(i) **逐 $t$ 的损失加权**是与参数化正交的又一个自由度——7.2 式 (24)(25) 的 SNR 权重、本章 §8 的 $t$ 采样密度、以及回归目标坐标三者共同决定有效权重，换坐标不改最优解但改各噪声水平的梯度量级分配；(ii) **guidance 不在此表**：CFG 作用在 score/$\varepsilon$ 层面（7.4 推导），经式 (19)(25) 的换算可原样搬进速度场坐标，SD3 系统侧的做法见 7.7。
+统一表管不到的两件事也登记一下，防过度外推：(i) **逐 $t$ 的损失加权**是与参数化正交的又一个自由度——7.2 式 (24)(25) 的 SNR 权重、本章 §8 的 $t$ 采样密度、以及回归目标坐标三者共同决定有效权重，换坐标不改最优解但改各噪声水平的梯度量级分配；(ii) **guidance 不在此表**：CFG 作用在 score/$`\varepsilon`$ 层面（7.4 推导），经式 (19)(25) 的换算可原样搬进速度场坐标，SD3 系统侧的做法见 7.7。
 
 ## 10. FM 的工程优势：直轨迹 → 少步求解 → 蒸馏友好
 
@@ -403,7 +403,7 @@ rectified flow 在这条账上的优势来自目标结构：条件目标 $\varep
 | CNF 定义 | $\dot\psi_t = u_t(\psi_t)$，式 (1)；$`p_t = [\psi_t]_{*} p_0`$，式 (2) | 生成 = ODE 的 pushforward， $t = 1$ 噪声端 |
 | 连续性方程 | $\partial_t p_t + \nabla \cdot (p_t u_t) = 0$，式 (3) | 密度 ↔ 速度场的桥梁 |
 | trace 公式 | $\log p_0(x) = \log p_1(\psi_1(x)) + \int_0^1 \nabla \cdot u_t\thinspace dt$，式 (6) | 精确似然；散度 × 积分步数 = 维度税 |
-| FM 目标 | $L_{FM} = \mathbb{E}\|v_\theta - u_t\|^2$，式 (7) | 边际场不可解（混合后验平均，式 (10)） |
+| FM 目标 | $L_{FM} = \mathbb{E}\Vert v_\theta - u_t \Vert^2$，式 (7) | 边际场不可解（混合后验平均，式 (10)） |
 | conditional FM 定理 | $\nabla L_{FM} = \nabla L_{CFM}$，式 (11)(14) | 关键步：内积线性 → 期望交换 |
 | Gaussian 路径闭式 | $u_t(x \mid x_0) = \frac{\dot\sigma}{\sigma} x + (\dot\alpha - \frac{\dot\sigma}{\sigma}\alpha) x_0$，式 (17) | 仿射、无 score |
 | 速度场 = 漂移 + score | 式 (19) | 与 PF-ODE（7.3）同对象 |
@@ -419,7 +419,7 @@ rectified flow 在这条账上的优势来自目标结构：条件目标 $\varep
 1.（推导）补全式 (5) 的矩阵引理：对可逆 $J(t)$，证明 $\frac{d}{dt} \log |\det J| = \operatorname{tr}(J^{-1} \frac{dJ}{dt})$（提示：对 $\det J = \exp(\operatorname{tr} \log J)$ 求导，或用 $\det(I + \delta M) = 1 + \delta\thinspace \operatorname{tr} M + O(\delta^2)$ 做一阶展开）；再由式 (4) 推出式 (5)，并说明为什么式 (6) 的积分符号是「加散度」而非「减散度」（注意 $\log p_t = \log p_0 - \log|\det J_t|$ 的符号链）。
 2.（推导）证明 CFM 与 FM 的损失差恰为条件速度的方差： $`L_{CFM}(\theta) - L_{FM}(\theta) = \mathbb{E}_{t, x \sim p_t}\left[ \mathbb{E}\left[ \Vert u_t(x \mid x_0) - u_t(x)\Vert^2 \mid x_t = x \right] \right]`$（提示：对 $\Vert v - u_c\Vert^2$ 在条件期望下用「均值 + 偏差」分解 $u_c = u_t(x) + (u_c - u_t(x))$，交叉项归零）。由此说明：(a) 差距与 $\theta$ 无关（定理的另一证法）；(b) 为什么 $L_{CFM}$ 的数值不能跨路径比较。
 3.（计算）logit-normal 与 shift 的网格账：(a) 由式 (28) 证明 $m = 0, s = 1$ 时 $\pi_{ln}(t)$ 关于 $t = 1/2$ 对称，并算 $\pi_{ln}(0.5)$、 $\pi_{ln}(0.1)$、 $\pi_{ln}(0.9)$ 的相对比例，与均匀分布对比中段权重；(b) 验证式 (29)：由 $\log \mathrm{SNR} = -2\thinspace\operatorname{logit}(t)$ 推出其分布参数；(c) 取 $s = 3$，计算 $t' = st/(1 + (s-1)t)$ 在 $t \in \lbrace0.1, 0.3, 0.5, 0.7, 0.9\rbrace$ 的值，画（或描述）平移前后 $t$ 网格的偏移方向。
-4.（代码）教学用，非优化实现：二维 two-moons 数据上的 rectified flow。(a) 用 §6 的 `rf_loss` 训练一个小型 MLP（ $t$ 经 sinusoidal embedding 拼接输入）， $t$ 均匀采样；(b) 用 `rf_sample` 分别取 $K \in \lbrace1, 2, 8, 64\rbrace$ 采样，与数据散点对比——观察 $K = 1$ 的样本落在何处（提示：直线外推的端点偏差 = 边际轨迹的弯曲量）；(c) 把 $t$ 采样换成 logit-normal$(0, 1)$（式 (27)），固定 $K = 8$ 比较样本质量；(d) 选做：实现一轮 reflow——用 (a) 的模型从 $\varepsilon$ 生成 $\hat x_0$，以 $(\hat x_0, \varepsilon)$ 为新端点对重训，再比较 $K = 1$。
+4.（代码）教学用，非优化实现：二维 two-moons 数据上的 rectified flow。(a) 用 §6 的 `rf_loss` 训练一个小型 MLP（ $t$ 经 sinusoidal embedding 拼接输入）， $t$ 均匀采样；(b) 用 `rf_sample` 分别取 $K \in \lbrace1, 2, 8, 64\rbrace$ 采样，与数据散点对比——观察 $K = 1$ 的样本落在何处（提示：直线外推的端点偏差 = 边际轨迹的弯曲量）；(c) 把 $t$ 采样换成 logit-normal $(0, 1)$（式 (27)），固定 $K = 8$ 比较样本质量；(d) 选做：实现一轮 reflow——用 (a) 的模型从 $\varepsilon$ 生成 $\hat x_0$，以 $(\hat x_0, \varepsilon)$ 为新端点对重训，再比较 $K = 1$。
 
 ## 参考
 

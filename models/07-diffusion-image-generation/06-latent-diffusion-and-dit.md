@@ -182,7 +182,7 @@ $$
 x' = x + 0 \odot \mathrm{MSA}(\mathrm{LN}(x)) = x, \qquad x'' = x' \qquad (9)
 $$
 
-即**每个 DiT block 在初始化时严格等于 identity**。端到端后果：patchify 后过 $L$ 个恒等 block，末端层同样零初始化，整网输出恒为零——初始预测 $\hat\varepsilon \equiv 0$，初始 $L_{simple} = \mathbb{E}\Vert\varepsilon\Vert^2 = $ 元素个数（每元素恰为 1），损失从一个良定义的标定点出发，没有随机初始化调制系数造成的尺度冲击。梯度侧的对价同样明确：残差通路全程恒等，反向梯度从末端层无衰减直达每个 block 的调制参数（2.7 Pre-LN 残差通路的同款论证）， $\alpha_i$ 从零开始的每一次更新都在「开通」一条子通路——网络深度是被逐 block 学出来的，而不是初始化时就全额承担。DiT 论文的同主干消融（论文原表口径）：adaLN-Zero 优于非零初始化 adaLN、优于 cross-attention 与 in-context（§3 表），且调制参数的代价是每 block 一个 $d \to 6d$ 的 MLP——这笔参数账到 §8 的 PixArt-α 还要再算一次。
+即**每个 DiT block 在初始化时严格等于 identity**。端到端后果：patchify 后过 $L$ 个恒等 block，末端层同样零初始化，整网输出恒为零——初始预测 $\hat\varepsilon \equiv 0$，初始 $L_{simple} = \mathbb{E}\Vert\varepsilon\Vert^2 =$ 元素个数（每元素恰为 1），损失从一个良定义的标定点出发，没有随机初始化调制系数造成的尺度冲击。梯度侧的对价同样明确：残差通路全程恒等，反向梯度从末端层无衰减直达每个 block 的调制参数（2.7 Pre-LN 残差通路的同款论证）， $\alpha_i$ 从零开始的每一次更新都在「开通」一条子通路——网络深度是被逐 block 学出来的，而不是初始化时就全额承担。DiT 论文的同主干消融（论文原表口径）：adaLN-Zero 优于非零初始化 adaLN、优于 cross-attention 与 in-context（§3 表），且调制参数的代价是每 block 一个 $d \to 6d$ 的 MLP——这笔参数账到 §8 的 PixArt-α 还要再算一次。
 
 ### 6.3 DiT scaling：Gflops ↔ FID 的对数线性
 

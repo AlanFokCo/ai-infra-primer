@@ -144,7 +144,7 @@ prefill：文本条件编码（一次）＋（可选）初始帧 latent 的 K/V 
 
 cache 的读写语义有一处扩散特有的细节值得钉死：历史 chunk 是已 emit 的干净 latent（ $t = 0$），其 K/V 在 emit 时计算一次，之后被全部后续 chunk × 每 chunk 全部 $K$ 个内层步复用；当前 chunk 的输入随内层步变化（ $x$ 在退火），其 K/V 每步重算、不进长期 cache。这是 2.4 §4.3「列被未来读、行只被自己读」的视频版：干净历史是被未来反复读的列，退火中的当前 chunk 是一次性消费品。
 
-**FLOPs 账**（逐层，只写 attention 二次项）：chunk $k$ 的每个内层步，queries 是当前 chunk 的 $n_k$ 个 token，keys 是 $T_{k-1} + n_k$（ $T_{k-1}$ = 历史 token 数），QK$^{\top}$ 与 PV 各 $2 d\thinspace n_k (T_{k-1} + n_k)$。均匀 chunk（ $n_k = n$、 $N = Mn$）下全视频、每内层步合计：
+**FLOPs 账**（逐层，只写 attention 二次项）：chunk $k$ 的每个内层步，queries 是当前 chunk 的 $n_k$ 个 token，keys 是 $T_{k-1} + n_k$（ $T_{k-1}$ = 历史 token 数）， $QK^{\top}$ 与 PV 各 $2 d\thinspace n_k (T_{k-1} + n_k)$。均匀 chunk（ $n_k = n$、 $N = Mn$）下全视频、每内层步合计：
 
 $$\sum_{k=1}^{M} 4 d\thinspace n \big( (k-1)n + n \big) = 4 d n^{2} \cdot \frac{M(M+1)}{2} = 2 d N^{2} \left( 1 + \frac{1}{M} \right) \qquad (7)$$
 

@@ -217,7 +217,7 @@ k 块局部 tokens（raster 序拼接，行间可学 newline 向量分隔）+ �
 
 **位置编码处理**。每块内部用视觉塔原生的 24×24 位置嵌入——同一张表对全部块复用，坐标是块内局部坐标，ViT 侧不需要任何改造；**跨块布局不进 ViT 的位置系统**：块 token 在 LLM 序列里按 raster 序排布，行间以可学的 image-newline 向量分隔（LLaVA-NeXT 实现口径，[LLaVA-NeXT repo](../references.md)，[A]），块间相对位置由 LLM 自己的 1D 位置编码按序列序承载。全局上下文由缩略图那份 576 tokens 携带。一句话：2D 结构在 ViT 内局部承载、全局布局交给 LLM 的 1D 序——这套工程答案的软肋是 LLM 侧的 1D RoPE 对「第 600 个 token 属于右上块第 3 行」这类 2D 事实毫无显式先验，全靠学。§9 的 M-RoPE 正是把 2D（乃至 3D）坐标系统一收进 LLM 侧位置编码的正式解。
 
-成本账两笔：视觉塔前向 ×$(k+1)$；LLM prefill 的视觉段长度 $(k+1) \cdot 576$，attention 二次项随之平方放大。AnyRes 的分辨率增益是用 token 预算买的——这是 §11 决策表里「灵活性」一列的价格。
+成本账两笔：视觉塔前向 × $(k+1)$；LLM prefill 的视觉段长度 $(k+1) \cdot 576$，attention 二次项随之平方放大。AnyRes 的分辨率增益是用 token 预算买的——这是 §11 决策表里「灵活性」一列的价格。
 
 ## 8. Qwen2-VL naive dynamic resolution：任意 $H \times W$ 直接进
 
@@ -366,7 +366,7 @@ $$
 | MLP projector | 式 (2) | 等长 $M = N$； $d_v d_{llm} + d_{llm}^{2}$ 参数（1024/4096 档 ≈ 21M）；LLaVA-1.5 正文+讨论口径：academic 数据规模下 MLP 已够 [A] |
 | Q-Former | 式 (3)-(7)：共享 self-attn + 隔层 XAttn、三 mask、ITC/ITM/ITG | $M = B$ = 32 定长瓶颈；约 1.9 亿参数需 129M 对训练；小数据不划算的容量-数据账（§3.4） |
 | Perceiver resampler | 式 (8) | $M = B$ = 64 与 $N$ 无关；cross-attn $O(BNd)$ 挡住二次项；Flamingo [B] |
-| pixel shuffle | 式 (9)(10)： $M = N r^{2}$、通道 ×$1/r^{2}$ | 拼接无损、取舍在投影；InternVL $r$ = 0.5、Qwen spatial_merge 2；LLM 端二次项 ×1/16 |
+| pixel shuffle | 式 (9)(10)： $M = N r^{2}$、通道 × $1/r^{2}$ | 拼接无损、取舍在投影；InternVL $r$ = 0.5、Qwen spatial_merge 2；LLM 端二次项 ×1/16 |
 | 固定分辨率损失账 | §6 | 1568×1176 → 336：12 px 字符缩到 2.6 px，一个 patch 混 5 行字；保细节需 9408 tokens ≈ 16×576 |
 | AnyRes | 式 (11) 网格选择字典序（max $e$、平局 min $\rho$）、式 (12) $M = (k+1)N$ | 4 切 → 2880；块内 ViT 原生 PE、跨块 raster 序 + newline，全局靠缩略图 |
 | naive dynamic resolution | 式 (13)： $M = HW/784$ | 任意 $H \times W$；配套：ViT 2D RoPE、window attention（112 px + 全局层 [7,15,23,31]）、M-RoPE |

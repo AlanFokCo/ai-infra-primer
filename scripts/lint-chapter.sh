@@ -24,5 +24,9 @@ done
 echo "$tmp" | grep -nF '\|' | grep -vE ':\s*\|' >/dev/null && { echo "FAIL: 非表格行含 \|（改用 \Vert）"; fail=1; }
 echo "$tmp" | grep -nF 'operatorname*' >/dev/null && { echo "FAIL: \operatorname* 星号变体被 GitHub 禁用（用 \operatorname）"; fail=1; }
 echo "$tmp" | grep -nE "[}')]_" >/dev/null && { echo "FAIL: 标点后 _ 强调冲突（行内公式用 \$\`...\`\$ 包裹）"; fail=1; }
+# 8. 行内公式边界规则（STYLE_GUIDE §3，2026-11-13 二轮实测）：开口/闭口 flanking、内容首尾空格、行内矩阵环境、表格内裸 |、区间合并写法
+if command -v python3 >/dev/null 2>&1; then
+  python3 "$(dirname "$0")/lint-math-boundary.py" "$f" || fail=1
+fi
 [ "$fail" -eq 0 ] && echo "LINT OK: $f"
 exit $fail

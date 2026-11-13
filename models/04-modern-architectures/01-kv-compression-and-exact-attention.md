@@ -28,7 +28,7 @@ cache 账直接代公式： $H_{kv} = 1$ 进 2.4 式 (9)，每 token 每层 $2 d
 
 decode 侧还有一笔账。2.4 式 (12) 的分母 = 权重读一遍 + 每序列一份 cache 读取； $H_{kv}$ = 1 把 cache 项压到 GQA-8 的 1/8、MHA 的 1/32。代数字走一遍（8B 形态、 $t$ = 131072）：单序列 cache 2 GiB， $B$ = 32 时 batch 的 cache 读取 64 GiB 对权重 16 GB——cache 项仍在分母里，但 batch 饱和强度上界（2.4 §6 对 GQA-8 算出的约 4.9）外推 8 倍。饱和点仍低于 ridge（ $10^{2}$ 量级），memory-bound 不变，但「凑 batch 还有用」的区间被拉长了同一个倍数。MQA 的原始动机正是这个服务侧数字——论文标题就是「one write-head」（[Shazeer, 2019](../references.md)，[B]）；质量是后账。
 
-代价写在机制里。2.3 §2：score 经 rank-$d_k$ 双线性型读 stream（列向量约定下 $A_h = (W_h^{Q})^{\top} W_h^{K} \in \mathbb{R}^{d \times d}$，rank ≤ $d_{\mathrm{head}}$），MHA 是 $H$ 个独立低秩透镜并排。MQA 不是减少透镜个数，而是强制全部透镜共用同一片 K 侧玻璃： $A_h^{MQA} = (W_h^{Q})^{\top} W^{K}$， $H_q$ 个头的 key 侧行空间被钉在同一组基上——检索分辨率塌缩到一份。value 侧同样：整条序列只有一条 $d_{\mathrm{head}}$ 维的交付通道， $H_q$ 个头各自加权求和的是同一些 $v_s$——交付带宽也塌缩到一份。MQA 论文报告的质量差距（[B]，无官方代码，按论文口径引）就是这两处塌缩的代价；§3 的 GQA 是「塌缩程度可调」的修复。
+代价写在机制里。2.3 §2：score 经 rank-$`d_k`$ 双线性型读 stream（列向量约定下 $A_h = (W_h^{Q})^{\top} W_h^{K} \in \mathbb{R}^{d \times d}$，rank ≤ $d_{\mathrm{head}}$），MHA 是 $H$ 个独立低秩透镜并排。MQA 不是减少透镜个数，而是强制全部透镜共用同一片 K 侧玻璃： $A_h^{MQA} = (W_h^{Q})^{\top} W^{K}$， $H_q$ 个头的 key 侧行空间被钉在同一组基上——检索分辨率塌缩到一份。value 侧同样：整条序列只有一条 $d_{\mathrm{head}}$ 维的交付通道， $H_q$ 个头各自加权求和的是同一些 $v_s$——交付带宽也塌缩到一份。MQA 论文报告的质量差距（[B]，无官方代码，按论文口径引）就是这两处塌缩的代价；§3 的 GQA 是「塌缩程度可调」的修复。
 
 一个对照注记为 §4 铺垫：MQA 与 GQA 同 RoPE 无冲突——压缩的是头数，每个幸存的 K/V 头仍逐位置物化、照常旋转（2.5 §4.3 的应用位置不变，cache 里存的是已旋转的共享 $k_n$）。冲突只在「压缩每个 token 的 KV 内容本身」时出现——那是 MLA 要面对的，§4.1 的推导就从这里开始。
 
@@ -40,7 +40,7 @@ $$
 H_{kv} = H_q / g \qquad (3)
 $$
 
-$g$ = 1 退回 MHA（每组独占 K/V）， $g = H_q$ 即 MQA（全体一组）。GQA 论文的记号 GQA-$N$ 指 $N$ 个 KV 头，即 $N = H_{kv}$。三种形态的 K/V 分配（ $H_q$ = 32、 $g$ = 4 即 Llama-3.1-8B 形态）：
+$g$ = 1 退回 MHA（每组独占 K/V）， $g = H_q$ 即 MQA（全体一组）。GQA 论文的记号 GQA-$`N`$ 指 $N$ 个 KV 头，即 $N = H_{kv}$。三种形态的 K/V 分配（ $H_q$ = 32、 $g$ = 4 即 Llama-3.1-8B 形态）：
 
 ```
 MHA (g = 1)              GQA (g = 4)                 MQA (g = 32)
@@ -175,7 +175,7 @@ $$
 
 $k^{C}$ 从计算图中消失：score 直接打在 cached latent $c_s^{KV}$ 上。decode 每步每 token 每层读的就是 576 元素，而不是展开后的全量 KV—— $2 H d_h + d_R$ = 2 × 128 × 128 + 64 = 32832 元素（ $H$ 份 $k^{C}$、 $H$ 份 $v^{C}$ 与共享 $k^{R}$）——读取削减 57 倍。2.4 §6 的口径下（decode $I \approx 1$–2.5、ridge $10^{2}$ 量级，memory-bound），这笔账直接换算成墙钟。
 
-合并算子还有一个结构注记： $`\tilde{W}_h = (W_h^{UQ})^{\top} W_h^{UK} \in \mathbb{R}^{d_c' \times d_c}`$ 的秩 ≤ $d_h$ = 128——吸收形下每头对 latent 的 score 仍是一个 rank-128 双线性型，与 2.3 §2「score 经 rank-$d_k$ 透镜读 stream」逐项对应；变化只是透镜的观测对象从逐头独立的 $k_s$ 换成了共享 latent $c_s^{KV}$。检索分辨率不因吸收而变——吸收是执行层变换，数学对象（式 (11) 两端）逐点相等。
+合并算子还有一个结构注记： $`\tilde{W}_h = (W_h^{UQ})^{\top} W_h^{UK} \in \mathbb{R}^{d_c' \times d_c}`$ 的秩 ≤ $d_h$ = 128——吸收形下每头对 latent 的 score 仍是一个 rank-128 双线性型，与 2.3 §2「score 经 rank-$`d_k`$ 透镜读 stream」逐项对应；变化只是透镜的观测对象从逐头独立的 $k_s$ 换成了共享 latent $c_s^{KV}$。检索分辨率不因吸收而变——吸收是执行层变换，数学对象（式 (11) 两端）逐点相等。
 
 ### 4.4 W_UV absorption：对称的一笔
 
@@ -305,7 +305,7 @@ FA2 与 FA3 各一句话：FA2（[Dao, 2023](../references.md)，arXiv:2307.0869
 
 ## 练习
 
-1.（推导）MQA 的透镜账。2.3 §2：MHA 第 $h$ 头经 rank-$d_k$ 双线性型 $A_h = (W_h^{Q})^{\top} W_h^{K}$ 读 stream。(a) 写出 MQA 下第 $h$ 头的等价双线性型 $A_h^{MQA}$，说明 $H_q$ 个 $A_h^{MQA}$ 的「K 侧行空间」为什么被钉在同一组基上；(b) 设 $v_s$ 全头共享，证明对任意 attention 权重分配，每头输出 $o_{t,h} \in \mathrm{span}\lbrace v_s\rbrace_{s \le t}$，即全部头的读出共享同一条维数 ≤ $d_{\mathrm{head}}$ 的 value 通道——与 MHA 的 $H_q$ 份独立 $\lbrace v_{s,h}\rbrace$ 对照，说明「value 交付带宽与 $H_q$ 无关」的准确含义。
+1.（推导）MQA 的透镜账。2.3 §2：MHA 第 $h$ 头经 rank-$`d_k`$ 双线性型 $A_h = (W_h^{Q})^{\top} W_h^{K}$ 读 stream。(a) 写出 MQA 下第 $h$ 头的等价双线性型 $A_h^{MQA}$，说明 $H_q$ 个 $A_h^{MQA}$ 的「K 侧行空间」为什么被钉在同一组基上；(b) 设 $v_s$ 全头共享，证明对任意 attention 权重分配，每头输出 $o_{t,h} \in \mathrm{span}\lbrace v_s\rbrace_{s \le t}$，即全部头的读出共享同一条维数 ≤ $d_{\mathrm{head}}$ 的 value 通道——与 MHA 的 $H_q$ 份独立 $\lbrace v_{s,h}\rbrace$ 对照，说明「value 交付带宽与 $H_q$ 无关」的准确含义。
 2.（推导）MLA absorption 的形状与账。设 $d_c$ = 512、 $d_c'$ = 1536、 $d_h$ = $d_v$ = 128、 $d_R$ = 64、 $H$ = 128。(a) 写出 $`W_h^{UQ}, W_h^{UK}, \tilde{W}_h, \widehat{W}_h`$ 的全部 shape 并验证式 (11)(14) 的矩阵乘法合法；(b) decode 第 $t$ 步，分别计算吸收形（score 对 $c$ 打）与非吸收形（先展开 $K^C, V^C$ 再算）的逐头 score FLOPs 与每 token 每层 KV 读取字节，验证「FLOPs 3 倍、读取 57 倍」的交换比；(c) prefill 长度 $T_p$ 时两形态的 $QK^{\top}$ FLOPs 各是多少？由此说明 prefill 用展开形的理由。
 3.（计算）DeepSeek-V3 满窗账：61 层、每 token 每层 576 元素、bf16、 $T$ = 163840。(a) 单序列 cache 总量（GiB）；(b) 同窗口反事实 MHA（ $H$ = 128、 $d_{\mathrm{head}}$ = 128）与反事实 GQA-8（ $H_{kv}$ = 8）各多少；(c) $B$ = 16 并发下三者的 cache 总量；设权重 671B 参数以 fp8（1 字节）驻留约 671 GB，指出 cache 与权重在显存预算中的相对位置随 $B$ 的变化。
 4.（代码）教学实现 online softmax forward（教学用，非优化实现）：随机 $Q, K, V$（ $T$ = 1024、 $d$ = 64、fp32），按式 (15)(16) 以块大小 $B_c$ = 128 实现 causal attention forward，与 `F.scaled_dot_product_attention(is_causal=True)` 断言 allclose（容差 $10^{-5}$）。扫 $B_c \in \lbrace32, 64, 128, 256\rbrace$：(a) 验证输出不随块大小改变（精确性的可执行形式）；(b) 记录峰值显存，对照 2.3 §7 教学版在同一 $T$ 下的物化账。

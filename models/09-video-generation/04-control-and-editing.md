@@ -202,7 +202,7 @@ I_1 ─► [段 1: p(V_1 | I_1, c_1)] ─► V_1 ─► last(Dec(V_1)) = I_2 ─
 | --- | --- | --- | --- |
 | I2V 输入拼接 | latent concat + mask | 式 (1)(2)：36 = 16+16+4（Wan2.1-I2V config） | 首层增量 $\sim 10^{5}$ 参数；binary mask 官方语义（1=preserved）+ 时间 stride 重排为 4 通道；新增投影层零初始化（起点即原模型）； $\mathcal{A} = \varnothing$ 退化回 T2V |
 | 条件失配 | noise augmentation（SVD 谱系，[B]）/ 数据过滤（Wan，[A]） | 式 (3)： $\hat z_c = z_c + \sigma_c \eta$；SigLIP 相似度阈值过滤 | 破复制捷径 / 收窄训练条件分布——同一失败模式的两端，可叠加 |
-| 语义图像条件 | CLIP embedding cross-attn | `clip_fea`：MLPProj(1280→$d$) 注入（Wan 代码实测） | 像素级（concat）与语义级（CLIP）双通道分工 |
+| 语义图像条件 | CLIP embedding cross-attn | `clip_fea`：MLPProj(1280→ $d$) 注入（Wan 代码实测） | 像素级（concat）与语义级（CLIP）双通道分工 |
 | 结构控制 | ControlNet 可训练副本 + zero-conv | 式 (4)：零初始化 ⇒ 起点即原模型 | 门先开、支路后动；与 adaLN-Zero / LoRA 同族 |
 | 相机控制 | Plücker 射线图 | 式 (5)： $(d,\hspace{5mu} o \times d) \in \mathbb{R}^{6}$ / pixel | moment 与取点无关；旋转/平移分置；与网格同形 |
 | 轨迹控制 | drag point 高斯图 | 式 (6)： $\exp(-\lVert \cdot \rVert^{2} / 2\sigma_g^{2})$ | $\sigma_g$ = 软约束半径；多点可表旋转/形变 |

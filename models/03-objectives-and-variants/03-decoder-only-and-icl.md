@@ -169,7 +169,7 @@ Olsson et al. 的第二组结果是动力学而非结构：沿训练步数看，
 
 | 内容 | 公式 / 出处 | 要点 |
 | --- | --- | --- |
-| 任务空间论证 | 式 (1)： $p(y \mid c) = \prod_t p(z_{|c|+t} \mid z_{<|c|+t})$ | 条件任务 = CLM 联合分布的切片；任务接口是数据不是参数 |
+| 任务空间论证 | 式 (1)： $p(y \mid c) = \prod_t p(z_{\|c\|+t} \mid z_{<\|c\|+t})$ | 条件任务 = CLM 联合分布的切片；任务接口是数据不是参数 |
 | 增量计算经济学 | 2.4 式 (4)(5)(8)(9) | 可缓存 ⟺ causal；ICL 的物理载体 = KV cache + residual stream |
 | 训练-推理一致性 | 2.4 §7 | 并行前向 ≡ 串行 decode 同一数学对象；exposure bias 归 training |
 | ICL 形式化 | 式 (2)： $s_K = \tau(x_1, y_1) \oplus \cdots \oplus \tau(x_q)$ | 无梯度、信息通道只有 token；zero / one / few-shot |

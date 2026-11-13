@@ -59,7 +59,7 @@ X [B, T, d]                          ← 2.1 式 (1) 中 RMSNorm(x) 的输出
                           O = PV   [B, T, d_k]
 ```
 
-score 的另一种读法值得登记： $\langle q_t, k_s \rangle = x_t^{\top} W^{Q} W^{K\top} x_s$。矩阵 $A = W^{Q} W^{K\top} \in \mathbb{R}^{d \times d}$ 的秩至多为 $d_k$——attention 通过一个 rank-$d_k$ 的双线性型（bilinear form）读 stream。代入锚点： $d$ = 4096、 $d_k$ = 128（Llama-3.1-8B 与 OLMo-2-7B 同值），每个 score 只经过 rank-128 的透镜，是 $d$ 维内容的 3% 截面。多头（第 5 节）就是并排摆放 $H$ 个这样的低秩透镜。
+score 的另一种读法值得登记： $\langle q_t, k_s \rangle = x_t^{\top} W^{Q} W^{K\top} x_s$。矩阵 $A = W^{Q} W^{K\top} \in \mathbb{R}^{d \times d}$ 的秩至多为 $d_k$——attention 通过一个 rank-$`d_k`$ 的双线性型（bilinear form）读 stream。代入锚点： $d$ = 4096、 $d_k$ = 128（Llama-3.1-8B 与 OLMo-2-7B 同值），每个 score 只经过 rank-128 的透镜，是 $d$ 维内容的 3% 截面。多头（第 5 节）就是并排摆放 $H$ 个这样的低秩透镜。
 
 ## 3. $\sqrt{d_k}$ 完整推导链
 
@@ -143,7 +143,7 @@ $$
 
 ## 5. Multi-head attention：拆分、合并与参数账
 
-单头把 score 限制在一个 rank-$d_k$ 双线性型里（§2）。multi-head attention（MHA）并排 $H$ 个独立投影组，再把输出拼回 $d$ 维（[Vaswani et al., 2017](../references.md)，arXiv:1706.03762，[A]，§3.2.2）：
+单头把 score 限制在一个 rank-$`d_k`$ 双线性型里（§2）。multi-head attention（MHA）并排 $H$ 个独立投影组，再把输出拼回 $d$ 维（[Vaswani et al., 2017](../references.md)，arXiv:1706.03762，[A]，§3.2.2）：
 
 $$
 \mathrm{head}_h = \mathrm{Attention}\left(X W_h^{Q}, X W_h^{K}, X W_h^{V}\right), \qquad \mathrm{MHA}(X) = \mathrm{concat}\left(\mathrm{head}_1, \ldots, \mathrm{head}_H\right) W^{O} \qquad (11)
@@ -296,11 +296,11 @@ assert torch.allclose(mha(x), o_ref, atol=1e-5, rtol=1e-5)  # 容差口径：CPU
 | 概念 | 公式 / 数值 | 要点 |
 | --- | --- | --- |
 | 软检索 | argmax 不可导 → softmax 凸组合，式 (1)(2) | $\tau \to 0$ 退回硬检索；温度即缩放 |
-| QKV 投影 | $W^{Q}, W^{K}, W^{V} \in \mathbb{R}^{d \times d_k}$，式 (3) | 同源三角色；score 是 rank-$d_k$ 双线性型 |
+| QKV 投影 | $W^{Q}, W^{K}, W^{V} \in \mathbb{R}^{d \times d_k}$，式 (3) | 同源三角色；score 是 rank-$`d_k`$ 双线性型 |
 | attention 公式 | $\mathrm{softmax}(QK^{\top}/\sqrt{d_k}) V$，式 (4) | 唯一 $T^{2}$ 对象 $[B,H,T,T]$ |
-| $\sqrt{d_k}$ 链 | $\mathrm{Var}(q \cdot k) = d_k$（式 (5)–(7)）→ 饱和（ $d_k$ = 128、 $T$ = 4096 时 $p_{\max} \approx 0.8$–$0.94$，中位 key 权重 $\sim 10^{-18}$）→ $J = \mathrm{diag}(p) - pp^{\top}$（式 (8)）→ $\partial L / \partial z_j = p_j (g_j - \bar{g})$（式 (9)） | 假设 (A1) 是初始化口径；幂次 $1/2$ 唯一；训练中 logit 增长归 2.7 |
+| $\sqrt{d_k}$ 链 | $\mathrm{Var}(q \cdot k) = d_k$（式 (5)–(7)）→ 饱和（ $d_k$ = 128、 $T$ = 4096 时 $p_{\max} \approx 0.8\text{–}0.94$，中位 key 权重 $\sim 10^{-18}$）→ $J = \mathrm{diag}(p) - pp^{\top}$（式 (8)）→ $\partial L / \partial z_j = p_j (g_j - \bar{g})$（式 (9)） | 假设 (A1) 是初始化口径；幂次 $1/2$ 唯一；训练中 logit 增长归 2.7 |
 | 数值稳定 | max 减法不变性，式 (10) | fp32/bf16 在 $z \approx 88$ 溢出、fp16 在 $z \approx 11$ 溢出；生产侧 fp32 softmax |
-| multi-head | 式 (11)；参数 $4d^{2}$ 与 $H$ 无关 | $H$ 个 rank-$d_k$ 透镜并行；scores 内存 $\propto H$ |
+| multi-head | 式 (11)；参数 $4d^{2}$ 与 $H$ 无关 | $H$ 个 rank-$`d_k`$ 透镜并行；scores 内存 $\propto H$ |
 | 置换等变 | $\mathrm{Attention}(P_\pi Q, P_\pi K, P_\pi V) = P_\pi \thinspace \mathrm{Attention}(Q, K, V)$ | 无位置信息的整机等变 ⇒ 位置编码必要 → 2.5 |
 | 复杂度 | $8Td^{2} + 2T^{2}d$（causal），式 (12)；scores+probs $4HT^{2}$ 字节 | 交叉点 $T = 4d$； $T$ = 131072 时单层 2 TiB → FlashAttention（4.1） |
 

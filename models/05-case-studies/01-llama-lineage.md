@@ -230,7 +230,7 @@ projector ──► 与文本 token 同一 embedding 空间 ──► 同一条 
 
 顶层与视觉侧：`architectures = Llama4ForConditionalGeneration`（early fusion 的 config 级证据，§5.3）；`vision_config` = 34 层 / hidden 1408 / patch 14 / `pixel_shuffle_ratio = 0.5` / 16 heads（token 账见 §5.3 图）。
 
-按 2.8 式 (6) 的口径起算（每 expert 三矩阵 $3 \times 5120 \times 8192 \approx 125.8$M；shared expert 按同尺寸计）：routed experts 合计 $16 \times 48 \times 125.8\text{M} \approx 96.6$B，shared expert $48 \times 125.8\text{M} \approx 6.0$B；attention 每层 62.9M（Q 26.2M + K/V 10.5M + O 26.2M），48 层约 3.0B；embedding 加输出头 2.07B——合计约 107.7B，加 vision tower（34 层、 $d$ = 1408，按 $12d^{2}$ 速算 ≈ 0.8B）与 projector、norm 增益，对 blog 的 109B 闭合到约 1B 余量。active 侧同样闭合：attention 3.0B + 每 token 1 routed + 1 shared（ $2 \times 6.0$B）+ embedding/输出头 2.07B ≈ 17.2B ≈ blog 的 17B——「17B active」的口径由此可读为文本侧每 token 激活参数，不含 vision tower。两个 blog 数字同时对上，是这套字段读法的自洽性检验；剩余余量的逐项归属见练习 4。
+按 2.8 式 (6) 的口径起算（每 expert 三矩阵 $3 \times 5120 \times 8192 \approx 125.8\text{M}$；shared expert 按同尺寸计）：routed experts 合计 $16 \times 48 \times 125.8\text{M} \approx 96.6\text{B}$，shared expert $48 \times 125.8\text{M} \approx 6.0\text{B}$；attention 每层 62.9M（Q 26.2M + K/V 10.5M + O 26.2M），48 层约 3.0B；embedding 加输出头 2.07B——合计约 107.7B，加 vision tower（34 层、 $d$ = 1408，按 $12d^{2}$ 速算 ≈ 0.8B）与 projector、norm 增益，对 blog 的 109B 闭合到约 1B 余量。active 侧同样闭合：attention 3.0B + 每 token 1 routed + 1 shared（ $2 \times 6.0\text{B}$）+ embedding/输出头 2.07B ≈ 17.2B ≈ blog 的 17B——「17B active」的口径由此可读为文本侧每 token 激活参数，不含 vision tower。两个 blog 数字同时对上，是这套字段读法的自洽性检验；剩余余量的逐项归属见练习 4。
 
 ## 7. 技术开放问题清单
 

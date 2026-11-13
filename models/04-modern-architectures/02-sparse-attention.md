@@ -23,9 +23,9 @@
 | SWA（Mistral-7B） | 最近 $w$ 个 | 否 | token | $O(w)$ | 从头训 |
 | SWA+full 混合（Gemma 3） | 5/6 层滑窗 + 1/6 层全量 | 否 | token | 混合 | 从头训 |
 | sink+滑窗（StreamingLLM） | 首 4 个 + 最近 $w$ 个 | 否 | token | $O(w)$ | 免训插入 |
-| NSA | 压缩全局 + top-$n$ 块 + 滑窗 | 是（块分数） | 块 | $O(t/d + n l' + w)$ | 原生联合训练 |
+| NSA | 压缩全局 + top-$`n`$ 块 + 滑窗 | 是（块分数） | 块 | $O(t/d + n l' + w)$ | 原生联合训练 |
 | DSA（DeepSeek-V3.2） | indexer top-2048 | 是（打分器） | token | $O(K)$ + indexer 全量打分 | 从 dense 续训 |
-| MoBA | top-$k$ 块（+SWA hybrid） | 是（块路由） | 块 | $O(k \cdot n_b)$ | 免训插入声明 |
+| MoBA | top-$`k`$ 块（+SWA hybrid） | 是（块路由） | 块 | $O(k \cdot n_b)$ | 免训插入声明 |
 
 ## 2. SWA：滑窗、三笔账与 $L \cdot w$ 感受野推导
 
@@ -160,7 +160,7 @@ $$
 
 **符号**： $`f^{cmp}_K`$：MLP，输入为块内 $l$ 个 key 的拼接加块内位置编码，输出单个 $d_{\mathrm{head}}$ 维压缩 key（ $\tilde{v}^{cmp}$ 同构）；压缩序列长约 $t / d$——全局信息以 $d$ 倍稀释的分辨率全员在场，needle 的「有没有、大概在哪个块」由这条支路回答。
 
-**Selection（选择细粒度）**。细粒度块（块长 $l'$、不重叠）的重要性分数从 compression 支路的真实 attention 权重聚合而来（对齐情形 $l = d = l'$ 时直接复用 $`p^{cmp}_t`$；一般情形对重叠的压缩块求和），取 top-$n$ 块、用块内**原始** K/V 算精确 attention：
+**Selection（选择细粒度）**。细粒度块（块长 $l'$、不重叠）的重要性分数从 compression 支路的真实 attention 权重聚合而来（对齐情形 $l = d = l'$ 时直接复用 $`p^{cmp}_t`$；一般情形对重叠的压缩块求和），取 top-$`n`$ 块、用块内**原始** K/V 算精确 attention：
 
 $$
 p^{slc}_t[j] = \sum_{i:\ \mathrm{block}_i\thinspace \cap\thinspace \mathrm{sel}_j \neq \varnothing} p^{cmp}_t[i], \qquad \mathcal{I}_t = \operatorname{TopN}\left( p^{slc}_t,\ n \right) \qquad (9)
@@ -184,7 +184,7 @@ $$
 
 **硬件对齐**（论文设计口径）：selection 块长取 64——对齐 GPU tensor core tile 粒度与连续显存读取；且 GQA 组内全部 query 头共享同一份块选择（group-consistent），选中块整块载入、一次 gather-matmul 服务全组，把「动态选择」做成 kernel 友好的规则访存。
 
-论文工作点（[B]，按论文引）： $l$ = 32、 $d$ = 16、 $l'$ = 64、 $n$ = 16、 $w$ = 512。代入每 query 的 key 位账：compression $t/16$ + selection $16 \times 64$ + sliding $512$； $t$ = 131072 时约 $8192 + 1024 + 512 \approx 9.7$K，为全量 131K 的 7.4%。注意 compression 项仍随 $t$ 线性涨——NSA 对全局的处理是稀释，不是删除。
+论文工作点（[B]，按论文引）： $l$ = 32、 $d$ = 16、 $l'$ = 64、 $n$ = 16、 $w$ = 512。代入每 query 的 key 位账：compression $t/16$ + selection $16 \times 64$ + sliding $512$； $t$ = 131072 时约 $8192 + 1024 + 512 \approx 9.7\text{K}$，为全量 131K 的 7.4%。注意 compression 项仍随 $t$ 线性涨——NSA 对全局的处理是稀释，不是删除。
 
 与 4.3 的对照能看清 compression 支路的定位：线性 attention 把全部历史压成固定大小的状态矩阵（不随 $t$ 涨），NSA 的压缩序列长 $t/d$ 仍随 $t$ 线性涨——前者付固定容量的信息论上界（associative recall 受限，4.3 §末），后者付线性增长的读取账但保留「按内容把局部放大」的通道：selection 支路就是在压缩图上按内容买回分辨率的机制。
 
@@ -241,7 +241,7 @@ $$
 
 ## 7. MoBA：query 级块路由
 
-MoBA（[Lu et al., 2025](../references.md)，arXiv:2502.13189，**[B]：官方 repo MoonshotAI/MoBA 仅代码、无开放权重，本节公式按论文拆**）把 MoE 的路由结构搬进可见集选择：历史分块、块即「专家」、query 对每块打分、top-$k$ 块入选。历史序列按块长 $n_b$ 切块，打分用块内 key 的均值池化向量：
+MoBA（[Lu et al., 2025](../references.md)，arXiv:2502.13189，**[B]：官方 repo MoonshotAI/MoBA 仅代码、无开放权重，本节公式按论文拆**）把 MoE 的路由结构搬进可见集选择：历史分块、块即「专家」、query 对每块打分、top-$`k`$ 块入选。历史序列按块长 $n_b$ 切块，打分用块内 key 的均值池化向量：
 
 $$
 \bar{k}_i = \frac{1}{n_b} \sum_{k \in \mathrm{block}_i} k, \qquad s_i = \langle q_t,\ \bar{k}_i \rangle, \qquad \mathcal{I}_t = \operatorname{TopK}\left( \lbrace s_i\rbrace,\ k \right) \qquad (15)
@@ -282,7 +282,7 @@ $$
 | sink+SWA | 首 4 + 最近 $w$ | 静态 / token | $w$ + 4 | 封顶 | 免训插入 | StreamingLLM [A] |
 | NSA | 压缩+选择+滑窗 | 动态 / 块 | ≈ 9.7K（7.4%） | 不减 | 原生联合训 | arXiv:2502.11089 [B] |
 | DSA | indexer top-2048 | 动态 / token | $K$ = 2048（1.6%） | 不减（读取减 64×） | 从 dense 续训 ≈ 0.94T token | DeepSeek-V3.2-Exp [A] |
-| MoBA | top-$k$ 块（+SWA） | 动态 / 块 | $k \cdot n_b$ | 不减 | 免训插入声明 | MoonshotAI/MoBA [B] |
+| MoBA | top-$`k`$ 块（+SWA） | 动态 / 块 | $k \cdot n_b$ | 不减 | 免训插入声明 | MoonshotAI/MoBA [B] |
 
 公式清单：SWA 可见集式 (1)；感受野 $\rho_L(t) = t - L(w-1)$ 式 (2)(3)；SWA cache 封顶式 (4)；混合层 FLOPs 比式 (5)；sink 输出分解式 (6) 与驱逐放大式 (7)；NSA 三分支式 (8)–(10) 与门控式 (11)；DSA indexer 打分式 (12)、top-K 式 (13)、KL 蒸馏式 (14)；MoBA 块路由式 (15)(16)。
 
@@ -291,7 +291,7 @@ $$
 1.（推导）补全式 (3) 的归纳证明：写明「第 $\ell$ 层读窗一步」如何给出递推式 (2)（提示：FFN / norm / 残差逐位置，依赖只经 attention 扩展）。然后：(a) 代入 Mistral-7B（ $L$ = 32、 $w$ = 4096）算精确感受野，说明论文「约 131K」口径与精确值差在哪；(b) 若窗口逐层交替 $w_1, w_2, w_1, w_2, \ldots$，写出 $R$ 的通式；(c) 证明：在纯 SWA 栈中，若把其中一层换成 global（ $V(i) = \lbrace1..i\rbrace$），则该层之后所有层的 $\rho_\ell(t) = 1$。
 2.（推导）sink 账：设一行 logit $z_1, \ldots, z_t$，sink 位置 1 占质量 $\pi$。(a) 由式 (7) 出发，证明驱逐位置 1 后任意两个幸存位置的权重比不变（ $`p'_s / p'_j = p_s / p_j`$），但输出从 $o = \pi v_1 + (1-\pi)\bar v_{\mathrm{rest}}$ 变为 $\bar v_{\mathrm{rest}}$——何时这个变化剧烈？(b) 证明 $\pi \to 1$ 且 $\Vert v_1\Vert \to 0$ 时 $o_t \to 0$，并把它与「softmax 均匀摊开」这一另一默认解比较：为什么均匀解不能近似 head 静默（提示：全体 value 均值的范数下界由什么决定）？
 3.（计算）DSA decode 账：61 层 MLA、576 元素 / token / 层、bf16、 $t$ = 131072、 $K$ = 2048。(a) 验证正文的 144 MB / 步 vs 9.2 GB / 步；(b) 若 indexer key 为 $d_I$ 维 FP8（每 token 每层 $d_I$ 字节），全量打分每步需读 $61 \times t \times d_I$ 字节—— $d_I$ = 128 时这笔账是多少，与主路省下的相比如何？由此说明为什么 indexer「 $O(T^2)$ 打分」在 decode 侧仍成立（提示：2.4 §6 的 memory-bound 结论）。
-4.（代码）教学实现（非优化）：(a) 给 2.3 §8 的 MHA 加 SWA mask（式 (1)），验证 $T \le w$ 时与 full causal 输出逐点相同、 $T > w$ 时窗口内行为一致；(b) 实现 MoBA 式块路由：均值池化打分、top-$k$ 选块、当前块恒选、未来块屏蔽，构造一个 needle 序列（目标块与 query 相关、其余随机），对比 full / SWA / MoBA 在 needle 距离从 $w$ 内移到 $L \cdot w$ 外时的召回行为。
+4.（代码）教学实现（非优化）：(a) 给 2.3 §8 的 MHA 加 SWA mask（式 (1)），验证 $T \le w$ 时与 full causal 输出逐点相同、 $T > w$ 时窗口内行为一致；(b) 实现 MoBA 式块路由：均值池化打分、top-$`k`$ 选块、当前块恒选、未来块屏蔽，构造一个 needle 序列（目标块与 query 相关、其余随机），对比 full / SWA / MoBA 在 needle 距离从 $w$ 内移到 $L \cdot w$ 外时的召回行为。
 
 ## 参考
 

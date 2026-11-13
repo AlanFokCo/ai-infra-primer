@@ -1,6 +1,6 @@
 # 7.2 DDPM 完整推导（Denoising Diffusion Probabilistic Models: The Complete Derivation）
 
-> 本章把 DDPM 从一条高斯加噪链推到底：前向闭式解（高斯卷积递推）、noise schedule 的 linear/cosine 对比与频谱读法、反向过程的参数化、后验 $q(x_{t-1} \mid x_t, x_0)$ 的 Bayes 配方推导、ELBO 三项分解、 $\varepsilon$-参数化、 $L_{simple}$ 与严格 ELBO 的 SNR weighting 差异、 $\varepsilon$/$x_0$/$v$ 三种预测参数化换算、 $\sigma_t$ 的两个选择 | 前置：1.1（KL 散度与 CE 分解式 (6)）、6.3（ELBO 双路径推导式 (3)(4)、reparameterization、Gaussian KL 闭式式 (6)(7)）、7.1（生成模型家族定位） | 锚点：DDPM [A]、iDDPM [A]、progressive distillation [A]（v-prediction 原始出处）；hojonathanho/diffusion [A]、lucidrains/denoising-diffusion-pytorch（教学参照）
+> 本章把 DDPM 从一条高斯加噪链推到底：前向闭式解（高斯卷积递推）、noise schedule 的 linear/cosine 对比与频谱读法、反向过程的参数化、后验 $q(x_{t-1} \mid x_t, x_0)$ 的 Bayes 配方推导、ELBO 三项分解、 $\varepsilon$-参数化、 $L_{simple}$ 与严格 ELBO 的 SNR weighting 差异、 $\varepsilon$/$`x_0`$/$`v`$ 三种预测参数化换算、 $\sigma_t$ 的两个选择 | 前置：1.1（KL 散度与 CE 分解式 (6)）、6.3（ELBO 双路径推导式 (3)(4)、reparameterization、Gaussian KL 闭式式 (6)(7)）、7.1（生成模型家族定位） | 锚点：DDPM [A]、iDDPM [A]、progressive distillation [A]（v-prediction 原始出处）；hojonathanho/diffusion [A]、lucidrains/denoising-diffusion-pytorch（教学参照）
 
 ## 1. 问题设定：一条固定的加噪链 + 一个学习的逆过程
 

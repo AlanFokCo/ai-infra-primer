@@ -230,19 +230,19 @@ $$
 
 ## 5. 从稀疏激活到 MoE：预告（→ 4.5）
 
-§4.2 第一条证据有一个直接的工程读法：若每位置只有一小撮条目被取出，dense FFN「每 token 为全表 $d_{\mathrm{ff}}$ 付 FLOPs」就是把算力花在没点火的条目上。MoE（Mixture-of-Experts）把这个观察做成架构：单层 FFN 复制成 $n$ 份（expert），每位置由 router 选 top-$k$ 个激活——总记忆容量乘 $n$，per-token FLOPs 只乘 $k$。1.3 已在 scaling 曲线上登记过这笔 $N_{\mathrm{act}}$ / $N_{\mathrm{tot}}$ 分离的账；实现端的极端值是 DeepSeek-V3：每层 256 个 routed expert + 1 个共享 expert、每 token 激活 8 个、前 3 层仍为 dense FFN，671B 总参数 / 37B 激活（[DeepSeek-V3 config](../references.md)，[A]；[DeepSeek-AI, 2024](../references.md)，arXiv:2412.19437，[A]）。对照式 (8) 的「等参数换结构」，MoE 是同一思想在 FFN 维度上的稀疏化升级：等 FLOPs 换容量。本章交给 4.5 的接口有两件：式 (8) 的等参数口径（单个 expert 的尺寸按 $8/3$ 规则起算），与式 (10) 的系数视角（router 的 top-$k$ 选择相当于把 $c_i(x)$ 的软稀疏改成条目粒度的硬稀疏）。路由公式、负载均衡与细粒度 expert 的推导见 4.5。
+§4.2 第一条证据有一个直接的工程读法：若每位置只有一小撮条目被取出，dense FFN「每 token 为全表 $d_{\mathrm{ff}}$ 付 FLOPs」就是把算力花在没点火的条目上。MoE（Mixture-of-Experts）把这个观察做成架构：单层 FFN 复制成 $n$ 份（expert），每位置由 router 选 top-$`k`$ 个激活——总记忆容量乘 $n$，per-token FLOPs 只乘 $k$。1.3 已在 scaling 曲线上登记过这笔 $N_{\mathrm{act}}$ / $N_{\mathrm{tot}}$ 分离的账；实现端的极端值是 DeepSeek-V3：每层 256 个 routed expert + 1 个共享 expert、每 token 激活 8 个、前 3 层仍为 dense FFN，671B 总参数 / 37B 激活（[DeepSeek-V3 config](../references.md)，[A]；[DeepSeek-AI, 2024](../references.md)，arXiv:2412.19437，[A]）。对照式 (8) 的「等参数换结构」，MoE 是同一思想在 FFN 维度上的稀疏化升级：等 FLOPs 换容量。本章交给 4.5 的接口有两件：式 (8) 的等参数口径（单个 expert 的尺寸按 $8/3$ 规则起算），与式 (10) 的系数视角（router 的 top-$`k`$ 选择相当于把 $c_i(x)$ 的软稀疏改成条目粒度的硬稀疏）。路由公式、负载均衡与细粒度 expert 的推导见 4.5。
 
 ## 总结
 
 | 概念 | 公式 / 数值 | 要点 |
 | --- | --- | --- |
 | 两矩阵 FFN | $\mathrm{FFN}(x) = \sigma(xW_1)W_2$，式 (1) | 逐位置； $d_{\mathrm{ff}} = 4d$ → $8d^{2}$/层 ≈ 2/3 层参数；现代配方无 bias |
-| GELU | $x\thinspace\Phi(x)$，式 (2)(3) | Bernoulli($\Phi(x)$) 随机门的期望；唯一驻点 $`x^{*} \approx -0.75`$； $`\approx \mathrm{Swish}_{1.702}`$；GPT-2 gelu_new = tanh 近似 [W] |
+| GELU | $x\thinspace\Phi(x)$，式 (2)(3) | $\mathrm{Bernoulli}(\Phi(x))$ 随机门的期望；唯一驻点 $`x^{*} \approx -0.75`$； $`\approx \mathrm{Swish}_{1.702}`$；GPT-2 gelu_new = tanh 近似 [W] |
 | SwiGLU | $`(\mathrm{Swish}_1(xW) \odot xV)W_2`$，式 (5)(6) | 门控三作用：数据依赖开关、双路梯度（式 (7)）、rank-1 二次型；同参同算力优于 ReLU / GELU 基线 [B] |
 | 等参数规则 | $3d\thinspace d_{\mathrm{ff}}' = 2d\thinspace d_{\mathrm{ff}}$ ⟹ $d_{\mathrm{ff}}' = 8d/3$，式 (8) | $d = 4096$ → 10922.67；参数与 FLOPs 同一条件钉死；4.5 / Part 5 复用 |
 | 三家对账 | OLMo-2 11008（≈2.69d，43×256）/ Qwen3 12288（3d）/ Llama-3.1 14336（3.5d） | FFN 占层 67% / 78% / 81%；规则是起点非铁律；16384 = 两矩阵宽度直搬，被共同否决 |
 | FFN = KV 记忆 | $\mathrm{FFN}(x) = \sum_i \sigma(k_i \cdot x)\thinspace v_i$，式 (9)(10) | $d_{\mathrm{ff}} \times L$ 条参数化记忆（Llama-3.1-8B 458752 条）；稀疏激活、模式分层、value→词表分布 [B] |
-| MoE 预告 | $n$ expert、top-$k$ 路由 | 等 FLOPs 换容量；DeepSeek-V3：256+1、top-8、671B/37B [A] → 4.5 |
+| MoE 预告 | $n$ expert、top-$`k`$ 路由 | 等 FLOPs 换容量；DeepSeek-V3：256+1、top-8、671B/37B [A] → 4.5 |
 
 ## 练习
 

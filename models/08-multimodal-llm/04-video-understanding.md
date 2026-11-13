@@ -27,7 +27,7 @@ $$
 - 墙一（prefill 的 $O(T^{2})$）： $T$ = 86,400、 $d$ = 3,584 代入单层 $2T^{2}d \approx 5.4 \times 10^{13}$ FLOPs，28 层合计 $\approx 1.5 \times 10^{15}$——已是旗舰卡秒级的理想下界，还没算视觉塔本身的前向。
 - 墙三（softmax 熵稀释）：15K 级视觉 token 摊在同一行归一化里，目标位置所需的 logit 优势随 $\ln T$ 增长（4.6 式 (5) 口径）——长视频「看得见但注意不到」与长文本同机制。
 
-视频因此不是一个新模态问题，而是 4.6 长上下文问题的一个快速实例：它是把 $T$ 抬进 $10^{4}$–$10^{5}$ 档最便宜的途径——一秒钟视频就能产生数百上千个 token。全章的技术地图就是对式 (1) 两个因子的操作：§2 动 $F$（帧从哪来），§4 动 $M$ 与 $F \to$ token 的换算（token 在哪省），§3 解决动 $F$ 之后位置编码的一致性，§5-§8 处理极端 $T$ 与输出、数据、评测。
+视频因此不是一个新模态问题，而是 4.6 长上下文问题的一个快速实例：它是把 $T$ 抬进 $10^{4}\text{–}10^{5}$ 档最便宜的途径——一秒钟视频就能产生数百上千个 token。全章的技术地图就是对式 (1) 两个因子的操作：§2 动 $F$（帧从哪来），§4 动 $M$ 与 $F \to$ token 的换算（token 在哪省），§3 解决动 $F$ 之后位置编码的一致性，§5-§8 处理极端 $T$ 与输出、数据、评测。
 
 ```
 视频 T 秒
@@ -121,7 +121,7 @@ $$
 v'_g = \mathrm{Pool}\negthinspace\left( v_{c_t g},\hspace{5mu} \ldots,\hspace{5mu} v_{c_t g + c_t - 1} \right), \qquad S_{vid} = \frac{F}{c_t} \cdot M \qquad (7)
 $$
 
-**符号**： $c_t$：时间压缩比；Pool：mean / max / concat+linear 皆可（空间版即 8.2 式 (9) 的 pixel shuffle，时间版同族； $c_t$ = 2 常与空间 2×2 叠加成 ÷8 总压缩）。LLM 侧视觉段 ÷$c_t$、attention 二次项 ÷$c_t^{2}$；但 $F$ 帧的 ViT 前向分文未省——长视频场景的吞吐瓶颈若在视觉塔，这个位置不解决问题。LLaVA-OneVision 的视频管线即此族：均匀采样帧各自过视觉塔、空间下采样后按序拼进 LLM（[Li et al., 2024](../references.md)，arXiv:2408.03326，[A]；每帧 token 数与采样帧上限引论文/repo 原文，[LLaVA-NeXT repo](../references.md)，[A]）。位置一与位置二是同一枚硬币的两面：分辨率在 encoder 前丢（便宜）还是在 encoder 后丢（保住 ViT 全程高分辨率）——静态细节多的内容（屏幕文字、文档画面）倾向后者，预算紧的倾向前者。
+**符号**： $c_t$：时间压缩比；Pool：mean / max / concat+linear 皆可（空间版即 8.2 式 (9) 的 pixel shuffle，时间版同族； $c_t$ = 2 常与空间 2×2 叠加成 ÷8 总压缩）。LLM 侧视觉段 ÷ $c_t$、attention 二次项 ÷ $c_t^{2}$；但 $F$ 帧的 ViT 前向分文未省——长视频场景的吞吐瓶颈若在视觉塔，这个位置不解决问题。LLaVA-OneVision 的视频管线即此族：均匀采样帧各自过视觉塔、空间下采样后按序拼进 LLM（[Li et al., 2024](../references.md)，arXiv:2408.03326，[A]；每帧 token 数与采样帧上限引论文/repo 原文，[LLaVA-NeXT repo](../references.md)，[A]）。位置一与位置二是同一枚硬币的两面：分辨率在 encoder 前丢（便宜）还是在 encoder 后丢（保住 ViT 全程高分辨率）——静态细节多的内容（屏幕文字、文档画面）倾向后者，预算紧的倾向前者。
 
 ### 4.3 位置三：connector 侧 temporal queries（resampler 定长瓶颈）
 
@@ -131,8 +131,8 @@ $$
 
 | 压缩位置 | token 公式 | encoder 侧省 | LLM 侧省 | 取舍可学处 | 代表 |
 | --- | --- | --- | --- | --- | --- |
-| 输入侧 3D patch | $(F/\tau_p) \cdot N$ | 是（ViT 序列 ÷$\tau_p$） | 是 | $W_e$ 一层 | Qwen2-VL / 2.5-VL（ $\tau_p$ = 2）[A] |
-| encoder 后 pooling | $(F/c_t) \cdot M$ | 否 | 是（二次项 ÷$c_t^{2}$） | 规则 Pool 或一层线性 | LLaVA-OneVision [A] |
+| 输入侧 3D patch | $(F/\tau_p) \cdot N$ | 是（ViT 序列 ÷ $\tau_p$） | 是 | $W_e$ 一层 | Qwen2-VL / 2.5-VL（ $\tau_p$ = 2）[A] |
+| encoder 后 pooling | $(F/c_t) \cdot M$ | 否 | 是（二次项 ÷ $c_t^{2}$） | 规则 Pool 或一层线性 | LLaVA-OneVision [A] |
 | connector 侧 resampler | 定长 $B$（或 段数 × $B$） | 否 | 最多（与片长解耦） | 整个 resampler 塔 | Flamingo [B] |
 
 ## 5. 流式与长视频：chunk + 循环 memory（机制描述）
@@ -170,7 +170,7 @@ $$
 视频评测比图像评测多一个必须主动防守的失效模式：静态捷径——模型不看时序也能答对。任务类型学先行：
 
 - **整体理解**（MCQA / open-ended QA）：多选题的局限与 8.3 同源（选项偏置、猜测基线），视频版额外叠加静态捷径。
-- **时间定位**：输出时间段，指标 mIoU 与 Recall@IoU=$\theta$：
+- **时间定位**：输出时间段，指标 mIoU 与 Recall@IoU= $\theta$：
 
 $$
 \mathrm{IoU}(A, B) = \frac{|A \cap B|}{|A \cup B|}, \qquad \mathrm{mIoU} = \frac{1}{K}\sum_{k=1}^{K} \mathrm{IoU}(A_k, B_k) \qquad (9)
@@ -188,7 +188,7 @@ $$
 
 | 主题 | 公式 / 数值 | 要点 |
 | --- | --- | --- |
-| 总预算账 | 式 (1) $S_{vid} = F \cdot M$；1min@1fps×256 = 15,360；KV 57,344 B/token（0.88 GB @ 15K） | 视频是把 $T$ 抬进 $10^{4}$-$10^{5}$ 最快的途径；4.6 四堵墙原样适用 |
+| 总预算账 | 式 (1) $S_{vid} = F \cdot M$；1min@1fps×256 = 15,360；KV 57,344 B/token（0.88 GB @ 15K） | 视频是把 $T$ 抬进 $10^{4}\text{–}10^{5}$ 最快的途径；4.6 四堵墙原样适用 |
 | 帧采样 | uniform：式 (2) $F \ge T/\delta$；dynamic：式 (3) $`fps^{*}`$ | 固定 $F$ ⇒ 分辨率随片长退化；固定 fps ⇒ fps 成片长函数，帧序号编码尺子漂移 |
 | 绝对时间编码 | 式 (4) $\tau_f = \operatorname{round}(t_f \nu)$、式 (5) 间隔不变性（误差 ≤1 id） | 采样率从位置语义消掉；定位监督一致； $t$ 段高频通道承细粒度时差；节奏可读（Qwen2.5-VL [A]） |
 | 时间压缩 | 式 (6) 3D patch（ $\tau_p$=2，encoder 也省）；式 (7) 时空 pooling（只省 LLM 侧）；resampler 定长 $B$ | 三位置「谁付钱」对照表（§4 末） |
@@ -211,7 +211,7 @@ $$
 - [Li et al., 2024](../references.md)：LLaVA-OneVision: Easy Visual Task Transfer，arXiv:2408.03326，[A]（key: llava-onevision）——§4.2 encoder 后下采样视频管线、§7 单图阶段→OneVision 混合阶段课程（3.2M 单图；1.6M 混合 = 350K 视频 + 560K 多图 + 800K 单图复用）
 - [Zohar et al., 2024](../references.md)：Apollo: An Exploration of Video Understanding in Large Multimodal Models，arXiv:2412.10360，[B]（key: apollo）——§2 Finding 2（fps 采样优于 uniform）、§4.3 Finding 3/6（tps-fps tradeoff 与 8–32 tokens/帧最优带、Perceiver resampler 占优）、§6 Finding 7（clip 间文本时间戳整合最优）、§7 Finding 10（文本 10–14% + 略偏视频混合）、§8 时长组相关性（ $R^{2}$ = 0.94 / >0.92）；代码与权重已下架，只引论文结论
 - [Alayrac et al., 2022](../references.md)：Flamingo: a Visual Language Model for Few-Shot Learning，arXiv:2204.14198，[B]（key: flamingo）——§4.3 视频 resampler（ $F$ 帧 + 时间位置编码作 K/V）
-- [Qwen, Qwen2.5-VL-7B-Instruct config.json](../references.md)：[A]（key: qwen25vl-config）——ctx 128000、28L/4KV/$d_{head}$ 128、mrope_section [16,24,24]、spatial_merge 2
+- [Qwen, Qwen2.5-VL-7B-Instruct config.json](../references.md)：[A]（key: qwen25vl-config）——ctx 128000、28L/4KV/$`d_{head}`$ 128、mrope_section [16,24,24]、spatial_merge 2
 - [Qwen, QwenLM/Qwen3-VL repo](../references.md)：[A]（key: qwen-vl-repo）——dynamic FPS 官方实现（原 Qwen2.5-VL repo 已 301 归并）
 - [HuggingFace, transformers Qwen2.5-VL modeling](../references.md)：[A]（key: qwen25vl-modeling）——`get_rope_index` 视频分支走读锚点
 - [LLaVA team, LLaVA-NeXT repo](../references.md)：[A]（key: llava-next-repo）——LLaVA-OneVision 视频管线实现口径

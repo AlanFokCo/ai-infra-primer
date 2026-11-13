@@ -53,13 +53,13 @@ t=1.0   [M] [M] [M] [M] [M] [M] [M] [M] [M]
 
 ## 2. 深度稀疏：MoD 与 early-exit
 
-MoD（混合深度，mixture-of-depths；[Raposo et al., 2024](../references.md)，arXiv:2404.02258，[B]）把 4.5 的路由思想从「选哪个 FFN」搬到「这个 token 要不要过这个 block」：每层一台标量 router $r_i^{l} = w^{\top} x_i^{l}$，top-$k$ 选中者过 attention + FFN，其余走残差直通：
+MoD（混合深度，mixture-of-depths；[Raposo et al., 2024](../references.md)，arXiv:2404.02258，[B]）把 4.5 的路由思想从「选哪个 FFN」搬到「这个 token 要不要过这个 block」：每层一台标量 router $r_i^{l} = w^{\top} x_i^{l}$，top-$`k`$ 选中者过 attention + FFN，其余走残差直通：
 
 $$
 x_i^{l+1} = \begin{cases} x_i^{l} + f^{l}\big(\tilde{x}^{l}\big)_i, & i \in \mathrm{TopK}\big(r^{l}, k\big) \\ x_i^{l}, & \text{otherwise} \end{cases} \qquad (4)
 $$
 
-**符号**： $f^{l}$：第 $l$ 个 block（attention + FFN）； $k$：静态容量（论文用序列长的固定分数，如 1/8）； $\tilde{x}^{l}$：选中 token 的子序列。容量写死 ⇒ 负载均衡由构造保证，无 aux loss——与 4.5 的 expert choice 同族（选择方在 block 侧而非 token 侧）。论文报告 iso-FLOPs 训练曲线下移，部分配置下同质量每前向 FLOPs 省至一半量级（论文 claim）。代价两笔：router 的 top-$k$ 依赖整条序列，AR 推理需要辅助预测头来近似；选中 token 的 attention 只在选中集合内闭合，逐 token 的深度不再均匀。**成熟度：研究原型**（无官方代码）。early-exit 是同族更激进的版本：判定器不问「过不过这一层」而问「是否就此读出」，可视为式 (4) 的容量随 token 自适应的极限形态；两者共同的工程难点是逐 token 可变深度与 batch 规整执行的冲突——序列内每个位置的层数不同，kernel 与流水线的处理归 inference 与 cluster 维度。
+**符号**： $f^{l}$：第 $l$ 个 block（attention + FFN）； $k$：静态容量（论文用序列长的固定分数，如 1/8）； $\tilde{x}^{l}$：选中 token 的子序列。容量写死 ⇒ 负载均衡由构造保证，无 aux loss——与 4.5 的 expert choice 同族（选择方在 block 侧而非 token 侧）。论文报告 iso-FLOPs 训练曲线下移，部分配置下同质量每前向 FLOPs 省至一半量级（论文 claim）。代价两笔：router 的 top-$`k`$ 依赖整条序列，AR 推理需要辅助预测头来近似；选中 token 的 attention 只在选中集合内闭合，逐 token 的深度不再均匀。**成熟度：研究原型**（无官方代码）。early-exit 是同族更激进的版本：判定器不问「过不过这一层」而问「是否就此读出」，可视为式 (4) 的容量随 token 自适应的极限形态；两者共同的工程难点是逐 token 可变深度与 batch 规整执行的冲突——序列内每个位置的层数不同，kernel 与流水线的处理归 inference 与 cluster 维度。
 
 ## 3. Differential Attention：两张 softmax 图相减
 
@@ -87,7 +87,7 @@ looped-depth recurrence 是相邻坐标上的另一个旋钮：同一 block 的�
 
 前四节是「新算子」；本节是两个已经在 serving 账上兑现的需求侧变化，方向相同：单次请求的 token 生成量与驻留长度上移。
 
-**测试时扩展（test-time scaling）的架构含义**。长推理链把单次请求的生成从 $10^{2}$–$10^{3}$ token 上移到 $10^{3}$–$10^{5}$：链全程驻留 context，4.6 的四堵墙从长尾需求变为默认约束——KV cache 随链长线性增长（2.4 账），直接抬高 MLA / DSA / KDA（4.1 / 4.2 / 4.3）的受益面；串行 decode 步数随链长放大，MTP 类摊薄（4.5）从加速器变成标配；1.3 的全生命周期账中推理侧占比上移，训练-推理算力配比被重写。工业佐证：DeepSeek-V3.2 把 top-2048 稀疏检索（4.2）带上 128K serving（arXiv:2512.02556，[A]），Kimi K3 以 KDA 主干加 1M 上下文上架（arXiv:2607.24653，[A]）——稀疏层与线性层的工业化正是推理链经济学的直接产物。**成熟度：工业现实**。
+**测试时扩展（test-time scaling）的架构含义**。长推理链把单次请求的生成从 $10^{2}\text{–}10^{3}$ token 上移到 $10^{3}\text{–}10^{5}$：链全程驻留 context，4.6 的四堵墙从长尾需求变为默认约束——KV cache 随链长线性增长（2.4 账），直接抬高 MLA / DSA / KDA（4.1 / 4.2 / 4.3）的受益面；串行 decode 步数随链长放大，MTP 类摊薄（4.5）从加速器变成标配；1.3 的全生命周期账中推理侧占比上移，训练-推理算力配比被重写。工业佐证：DeepSeek-V3.2 把 top-2048 稀疏检索（4.2）带上 128K serving（arXiv:2512.02556，[A]），Kimi K3 以 KDA 主干加 1M 上下文上架（arXiv:2607.24653，[A]）——稀疏层与线性层的工业化正是推理链经济学的直接产物。**成熟度：工业现实**。
 
 **Agentic 化的架构含义**。多轮工具调用在机制上等于：每轮把工具返回 append 进 context，会话单调变长且前缀高度共享。两个直接后果：(a) 前缀复用成为 serving 一级优化（prefix caching 的调度与命中归 inference 维度），架构侧对应的是长窗与有效上下文（4.6 的 claimed vs effective 口径）成为默认指标而非宣传数字；(b) 会话状态即 KV cache 的持久化、分叉与回滚——长会话的边际成本由固定状态层（4.4 的 hybrid 账）与稀疏检索层（4.2）决定，链式生成的串行延迟由 MTP（4.5）与 §1 的并行解码对冲。**成熟度：工业现实**。
 
@@ -100,7 +100,7 @@ looped-depth recurrence 是相邻坐标上的另一个旋钮：同一 block 的�
 | 方向 | 机制一句话 | 关键公式 | 证据锚点 | 成熟度 |
 | --- | --- | --- | --- | --- |
 | diffusion LLM | 逐 token mask 腐蚀 + 联合去掩码；ELBO 塌缩为 $1/t$ 加权 CE | 式 (1)(2)(3) | LLaDA（8B）[A]、SEDD [A] | 研究原型 → 早期工业验证 |
-| MoD / early-exit | 逐 token 决定过不过 block；静态容量 top-$k$ | 式 (4) | MoD [B] | 研究原型 |
+| MoD / early-exit | 逐 token 决定过不过 block；静态容量 top-$`k`$ | 式 (4) | MoD [B] | 研究原型 |
 | differential attention | 两张半维 softmax 图相减消共模噪声 | 式 (5) | arXiv:2410.05258 [A] | 研究原型 |
 | TTT | 隐状态 = 小模型权重，递推即 test-time GD | 式 (6) | TTT [B] | 研究原型 |
 | looped-depth recurrence | 同 block 沿深度循环，参数 ↔ 深度解耦 | —（无锚点） | 概念登记 | 研究原型 |

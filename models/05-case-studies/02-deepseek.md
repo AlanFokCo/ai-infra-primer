@@ -110,7 +110,7 @@ config 的 rope_scaling 是 YaRN 字段的标准实例（W1 实测）：factor 4
 
 V3.2-Exp（[DeepSeek-AI, 2025](../references.md)，arXiv:2512.02556，[A]；官方 repo deepseek-ai/DeepSeek-V3.2-Exp）是稀疏化 retro-fit 的落地样本：架构字段与 V3 同构，增量只有一个模块与一套配方。
 
-**结构（DSA）**。每 query 由 lightning indexer（小维度头、ReLU 打分、可 FP8）对全部历史逐 token 打分，取 top-$K$ = 2048 个位置，MLA 主路只在选中集上算（公式 4.2 式 (12)(13)）。cache 格式不变（576 元素 / token / 层全量驻留），变的是每步读哪几行——decode 每步主路读取 $61 \times 2048 \times 576 \times 2$ B ≈ 144 MB，全量对照 $61 \times 131072 \times 576 \times 2$ B ≈ 9.2 GB（ $t$ = 131072，4.2 §6 的账）。减的是带宽与 FLOPs，不是 cache 容量。
+**结构（DSA）**。每 query 由 lightning indexer（小维度头、ReLU 打分、可 FP8）对全部历史逐 token 打分，取 top-$`K`$ = 2048 个位置，MLA 主路只在选中集上算（公式 4.2 式 (12)(13)）。cache 格式不变（576 元素 / token / 层全量驻留），变的是每步读哪几行——decode 每步主路读取 $61 \times 2048 \times 576 \times 2$ B ≈ 144 MB，全量对照 $61 \times 131072 \times 576 \times 2$ B ≈ 9.2 GB（ $t$ = 131072，4.2 §6 的账）。减的是带宽与 FLOPs，不是 cache 容量。
 
 **配方（sparse-from-dense）**。从 V3.1-Terminus 的 128K dense checkpoint 出发——起点选型本身是设计：V3.1-Terminus 已是 128K 就绪的 dense MLA 模型，sparse 化只动「读哪些」、不动「怎么存」。两阶段：dense warm-up 冻结主模型、只训 indexer，目标是主模型跨头聚合 attention 分布的 KL 蒸馏（4.2 式 (14)）；随后解冻全模型 sparse 续训（lr 7.3e-6、15000 步、每步 480 条 128K 序列 ≈ $9.4 \times 10^{11}$ token——「免训练稀疏」在这条路线上不成立，4.2 §6 的规模账）。
 

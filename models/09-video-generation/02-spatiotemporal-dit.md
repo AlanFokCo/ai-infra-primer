@@ -222,7 +222,7 @@ expert:   [═ high-noise（布局/早期）═|══ low-noise（细节/后期
 | 轴 | 4.5 token 级 MoE（LLM） | Wan2.2 timestep 级 MoE |
 | --- | --- | --- |
 | 路由粒度 | 每 token × 每层一次决策 | 每 timestep 一次决策，全 token 共享同一 expert |
-| router | 可学（打分 + top-$k$ + softmax 归一） | 确定性标量阈值（SNR，式 (8)），无可学参数 |
+| router | 可学（打分 + top-$`k`$ + softmax 归一） | 确定性标量阈值（SNR，式 (8)），无可学参数 |
 | 负载均衡 | 辅助损失（4.5 式 (6) 的 $\alpha N_e \sum f_i P_i$）或 aux-loss-free 控制器 | 概念不存在——均衡由调度在时间轴上的步数分配决定，非路由问题 |
 | expert 粒度 | 单层 FFN 分片（ $N_e$ 份） | 整个网络（40 层全体） |
 | 通信 | 每层 all-to-all dispatch/combine | 步内零通信；一次生成只在 $t_{moe}$ 切换一次 |
@@ -303,7 +303,7 @@ Qwen2.5-VL:   [0‥15]  t 轴 16 | [16‥39] h 轴 24 | [40‥63] w 轴 24   折
 
 **Open-Sora 2.0**（[Zheng et al., 2025](../references.md)，arXiv:2503.09642，[A]；代码 [hpcaitech/Open-Sora](../references.md)）：11B、训练成本公开口径 \$200k，架构为 Video DC-AE + MMDiT——用深压缩 VAE（9.1 的 DC-AE 式 tradeoff）把 $N$ 压下来，再用 MMDiT 式双流（§4 谱系）做文本耦合。它回答的是「有限预算下怎么配」：压缩换 token 数、MMDiT 换文本质量。
 
-**LTX-Video**（[HaCohen et al., 2025](../references.md)，arXiv:2501.00103，[A]；[Lightricks/LTX-Video](../references.md)）：把路线走到另一端——压缩率 1:192（每 token 对应 32×32×8 像素块），并把 patchify 从 transformer 输入挪进 VAE 输入（VAE 直接吐出 token 网格）。768×512、121 帧的视频只有 $24 \times 16 \times 16 \approx 6.1$K token： $N$ 小两个数量级，full spatiotemporal self-attention（摘要原文）的二次项不再是约束，2B 级（摘要口径）参数在 H100 上 5 秒视频 2 秒出（faster-than-real-time）。代价在 VAE 侧（9.1 的压缩-质量 tradeoff），不在 DiT 侧。
+**LTX-Video**（[HaCohen et al., 2025](../references.md)，arXiv:2501.00103，[A]；[Lightricks/LTX-Video](../references.md)）：把路线走到另一端——压缩率 1:192（每 token 对应 32×32×8 像素块），并把 patchify 从 transformer 输入挪进 VAE 输入（VAE 直接吐出 token 网格）。768×512、121 帧的视频只有 $24 \times 16 \times 16 \approx 6.1\text{K}$ token： $N$ 小两个数量级，full spatiotemporal self-attention（摘要原文）的二次项不再是约束，2B 级（摘要口径）参数在 H100 上 5 秒视频 2 秒出（faster-than-real-time）。代价在 VAE 侧（9.1 的压缩-质量 tradeoff），不在 DiT 侧。
 
 **Mochi 1**（[Genmo](../references.md)，[C]——无论文，只登记 repo/README 已披露信息）：10B AsymmDiT——non-square QKV、视觉流参数 ≈4× 文本流（更大 hidden 维度）、逐模态独立 MLP，单 T5-XXL 文本编码；配套 AsymmVAE 因果压缩 8×8 空间 × 6× 时间 → 12 通道 latent。「视觉流参数 ≈4× 文本流」是 §7 对照表上参数分配轴的一个极端取点：文本侧只保留够用的读取容量。
 

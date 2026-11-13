@@ -70,7 +70,7 @@ $$
 
 ### 2.3 learned absolute：外推 = 未定义
 
-可学绝对位置嵌入（learned absolute position embedding）把位置当 token 处理：一张可训练查找表 $P \in \mathbb{R}^{T_{\max} \times d}$，第 $t$ 行加进第 $t$ 个 token 的 embedding。GPT-2 的 `wpe` 即此形：n_positions = 1024、 $d$ = 768（[Radford et al., 2019](../references.md)，[W]，config 口径）。两个硬后果。其一，外推不是「退化」而是**未定义**：位置 $T_{\max}$ 之外表里没有行，位置 id 越界是非法访问，连函数值都不存在。其二，即便把表加长，新区间的行是随机初始化、从未被训练；且训练动态本身就不均——行 $t$ 只在长度超过 $t$ 的样本上收到梯度，短序列居多的语料里大行号的行训练信号天然稀薄——这和 §2.1 的 sinusoidal（函数在任意整数位置有定义，只是行为漂移）是两个层级的失败。参数账也记一笔：GPT-2 的表是 $1024 \times 768 \approx 0.79$M（约占总参数 0.6%），小头；若按 Llama-3.1 的窗口造表则是 $131072 \times 4096 \approx 0.54$B——加性绝对编码在长窗时代光查表就要半 B 参数，这条路自己把自己走死了。
+可学绝对位置嵌入（learned absolute position embedding）把位置当 token 处理：一张可训练查找表 $P \in \mathbb{R}^{T_{\max} \times d}$，第 $t$ 行加进第 $t$ 个 token 的 embedding。GPT-2 的 `wpe` 即此形：n_positions = 1024、 $d$ = 768（[Radford et al., 2019](../references.md)，[W]，config 口径）。两个硬后果。其一，外推不是「退化」而是**未定义**：位置 $T_{\max}$ 之外表里没有行，位置 id 越界是非法访问，连函数值都不存在。其二，即便把表加长，新区间的行是随机初始化、从未被训练；且训练动态本身就不均——行 $t$ 只在长度超过 $t$ 的样本上收到梯度，短序列居多的语料里大行号的行训练信号天然稀薄——这和 §2.1 的 sinusoidal（函数在任意整数位置有定义，只是行为漂移）是两个层级的失败。参数账也记一笔：GPT-2 的表是 $1024 \times 768 \approx 0.79\text{M}$（约占总参数 0.6%），小头；若按 Llama-3.1 的窗口造表则是 $131072 \times 4096 \approx 0.54\text{B}$——加性绝对编码在长窗时代光查表就要半 B 参数，这条路自己把自己走死了。
 
 ## 3. 相对位置偏置族：T5 分桶与 ALiBi 线性惩罚
 
@@ -132,7 +132,13 @@ $$
 R(\theta) = \begin{bmatrix} \cos\theta & -\sin\theta \\ \sin\theta & \cos\theta \end{bmatrix} \qquad (9)
 $$
 
-**引理 (i)（正交性）**： $R(\theta)^{\top} = R(-\theta)$。由 $\cos(-\theta) = \cos\theta$、 $\sin(-\theta) = -\sin\theta$， $R(-\theta) = \begin{bmatrix} \cos\theta & \sin\theta \\ -\sin\theta & \cos\theta \end{bmatrix} = R(\theta)^{\top}$。且 $R(\theta)^{\top} R(\theta) = I$（对角元 $\cos^{2}\theta + \sin^{2}\theta = 1$，非对角元相消）——旋转保范、保内积。
+**引理 (i)（正交性）**： $R(\theta)^{\top} = R(-\theta)$。由 $\cos(-\theta) = \cos\theta$、 $\sin(-\theta) = -\sin\theta$：
+
+$$
+R(-\theta) = \begin{bmatrix} \cos\theta & \sin\theta \\ -\sin\theta & \cos\theta \end{bmatrix} = R(\theta)^{\top}
+$$
+
+且 $R(\theta)^{\top} R(\theta) = I$（对角元 $\cos^{2}\theta + \sin^{2}\theta = 1$，非对角元相消）——旋转保范、保内积。
 
 **引理 (ii)（群性质）**： $R(\alpha) R(\beta) = R(\alpha + \beta)$。乘开左上角元： $\cos\alpha\cos\beta - \sin\alpha\sin\beta = \cos(\alpha + \beta)$；右上角元： $-\cos\alpha\sin\beta - \sin\alpha\cos\beta = -\sin(\alpha + \beta)$；另两元同理——全部归为式 (2) 的两角和恒等式。引理 (i)(ii) 合起来说： $\lbrace R(\theta) : \theta \in \mathbb{R}\rbrace$ 在矩阵乘法下构成与 $(\mathbb{R}, +)$ 同态的群（角度相加 = 旋转复合）， $R(0) = I$、 $R(\theta)^{-1} = R(\theta)^{\top}$。RoPE 的全部相对性都是这条同态的推论。
 
@@ -311,7 +317,7 @@ rope_scaling = { type: "yarn", factor: 40.0, beta_fast: 32, beta_slow: 1,
 | 必要性 | 2.3 §6 置换等变推论 | 位置信息必须外部注入；三维自由度：注入点 / 参照系 / 外推 |
 | sinusoidal | $PE(pos, 2i) = \sin(pos / 10000^{2i/d})$，式 (1) | 频率几何级数； $PE(pos+k) = M_k PE(pos)$（式 (3)）； $\langle PE(m), PE(n) \rangle = \sum_i \cos\omega_i(m-n)$（式 (4)） |
 | learned absolute | 查表 $P \in \mathbb{R}^{T_{\max} \times d}$ | 外推 = 索引越界，未定义；GPT-2 $1024 \times 768$ [W] |
-| T5 bias | $b(i-j)$ 查表，32 桶 log 分桶，式 (6) | 0–7 精确、8–128 对数、 $>$128 落末桶；跨层共享 |
+| T5 bias | $b(i-j)$ 查表，32 桶 log 分桶，式 (6) | 0–7 精确、8–128 对数、 $>128$ 落末桶；跨层共享 |
 | ALiBi | $-m_h (i - j)$， $m_h = 2^{-8h/H}$，式 (7) | 零参数直线；外推 = 同一直线延自变量，感受野自动收缩 |
 | RoPE 主命题 | $\langle R_m q, R_n k \rangle = \langle q, R_{n-m} k \rangle$，式 (13) | 2D 旋转（引理 i–iii）→ 块对角（式 (12)）→ 复数相位（式 (15)）；score 平移不变 |
 | 频率与波长 | $\theta_j = base^{-2j/d}$、 $\lambda_j = 2\pi \cdot base^{2j/d}$，式 (16) | Llama-3.1 base = 5×10⁵（ $\lambda_{\max} \approx 2.6 \times 10^{6}$）、Qwen3 10⁶、DeepSeek-V3 10⁴（32 通道） |
