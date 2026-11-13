@@ -16,16 +16,16 @@ const BASE = '/ai-infra-primer';
 
 // Part 元数据（事实源：models/README.md 目录节；tagline 为该 Part 章节描述的浓缩）
 const PARTS = [
-  { num: 1, dir: '01-foundations', titleEn: 'Foundations', titleZh: '基础', tagline: '语言建模的数学形式化、参数/计算/内存的账、scaling laws' },
-  { num: 2, dir: '02-transformer-anatomy', titleEn: 'Transformer Anatomy', titleZh: 'Transformer 解剖', tagline: '从 tokenization 到组装完整 decoder block，每个组件的推导' },
-  { num: 3, dir: '03-objectives-and-variants', titleEn: 'Objectives & Variants', titleZh: '目标与变体', tagline: 'CLM / MLM 统一形式化、encoder 家族、in-context learning' },
-  { num: 4, dir: '04-modern-architectures', titleEn: 'Modern Architectures', titleZh: '现代架构', tagline: 'KV 压缩、sparse / linear attention、MoE、long context、可解释性' },
-  { num: 5, dir: '05-case-studies', titleEn: 'Case Studies', titleZh: '案例研究', tagline: 'Llama / DeepSeek / Qwen / GLM / Kimi 五家谱系逐代拆解' },
-  { num: 6, dir: '06-vision-representations', titleEn: 'Vision Representations', titleZh: '视觉表征', tagline: 'ViT、CLIP 对比学习、visual tokenizer' },
-  { num: 7, dir: '07-diffusion-image-generation', titleEn: 'Diffusion & Image Generation', titleZh: '扩散与图像生成', tagline: 'DDPM、SDE/ODE、guidance、flow matching、DiT' },
-  { num: 8, dir: '08-multimodal-llm', titleEn: 'Multimodal LLMs', titleZh: '多模态 LLM', tagline: 'VLM 架构分类学、connector、训练目标、视频理解、统一生成' },
-  { num: 9, dir: '09-video-generation', titleEn: 'Video Generation', titleZh: '视频生成', tagline: 'video VAE、时空 DiT、训练加速、控制与编辑' },
-  { num: 10, dir: '10-audio-speech', titleEn: 'Audio & Speech', titleZh: '音频与语音', tagline: '音频表征与 codec、ASR、TTS、speech LLM 与全双工' },
+  { num: 1, dir: '01-foundations', titleEn: 'Foundations', titleZh: '基础', tagline: '语言建模的数学形式化、参数/计算/内存的账、scaling laws', wave: 'W1' },
+  { num: 2, dir: '02-transformer-anatomy', titleEn: 'Transformer Anatomy', titleZh: 'Transformer 解剖', tagline: '从 tokenization 到组装完整 decoder block，每个组件的推导', wave: 'W1' },
+  { num: 3, dir: '03-objectives-and-variants', titleEn: 'Objectives & Variants', titleZh: '目标与变体', tagline: 'CLM / MLM 统一形式化、encoder 家族、in-context learning', wave: 'W2' },
+  { num: 4, dir: '04-modern-architectures', titleEn: 'Modern Architectures', titleZh: '现代架构', tagline: 'KV 压缩、sparse / linear attention、MoE、long context、可解释性', wave: 'W2' },
+  { num: 5, dir: '05-case-studies', titleEn: 'Case Studies', titleZh: '案例研究', tagline: 'Llama / DeepSeek / Qwen / GLM / Kimi 五家谱系逐代拆解', wave: 'W3' },
+  { num: 6, dir: '06-vision-representations', titleEn: 'Vision Representations', titleZh: '视觉表征', tagline: 'ViT、CLIP 对比学习、visual tokenizer', wave: 'W3' },
+  { num: 7, dir: '07-diffusion-image-generation', titleEn: 'Diffusion & Image Generation', titleZh: '扩散与图像生成', tagline: 'DDPM、SDE/ODE、guidance、flow matching、DiT', wave: 'W4' },
+  { num: 8, dir: '08-multimodal-llm', titleEn: 'Multimodal LLMs', titleZh: '多模态 LLM', tagline: 'VLM 架构分类学、connector、训练目标、视频理解、统一生成', wave: 'W5' },
+  { num: 9, dir: '09-video-generation', titleEn: 'Video Generation', titleZh: '视频生成', tagline: 'video VAE、时空 DiT、训练加速、控制与编辑', wave: 'W6' },
+  { num: 10, dir: '10-audio-speech', titleEn: 'Audio & Speech', titleZh: '音频与语音', tagline: '音频表征与 codec、ASR、TTS、speech LLM 与全双工', wave: 'W7' },
 ];
 
 function main() {
@@ -78,6 +78,7 @@ function main() {
         partNum: part.num,
         partTitleEn: part.titleEn,
         partTitleZh: part.titleZh,
+        partWave: part.wave,
         file: meta.file,
         cjkChars: meta.cjkChars,
         formulas: chapterFormulas,

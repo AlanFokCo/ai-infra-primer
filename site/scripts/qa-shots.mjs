@@ -125,6 +125,19 @@ for (const [vpName, viewport] of VIEWPORTS) {
   await ctx.close();
 }
 
+// OG 卡片：重新生成 public/og.png
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 630 } });
+  const page = await ctx.newPage();
+  const resp = await page.goto(`${BASE_URL}/og-card/`, { waitUntil: 'networkidle' });
+  if (resp?.ok()) {
+    await page.waitForTimeout(600);
+    await page.screenshot({ path: path.join(SITE, 'public', 'og.png') });
+    console.log('[qa] og.png 已生成');
+  }
+  await ctx.close();
+}
+
 await browser.close();
 console.log(failures === 0 ? '[qa] 全部通过' : `[qa] ${failures} 处问题`);
 process.exit(failures === 0 ? 0 : 1);

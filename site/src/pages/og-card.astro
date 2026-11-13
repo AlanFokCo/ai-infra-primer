@@ -1,0 +1,70 @@
+---
+// OG 卡片生成页：qa 脚本截图此页 → public/og.png（不链接、不进索引）
+import katex from 'katex';
+import manifest from '../generated/manifest.json';
+import '@fontsource/noto-serif-sc/900.css';
+import '@fontsource/noto-sans-sc/400.css';
+import '@fontsource/ibm-plex-mono/400.css';
+import 'katex/dist/katex.min.css';
+const stats = manifest.stats;
+const formula = katex.renderToString(
+  '\\mathrm{Attention}(Q,K,V) = \\mathrm{softmax}\\left(\\frac{QK^{\\top}}{\\sqrt{d_k}}\\right) V',
+  { displayMode: true, throwOnError: true }
+);
+---
+
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="robots" content="noindex" />
+  </head>
+  <body style="margin:0">
+    <div class="og-card">
+      <div class="og-top">
+        <span class="og-seal">算</span>
+        <span class="og-word">ai-infra-primer</span>
+      </div>
+      <h1 class="og-title">从 <em>token</em> 到 <em>teraflops</em></h1>
+      <div class="og-formula" set:html={formula} />
+      <p class="og-ledger">{stats.chapters} 章 · {stats.parts} Part · {(stats.totalCjk / 10000).toFixed(1)} 万字 · {stats.formulas.toLocaleString('en-US')} 式 — 全部带证据分级</p>
+    </div>
+  </body>
+</html>
+
+<style is:global>
+  .og-card {
+    width: 1200px;
+    height: 630px;
+    background: #f7f6f2;
+    color: #181b20;
+    padding: 64px 72px;
+    display: flex;
+    flex-direction: column;
+    font-family: 'Noto Sans SC', 'PingFang SC', sans-serif;
+    box-sizing: border-box;
+  }
+  .og-top { display: flex; align-items: center; gap: 14px; }
+  .og-seal {
+    width: 44px; height: 44px;
+    background: #a83228; color: #f7f6f2;
+    font-family: 'Noto Serif SC', serif; font-weight: 700; font-size: 26px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 4px;
+  }
+  .og-word { font-family: 'IBM Plex Mono', monospace; font-size: 22px; color: #454b57; }
+  .og-title {
+    font-family: 'Noto Serif SC', 'Songti SC', serif;
+    font-weight: 900; font-size: 92px; line-height: 1.15;
+    margin: 72px 0 40px; letter-spacing: 0.01em;
+  }
+  .og-title em { font-style: italic; font-weight: 700; }
+  .og-formula { margin-top: 8px; }
+  .og-formula .katex-display { margin: 0; text-align: left; }
+  .og-formula .katex { font-size: 30px; }
+  .og-ledger {
+    margin-top: auto;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 20px; color: #767c8a;
+    border-top: 1px solid #d9d6cc; padding-top: 24px;
+  }
+</style>

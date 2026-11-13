@@ -1,0 +1,50 @@
+---
+import Base from '../layouts/Base.astro';
+const base = import.meta.env.BASE_URL;
+---
+
+<Base title="404">
+  <div class="nf">
+    <p class="nf-code">404</p>
+    <h1 class="nf-title">这一页不在账上</h1>
+    <p class="nf-note">链接可能来自旧版本结构。全部现存内容都在索引里。</p>
+    <p class="nf-actions">
+      <a class="cta-primary" href={`${base}/models/`}>去教程目录</a>
+      <a class="cta-quiet" href={`${base}/`}>回首页</a>
+    </p>
+  </div>
+</Base>
+
+<style>
+  .nf {
+    max-width: var(--prose-width);
+    margin: 0 auto;
+    padding: var(--space-16) var(--page-gutter);
+    text-align: left;
+  }
+  .nf-code {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--seal);
+    letter-spacing: 0.1em;
+    margin: 0 0 var(--space-4);
+  }
+  .nf-title {
+    font-family: var(--font-serif);
+    font-weight: 900;
+    font-size: var(--text-2xl);
+    margin: 0 0 var(--space-4);
+  }
+  .nf-note { color: var(--ink-soft); margin: 0 0 var(--space-8); }
+  .nf-actions { display: flex; gap: var(--space-4); align-items: baseline; }
+  .cta-primary {
+    display: inline-block;
+    padding: var(--space-3) var(--space-6);
+    background: var(--ink);
+    color: var(--paper);
+    border: 1px solid var(--ink);
+  }
+  .cta-primary:hover { background: var(--seal); border-color: var(--seal); }
+  .cta-quiet { color: var(--ink-soft); border-bottom: 1px solid var(--rule); }
+  .cta-quiet:hover { color: var(--seal); border-bottom-color: var(--seal); }
+</style>

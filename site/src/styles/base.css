@@ -147,6 +147,22 @@ a:hover { text-decoration: none; }
 .site-footer a { border-bottom: 1px solid var(--rule); }
 .site-footer a:hover { color: var(--seal); border-bottom-color: var(--seal); }
 
+/* --- 滚动条：细线仪器感（webkit 系） --- */
+pre::-webkit-scrollbar, .katex-display::-webkit-scrollbar, .table-scroll::-webkit-scrollbar,
+.part-nav::-webkit-scrollbar, .toc-rail::-webkit-scrollbar, .graph-wrap::-webkit-scrollbar {
+  height: 4px;
+  width: 4px;
+}
+pre::-webkit-scrollbar-thumb, .katex-display::-webkit-scrollbar-thumb,
+.table-scroll::-webkit-scrollbar-thumb, .part-nav::-webkit-scrollbar-thumb,
+.toc-rail::-webkit-scrollbar-thumb, .graph-wrap::-webkit-scrollbar-thumb {
+  background: var(--ink-faint);
+  border-radius: 2px;
+}
+pre::-webkit-scrollbar-thumb { background: var(--plate-faint); }
+pre::-webkit-scrollbar-track, .katex-display::-webkit-scrollbar-track,
+.table-scroll::-webkit-scrollbar-track { background: transparent; }
+
 /* --- 通用工具 --- */
 .mono { font-family: var(--font-mono); }
 .visually-hidden {

@@ -83,6 +83,14 @@ const readMinutes = Math.max(4, Math.round(fm.cjkChars / 420));
       <TocRail headings={headings} />
     </div>
 
+    <div class="closure-line">
+      <span class="closure-stamp" aria-hidden="true">审</span>
+      <span class="closure-text">
+        本章已通过 evaluator 对抗审查并关闭（波次 {fm.partWave}，S1/S2 清零）。
+        审查记录与重推导清单见仓库 <a href="https://github.com/AlanFokCo/ai-infra-primer/blob/main/models/README.md" rel="noopener">models/README.md</a>。
+      </span>
+    </div>
+
     <nav class="chapter-pager" aria-label="上下章">
       <span>
         {prev && (

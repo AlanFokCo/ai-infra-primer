@@ -220,7 +220,9 @@ function linkFor(idOrUrl: string): string | null {
   .badge-ref { color: var(--ink-faint); }
 
   @media (max-width: 40rem) {
-    .ref-authors, .ref-date { display: none; }
-    .refs-table th:nth-child(2), .refs-table th:nth-child(5) { display: none; }
+    .refs-table { min-width: 0; }
+    /* 窄屏只留：标题（可点）/ 级 / 被引 */
+    .ref-authors, .ref-date, .ref-id { display: none; }
+    .refs-table th:nth-child(2), .refs-table th:nth-child(3), .refs-table th:nth-child(5) { display: none; }
   }
 </style>
