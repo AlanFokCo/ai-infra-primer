@@ -174,7 +174,7 @@ Q, K, V [B, T, 4096] ──view──► [B, T, 32, 128] ──transpose──�
 
 本节证明一个贯穿后文的结构性质：不含位置信息时，attention 对输入序列的置换是等变的——打乱输入顺序，输出原样跟着打乱，内容不变。
 
-记 $\pi$ 为 $\lbrace1, \ldots, T\rbrace$ 的置换， $P_\pi \in \lbrace0, 1\rbrace^{T \times T}$ 为对应的置换矩阵（permutation matrix）， $(P_\pi)_{ij} = 1 \Leftrightarrow j = \pi(i)$，即 $(P_\pi X)_{i,:} = X_{\pi(i),:}$（第 $i$ 行取原第 $\pi(i)$ 行）。置换矩阵正交： $P_\pi^{\top} P_\pi = I$。
+记 $\pi$ 为 $\lbrace1, \ldots, T\rbrace$ 的置换， $P_\pi \in \lbrace0, 1\rbrace^{T \times T}$ 为对应的置换矩阵（permutation matrix）， $`(P_\pi)_{ij} = 1 \Leftrightarrow j = \pi(i)`$，即 $`(P_\pi X)_{i,:} = X_{\pi(i),:}`$（第 $i$ 行取原第 $\pi(i)$ 行）。置换矩阵正交： $P_\pi^{\top} P_\pi = I$。
 
 **命题**（置换等变，permutation equivariance）：无 mask 的 attention 满足 $\mathrm{Attention}(P_\pi Q, P_\pi K, P_\pi V) = P_\pi \thinspace \mathrm{Attention}(Q, K, V)$。
 
@@ -184,7 +184,7 @@ $$
 S' = (P_\pi Q)(P_\pi K)^{\top} = P_\pi Q K^{\top} P_\pi^{\top} = P_\pi S P_\pi^{\top}
 $$
 
-第二步，softmax 与双置换交换。 $(P_\pi S P_\pi^{\top})_{ij} = S_{\pi(i), \pi(j)}$；对第 $i$ 行做 softmax 时分母 $\sum_j e^{S_{\pi(i), \pi(j)}}$ 跑遍全部列、与列序无关，等于 $\sum_s e^{S_{\pi(i), s}}$。故
+第二步，softmax 与双置换交换。 $`(P_\pi S P_\pi^{\top})_{ij} = S_{\pi(i), \pi(j)}`$；对第 $i$ 行做 softmax 时分母 $\sum_j e^{S_{\pi(i), \pi(j)}}$ 跑遍全部列、与列序无关，等于 $\sum_s e^{S_{\pi(i), s}}$。故
 
 $$
 \mathrm{softmax}\left(P_\pi S P_\pi^{\top}\right)_{ij} = \frac{e^{S_{\pi(i), \pi(j)}}}{\sum_s e^{S_{\pi(i), s}}} = \mathrm{softmax}(S)_{\pi(i), \pi(j)} = \left( P_\pi \thinspace \mathrm{softmax}(S) \thinspace P_\pi^{\top} \right)_{ij}

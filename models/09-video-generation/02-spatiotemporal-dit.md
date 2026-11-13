@@ -188,7 +188,7 @@ $$
 e(t) = \begin{cases} e_{\text{high}} & t \ge t_{moe} \\ e_{\text{low}} & t < t_{moe} \end{cases}, \qquad \mathrm{SNR}(t_{moe}) = s^{\ast } \qquad (8)
 $$
 
-**符号**： $e_{\text{high}}, e_{\text{low}}$：high-noise / low-noise 两个 expert 网络；$`s^{*}`$：切换阈值，官方 README 口径为 $\mathrm{SNR}_{\min}$ 的一半（ $\mathrm{SNR}_{\min}$ 为调度上的最小 SNR，其数值与取半的域 README 未展开，见下文的诚实边界）。路由规则的方向与 README 原文一致： $t$ 大（SNR 小，采样早期）走高噪声 expert， $t < t_{moe}$ 切低噪声 expert。
+**符号**： $e_{\text{high}}, e_{\text{low}}$：high-noise / low-noise 两个 expert 网络；$`s^{*}`$：切换阈值，官方 README 口径为 $`\mathrm{SNR}_{\min}`$ 的一半（ $`\mathrm{SNR}_{\min}`$ 为调度上的最小 SNR，其数值与取半的域 README 未展开，见下文的诚实边界）。路由规则的方向与 README 原文一致： $t$ 大（SNR 小，采样早期）走高噪声 expert， $t < t_{moe}$ 切低噪声 expert。
 
 任一 SNR 阈值 $`s^{*}`$ 对应的时间步可由式 (7) 反解：$`(1-t)/t = \sqrt{s^{*}}`$，即
 
@@ -196,7 +196,7 @@ $$
 t^{\ast } = \frac{1}{1 + \sqrt{s^{\ast }}} \qquad (9)
 $$
 
-——阈值与步数的换算是闭式的。诚实边界： $\mathrm{SNR}_{\min}$ 的数值与其取半的域（线性域还是对数域）官方 README 未展开，本章给出阈值规则的函数形式与逆映射，不杜撰具体数值；采样调度（shift 等，7.5 §8）改变的是式 (7) 里 $t$ 的有效标定，不改变「SNR 单调 ⇒ 阈值 ⇔ 时间步阈值」这一结构。
+——阈值与步数的换算是闭式的。诚实边界： $`\mathrm{SNR}_{\min}`$ 的数值与其取半的域（线性域还是对数域）官方 README 未展开，本章给出阈值规则的函数形式与逆映射，不杜撰具体数值；采样调度（shift 等，7.5 §8）改变的是式 (7) 里 $t$ 的有效标定，不改变「SNR 单调 ⇒ 阈值 ⇔ 时间步阈值」这一结构。
 
 ```
 采样方向   t: 1 ───────────────────────────────► 0

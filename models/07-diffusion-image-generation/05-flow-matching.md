@@ -73,7 +73,7 @@ $$
 - **散度本身**。 $\nabla \cdot u_t = \sum_{i=1}^{d} \partial u_{t,i} / \partial x_i$ 含 $d$ 个偏导，对每个 $(x, t)$ 求值需要 $d$ 次 Jacobian-向量积（每次约一次反向传播的开销）。图像 latent $d$ 在 $10^4$ 量级，精确散度即每点上万次反传。
 - **沿轨迹积分**。式 (6) 的积分要用 ODE solver 数值走完整条 $[0, 1]$ 轨迹，每个积分步都要重新算一次散度——总开销 = 积分步数 × 每步散度开销。
 
-工程上的标准近似是 Hutchinson 迹估计：对任意方阵 $A$， $\operatorname{tr}(A) = \mathbb{E}_{z \sim \mathcal{N}(0, I)}\left[ z^{\top} A z \right]$（由 $\mathbb{E}[z z^{\top}] = I$ 即得）。每个探针 $z$ 只要一次向量-Jacobian 积， $K$ 个探针把方差降到 $1/K$ 量级——但引入的随机性使对数似然变成有噪声的估计，且每步仍要常数次额外反传。结论是：CNF 的精确似然「可算但贵」，按最大似然直接训练 CNF（目标含式 (6)，每步优化都要付这笔账）在大 $d$ 上不切实际。7.3 会把同一公式用在 diffusion 的 probability-flow ODE 上做离线 NLL 评估（评估一次可以忍，训练每步都付不能忍）；而 §3 的 flow matching 正是「绕开式 (6)、不碰散度」的训练路线。
+工程上的标准近似是 Hutchinson 迹估计：对任意方阵 $A$， $`\operatorname{tr}(A) = \mathbb{E}_{z \sim \mathcal{N}(0, I)}\left[ z^{\top} A z \right]`$（由 $\mathbb{E}[z z^{\top}] = I$ 即得）。每个探针 $z$ 只要一次向量-Jacobian 积， $K$ 个探针把方差降到 $1/K$ 量级——但引入的随机性使对数似然变成有噪声的估计，且每步仍要常数次额外反传。结论是：CNF 的精确似然「可算但贵」，按最大似然直接训练 CNF（目标含式 (6)，每步优化都要付这笔账）在大 $d$ 上不切实际。7.3 会把同一公式用在 diffusion 的 probability-flow ODE 上做离线 NLL 评估（评估一次可以忍，训练每步都付不能忍）；而 §3 的 flow matching 正是「绕开式 (6)、不碰散度」的训练路线。
 
 ## 3. FM 目标：回归一个「写出来、算不出」的速度场
 
@@ -151,9 +151,9 @@ $$
 L_{CFM} = \mathbb{E}_{t, x_0, x}\Vert v_\theta\Vert^2 - 2\thinspace \mathbb{E}_{t, x_0, x}\langle v_\theta, u_t(x \mid x_0) \rangle + \mathbb{E}_{t, x_0, x}\Vert u_t(x \mid x_0)\Vert^2 \qquad (13)
 $$
 
-第一块相等： $v_\theta$ 不含 $x_0$，对联合 $(x_0, x)$ 的期望把 $x_0$ 积掉就回到边际期望， $\mathbb{E}_{t, x \sim p_t}\Vert v_\theta\Vert^2 = \mathbb{E}_{t, x_0, x}\Vert v_\theta\Vert^2$。第三块都不含 $\theta$（目标速度不依赖网络），求梯度时消失。
+第一块相等： $v_\theta$ 不含 $x_0$，对联合 $(x_0, x)$ 的期望把 $x_0$ 积掉就回到边际期望， $`\mathbb{E}_{t, x \sim p_t}\Vert v_\theta\Vert^2 = \mathbb{E}_{t, x_0, x}\Vert v_\theta\Vert^2`$。第三块都不含 $\theta$（目标速度不依赖网络），求梯度时消失。
 
-**第三步（关键步）：交叉项的期望交换。** 要证 $\mathbb{E}_{x \sim p_t}\langle v_\theta(x, t), u_t(x) \rangle = \mathbb{E}_{x_0, x \sim p_t(\cdot \mid x_0)}\langle v_\theta(x, t), u_t(x \mid x_0) \rangle$。把式 (10) 乘回 $p_t(x)$ 的形式代入：
+**第三步（关键步）：交叉项的期望交换。** 要证 $`\mathbb{E}_{x \sim p_t}\langle v_\theta(x, t), u_t(x) \rangle = \mathbb{E}_{x_0, x \sim p_t(\cdot \mid x_0)}\langle v_\theta(x, t), u_t(x \mid x_0) \rangle`$。把式 (10) 乘回 $p_t(x)$ 的形式代入：
 
 $$
 \begin{aligned}
@@ -289,7 +289,7 @@ x₀ ────────────────► ε                     
 
 DDPM 的前向闭式（7.2 式 (5)(6)） $x_t = \sqrt{\bar\alpha_t}\thinspace x_0 + \sqrt{1 - \bar\alpha_t}\thinspace \varepsilon$ 本身就是式 (15)(16) 的特例： $\alpha_t = \sqrt{\bar\alpha_t}$、 $\sigma_t = \sqrt{1 - \bar\alpha_t}$（且满足 VP 约束 $\alpha_t^2 + \sigma_t^2 = 1$）。所以 diffusion 与 FM 不是两类模型，而是**同一 Gaussian 条件路径族上两种不同的 schedule 与参数化选择**。两层的换算分别如下。
 
-**schedule 层：SNR 匹配。** 一条 Gaussian 路径的全部语义由信噪比 $\mathrm{SNR}_t = \alpha_t^2 / \sigma_t^2$ 决定（7.2 式 (9) 的连续版）。线性路径在时刻 $t$ 的 SNR 为 $(1-t)^2 / t^2$；令 DDPM 在时刻 $t'$ 的 SNR 与之相等， $\bar\alpha_{t'} / (1 - \bar\alpha_{t'}) = (1-t)^2 / t^2$，解出
+**schedule 层：SNR 匹配。** 一条 Gaussian 路径的全部语义由信噪比 $`\mathrm{SNR}_t = \alpha_t^2 / \sigma_t^2`$ 决定（7.2 式 (9) 的连续版）。线性路径在时刻 $t$ 的 SNR 为 $(1-t)^2 / t^2$；令 DDPM 在时刻 $t'$ 的 SNR 与之相等， $\bar\alpha_{t'} / (1 - \bar\alpha_{t'}) = (1-t)^2 / t^2$，解出
 
 $$
 \bar\alpha_{t'} = \frac{(1-t)^2}{(1-t)^2 + t^2} \qquad (24)
@@ -362,7 +362,7 @@ $$
 | 对象 | DDPM（VP 扩散，7.2） | rectified flow / FM（本章） |
 | --- | --- | --- |
 | 条件路径 $p_t(x \mid x_0)$ | $\mathcal{N}(\sqrt{\bar\alpha_t}\thinspace x_0,\ (1-\bar\alpha_t) I)$ | $\mathcal{N}((1-t)\thinspace x_0,\ t^2 I)$ |
-| $\mathrm{SNR}_t = \alpha_t^2/\sigma_t^2$ | $\bar\alpha_t / (1 - \bar\alpha_t)$ | $(1-t)^2 / t^2$ |
+| $`\mathrm{SNR}_t = \alpha_t^2/\sigma_t^2`$ | $\bar\alpha_t / (1 - \bar\alpha_t)$ | $(1-t)^2 / t^2$ |
 | schedule 匹配 | $\bar\alpha = (1-t)^2 / ((1-t)^2 + t^2)$，式 (24) | 同左（同一映射） |
 | 回归目标 | $\varepsilon$（ $\varepsilon$-prediction， $L_{simple}$） | $u = \varepsilon - x_0$（速度， $L_{RF}$） |
 | 目标互转 | — | $\hat x_0 = x_t - t v_\theta$、 $\hat\varepsilon = x_t + (1-t) v_\theta$，式 (25) |
@@ -417,7 +417,7 @@ rectified flow 在这条账上的优势来自目标结构：条件目标 $\varep
 ## 练习
 
 1.（推导）补全式 (5) 的矩阵引理：对可逆 $J(t)$，证明 $\frac{d}{dt} \log |\det J| = \operatorname{tr}(J^{-1} \frac{dJ}{dt})$（提示：对 $\det J = \exp(\operatorname{tr} \log J)$ 求导，或用 $\det(I + \delta M) = 1 + \delta\thinspace \operatorname{tr} M + O(\delta^2)$ 做一阶展开）；再由式 (4) 推出式 (5)，并说明为什么式 (6) 的积分符号是「加散度」而非「减散度」（注意 $\log p_t = \log p_0 - \log|\det J_t|$ 的符号链）。
-2.（推导）证明 CFM 与 FM 的损失差恰为条件速度的方差： $L_{CFM}(\theta) - L_{FM}(\theta) = \mathbb{E}_{t, x \sim p_t}\left[ \mathbb{E}\left[ \Vert u_t(x \mid x_0) - u_t(x)\Vert^2 \mid x_t = x \right] \right]$（提示：对 $\Vert v - u_c\Vert^2$ 在条件期望下用「均值 + 偏差」分解 $u_c = u_t(x) + (u_c - u_t(x))$，交叉项归零）。由此说明：(a) 差距与 $\theta$ 无关（定理的另一证法）；(b) 为什么 $L_{CFM}$ 的数值不能跨路径比较。
+2.（推导）证明 CFM 与 FM 的损失差恰为条件速度的方差： $`L_{CFM}(\theta) - L_{FM}(\theta) = \mathbb{E}_{t, x \sim p_t}\left[ \mathbb{E}\left[ \Vert u_t(x \mid x_0) - u_t(x)\Vert^2 \mid x_t = x \right] \right]`$（提示：对 $\Vert v - u_c\Vert^2$ 在条件期望下用「均值 + 偏差」分解 $u_c = u_t(x) + (u_c - u_t(x))$，交叉项归零）。由此说明：(a) 差距与 $\theta$ 无关（定理的另一证法）；(b) 为什么 $L_{CFM}$ 的数值不能跨路径比较。
 3.（计算）logit-normal 与 shift 的网格账：(a) 由式 (28) 证明 $m = 0, s = 1$ 时 $\pi_{ln}(t)$ 关于 $t = 1/2$ 对称，并算 $\pi_{ln}(0.5)$、 $\pi_{ln}(0.1)$、 $\pi_{ln}(0.9)$ 的相对比例，与均匀分布对比中段权重；(b) 验证式 (29)：由 $\log \mathrm{SNR} = -2\thinspace\operatorname{logit}(t)$ 推出其分布参数；(c) 取 $s = 3$，计算 $t' = st/(1 + (s-1)t)$ 在 $t \in \lbrace0.1, 0.3, 0.5, 0.7, 0.9\rbrace$ 的值，画（或描述）平移前后 $t$ 网格的偏移方向。
 4.（代码）教学用，非优化实现：二维 two-moons 数据上的 rectified flow。(a) 用 §6 的 `rf_loss` 训练一个小型 MLP（ $t$ 经 sinusoidal embedding 拼接输入）， $t$ 均匀采样；(b) 用 `rf_sample` 分别取 $K \in \lbrace1, 2, 8, 64\rbrace$ 采样，与数据散点对比——观察 $K = 1$ 的样本落在何处（提示：直线外推的端点偏差 = 边际轨迹的弯曲量）；(c) 把 $t$ 采样换成 logit-normal$(0, 1)$（式 (27)），固定 $K = 8$ 比较样本质量；(d) 选做：实现一轮 reflow——用 (a) 的模型从 $\varepsilon$ 生成 $\hat x_0$，以 $(\hat x_0, \varepsilon)$ 为新端点对重训，再比较 $K = 1$。
 

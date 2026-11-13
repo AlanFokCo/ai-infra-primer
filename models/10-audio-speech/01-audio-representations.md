@@ -125,7 +125,7 @@ EnCodec（[Défossez et al., 2022](../references.md)，arXiv:2210.13438，[A]；
 
 $$L_{\text{adv}} = \sum_{s=1}^{5} \ell\left(D_s\left(\left|\mathrm{STFT}_{N_s}(x)\right|\right),\hspace{5mu} D_s\left(\left|\mathrm{STFT}_{N_s}(\hat{x})\right|\right)\right), \qquad N_s \in \lbrace2048, 1024, 512, 256, 128\rbrace \qquad (9)$$
 
-**符号**： $\mathrm{STFT}_{N_s}$：窗长 $N_s$ 的 STFT； $\ell$：具体 GAN 损失形式（各家实现有差异，机制不依赖其选择）。式 (9) 与式 (3) 连起来读：单个判别器只钉一对 $(\Delta t, \Delta f)$，五个窗长就是五对互补分辨率——长窗抓谐波与音高结构（频率细），短窗抓瞬态与爆破音（时间细）——重建谱在时频两维同时被盯住。另有一条可选的 Transformer LM 熵编码支路（对码流再压一档），此处一笔带过。
+**符号**： $`\mathrm{STFT}_{N_s}`$：窗长 $N_s$ 的 STFT； $\ell$：具体 GAN 损失形式（各家实现有差异，机制不依赖其选择）。式 (9) 与式 (3) 连起来读：单个判别器只钉一对 $(\Delta t, \Delta f)$，五个窗长就是五对互补分辨率——长窗抓谐波与音高结构（频率细），短窗抓瞬态与爆破音（时间细）——重建谱在时频两维同时被盯住。另有一条可选的 Transformer LM 熵编码支路（对码流再压一档），此处一笔带过。
 
 ### 4.3 DAC：factorized codes 与 dropout 修正
 

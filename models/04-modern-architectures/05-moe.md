@@ -193,7 +193,7 @@ $$
 b_i \leftarrow b_i + \Delta \cdot (\mathrm{target} - \mathrm{observed})_i \qquad (18)
 $$
 
-**符号**： $\mathrm{observed}_i$：本步 expert $i$ 的负载份额（式 (5) 的 $f_i$ 同族量）； $\mathrm{target}$：均匀目标； $\Delta$：更新步长。V3 的实现取符号步——过载减 $\gamma$、欠载加 $\gamma$， $\gamma = 10^{-3}$ 为训练大部分时间的工作点（[A]，论文 §2.1.2）。走读三条性质。
+**符号**： $`\mathrm{observed}_i`$：本步 expert $i$ 的负载份额（式 (5) 的 $f_i$ 同族量）； $\mathrm{target}$：均匀目标； $\Delta$：更新步长。V3 的实现取符号步——过载减 $\gamma$、欠载加 $\gamma$， $\gamma = 10^{-3}$ 为训练大部分时间的工作点（[A]，论文 §2.1.2）。走读三条性质。
 
 **(i) 收敛行为**。式 (18) 是负载误差上的离散积分器： $b_i$ 累积历史误差，稳态要求 $\mathrm{observed} = \mathrm{target}$，否则 $b_i$ 继续单向漂移——任何不动点必为均衡负载。符号步版本的稳态不是点而是幅度 $\sim \gamma$ 的极限环：偏置在均衡值附近振荡，负载偏差被 $\gamma$ 对应的分数位移界定。 $\gamma$ 越小稳态波纹越小、响应越慢， $10^{-3}$ 是响应速度与波纹的折中点。
 
@@ -259,7 +259,7 @@ $$
 h^{k} = \mathrm{TRM}_k\big(h'^k\big), \qquad P_{i+k+1}^{k} = \mathrm{OutHead}\big(h_i^{k}\big) \qquad (20)
 $$
 
-**符号**： $h_i^{k-1}$：上一层（ $k = 1$ 时是主模型 backbone）位置 $i$ 的表示； $\mathrm{Emb}$ 与 $\mathrm{OutHead}$：与主模型共享的 embedding 与输出头； $[;\hspace{5mu}]$：特征轴拼接； $M_k \in \mathbb{R}^{d \times 2d}$：拼接投影； $\mathrm{TRM}_k$：一个完整 transformer block； $P^{k}$：模块 $k$ 对位置 $i+k+1$ 的预测分布。链式结构的关键：模块 $k$ 吃模块 $k-1$ 的表示与真实 token $t_{i+k}$ 的嵌入——预测条件始终是真实前缀，因果链完整。
+**符号**： $h_i^{k-1}$：上一层（ $k = 1$ 时是主模型 backbone）位置 $i$ 的表示； $\mathrm{Emb}$ 与 $\mathrm{OutHead}$：与主模型共享的 embedding 与输出头； $[;\hspace{5mu}]$：特征轴拼接； $M_k \in \mathbb{R}^{d \times 2d}$：拼接投影； $`\mathrm{TRM}_k`$：一个完整 transformer block； $P^{k}$：模块 $k$ 对位置 $i+k+1$ 的预测分布。链式结构的关键：模块 $k$ 吃模块 $k-1$ 的表示与真实 token $t_{i+k}$ 的嵌入——预测条件始终是真实前缀，因果链完整。
 
 shape 走读（ $D = 1$，位置 $i$）：
 
@@ -280,7 +280,7 @@ $$
 
 ### 6.2 推理：self-speculative 与接受率
 
-推理时 MTP 模块翻过来当草稿模型（self-speculative）：模块 1 以 backbone 表示为条件先猜 $t+2$，主模型一次前向并行验证两个位置。接受规则与接受率公式出自 speculative decoding（[Leviathan et al., 2023](../references.md)，arXiv:2211.17192，[B]）：草稿分布 $q$、目标分布 $p$，采样 $x \sim q$ 后以概率 $\min(1, p(x)/q(x))$ 接受；拒绝则从归一化的 $(p - q)_{+}$ 重采。该规则保证输出分布精确等于 $p$——无损加速（练习 3 证）。
+推理时 MTP 模块翻过来当草稿模型（self-speculative）：模块 1 以 backbone 表示为条件先猜 $t+2$，主模型一次前向并行验证两个位置。接受规则与接受率公式出自 speculative decoding（[Leviathan et al., 2023](../references.md)，arXiv:2211.17192，[B]）：草稿分布 $q$、目标分布 $p$，采样 $x \sim q$ 后以概率 $\min(1, p(x)/q(x))$ 接受；拒绝则从归一化的 $`(p - q)_{+}`$ 重采。该规则保证输出分布精确等于 $p$——无损加速（练习 3 证）。
 
 整体接受率：
 

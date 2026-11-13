@@ -64,9 +64,9 @@ $$
 \mathrm{SNR}_{\mathrm{eff}}(t) = \frac{\bar\alpha_t\thinspace \sigma_z^2}{1 - \bar\alpha_t} = \sigma_z^2 \cdot \mathrm{SNR}_{\mathrm{nominal}}(t) \qquad (3)
 $$
 
-**符号**： $\mathrm{SNR}_{\mathrm{nominal}}(t) = \bar\alpha_t / (1-\bar\alpha_t)$：schedule 设计时的名义信噪比（7.2 式 (9)、7.5 §7 的同一对象）。
+**符号**： $`\mathrm{SNR}_{\mathrm{nominal}}(t) = \bar\alpha_t / (1-\bar\alpha_t)`$：schedule 设计时的名义信噪比（7.2 式 (9)、7.5 §7 的同一对象）。
 
-取对数： $\log \mathrm{SNR}_{\mathrm{eff}} = \log \mathrm{SNR}_{\mathrm{nominal}} + 2\ln \sigma_z$。也就是说， $\sigma_z \ne 1$ 的效果是在 log-SNR 轴上把整条 schedule 平移一个常数——linear/cosine schedule（7.2 §2.3）、logit-normal $t$ 采样（7.5 式 (27)）的全部标定都建立在「输入单位方差」的假设上，尺度错了等于整套超参对着另一条 schedule 调。取 $s = 1/\hat\sigma_z$ 预乘 $z$，式 (3) 回到名义值，schedule 恢复其设计语义；decode 侧先除以 $s$ 再进 $D$。
+取对数： $`\log \mathrm{SNR}_{\mathrm{eff}} = \log \mathrm{SNR}_{\mathrm{nominal}} + 2\ln \sigma_z`$。也就是说， $\sigma_z \ne 1$ 的效果是在 log-SNR 轴上把整条 schedule 平移一个常数——linear/cosine schedule（7.2 §2.3）、logit-normal $t$ 采样（7.5 式 (27)）的全部标定都建立在「输入单位方差」的假设上，尺度错了等于整套超参对着另一条 schedule 调。取 $s = 1/\hat\sigma_z$ 预乘 $z$，式 (3) 回到名义值，schedule 恢复其设计语义；decode 侧先除以 $s$ 再进 $D$。
 
 数值自检： $1/0.18215 \approx 5.49$，与实测 $\hat\sigma_z$ 互倒（6.3 §7.1）。SD3/FLUX 世代的 16 通道 VAE 同机制、另加一个 shift 项（scale 0.3611 / shift 0.1159，FLUX 代码实测口径，6.3 §7.2）——机制不变：把 latent 的逐分量均值与方差都钉到标定点上。
 

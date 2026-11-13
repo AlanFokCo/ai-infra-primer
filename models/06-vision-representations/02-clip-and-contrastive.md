@@ -85,7 +85,7 @@ $$
 \frac{\partial L_{i2t}}{\partial S_{ij}} = \frac{1}{B} \left( p_{ij} - \delta_{ij} \right), \qquad p_{ij} = \frac{\exp(S_{ij})}{\sum_{j'=1}^{B} \exp(S_{ij'})} \qquad (6)
 $$
 
-**符号**： $p_{ij}$：第 $i$ 行 softmax 后、文本 $j$ 被选中为配图的概率； $\delta_{ij}$：Kronecker delta。列方向同形，记 $p^{c}_{ij} = \exp(S_{ij}) / \sum_{i'} \exp(S_{i'j})$（对行下标归一化）；合并式 (5) 的 $1/2$：
+**符号**： $p_{ij}$：第 $i$ 行 softmax 后、文本 $j$ 被选中为配图的概率； $\delta_{ij}$：Kronecker delta。列方向同形，记 $`p^{c}_{ij} = \exp(S_{ij}) / \sum_{i'} \exp(S_{i'j})`$（对行下标归一化）；合并式 (5) 的 $1/2$：
 
 $$
 \frac{\partial L}{\partial S_{ij}} = \frac{1}{2B} \left( p_{ij} + p^{c}_{ij} - 2\thinspace\delta_{ij} \right) \qquad (7)
@@ -150,7 +150,7 @@ $$
 L_i = -S_{ii} + \log \left( \exp(S_{ii}) + \sum_{j \neq i} \exp(S_{ij}) \right) \qquad (11)
 $$
 
-求和项改写为 $\sum_{j \neq i} \exp(S_{ij}) = (B - 1) \cdot \frac{1}{B-1} \sum_{j \neq i} \exp\left( \langle v_i, t_j \rangle / \tau \right)$——括号里的平均正是 $\mathbb{E}_{t' \sim p_{\mathrm{data}}}\left[ \exp\left( \langle v_i, t' \rangle / \tau \right) \right]$ 的 $B - 1$ 样本 Monte Carlo 估计。代入得
+求和项改写为 $\sum_{j \neq i} \exp(S_{ij}) = (B - 1) \cdot \frac{1}{B-1} \sum_{j \neq i} \exp\left( \langle v_i, t_j \rangle / \tau \right)$——括号里的平均正是 $`\mathbb{E}_{t' \sim p_{\mathrm{data}}}\left[ \exp\left( \langle v_i, t' \rangle / \tau \right) \right]`$ 的 $B - 1$ 样本 Monte Carlo 估计。代入得
 
 $$
 L_i \approx -S_{ii} + \log(B - 1) + \log \mathbb{E}_{t'}\left[ \exp\left( \langle v_i, t' \rangle / \tau \right) \right] \qquad (12)
@@ -233,7 +233,7 @@ CLIP 训出的共享空间在两个后续 Part 直接复用，本章只登记接
 
 ## 练习
 
-1.（推导）(a) 写出列方向 $p^{c}_{ij}$ 的定义，由式 (5) 证明式 (7)；(b) 补全式 (8)：明确指出 $\sum_j p_{ij} = 1$ 用在哪一步，并把「吸引 + 排斥」改写成 $\frac{1}{B\tau}\left[ (1 - p_{ii})\thinspace t_i - \sum_{j \neq i} p_{ij}\thinspace t_j \right]$ 验证等价；(c) 若丢掉列方向只训式 (3)， $t_j$ 从哪些项获得梯度、缺了哪些项？由此说明单方向训练对以文搜图的影响。
+1.（推导）(a) 写出列方向 $`p^{c}_{ij}`$ 的定义，由式 (5) 证明式 (7)；(b) 补全式 (8)：明确指出 $\sum_j p_{ij} = 1$ 用在哪一步，并把「吸引 + 排斥」改写成 $\frac{1}{B\tau}\left[ (1 - p_{ii})\thinspace t_i - \sum_{j \neq i} p_{ij}\thinspace t_j \right]$ 验证等价；(c) 若丢掉列方向只训式 (3)， $t_j$ 从哪些项获得梯度、缺了哪些项？由此说明单方向训练对以文搜图的影响。
 2.（计算）(a) $B$ = 32768 时随机基线行 CE 是多少 nats？训练末期某行 CE 降到 2.0，该行正样本概率与随机基线各是多少、差多少倍？(b) 某行 $c_{ii}$ = 0.30、 $\sum_j p_{ij} c_{ij}$ = 0.18、 $\gamma$ = 14.3，用式 (10) 算 $\partial L_i / \partial t$，说明这一步会把 $\tau$ 调大还是调小、为何合理。(c) $\tau$ 固定、 $B$ 从 1024 升到 32768，式 (12) 中 Monte Carlo 相对误差约缩多少倍？
 3.（代码）用 §2.3 的教学实现：(a) 构造 $B$ = 64、 $d$ = 32 的随机单位化 $V, T$（对角人为加 0.3 余弦偏置），跑 200 步 Adam 只更新 $V, T$，验证对角余弦均值上升、行 CE 从约 $\log 64$ 单调下降；(b) 把温度设为可学（对数参数化 + clamp 100），打印前 50 步的变化方向并用式 (10) 解释符号；(c) 手写一行梯度（式 (6)）与 autograd 输出对拍到 $10^{-6}$。
 4.（推导 + 计算）(a) 用单位化恒等式把式 (16) 化成 $2 - 2\thinspace\mathbb{E}[\cos\theta]$、式 (17) 化成 $-4 + \log \mathbb{E}\left[ e^{4\cos\theta} \right]$；(b) 构造两个 toy 分布：A（正样本对 cos = 0.9、随机对 cos = 0）与 B（正样本对 cos = 0.9、随机对 cos = 0.85），期望用 delta 近似各算两指标，指出 B 属于 §6 的哪种失败模式、对应哪个指标失灵。

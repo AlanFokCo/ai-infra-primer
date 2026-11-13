@@ -292,7 +292,7 @@ $$
 \left\langle R^{(m)} q,\hspace{5mu} R^{(n)} k \right\rangle = \sum_{j=0}^{15} B_j\big(q, k;\hspace{5mu} (t_n - t_m)\thinspace \theta_j \big) + \sum_{j=16}^{39} B_j\big(q, k;\hspace{5mu} (h_n - h_m)\thinspace \theta_j \big) + \sum_{j=40}^{63} B_j\big(q, k;\hspace{5mu} (w_n - w_m)\thinspace \theta_j \big) \qquad (17)
 $$
 
-**证明**。每块仍是独立 2D 旋转，2.5 的三条引理逐块继承： $\big(R^{(m)}\big)^{\top} R^{(n)}$ 在第 $j$ 块上等于 $R\big( (\mathrm{axis}_j(n) - \mathrm{axis}_j(m))\thinspace \theta_j \big)$， $\mathrm{axis}_j$ 按 $j$ 所属段取 $t / h / w$；内积按块分解求和（2.5 式 (13) 的逐块论证原样套用），角度差逐段代入即式 (17)。∎
+**证明**。每块仍是独立 2D 旋转，2.5 的三条引理逐块继承： $\big(R^{(m)}\big)^{\top} R^{(n)}$ 在第 $j$ 块上等于 $`R\big( (\mathrm{axis}_j(n) - \mathrm{axis}_j(m))\thinspace \theta_j \big)`$， $`\mathrm{axis}_j`$ 按 $j$ 所属段取 $t / h / w$；内积按块分解求和（2.5 式 (13) 的逐块论证原样套用），角度差逐段代入即式 (17)。∎
 
 score 的「位置部分」只含三轴相对位移 $(\Delta t, \Delta h, \Delta w)$ 的分段加权和——6.1 式 (8) 的 RoPE-2D 两轴版在这里扩成三轴，且轴的语义随 token 类型切换。三个推论把 §9.1 的规则兑现：
 

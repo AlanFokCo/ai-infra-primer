@@ -334,7 +334,7 @@ patch   [b1 b2 b3] [b4 b5] [b6 b7 b8] ...    ← 长度随可预测性变化
 ## 练习
 
 1.（计算）对语料 {banana ×4, bandana ×2, ananas ×3} 手算 BPE 的前三轮 merge（字符基元，词频加权）：列出每轮的相邻对频次表、选中的对与语料总长。再用学到的 merge 编码未见词 bananas，给出切分结果。（提示：第一轮 (a,n) 以 18 次居首。）
-2.（推导）Unigram EM 的 M 步：写出辅助函数 $Q(\theta, \theta') = \sum_x \mathbb{E}_{q(z \mid x; \theta')}[\log p(z; \theta)]$ ，在约束 $\sum_v p(v) = 1$ 下用 Lagrange 乘子法推出闭式更新 $p(v) = c(v) / \sum_{v'} c(v')$ 。
+2.（推导）Unigram EM 的 M 步：写出辅助函数 $`Q(\theta, \theta') = \sum_x \mathbb{E}_{q(z \mid x; \theta')}[\log p(z; \theta)]`$ ，在约束 $\sum_v p(v) = 1$ 下用 Lagrange 乘子法推出闭式更新 $p(v) = c(v) / \sum_{v'} c(v')$ 。
 3.（计算）Qwen3-8B（ $V$ = 151936， $d$ = 4096，untied）：(a) 计算 $2Vd$ 参数；层参数按 2.1 的方法以 $11.5 d^{2} \times 36$ 估算（GQA 使 attention 为 $2.5 d^{2}$ 、SwiGLU 且 $d_{\mathrm{ff}} = 3d$ 使 FFN 为 $9 d^{2}$ ），总参数约多少、词表矩阵占几成？(b) 若改为 tied，省多少参数？(c) 输出头每 token 前向 FLOPs（ $2Vd$ ）占「层部分 $2N$ + 输出头」的几成？
 4.（推导 + 论证）(a) 从式 (10) 写出第 $v$ 行梯度的完整表达式，并指出两路梯度各自为零的条件；(b) 无 bias 且 tied（ $W_U = E$ ）时，说明「输入映射与输出映射共享同一 rank ≤ $d$ 预算」的确切含义；(c) 解释为什么 MoS 的 $\log P$ 不受式 (12) 约束（提示： $\log$ 无法穿过混合求和）。
 

@@ -122,7 +122,7 @@ $$
 x_{j+1}^{(1)} = x_{j+1}^{(0)} + \sum_{s} A^{(1)}_{j+1,\thinspace s}\thinspace W_{OV}^{(1)} E_{x_s} \approx x_{j+1}^{(0)} + W_{OV}^{(1)} E_{x_j} \qquad (6)
 $$
 
-**符号**： $E_{x_j} \in \mathbb{R}^{d}$ ：token $x_j$ 的嵌入（residual stream 初值）； $W_{OV}^{(1)}$ ：第 1 层的 OV 矩阵；近似号用 $A^{(1)}_{j+1,\thinspace j} \approx 1$ 。效果：位置 $i+1$ 的 stream 同时编码「我是 B」与「我的前驱是 A」。
+**符号**： $E_{x_j} \in \mathbb{R}^{d}$ ：token $x_j$ 的嵌入（residual stream 初值）； $W_{OV}^{(1)}$ ：第 1 层的 OV 矩阵；近似号用 $`A^{(1)}_{j+1,\thinspace j} \approx 1`$ 。效果：位置 $i+1$ 的 stream 同时编码「我是 B」与「我的前驱是 A」。
 
 第 2 层 **induction head**（归纳头）：当前位置 $t$（第二个 A）的 query 去匹配「前驱是 A 的位置」的 key——这一步叫 prefix matching（前缀匹配）；命中位置 $i+1$ 后，OV 侧把该位置的 token 表征（B）搬到 $t$ ——这一步叫 copying（复制），经 unembedding $W_U$ 抬升 B 的 logit。把式 (6) 代入第 2 层 score，展开组合双线性型：
 

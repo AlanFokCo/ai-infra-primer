@@ -20,7 +20,7 @@
 
 $$L_{joint}(\theta) = \mathbb{E}_{(x_0,\thinspace c) \sim \mathcal{D}} \hspace{5mu} \mathbb{E}_{t \sim \pi,\hspace{5mu} \varepsilon \sim \mathcal{N}(0, I)} \left\Vert v_\theta\left( (1 - t)\thinspace x_0 + t\thinspace \varepsilon,\hspace{5mu} t,\hspace{5mu} c \right) - \left( \varepsilon - x_0 \right) \right\Vert^2 \qquad (1)$$
 
-**符号**： $\mathcal{D} = \mathcal{D}_{img} \cup \mathcal{D}_{vid}$：图像与视频的混合数据分布（混合比例是配方自由度）； $x_0$：latent（图像样本的 $x_0$ 是 $1 \times h \times w \times c$）；其余同 7.5 式 (22)。混训在目标层面零改动——全部差异在数据分布与桶调度里。
+**符号**： $`\mathcal{D} = \mathcal{D}_{img} \cup \mathcal{D}_{vid}`$：图像与视频的混合数据分布（混合比例是配方自由度）； $x_0$：latent（图像样本的 $x_0$ 是 $1 \times h \times w \times c$）；其余同 7.5 式 (22)。混训在目标层面零改动——全部差异在数据分布与桶调度里。
 
 诚实边界：各家具体的混训比例、图像桶占比与课程参数，本书事实源未逐一登记，本节给的是该配方族成立的结构条件与成本论证；机制断言（三条兼容条件）逐条有 9.1/9.2 的已登记事实支撑。
 
@@ -92,15 +92,15 @@ CausVid（[Yin et al., 2024](../references.md)，arXiv:2412.07772，[A]；官方
 
 $$L_{ODE}(\psi) = \mathbb{E}_{x_1 \sim \mathcal{N}(0, I),\hspace{5mu} j \in \lbrace1, \ldots, K\rbrace} \left\Vert G_\psi\left( x^{teacher}_{s_j},\hspace{5mu} s_j \right) - x^{teacher}_{0} \right\Vert^2 \qquad (4)$$
 
-**符号**： $x^{teacher}_{s}$：教师从 $x_1 \sim \mathcal{N}(0, I)$ 出发的 ODE 解轨迹在噪声水平 $s$ 处的取值； $\lbrace s_j\rbrace_{j=1..K}$：学生的 $K = 4$ 个锚点时间（采样网格，方向 $s : 1 \to 0$）； $G_\psi(x, s)$：学生从 $(x, s)$ 一步映射到数据端的预测（ $K$ = 4 步采样由该一步映射经重噪迭代复合而成——few-step 学生的标准用法，7.4 §5 谱系）； $x^{teacher}_{0}$：该轨迹的教师终态。这一构造与 DMD 初代的配对回归同族（7.4 §5.5），DMD2 删除、CausVid 恢复为独立预训阶段。机制读法（本书分析）：DMD 主阶段的 real score 由教师在「噪声化的学生输出」上评估——学生输出若离数据流形太远，加噪后的输入落在教师的训练分布之外、score 信号失真；ODE 预训先把学生钉到教师解流形附近，主阶段的监督才良性。
+**符号**： $`x^{teacher}_{s}`$：教师从 $x_1 \sim \mathcal{N}(0, I)$ 出发的 ODE 解轨迹在噪声水平 $s$ 处的取值； $\lbrace s_j\rbrace_{j=1..K}$：学生的 $K = 4$ 个锚点时间（采样网格，方向 $s : 1 \to 0$）； $G_\psi(x, s)$：学生从 $(x, s)$ 一步映射到数据端的预测（ $K$ = 4 步采样由该一步映射经重噪迭代复合而成——few-step 学生的标准用法，7.4 §5 谱系）； $`x^{teacher}_{0}`$：该轨迹的教师终态。这一构造与 DMD 初代的配对回归同族（7.4 §5.5），DMD2 删除、CausVid 恢复为独立预训阶段。机制读法（本书分析）：DMD 主阶段的 real score 由教师在「噪声化的学生输出」上评估——学生输出若离数据流形太远，加噪后的输入落在教师的训练分布之外、score 信号失真；ODE 预训先把学生钉到教师解流形附近，主阶段的监督才良性。
 
-**阶段二：非对称 DMD 主目标**（论文 Algorithm 1「Asymmetric Distillation with DMD」）。训练输入的构造先钉死（这是后面式 (6) 的 $x$ 的出处）：逐 chunk 采样——**全体** chunk 各自采噪声时间步 $t^{j} \sim \mathrm{Uniform}(\mathcal{T})$（含 0）并各自加噪，历史 chunk 同为带噪的 ground truth；学生以此带噪历史为条件、把当前（ground-truth）chunk 的加噪输入**一步**映到数据端 $\hat x_0^{(i)} = G_\psi\left( x^{(i)}_{t^{i}},\thinspace t^{i};\thinspace x_{t^{<i}}^{(<i)} \right)$，各 chunk 的预测拼接成整段视频 $x$（论文 Algorithm 1 lines 5-9 口径）。输入侧的这个构造在 chunk 粒度上已是 Diffusion Forcing 方案——论文 §4.2 原文「Each chunk has its own noise time step, following Diffusion Forcing」（Self-Forcing 论文 §2 亦以此定性 CausVid，其对 DF 的刻画为「denoising each frame based on noisy context frames」）；§5 的 DF 框架是同一思想在 token 粒度的推广、并给出变分下界口径。记 $p_\psi$ 为学生输出分布（上述逐 chunk 一步预测拼接的分布）、 $p_{data}$ 为数据分布， $p_{\psi, t}$ / $p_{data, t}$ 为各自加噪到水平 $t$ 的平滑分布（FM 线性路径 $x_t = (1-t)x + t\varepsilon$ 的边际）。目标是在随机采样的噪声水平上最小化 reverse KL：
+**阶段二：非对称 DMD 主目标**（论文 Algorithm 1「Asymmetric Distillation with DMD」）。训练输入的构造先钉死（这是后面式 (6) 的 $x$ 的出处）：逐 chunk 采样——**全体** chunk 各自采噪声时间步 $t^{j} \sim \mathrm{Uniform}(\mathcal{T})$（含 0）并各自加噪，历史 chunk 同为带噪的 ground truth；学生以此带噪历史为条件、把当前（ground-truth）chunk 的加噪输入**一步**映到数据端 $`\hat x_0^{(i)} = G_\psi\left( x^{(i)}_{t^{i}},\thinspace t^{i};\thinspace x_{t^{<i}}^{(<i)} \right)`$，各 chunk 的预测拼接成整段视频 $x$（论文 Algorithm 1 lines 5-9 口径）。输入侧的这个构造在 chunk 粒度上已是 Diffusion Forcing 方案——论文 §4.2 原文「Each chunk has its own noise time step, following Diffusion Forcing」（Self-Forcing 论文 §2 亦以此定性 CausVid，其对 DF 的刻画为「denoising each frame based on noisy context frames」）；§5 的 DF 框架是同一思想在 token 粒度的推广、并给出变分下界口径。记 $p_\psi$ 为学生输出分布（上述逐 chunk 一步预测拼接的分布）、 $p_{data}$ 为数据分布， $p_{\psi, t}$ / $p_{data, t}$ 为各自加噪到水平 $t$ 的平滑分布（FM 线性路径 $x_t = (1-t)x + t\varepsilon$ 的边际）。目标是在随机采样的噪声水平上最小化 reverse KL：
 
 $$L_{DMD}(\psi) = \mathbb{E}_{t \sim \pi} \left[ \mathrm{KL}\left( p_{\psi, t}\thinspace \Vert\thinspace p_{data, t} \right) \right] \qquad (5)$$
 
 **符号**： $\pi$：噪声水平采样分布（随机 timestep 口径与 7.4 §5.5 一致）。reverse KL 的方向语义：学生把质量放到数据无质量处会被严惩（mode-seeking；与 §7 rCM 条目的「forward KL mode-covering + reverse KL mode-seeking 互补」口径互证）。
 
-梯度由 7.4 式 (30)-(32) 的推导在视频记号下重放：交叉项经重参数化链式展开、熵项拆出测度项（ $\mathbb{E}_{p_\psi}[\partial_\psi \log p_\psi] = 0$，密度归一的恒等推论）与样本点链式项，合并得
+梯度由 7.4 式 (30)-(32) 的推导在视频记号下重放：交叉项经重参数化链式展开、熵项拆出测度项（ $`\mathbb{E}_{p_\psi}[\partial_\psi \log p_\psi] = 0`$，密度归一的恒等推论）与样本点链式项，合并得
 
 $$\nabla_\psi\thinspace \mathrm{KL}\left( p_{\psi, t}\thinspace \Vert\thinspace p_{data, t} \right) = \mathbb{E}_{x \sim p_\psi,\hspace{5mu} \varepsilon} \left[ \left( s_{\psi, t}(x_t) - s_{data, t}(x_t) \right)\thinspace \frac{\partial x}{\partial \psi} \right], \qquad x_t = (1 - t)\thinspace x + t\thinspace \varepsilon \qquad (6)$$
 
@@ -280,7 +280,7 @@ $$L_{SF}(\theta) = \mathbb{E}_{x^{1:M} \sim q_\theta^{rollout}} \left[ \ell_{DM}
 
 1.（推导）Diffusion Forcing 的角点与缺口。从式 (8)(9) 出发：(a) 约束 $t_1 = \cdots = t_n = t$（每序列采一个标量），把式 (9) 化简为式 (1) 的 ε 坐标形态，写出每一步；(b) 取 $t_{<i} = 0$，写出第 $i$ 个 token 的条件学习目标的显式形式，并描述「逐 token 内层退火 + 历史钉 0」的采样算法；(c) 论证：只在共享 $t$ 截面训练的双向基座，面对 §4 双层循环的输入（cache 内 clean 历史 + 当前 chunk 在噪）时缺了哪部分支撑集——注意连续 $\pi$ 下任何具体配置都是零测集，请用支撑集（而非概率质量）的语言陈述缺口；并说明 DF 论文的离散噪声水平口径（含 0）如何使该类配置获得正概率质量。
 
-2.（推导）CausVid 的非对称 DMD 梯度。从式 (5) 出发重推式 (6)：写出 reverse KL 的熵-交叉熵分解、测度项 $\mathbb{E}_{p_\psi}[\partial_\psi \log p_\psi] = 0$ 的依据、以及 score 差的合并步（对照 7.4 式 (30)-(32)）。然后回答两个架构问题：(a) 冻结教师的双向性出现在梯度的哪个因子里，学生的因果性出现在哪里；(b) 论证不动点 $p_\psi = p_{data}$ 与学生上下文窗口无关，并解释「非对称」因此改变的是逼近路径而非目标。
+2.（推导）CausVid 的非对称 DMD 梯度。从式 (5) 出发重推式 (6)：写出 reverse KL 的熵-交叉熵分解、测度项 $`\mathbb{E}_{p_\psi}[\partial_\psi \log p_\psi] = 0`$ 的依据、以及 score 差的合并步（对照 7.4 式 (30)-(32)）。然后回答两个架构问题：(a) 冻结教师的双向性出现在梯度的哪个因子里，学生的因果性出现在哪里；(b) 论证不动点 $p_\psi = p_{data}$ 与学生上下文窗口无关，并解释「非对称」因此改变的是逼近路径而非目标。
 
 3.（计算）流式账。取 81 帧 720p（21 latent 帧、 $N$ = 302,400、 $d$ = 5120、40 层、40 头、 $d_{head}$ = 128，Wan 14B config 实测口径），chunk = 3 latent 帧（ $n$ = 43,200、 $M$ = 7）、 $K$ = 4：(a) 用式 (7) 算每内层步的 attention 二次项总量与全视频（ $K$ 步合计）总量，对照双向教师 50 步的 $K_T \cdot 4 d N^{2}$，验证比值 ≈ 1/21.9（ $M$ = 7 精确值； $M \to \infty$ 极限 1/25）；(b) 算 chunk $k$ = 7 时 cache 的字节数（2.4 式 (9) 口径）与全历史上限，并对照 §4.2 的 248 GB 参照；(c) 用 §4.2 的延迟分解估计 time-to-first-frame 比值的量级，说明实测 160× 与上界估计之间的差值来源。
 

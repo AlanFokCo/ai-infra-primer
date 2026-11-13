@@ -16,7 +16,7 @@ $$|V| = T \cdot H \cdot W \cdot 3 = 120 \times 720 \times 1280 \times 3 \approx 
 
 与 8.4 的理解侧对照可以看清生成侧为什么更苛刻：视频理解可以抽稀帧（1 min @ 1 fps × 256 token/帧 = 15,360 token，8.4 式 (1) 的账；更高帧率档直接吃掉 128K context 预算的过半），但生成必须逐帧产出——输出端没有「跳帧」的自由，latent 帧密度由压缩率钉死，帧率与时长动不了。理解侧的省 token 三位置（8.4 §4）对应到生成侧只剩一个：VAE 压缩率本身。这是 Video VAE 在整个系统里的位置：它是 token 预算的唯一闸门。
 
-Video VAE 的数学骨架与 6.3 的图像 VAE 完全一致：对角高斯后验 $q_\phi(z \mid V)$、reparameterization 采样 $z = \mu + \sigma \odot \varepsilon$、目标函数 $L = -\mathbb{E}_{q_\phi}\left[ \log p_\theta(V \mid z) \right] + \beta \cdot \mathrm{KL}\left( q_\phi(z \mid V)\thinspace \Vert\thinspace p(z) \right)$（6.3 式 (8)，推导不重复）。其中 KL 项在视频语境下的角色值得单独点出：它把后验往标准高斯先验上拉，保证「从 $\mathcal{N}(0, I)$ 采样 $z$ → decoder」这条生成路径与 encoder 产出的 latent 同分布——视频 latent 的数值体积比单帧图像大一到两个数量级，标定不良的后果（扩散模型在失配分布上回归）也被同等放大。两阶段分工沿用 7.6 §1 的读法：VAE 负责感知压缩，扩散负责语义生成——LDM 的同预算消融同时给出警示：压缩率存在质量上限，压缩因子过大时 autoencoder 的重建误差封顶整体样本质量。这个上限在视频侧的量化证据见 §5。
+Video VAE 的数学骨架与 6.3 的图像 VAE 完全一致：对角高斯后验 $q_\phi(z \mid V)$、reparameterization 采样 $z = \mu + \sigma \odot \varepsilon$、目标函数 $`L = -\mathbb{E}_{q_\phi}\left[ \log p_\theta(V \mid z) \right] + \beta \cdot \mathrm{KL}\left( q_\phi(z \mid V)\thinspace \Vert\thinspace p(z) \right)`$（6.3 式 (8)，推导不重复）。其中 KL 项在视频语境下的角色值得单独点出：它把后验往标准高斯先验上拉，保证「从 $\mathcal{N}(0, I)$ 采样 $z$ → decoder」这条生成路径与 encoder 产出的 latent 同分布——视频 latent 的数值体积比单帧图像大一到两个数量级，标定不良的后果（扩散模型在失配分布上回归）也被同等放大。两阶段分工沿用 7.6 §1 的读法：VAE 负责感知压缩，扩散负责语义生成——LDM 的同预算消融同时给出警示：压缩率存在质量上限，压缩因子过大时 autoencoder 的重建误差封顶整体样本质量。这个上限在视频侧的量化证据见 §5。
 
 latent 形状由压缩率直接写出：
 

@@ -49,7 +49,7 @@ $$
 
 ### 2.3 ELBO 推导 II：KL 非负性路径（gap 的精确含义）
 
-第二条路径得到一个恒等式，不只是不等式。 $\log p_{\theta}(x)$ 不含 $z$，对任意 $q_{\phi}$ 有 $\log p_{\theta}(x) = \mathbb{E}_{q_{\phi}}[\log p_{\theta}(x)]$；再用联合分解 $p_{\theta}(x) = p_{\theta}(x, z) / p_{\theta}(z \mid x)$ 代入：
+第二条路径得到一个恒等式，不只是不等式。 $\log p_{\theta}(x)$ 不含 $z$，对任意 $q_{\phi}$ 有 $`\log p_{\theta}(x) = \mathbb{E}_{q_{\phi}}[\log p_{\theta}(x)]`$；再用联合分解 $p_{\theta}(x) = p_{\theta}(x, z) / p_{\theta}(z \mid x)$ 代入：
 
 $$
 \begin{aligned}
@@ -86,7 +86,7 @@ $$
 \end{aligned} \qquad (6)
 $$
 
-第二步写出两个 log 密度并把常数 $-\frac{1}{2}\log 2\pi$ 消掉；第三步用 $\mathbb{E}_{q}[(z-\mu)^{2}] = \sigma^{2}$ 与 $\mathbb{E}_{q}[z^{2}] = \mu^{2} + \sigma^{2}$；第四步整理。多维对角情形逐维相加：
+第二步写出两个 log 密度并把常数 $-\frac{1}{2}\log 2\pi$ 消掉；第三步用 $`\mathbb{E}_{q}[(z-\mu)^{2}] = \sigma^{2}`$ 与 $`\mathbb{E}_{q}[z^{2}] = \mu^{2} + \sigma^{2}`$；第四步整理。多维对角情形逐维相加：
 
 $$
 \mathrm{KL}\left( \mathcal{N}(\mu, \mathrm{diag}\thinspace\sigma^{2})\thinspace \Vert\thinspace \mathcal{N}(0, I) \right) = \frac{1}{2} \sum_{i=1}^{d_z} \left( \mu_{i}^{2} + \sigma_{i}^{2} - \log \sigma_{i}^{2} - 1 \right) \qquad (7)
@@ -106,7 +106,7 @@ $$
 
 式 (8) 的 recon 项要对 $\phi$ 求导，但期望号下的分布 $q_{\phi}(z \mid x)$ 本身依赖 $\phi$——采样是一个无梯度的操作，链式法则在「采一个 $z$」这一步断掉。
 
-通用解是 log-derivative trick： $\nabla_{\phi} \mathbb{E}_{q_{\phi}}[f(z)] = \mathbb{E}_{q_{\phi}}[ f(z)\thinspace \nabla_{\phi} \log q_{\phi}(z \mid x) ]$。它对任何分布成立，但梯度估计把逐样本的 $f(z)$ 值直接乘上去，方差大—— $f$ 的大幅波动原样进入梯度。
+通用解是 log-derivative trick： $`\nabla_{\phi} \mathbb{E}_{q_{\phi}}[f(z)] = \mathbb{E}_{q_{\phi}}[ f(z)\thinspace \nabla_{\phi} \log q_{\phi}(z \mid x) ]`$。它对任何分布成立，但梯度估计把逐样本的 $f(z)$ 值直接乘上去，方差大—— $f$ 的大幅波动原样进入梯度。
 
 高斯族有更好的 pathwise 解（reparameterization，VAE 论文的核心机制）：把采样改写成对无参噪声的确定性变换，
 
@@ -130,7 +130,7 @@ $$
 
 机制拆解：collapse 发生的条件是 decoder 强到 recon 项对 $z$ 不敏感。极端情形是自回归 decoder—— $p_{\theta}(x_t \mid x_{<t}, z)$ 里 $x_{<t}$ 已经足以预测 $x_t$， $z$ 被旁路， $\mathbb{E}[\log p_{\theta}(x \mid z)]$ 在 $z$ 被忽略时照样取到高值，于是 KL 项把 $q_{\phi}$ 一路拉向先验，KL → 0，latent 通道报废。训练中的可观测信号：KL 项单调降到 0 附近；从 $\mathcal{N}(0, I)$ 采样 $z$ 生成的结果与 encoder 编码真实图像得到的 $z$ 不可区分——后验已经不带信息。
 
-缓解手段全部从「打破 recon 与 KL 的失衡」出发：(a) $\beta$ 退火：训练前期 $\beta = 0$（纯 AE），让 latent 先变得有用，再线性升到目标值；(b) free bits：给每维 KL 一个免罚额度 $\lambda$，把式 (7) 换成 $\sum_{i} \max(\lambda,\ \mathrm{KL}_i)$——低于额度的维度不产生梯度，强制每维至少保留 $\lambda$ nats 的信息通道；(c) 限制 decoder 的条件容量（砍掉自回归通路）。对图像 conv decoder（非自回归），collapse 压力天然较小；§7 会看到的实践口径是把 $\beta$ 压到远小于 1，让式 (8) 行为上接近确定性 AE，概率语义只剩一层薄正则。
+缓解手段全部从「打破 recon 与 KL 的失衡」出发：(a) $\beta$ 退火：训练前期 $\beta = 0$（纯 AE），让 latent 先变得有用，再线性升到目标值；(b) free bits：给每维 KL 一个免罚额度 $\lambda$，把式 (7) 换成 $`\sum_{i} \max(\lambda,\ \mathrm{KL}_i)`$——低于额度的维度不产生梯度，强制每维至少保留 $\lambda$ nats 的信息通道；(c) 限制 decoder 的条件容量（砍掉自回归通路）。对图像 conv decoder（非自回归），collapse 压力天然较小；§7 会看到的实践口径是把 $\beta$ 压到远小于 1，让式 (8) 行为上接近确定性 AE，概率语义只剩一层薄正则。
 
 VAE 数据流（教学口径）：
 
@@ -293,13 +293,13 @@ $$
 
 **符号**： $z \in \mathbb{R}^{d}$：encoder 输出（单 latent 位点展平）； $q(z) \in \lbrace -1, +1 \rbrace^{d}$：量化结果。codebook 不再是一张可学表，而是超立方体的顶点集 $\lbrace -1, +1 \rbrace^{d}$——隐式 codebook，大小 $2^{d}$，位点的 token id 就是 sign 模式的二进制编号。没有最近邻检索（lookup-free 的名字由此来），量化是逐维独立的一次符号函数；STE 照旧： $q^{\mathrm{ST}} = z + \mathrm{sg}[\operatorname{sign}(z) - z]$，梯度拷贝同式 (12)(13)。
 
-代价： $2^{d}$ 个顶点里能被 argmin「自然选中」的概念不复存在——没有距离几何，使用率必须由目标函数显式管理。LFQ 的熵正则由两项组成。对第 $i$ 维，样本 $z$ 诱导一个 Bernoulli： $p_i(z) = (z_i + 1)/2$（设 $z_i$ 经有界化落在 $[-1, 1]$， $p_i$ 是「第 $i$ 维取 $+1$」的软概率——该参数化是实现层的操作化写法：原文的 $q(z_i)$ 保持抽象分布记号，官方 magvit 实现按顶点距离的负值过 softmax 得概率再算熵，数值细节以实现为准），其熵 $H(p) = -p \log p - (1 - p) \log(1 - p)$。记 batch 大小 $B$、batch 聚合概率 $\bar{p}_i = \frac{1}{B} \sum_{b=1}^{B} p_i(z^{(b)})$，则
+代价： $2^{d}$ 个顶点里能被 argmin「自然选中」的概念不复存在——没有距离几何，使用率必须由目标函数显式管理。LFQ 的熵正则由两项组成。对第 $i$ 维，样本 $z$ 诱导一个 Bernoulli： $p_i(z) = (z_i + 1)/2$（设 $z_i$ 经有界化落在 $[-1, 1]$， $p_i$ 是「第 $i$ 维取 $+1$」的软概率——该参数化是实现层的操作化写法：原文的 $q(z_i)$ 保持抽象分布记号，官方 magvit 实现按顶点距离的负值过 softmax 得概率再算熵，数值细节以实现为准），其熵 $H(p) = -p \log p - (1 - p) \log(1 - p)$。记 batch 大小 $B$、batch 聚合概率 $`\bar{p}_i = \frac{1}{B} \sum_{b=1}^{B} p_i(z^{(b)})`$，则
 
 $$
 L_{\mathrm{ent}} = \frac{1}{B} \sum_{b=1}^{B} \sum_{i=1}^{d} H\left( p_i(z^{(b)}) \right) \hspace{5mu} - \hspace{5mu} \sum_{i=1}^{d} H\left( \bar{p}_i \right) \qquad (23)
 $$
 
-**符号**：第一项：逐样本熵，最小化它把每个样本的每维推向 $0$ 或 $1$—— $z_i$ 贴向 $\pm 1$ 的顶点，不许「骑墙」（ $p_i \approx 1/2$ 时熵最大）；第二项：batch 聚合熵，式 (23) 里带负号即最大化它，把逐维的边缘使用推向均匀（ $\bar{p}_i = 1/2$），进而让 $2^{d}$ 个顶点被整批样本铺开。一压一抬，正是 §3.4 collapse 的目标函数级解法：逐样本要确定、逐维边缘要均匀。总目标是 VQGAN 家族三项（重建 + LPIPS + 对抗）再加 $L_{\mathrm{ent}}$。
+**符号**：第一项：逐样本熵，最小化它把每个样本的每维推向 $0$ 或 $1$—— $z_i$ 贴向 $\pm 1$ 的顶点，不许「骑墙」（ $p_i \approx 1/2$ 时熵最大）；第二项：batch 聚合熵，式 (23) 里带负号即最大化它，把逐维的边缘使用推向均匀（ $`\bar{p}_i = 1/2`$），进而让 $2^{d}$ 个顶点被整批样本铺开。一压一抬，正是 §3.4 collapse 的目标函数级解法：逐样本要确定、逐维边缘要均匀。总目标是 VQGAN 家族三项（重建 + LPIPS + 对抗）再加 $L_{\mathrm{ent}}$。
 
 定位：MAGVIT-v2 用 LFQ 把视频与图像量化进同一个 vocabulary（摘要口径，[A]），并在该论文的评测上让语言模型路线的生成质量超过同期扩散模型——标题主张即此；注意其主结果的采样范式是 masked LM（掩码迭代解码）而非严格逐 token 自回归，「tokenizer 质量是语言模型视觉路线的杠杆点」这一判断由此坐实，直接影响 P7 的「AR vs diffusion」讨论与 P8 的多模态 tokenizer 选择。
 
@@ -311,13 +311,13 @@ $$
 
 Stable Diffusion 1.x 的 VAE： $f = 8$（encoder 三次 stride-2 下采样， $H/2 \to H/4 \to H/8$），latent 通道 $c = 4$（runwayml/stable-diffusion-v1-5 的 `vae/config.json` 实测 `latent_channels = 4`）；后验是对角高斯，走读锚点是 diffusers 的 `autoencoder_kl.py`（[AutoencoderKL](../references.md)，[A]）：`encode` 产出后验分布，`sample`/`mode` 取 $z$，随后乘一个常数 scale factor。
 
-这个常数的数学值得单独写：训练好的 AE 的 latent 标准差实测 $\hat{\sigma}_z \approx 5.49$，而下游扩散模型的 noise schedule 按单位方差输入标定（P7 展开），于是把 latent 归一到 $\mathcal{O}(1)$：
+这个常数的数学值得单独写：训练好的 AE 的 latent 标准差实测 $`\hat{\sigma}_z \approx 5.49`$，而下游扩散模型的 noise schedule 按单位方差输入标定（P7 展开），于是把 latent 归一到 $\mathcal{O}(1)$：
 
 $$
 z' = s \cdot z, \qquad s = \frac{1}{\hat{\sigma}_z} = 0.18215 \qquad (24)
 $$
 
-**符号**： $s$：scaling factor。数值自检： $1 / 0.18215 \approx 5.49$，与 $\hat{\sigma}_z$ 互倒——式 (24) 就是单位方差化，不是模型结构的一部分，纯粹是分布标定。出处注意：0.18215 不在 diffusers 版 config 里，它的出处是 CompVis/stable-diffusion 的 `configs/stable-diffusion/v1-inference.yaml`（W3 实测）；decode 侧先除以 $s$ 再进 decoder。 $\beta$ 口径上，这条线的 KL 权重压得极小，式 (8) 行为上接近确定性 AE——§2.6 的概率语义只剩一层薄正则，这与「latent 规整」而非「后验推断」的目标一致。
+**符号**： $s$：scaling factor。数值自检： $1 / 0.18215 \approx 5.49$，与 $`\hat{\sigma}_z`$ 互倒——式 (24) 就是单位方差化，不是模型结构的一部分，纯粹是分布标定。出处注意：0.18215 不在 diffusers 版 config 里，它的出处是 CompVis/stable-diffusion 的 `configs/stable-diffusion/v1-inference.yaml`（W3 实测）；decode 侧先除以 $s$ 再进 decoder。 $\beta$ 口径上，这条线的 KL 权重压得极小，式 (8) 行为上接近确定性 AE——§2.6 的概率语义只剩一层薄正则，这与「latent 规整」而非「后验推断」的目标一致。
 
 ### 7.2 SD3/FLUX：f8 16ch
 
@@ -380,8 +380,8 @@ block 输出 = 卷积主路 + 捷径输出，中间 stage 按同一原则改造�
 
 ## 练习
 
-1.（推导）补全式 (6) 到式 (7)：对 $q = \mathcal{N}(\mu, \sigma^{2})$、 $p = \mathcal{N}(0, 1)$，从 $\mathrm{KL}(q \Vert p) = \mathbb{E}_q[\log q - \log p]$ 出发，写出两个密度的完整形式、逐项取期望，得到单维闭式；再说明多维对角情形为何是逐维求和。验证 $\mu = 0, \sigma = 1$ 时取 0、 $\sigma = 1$ 时退化为 $\mu^{2}/2$。
-2.（推导）EMA 与均值闭式解的关系：证明式 (14) 第二项 $\sum_{z \in S_i} \Vert z - e_i \Vert^{2}$ 关于 $e_i$ 的全局极小是 $\bar{z}_i = |S_i|^{-1} \sum_{z \in S_i} z$；再说明式 (15) 在 $N_i$ 收敛（ $N_i \approx \bar{n}_i$ 的稳态）时等价于对历史 batch 的 $\bar{z}_i$ 做指数滑动平均，并讨论 $\gamma = 0.99$ 对应的有效窗口长度量级。
+1.（推导）补全式 (6) 到式 (7)：对 $q = \mathcal{N}(\mu, \sigma^{2})$、 $p = \mathcal{N}(0, 1)$，从 $`\mathrm{KL}(q \Vert p) = \mathbb{E}_q[\log q - \log p]`$ 出发，写出两个密度的完整形式、逐项取期望，得到单维闭式；再说明多维对角情形为何是逐维求和。验证 $\mu = 0, \sigma = 1$ 时取 0、 $\sigma = 1$ 时退化为 $\mu^{2}/2$。
+2.（推导）EMA 与均值闭式解的关系：证明式 (14) 第二项 $\sum_{z \in S_i} \Vert z - e_i \Vert^{2}$ 关于 $e_i$ 的全局极小是 $`\bar{z}_i = |S_i|^{-1} \sum_{z \in S_i} z`$；再说明式 (15) 在 $N_i$ 收敛（ $`N_i \approx \bar{n}_i`$ 的稳态）时等价于对历史 batch 的 $`\bar{z}_i`$ 做指数滑动平均，并讨论 $\gamma = 0.99$ 对应的有效窗口长度量级。
 3.（计算）(a) 用式 (21) 复算文中实例（ $n_q = 8$、 $K = 1024$、75 fps）；(b) 码率预算压到 1.5 kbps、 $K$ 不变，给出两组可行的 $(n_q, f_{\mathrm{rate}})$ 组合并比较各自的重建风险（提示： $n_q$ 与 $f_{\mathrm{rate}}$ 分别伤什么）；(c) $K = 1024$、 $n_q = 8$ 时有效词表是 $2^{80}$，若换成单级 VQ 达到同容量，词表多大、 $d_e = 256$ 时参数多少？以此说明加法结构的参数效率。
 4.（代码）教学用，非优化实现：实现式 (11)(12) 的 VQ 层——`z_q = z_e + (z_q - z_e).detach()`，随机初始化 codebook、encoder 用两层 MLP，在合成二维数据上训练；(a) 打印训练前后 codebook 使用分布的 perplexity $\exp(H(u))$；(b) 把 codebook 初始化拉到远离数据的位置复训，观察 collapse 的发生与 perplexity 曲线；(c) 加入死码重启（使用率低于阈值的 entry 重置为 batch 内随机 $z_e$）对照。验证 STE：对同一输入，比较 `loss.backward()` 后 `z_e.grad` 与手动拷贝的 decoder 输入端梯度是否一致。
 

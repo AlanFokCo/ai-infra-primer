@@ -76,19 +76,19 @@ $$
 y' = (\varnothing, y_1, \varnothing, y_2, \varnothing, \ldots, \varnothing, y_U, \varnothing), \qquad S = 2U + 1 \qquad (7)
 $$
 
-**符号**： $y'_s$：扩展序列第 $s$ 位——奇数位恒为 $\varnothing$，偶数位依次为 $y_1, \ldots, y_U$； $S$：扩展序列长度。
+**符号**： $`y'_s`$：扩展序列第 $s$ 位——奇数位恒为 $\varnothing$，偶数位依次为 $y_1, \ldots, y_U$； $S$：扩展序列长度。
 
-每条合法路径 $\pi \in \mathcal{B}^{-1}(y)$ 一一对应于 $y'$ 位置网格上的一条单调行走：第 $t$ 帧占据某个位置 $s_t$（即 $\pi_t = y'_{s_t}$），且 $s_{t+1} - s_t \in \lbrace0, 1, 2\rbrace$。三种步进的语义：
+每条合法路径 $\pi \in \mathcal{B}^{-1}(y)$ 一一对应于 $y'$ 位置网格上的一条单调行走：第 $t$ 帧占据某个位置 $s_t$（即 $`\pi_t = y'_{s_t}`$），且 $s_{t+1} - s_t \in \lbrace0, 1, 2\rbrace$。三种步进的语义：
 
 - **停留**（ $s \to s$）：再发一次当前符号。停在 blank 位无害；停在标签位则发出重复帧，被 $\mathcal{B}$ 合并——「一个标签占多个连续帧」正是这样实现的。
 - **走一格**（ $s \to s+1$）：前进到下一位置，永远合法。
-- **走两格**（ $s \to s+2$）：跳过 $y'_{s+1}$，**仅当 $y'_{s+2} \ne y'_s$ 时合法**。
+- **走两格**（ $s \to s+2$）：跳过 $`y'_{s+1}`$，**仅当 $`y'_{s+2} \ne y'_s`$ 时合法**。
 
 两格步进的合法性条件是整套 DP 里唯一需要论证的规则，分两种情形：
 
-(i) $s$ 为奇（ $y'_s = \varnothing$）：此时 $y'_{s+2} = \varnothing = y'_s$，条件不满足、步进被禁——这是对的： $s$ 与 $s+2$ 同为 blank 位，跳过的是标签位 $y'_{s+1}$，若放行，该标签在路径中永无发出的机会，坍缩结果不再是 $y$。
+(i) $s$ 为奇（ $`y'_s = \varnothing`$）：此时 $`y'_{s+2} = \varnothing = y'_s`$，条件不满足、步进被禁——这是对的： $s$ 与 $s+2$ 同为 blank 位，跳过的是标签位 $`y'_{s+1}`$，若放行，该标签在路径中永无发出的机会，坍缩结果不再是 $y$。
 
-(ii) $s$ 为偶（ $y'_s$ 为标签）：跳过的是 blank 位 $y'_{s+1}$。若 $y'_{s+2} = y'_s$（重复标签，如 $aa$ 中的两个 $a$），跳格让两个相同标签在路径中相邻、被 $\mathcal{B}$ 合并为一个——路径坍缩结果不再是 $y$，故禁止；此时必须经由中间 blank 位（先发 $\varnothing$ 阻断合并）。若 $y'_{s+2} \ne y'_s$，两标签本来就不合并，跳过 blank 位只是少发一个可省的 $\varnothing$，合法。
+(ii) $s$ 为偶（ $`y'_s`$ 为标签）：跳过的是 blank 位 $`y'_{s+1}`$。若 $`y'_{s+2} = y'_s`$（重复标签，如 $aa$ 中的两个 $a$），跳格让两个相同标签在路径中相邻、被 $\mathcal{B}$ 合并为一个——路径坍缩结果不再是 $y$，故禁止；此时必须经由中间 blank 位（先发 $\varnothing$ 阻断合并）。若 $`y'_{s+2} \ne y'_s`$，两标签本来就不合并，跳过 blank 位只是少发一个可省的 $\varnothing$，合法。
 
 行走的起点与终点各有一格自由度：路径可以以若干 blank 开头（从 $s = 1$ 出发），也可以直接以首个标签开头（从 $s = 2$ 出发）；同理终于 $s = S$（收尾 blank）或 $s = S - 1$（末标签）。这两组端点条件将在式 (9) 与式 (11) 落实为初始化与终止求和。
 
@@ -130,7 +130,7 @@ $$
 \alpha_t(s) = P_t(y'_s) \begin{cases} \alpha_{t-1}(s) + \alpha_{t-1}(s-1), & y'_s = \varnothing \ \text{or}\ y'_{s-2} = y'_s \\ \alpha_{t-1}(s) + \alpha_{t-1}(s-1) + \alpha_{t-1}(s-2), & \text{otherwise} \end{cases} \qquad (10)
 $$
 
-第一行对应 §2.3 的两类禁跳情形： $s$ 为奇时 $y'_s = \varnothing$（跳入将丢标签）； $s$ 为偶且 $y'_{s-2} = y'_s$ 时为重复标签（跳入将触发非法合并）。注意这里的条件用「到点」 $s$ 写出，与 §2.3 用「出点」 $s-2$ 写出等价： $s$ 偶、 $y'_{s-2} \ne y'_s$ 当且仅当 $y'_s \ne \varnothing$ 且 $y'_{s-2} \ne y'_s$。越界项按 0 计： $\alpha_{t-1}(0)$、 $\alpha_{t-1}(-1)$ 恒为 0（与式 (13) 的越界约定对称）。
+第一行对应 §2.3 的两类禁跳情形： $s$ 为奇时 $`y'_s = \varnothing`$（跳入将丢标签）； $s$ 为偶且 $`y'_{s-2} = y'_s`$ 时为重复标签（跳入将触发非法合并）。注意这里的条件用「到点」 $s$ 写出，与 §2.3 用「出点」 $s-2$ 写出等价： $s$ 偶、 $`y'_{s-2} \ne y'_s`$ 当且仅当 $`y'_s \ne \varnothing`$ 且 $`y'_{s-2} \ne y'_s`$。越界项按 0 计： $\alpha_{t-1}(0)$、 $\alpha_{t-1}(-1)$ 恒为 0（与式 (13) 的越界约定对称）。
 
 **终止**（落实终点自由度）：
 
@@ -148,17 +148,17 @@ $$
 | 2 | 0.4 | 0.4 | 0.2 |
 | 3 | 0.1 | 0.6 | 0.3 |
 
-先枚举： $\mathcal{B}^{-1}(ab)$ 恰含 5 条路径—— $(a,a,b)$、 $(a,b,b)$ 概率各 $0.5 \times 0.4 \times 0.6 = 0.12$， $(a,b,\varnothing)$、 $(a,\varnothing,b)$ 各 $0.06$， $(\varnothing,a,b)$ 为 $0.072$——合计 $0.432$。再跑 DP： $\alpha_1 = (0.3, 0.5, 0, 0, 0)$； $t = 2$ 时 $\alpha_2(2) = 0.4 \times (0.5 + 0.3) = 0.32$（停留 + 走一格）， $\alpha_2(3) = 0.2 \times 0.5 = 0.10$（blank 位禁跳，只收 $s = 2$ 来路）， $\alpha_2(4) = 0.4 \times (0 + 0 + 0.5) = 0.20$（ $y'_4 = b \ne a = y'_2$，跳格开放）； $t = 3$ 时 $\alpha_3(4) = 0.6 \times (0.20 + 0.10 + 0.32) = 0.372$， $\alpha_3(5) = 0.3 \times 0.20 = 0.06$。式 (11) 给出 $0.372 + 0.06 = 0.432$——与枚举逐项相符。换任意帧表都可同样复算，这是检验 CTC 实现正确性的最小手段。
+先枚举： $\mathcal{B}^{-1}(ab)$ 恰含 5 条路径—— $(a,a,b)$、 $(a,b,b)$ 概率各 $0.5 \times 0.4 \times 0.6 = 0.12$， $(a,b,\varnothing)$、 $(a,\varnothing,b)$ 各 $0.06$， $(\varnothing,a,b)$ 为 $0.072$——合计 $0.432$。再跑 DP： $\alpha_1 = (0.3, 0.5, 0, 0, 0)$； $t = 2$ 时 $\alpha_2(2) = 0.4 \times (0.5 + 0.3) = 0.32$（停留 + 走一格）， $\alpha_2(3) = 0.2 \times 0.5 = 0.10$（blank 位禁跳，只收 $s = 2$ 来路）， $\alpha_2(4) = 0.4 \times (0 + 0 + 0.5) = 0.20$（ $`y'_4 = b \ne a = y'_2`$，跳格开放）； $t = 3$ 时 $\alpha_3(4) = 0.6 \times (0.20 + 0.10 + 0.32) = 0.372$， $\alpha_3(5) = 0.3 \times 0.20 = 0.06$。式 (11) 给出 $0.372 + 0.06 = 0.432$——与枚举逐项相符。换任意帧表都可同样复算，这是检验 CTC 实现正确性的最小手段。
 
 ### 2.5 后向变量 $\beta$、占有后验与 logit 梯度
 
-后向变量（backward variable） $\beta_t(s)$ 定义为：已知第 $t$ 帧占据位置 $s$，全部「合法后缀」的概率之和。记合法后缀集合为 $\mathcal{S}_t(s) = \lbrace \pi_{t+1:T} :$ 存在以 $y'_s$ 结尾的合法前缀 $\pi_{1:t}$，使 $\mathcal{B}(\pi_{1:T}) = y \rbrace$，则
+后向变量（backward variable） $\beta_t(s)$ 定义为：已知第 $t$ 帧占据位置 $s$，全部「合法后缀」的概率之和。记合法后缀集合为 $`\mathcal{S}_t(s) = \lbrace \pi_{t+1:T} :`$ 存在以 $`y'_s`$ 结尾的合法前缀 $\pi_{1:t}$，使 $\mathcal{B}(\pi_{1:T}) = y \rbrace$，则
 
 $$
 \beta_t(s) = \sum_{\pi_{t+1:T} \in \mathcal{S}_t(s)} \prod_{t'=t+1}^{T} P_{t'}(\pi_{t'}) \qquad (12)
 $$
 
-**符号**：与前向的定义对偶—— $\alpha$ 含 $P_t(y'_s)$、 $\beta$ 不含，后缀从 $t+1$ 计起； $\mathcal{S}_t(s)$ 的合法性由 §2.3 的步进规则判定。
+**符号**：与前向的定义对偶—— $\alpha$ 含 $`P_t(y'_s)`$、 $\beta$ 不含，后缀从 $t+1$ 计起； $`\mathcal{S}_t(s)`$ 的合法性由 §2.3 的步进规则判定。
 
 终止： $\beta_T(S) = \beta_T(S-1) = 1$（末位置合法、后缀为空），其余 $\beta_T(s) = 0$。递推与前向镜像，把「到达 $s$ 的来源」换成「从 $s$ 出发的去向」，合法性条件不变：
 
@@ -166,9 +166,9 @@ $$
 \beta_t(s) = P_{t+1}(y'_s)\thinspace\beta_{t+1}(s) + P_{t+1}(y'_{s+1})\thinspace\beta_{t+1}(s+1) + \delta_s\thinspace P_{t+1}(y'_{s+2})\thinspace\beta_{t+1}(s+2) \qquad (13)
 $$
 
-**符号**： $\delta_s \in \lbrace0, 1\rbrace$：两格步进开关， $\delta_s = 1$ 当且仅当 $y'_{s+2} \ne y'_s$；越界项（ $s+1, s+2 > S$）按 0 计。
+**符号**： $\delta_s \in \lbrace0, 1\rbrace$：两格步进开关， $\delta_s = 1$ 当且仅当 $`y'_{s+2} \ne y'_s`$；越界项（ $s+1, s+2 > S$）按 0 计。
 
-由定义直接乘开： $\alpha_t(s)$ 乘 $\beta_t(s)$ 恰好穷尽所有经过格点 $(t, s)$ 的完整路径（前缀 × 后缀， $P_t(y'_s)$ 恰好在 $\alpha$ 侧出现一次），得本章的恒等式校验点：
+由定义直接乘开： $\alpha_t(s)$ 乘 $\beta_t(s)$ 恰好穷尽所有经过格点 $(t, s)$ 的完整路径（前缀 × 后缀， $`P_t(y'_s)`$ 恰好在 $\alpha$ 侧出现一次），得本章的恒等式校验点：
 
 $$
 \alpha_t(s)\thinspace\beta_t(s) = \sum_{\pi \in \mathcal{B}^{-1}(y):\ \pi_t = y'_s} P(\pi \mid x), \qquad P(y \mid x) = \sum_{s=1}^{S} \alpha_t(s)\thinspace\beta_t(s) \quad (\forall t) \qquad (14)
@@ -216,7 +216,7 @@ $$
 
 RNN-T（RNN-Transducer，[Graves, 2012](../references.md)，arXiv:1211.3711，[B]——2012 年论文无官方代码，ESPnet 等为第三方标准实现）由三个网络组成：
 
-- **transcription network**（声学端）： $f_t = \mathrm{enc}(x)_t$，与 CTC 的 encoder 同位。
+- **transcription network**（声学端）： $`f_t = \mathrm{enc}(x)_t`$，与 CTC 的 encoder 同位。
 - **prediction network**（标签端）： $g_u = g(y_1, \ldots, y_u)$——消费完第 $u$ 个标签后的状态（ $g_0$ 为空历史的初始状态），只看标签历史、不看声学，一个小型 LM。格点 $(t, u)$ 已发出 $u$ 个标签（对照下方 $\alpha(t, u)$ 的定义），故 $P(k \mid t, u)$ 作为第 $u+1$ 次发射的分布，条件于 $g_u$ 即条件于 $y_1..\thinspace y_u$；式 (18) 中从 $(t, u-1)$ 发出的标签迁移预测 $y_u$，用的是 $g_{u-1} = g(y_1..\thinspace y_{u-1})$，索引自洽。
 - **joint network**：两者相加融合后过 softmax：
 
@@ -361,7 +361,7 @@ $$
 | 条件独立假设 | $P(\pi \mid x) = \prod_t P_t(\pi_t)$ | 式 (3) |
 | 坍缩映射 | $\mathcal{B}$：合并相邻重复、删 blank； $\varnothing$ 阻断合并 | 式 (4) |
 | CTC 边缘化 | $P(y \mid x) = \sum_{\pi \in \mathcal{B}^{-1}(y)} P(\pi \mid x)$；枚举 $\sim \binom{T}{U}$ 不可行 | 式 (6) |
-| 扩展序列与步进 | $y'$ 长 $2U+1$；两格步进 $\Leftrightarrow$ $y'_{s+2} \ne y'_s$；长度约束 $T \ge U + r$ | 式 (7)，§2.3 |
+| 扩展序列与步进 | $y'$ 长 $2U+1$；两格步进 $\Leftrightarrow$ $`y'_{s+2} \ne y'_s`$；长度约束 $T \ge U + r$ | 式 (7)，§2.3 |
 | 前向 / 后向递推 | $\alpha$：式 (8)–(11)； $\beta$：式 (12)(13)；恒等式 $\sum_s \alpha_t(s)\beta_t(s) = P(y \mid x)$（ $\forall t$） | 式 (14) |
 | logit 梯度 | $P_t(k) - \gamma_t(k)$：softmax 预测 − 占有后验 | 式 (15) |
 | peaky / 弱 LM | 式 (15) 自增强 → 尖峰 + blank 海洋；条件独立 → shallow fusion 外挂 | §2.6 |
@@ -376,7 +376,7 @@ $$
 
 1.（推导）后向递推与恒等式。从定义式 (12) 出发：(a) 证明递推式 (13)（提示：按「 $t+1$ 帧占据哪个位置」分三类，合法性条件沿用 §2.3）；(b) 证明 $\sum_{s=1}^{S} \alpha_t(s)\thinspace\beta_t(s) = P(y \mid x)$ 对任意 $t$ 成立（提示：把经过 $(t, s)$ 的完整路径按前缀 × 后缀分解求和，再对 $s$ 求和穷尽全部路径）；(c) 用 §2.4 数例的帧表算出全部 $\beta_2(s)$，在 $t = 2$ 处数值验证恒等式。
 
-2.（推导）logit 梯度。证明式 (15)：先证 $\partial P(y \mid x) / \partial P_t(k) = \sum_{s: y'_s = k} \alpha_t(s)\thinspace\beta_t(s) / P_t(k)$（经过 $(t, k)$ 的路径概率去掉 $P_t(k)$ 因子，用式 (14)），再对 logit $z_t(k)$ 用 softmax 求导恒等式链式展开、合并两项。结论：CTC 训练 = 以占有后验为软目标的逐帧交叉熵。
+2.（推导）logit 梯度。证明式 (15)：先证 $`\partial P(y \mid x) / \partial P_t(k) = \sum_{s: y'_s = k} \alpha_t(s)\thinspace\beta_t(s) / P_t(k)`$（经过 $(t, k)$ 的路径概率去掉 $P_t(k)$ 因子，用式 (14)），再对 logit $z_t(k)$ 用 softmax 求导恒等式链式展开、合并两项。结论：CTC 训练 = 以占有后验为软目标的逐帧交叉熵。
 
 3.（推导 + 计算）RNN-T 同构练习。(a) 写出 $\beta(t, u)$ 的定义与反向递推，使 $\alpha(t, u)\thinspace\beta(t, u)$ 给出格点后验（提示：终态含式 (19) 的收尾 blank）；(b) $T = 500$、 $U = 50$、 $|\mathcal{V}| = 4000$ 时，数 RNN-T 的 joint softmax 次数与 logit 张量元素数，对照 CTC 的帧级 softmax 次数；(c) 论证「prediction network 输出为常数 + 每帧至多一发标签」时 RNN-T 退化为 CTC 形态，并指出此时仍残留的一处语义差异。
 

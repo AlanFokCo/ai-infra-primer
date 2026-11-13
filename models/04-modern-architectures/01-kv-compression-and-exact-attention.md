@@ -74,7 +74,7 @@ $$
 第二步用了 2.5 式 (13) 的内积不变性。 $R_{n-t}$ 卡在 $W^{UK}$ 与 $c_n$ 之间，且逐位置对不同。三条出路逐一封死：
 
 - **缓存展开并旋转后的 $k_n$**： $k_n = R_n W^{UK} c_n$ 是 $H_{kv} d_{\mathrm{head}}$ 全尺寸——压缩白做；
-- **把旋转预先折进压缩矩阵**：需要 $\tilde{W}^{UK}_n = R_n W^{UK}$ 逐位置一份，cache 里一份 $c_n$ 无法服务全部未来时刻；
+- **把旋转预先折进压缩矩阵**：需要 $`\tilde{W}^{UK}_n = R_n W^{UK}`$ 逐位置一份，cache 里一份 $c_n$ 无法服务全部未来时刻；
 - **让旋转与压缩换位**：若 $R_\Delta W^{UK} = W^{UK} R_\Delta$ 对全部 $\Delta$ 成立，则可先旋转 latent 再展开，cache 存 $R_n c_n$ 即可。但对全部 $\Delta$ 换位迫使 $W^{UK}$ 保持 RoPE 的每个 2D 频率块互不混合（块对角的 scaled-rotation 形式）——而压缩矩阵的全部意义是跨通道全混合（ $d_c$ 维之间任意重组），二者结构性不相容，一般地 $R_n W^{UK} \neq W^{UK} R_n$。
 
 把第三条的交换子说透。块对角旋转族 $\lbrace R_\Delta : \Delta \in \mathbb{R}\rbrace$ 中，各块的角速度 $\theta_j$ 互不相同， $\Delta$ 变化时各块角度独立取值；与全部 $R_\Delta$ 交换的矩阵只能是逐块的 scaled rotation（第 $j$ 块上形如 $a_j I + b_j J$ 的 2×2 矩阵）——跨频率块的混合一概被排除。而 $W^{UK}$ 的工作恰恰是从 $d_c$ = 512 维 latent 跨通道重组出每头 128 维 key，是全混合映射：在交换子内则压缩不成立，做压缩则不在交换子内。
@@ -125,7 +125,7 @@ $$
 o_{t,h} = \sum_{s=1}^{t} p_{t,s,h} \thinspace v_{s,h}^{C}, \qquad o_t = W^{O} \thinspace \operatorname{concat}_h \left( o_{t,h} \right) \qquad (10)
 $$
 
-**符号**： $p_{t,s,h}$：式 (9) 的 score 经 causal mask 与逐行 softmax 后的权重（2.4 式 (7) 同口径）； $\operatorname{concat}_h$：沿头维拼接， $o_t \in \mathbb{R}^{d}$； $W^{O} \in \mathbb{R}^{d \times H d_v}$。
+**符号**： $p_{t,s,h}$：式 (9) 的 score 经 causal mask 与逐行 softmax 后的权重（2.4 式 (7) 同口径）； $`\operatorname{concat}_h`$：沿头维拼接， $o_t \in \mathbb{R}^{d}$； $W^{O} \in \mathbb{R}^{d \times H d_v}$。
 
 式 (9) 即 2.5 式 (17) 的 partial RoPE 分解：128 维 nope 内积位置盲、64 维 rope 内积只含 $t - s$——§4.1 的冲突被「拆开」绕开：压缩通道上的 $k^{C}$ 从头到尾不旋转，旋转通道上的 $k^{R}$ 从头到尾不压缩。
 
@@ -167,7 +167,7 @@ $$
 \left\langle q_{t,h}^{C},\thinspace k_{s,h}^{C} \right\rangle = \left( W_h^{UQ} c_t^{Q} \right)^{\top} W_h^{UK} c_s^{KV} = \left( c_t^{Q} \right)^{\top} \underbrace{\left( W_h^{UQ} \right)^{\top} W_h^{UK}}_{\tilde{W}_h \in \mathbb{R}^{d_c' \times d_c}} c_s^{KV} \qquad (11)
 $$
 
-**符号**： $\tilde{W}_h = (W_h^{UQ})^{\top} W_h^{UK}$：第 $h$ 头的合并算子，离线预计算，无逐位置量。定义吸收后 query $\tilde{q}_{t,h} = \tilde{W}_h \thinspace c_t^{Q} \in \mathbb{R}^{d_c}$，score 变成
+**符号**： $`\tilde{W}_h = (W_h^{UQ})^{\top} W_h^{UK}`$：第 $h$ 头的合并算子，离线预计算，无逐位置量。定义吸收后 query $`\tilde{q}_{t,h} = \tilde{W}_h \thinspace c_t^{Q} \in \mathbb{R}^{d_c}`$，score 变成
 
 $$
 s_{t,s,h} = \frac{\left\langle \tilde{q}_{t,h},\thinspace c_s^{KV} \right\rangle + \left\langle q_{t,h}^{R},\thinspace k_s^{R} \right\rangle}{\sqrt{d_h + d_R}} \qquad (12)
@@ -175,7 +175,7 @@ $$
 
 $k^{C}$ 从计算图中消失：score 直接打在 cached latent $c_s^{KV}$ 上。decode 每步每 token 每层读的就是 576 元素，而不是展开后的全量 KV—— $2 H d_h + d_R$ = 2 × 128 × 128 + 64 = 32832 元素（ $H$ 份 $k^{C}$、 $H$ 份 $v^{C}$ 与共享 $k^{R}$）——读取削减 57 倍。2.4 §6 的口径下（decode $I \approx 1$–2.5、ridge $10^{2}$ 量级，memory-bound），这笔账直接换算成墙钟。
 
-合并算子还有一个结构注记： $\tilde{W}_h = (W_h^{UQ})^{\top} W_h^{UK} \in \mathbb{R}^{d_c' \times d_c}$ 的秩 ≤ $d_h$ = 128——吸收形下每头对 latent 的 score 仍是一个 rank-128 双线性型，与 2.3 §2「score 经 rank-$d_k$ 透镜读 stream」逐项对应；变化只是透镜的观测对象从逐头独立的 $k_s$ 换成了共享 latent $c_s^{KV}$。检索分辨率不因吸收而变——吸收是执行层变换，数学对象（式 (11) 两端）逐点相等。
+合并算子还有一个结构注记： $`\tilde{W}_h = (W_h^{UQ})^{\top} W_h^{UK} \in \mathbb{R}^{d_c' \times d_c}`$ 的秩 ≤ $d_h$ = 128——吸收形下每头对 latent 的 score 仍是一个 rank-128 双线性型，与 2.3 §2「score 经 rank-$d_k$ 透镜读 stream」逐项对应；变化只是透镜的观测对象从逐头独立的 $k_s$ 换成了共享 latent $c_s^{KV}$。检索分辨率不因吸收而变——吸收是执行层变换，数学对象（式 (11) 两端）逐点相等。
 
 ### 4.4 W_UV absorption：对称的一笔
 
@@ -191,7 +191,7 @@ $$
 o_t = \sum_{h=1}^{H} W_h^{O} W_h^{UV} m_{t,h} = \sum_{h=1}^{H} \widehat{W}_h \thinspace m_{t,h}, \qquad \widehat{W}_h = W_h^{O} W_h^{UV} \in \mathbb{R}^{d \times d_c} \qquad (14)
 $$
 
-$\widehat{W}_h$ 同样离线预计算—— $W_h^{UV}$ 被吸进 $W^{O}$。两笔吸收完全对称：K 侧吸进 Q（式 (11)(12)），V 侧吸进 O（式 (13)(14)），合起来 attention 本体全部在 $d_c$ = 512 维 latent 空间执行——score 对 $c$ 打、加权和加 $c$、两头出入各过一次合并矩阵。两种执行形态并排：
+$`\widehat{W}_h`$ 同样离线预计算—— $W_h^{UV}$ 被吸进 $W^{O}$。两笔吸收完全对称：K 侧吸进 Q（式 (11)(12)），V 侧吸进 O（式 (13)(14)），合起来 attention 本体全部在 $d_c$ = 512 维 latent 空间执行——score 对 $c$ 打、加权和加 $c$、两头出入各过一次合并矩阵。两种执行形态并排：
 
 | | 展开形（训练 / prefill） | 吸收形（decode） |
 | --- | --- | --- |
@@ -200,7 +200,7 @@ $\widehat{W}_h$ 同样离线预计算—— $W_h^{UV}$ 被吸进 $W^{O}$。两�
 | 每 token 每层 KV 读取 | $2 H d_h + d_R$ = 32832 元素 | $d_c + d_R$ = 576 元素 |
 | regime | compute-bound，大 matmul 友好 | memory-bound，读取 57× 削减 |
 
-**代价与边界**（诚实账三笔）。(a) 吸收后 query 有效维数从 $d_h + d_R$ = 192 涨到 $d_c + d_R$ = 576：score 的逐对 FLOPs 涨 3 倍。decode 是 memory-bound，多付 FLOPs 换 57 倍读取削减是净赚；这笔交换在 compute-bound 侧不成立。(b) 因此 prefill 与训练用**非吸收形**——先把 $K^{C}, V^{C}$ 展开成 192 / 128 维再正常算（大 batch matmul、 $d_c$ 不进 $QK^{\top}$ 的内维），decode 用吸收形；同一份权重、两张执行图。部署侧的落法是逐阶段切换： $\tilde{W}_h$ 与 $\widehat{W}_h$ 在加载时一次性预计算，prefill 走展开形、首个 decode 步起切吸收形，切换本身零成本。(c) 吸收只覆盖 nope 部分； $k^{R}$ 仍逐位置旋转、原样缓存——若当初选择全维旋转，式 (11) 里 $R_n$ 会卡在 $\tilde{W}_h$ 与 $c_s^{KV}$ 之间（§4.1 式 (4)），吸收当场死亡。顺带一句 MLA 与 §5 的关系：kernel 层完全不感知 MLA——展开形下它就是普通 attention（head 维 192），FlashAttention 原样可用；吸收形的 kernel 化是推理框架的事，归 inference 维度。DeepSeek 官方推理实现即按吸收形落地（[DeepSeek-AI, 2024](../references.md)，arXiv:2412.19437，[A]）；Kimi-Linear 的 full-attn 层给出同一结构的 NoPE 变体（无旋转则无需 decoupled），归 4.4。
+**代价与边界**（诚实账三笔）。(a) 吸收后 query 有效维数从 $d_h + d_R$ = 192 涨到 $d_c + d_R$ = 576：score 的逐对 FLOPs 涨 3 倍。decode 是 memory-bound，多付 FLOPs 换 57 倍读取削减是净赚；这笔交换在 compute-bound 侧不成立。(b) 因此 prefill 与训练用**非吸收形**——先把 $K^{C}, V^{C}$ 展开成 192 / 128 维再正常算（大 batch matmul、 $d_c$ 不进 $QK^{\top}$ 的内维），decode 用吸收形；同一份权重、两张执行图。部署侧的落法是逐阶段切换： $`\tilde{W}_h`$ 与 $`\widehat{W}_h`$ 在加载时一次性预计算，prefill 走展开形、首个 decode 步起切吸收形，切换本身零成本。(c) 吸收只覆盖 nope 部分； $k^{R}$ 仍逐位置旋转、原样缓存——若当初选择全维旋转，式 (11) 里 $R_n$ 会卡在 $`\tilde{W}_h`$ 与 $c_s^{KV}$ 之间（§4.1 式 (4)），吸收当场死亡。顺带一句 MLA 与 §5 的关系：kernel 层完全不感知 MLA——展开形下它就是普通 attention（head 维 192），FlashAttention 原样可用；吸收形的 kernel 化是推理框架的事，归 inference 维度。DeepSeek 官方推理实现即按吸收形落地（[DeepSeek-AI, 2024](../references.md)，arXiv:2412.19437，[A]）；Kimi-Linear 的 full-attn 层给出同一结构的 NoPE 变体（无旋转则无需 decoupled），归 4.4。
 
 ## 5. FlashAttention：不物化 scores 的精确 attention
 
@@ -298,7 +298,7 @@ FA2 与 FA3 各一句话：FA2（[Dao, 2023](../references.md)，arXiv:2307.0869
 | RoPE×低秩冲突 | 式 (4) | $R_{n-t}$ 卡在 $W^{UK}$ 与 $c$ 之间； $R_\Delta C \neq C R_\Delta$（全换位 ⟺ 频率块不混合 ⟺ 非压缩） |
 | MLA 构造 | 式 (5)–(10) | $c^{KV}$ = $W^{DKV} u$（512）+ decoupled $k^{R}$（64，旋转后缓存、全头共享）；query 侧同低秩（1536） |
 | MLA cache 账 | 576 元素 / token / 层 | vs MHA-32 反事实 8192（14.2×）；V3 满窗 163840：10.7 GiB vs MHA 反事实 610 GiB（56.9×） |
-| W_UK / W_UV absorption | 式 (11)(12) / (13)(14) | $\tilde{W}_h = (W_h^{UQ})^{\top} W_h^{UK}$、 $\widehat{W}_h = W_h^{O} W_h^{UV}$ 离线预计算；decode 吸收形（读 576 而非 32832 元素，57×）/ prefill 展开形 |
+| W_UK / W_UV absorption | 式 (11)(12) / (13)(14) | $`\tilde{W}_h = (W_h^{UQ})^{\top} W_h^{UK}`$、 $`\widehat{W}_h = W_h^{O} W_h^{UV}`$ 离线预计算；decode 吸收形（读 576 而非 32832 元素，57×）/ prefill 展开形 |
 | online softmax | 式 (15)(16) | running max / sum，重缩放因子 $e^{m_{old} - m_{new}}$ 只换基准；归纳不变量 ⟹ 逐点精确 |
 | FlashAttention | tiling 图；式 (17) | 精确等价非近似；HBM 流量 $O(T^{2} d^{2} / M)$ vs naive $\Theta(T^{2})$；反向重算，前向内存 $O(T)$ |
 | FA2 / FA3 | 同一数学 | FA2 改并行划分（约一倍）；FA3 面向 Hopper 异步；细节归 gpu |
@@ -306,7 +306,7 @@ FA2 与 FA3 各一句话：FA2（[Dao, 2023](../references.md)，arXiv:2307.0869
 ## 练习
 
 1.（推导）MQA 的透镜账。2.3 §2：MHA 第 $h$ 头经 rank-$d_k$ 双线性型 $A_h = (W_h^{Q})^{\top} W_h^{K}$ 读 stream。(a) 写出 MQA 下第 $h$ 头的等价双线性型 $A_h^{MQA}$，说明 $H_q$ 个 $A_h^{MQA}$ 的「K 侧行空间」为什么被钉在同一组基上；(b) 设 $v_s$ 全头共享，证明对任意 attention 权重分配，每头输出 $o_{t,h} \in \mathrm{span}\lbrace v_s\rbrace_{s \le t}$，即全部头的读出共享同一条维数 ≤ $d_{\mathrm{head}}$ 的 value 通道——与 MHA 的 $H_q$ 份独立 $\lbrace v_{s,h}\rbrace$ 对照，说明「value 交付带宽与 $H_q$ 无关」的准确含义。
-2.（推导）MLA absorption 的形状与账。设 $d_c$ = 512、 $d_c'$ = 1536、 $d_h$ = $d_v$ = 128、 $d_R$ = 64、 $H$ = 128。(a) 写出 $W_h^{UQ}, W_h^{UK}, \tilde{W}_h, \widehat{W}_h$ 的全部 shape 并验证式 (11)(14) 的矩阵乘法合法；(b) decode 第 $t$ 步，分别计算吸收形（score 对 $c$ 打）与非吸收形（先展开 $K^C, V^C$ 再算）的逐头 score FLOPs 与每 token 每层 KV 读取字节，验证「FLOPs 3 倍、读取 57 倍」的交换比；(c) prefill 长度 $T_p$ 时两形态的 $QK^{\top}$ FLOPs 各是多少？由此说明 prefill 用展开形的理由。
+2.（推导）MLA absorption 的形状与账。设 $d_c$ = 512、 $d_c'$ = 1536、 $d_h$ = $d_v$ = 128、 $d_R$ = 64、 $H$ = 128。(a) 写出 $`W_h^{UQ}, W_h^{UK}, \tilde{W}_h, \widehat{W}_h`$ 的全部 shape 并验证式 (11)(14) 的矩阵乘法合法；(b) decode 第 $t$ 步，分别计算吸收形（score 对 $c$ 打）与非吸收形（先展开 $K^C, V^C$ 再算）的逐头 score FLOPs 与每 token 每层 KV 读取字节，验证「FLOPs 3 倍、读取 57 倍」的交换比；(c) prefill 长度 $T_p$ 时两形态的 $QK^{\top}$ FLOPs 各是多少？由此说明 prefill 用展开形的理由。
 3.（计算）DeepSeek-V3 满窗账：61 层、每 token 每层 576 元素、bf16、 $T$ = 163840。(a) 单序列 cache 总量（GiB）；(b) 同窗口反事实 MHA（ $H$ = 128、 $d_{\mathrm{head}}$ = 128）与反事实 GQA-8（ $H_{kv}$ = 8）各多少；(c) $B$ = 16 并发下三者的 cache 总量；设权重 671B 参数以 fp8（1 字节）驻留约 671 GB，指出 cache 与权重在显存预算中的相对位置随 $B$ 的变化。
 4.（代码）教学实现 online softmax forward（教学用，非优化实现）：随机 $Q, K, V$（ $T$ = 1024、 $d$ = 64、fp32），按式 (15)(16) 以块大小 $B_c$ = 128 实现 causal attention forward，与 `F.scaled_dot_product_attention(is_causal=True)` 断言 allclose（容差 $10^{-5}$）。扫 $B_c \in \lbrace32, 64, 128, 256\rbrace$：(a) 验证输出不随块大小改变（精确性的可执行形式）；(b) 记录峰值显存，对照 2.3 §7 教学版在同一 $T$ 下的物化账。
 

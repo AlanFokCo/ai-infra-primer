@@ -193,19 +193,19 @@ $$
 
 ### 4.4 复数视角：旋转 = 乘 $e^{im\theta}$
 
-把第 $j$ 块的 2 维向量看成复数 $\tilde{q}_j = q_{2j} + i\thinspace q_{2j+1}$。2D 旋转恰是复乘 $e^{i\varphi}$：
+把第 $j$ 块的 2 维向量看成复数 $`\tilde{q}_j = q_{2j} + i\thinspace q_{2j+1}`$。2D 旋转恰是复乘 $e^{i\varphi}$：
 
 $$
 e^{i\varphi}\thinspace \tilde{q}_j = (\cos\varphi + i\sin\varphi)(q_{2j} + i\thinspace q_{2j+1}) = \left( q_{2j}\cos\varphi - q_{2j+1}\sin\varphi \right) + i \left( q_{2j}\sin\varphi + q_{2j+1}\cos\varphi \right) \qquad (14)
 $$
 
-实部、虚部逐一对上 $R(\varphi)\thinspace q_j$ 的两个坐标。于是 RoPE 的复数写法是逐通道乘相位： $\tilde{q}_j \mapsto e^{i m \theta_j} \tilde{q}_j$——工程实现里预存的 cos/sin 两张表，就是复数 $e^{i m \theta_j}$ 的实部与虚部分开存放。实内积式 (13) 则是 Hermitian 内积的实部：
+实部、虚部逐一对上 $R(\varphi)\thinspace q_j$ 的两个坐标。于是 RoPE 的复数写法是逐通道乘相位： $`\tilde{q}_j \mapsto e^{i m \theta_j} \tilde{q}_j`$——工程实现里预存的 cos/sin 两张表，就是复数 $e^{i m \theta_j}$ 的实部与虚部分开存放。实内积式 (13) 则是 Hermitian 内积的实部：
 
 $$
 \langle R_m\thinspace q,\ R_n\thinspace k \rangle = \operatorname{Re} \sum_{j=0}^{d/2-1} \left( e^{i m \theta_j} \tilde{q}_j \right) \overline{\left( e^{i n \theta_j} \tilde{k}_j \right)} = \operatorname{Re} \sum_{j=0}^{d/2-1} \tilde{q}_j\thinspace \overline{\tilde{k}_j}\thinspace e^{i (m - n) \theta_j} \qquad (15)
 $$
 
-逐步：第一步逐块代入复数写法；第二步共轭把 $e^{i n \theta_j}$ 翻成 $e^{-i n \theta_j}$，与前一因子合并为 $e^{i(m-n)\theta_j}$。等价性验证： $\tilde{q}_j \overline{\tilde{k}_j} = (q_{2j} k_{2j} + q_{2j+1} k_{2j+1}) + i (q_{2j+1} k_{2j} - q_{2j} k_{2j+1})$，记为 $A_j + i B_j$； $\operatorname{Re}\left[(A_j + i B_j) e^{i(m-n)\theta_j}\right] = A_j \cos\left((m-n)\theta_j\right) - B_j \sin\left((m-n)\theta_j\right) = A_j \cos\left((n-m)\theta_j\right) + B_j \sin\left((n-m)\theta_j\right)$，逐项等于式 (13) 第 $j$ 块。∎
+逐步：第一步逐块代入复数写法；第二步共轭把 $e^{i n \theta_j}$ 翻成 $e^{-i n \theta_j}$，与前一因子合并为 $e^{i(m-n)\theta_j}$。等价性验证： $`\tilde{q}_j \overline{\tilde{k}_j} = (q_{2j} k_{2j} + q_{2j+1} k_{2j+1}) + i (q_{2j+1} k_{2j} - q_{2j} k_{2j+1})`$，记为 $A_j + i B_j$； $\operatorname{Re}\left[(A_j + i B_j) e^{i(m-n)\theta_j}\right] = A_j \cos\left((m-n)\theta_j\right) - B_j \sin\left((m-n)\theta_j\right) = A_j \cos\left((n-m)\theta_j\right) + B_j \sin\left((n-m)\theta_j\right)$，逐项等于式 (13) 第 $j$ 块。∎
 
 复数视角是波长账（§4.5）与外推缩放族（4.6）的公共语言：RoPE 就是每个频率通道把 q、k 之间的相对相位转过 $(m - n)\theta_j$。
 
@@ -238,7 +238,7 @@ $$
 
 ### 4.6 远程衰减性质
 
-直觉预期： $|m - n|$ 大时位置项应衰减——近处 token 默认更相关。RoPE 论文（§3.4.3）给出的论证：固定内容，式 (15) 的和 $\sum_j h_j\thinspace e^{i\Delta\theta_j}$（ $h_j = \tilde{q}_j \overline{\tilde{k}_j}$、 $\Delta = m - n$）随 $\Delta$ 增大时各通道相位以不同角速度散开、相互抵消； $\theta_j$ 几何衰减使通道角速度跨多个量级，去相（dephasing）随 $\Delta$ 迅速发生。一个端点值把上界钉死（以下取 $h_j$ 模长为 1 的同相位极端情形）： $\Delta = 0$ 时所有相位同相、 $\left| \sum_j e^{i\Delta\theta_j} \right|$ 取最大值 $d/2$； $\Delta$ 增大后各通道相位在对数频率轴上散开，和式进入振荡下行。论文用 Abel 分部求和给出该和的上界因子，并绘制了该界随 $\Delta$ 衰减的确定性曲线（非实测曲线）：即使在这一极端情形下， $\left| \sum_j e^{i\Delta\theta_j} \right|$ 也从 $d/2$ 随 $\Delta$ 趋势性衰减。
+直觉预期： $|m - n|$ 大时位置项应衰减——近处 token 默认更相关。RoPE 论文（§3.4.3）给出的论证：固定内容，式 (15) 的和 $\sum_j h_j\thinspace e^{i\Delta\theta_j}$（ $`h_j = \tilde{q}_j \overline{\tilde{k}_j}`$、 $\Delta = m - n$）随 $\Delta$ 增大时各通道相位以不同角速度散开、相互抵消； $\theta_j$ 几何衰减使通道角速度跨多个量级，去相（dephasing）随 $\Delta$ 迅速发生。一个端点值把上界钉死（以下取 $h_j$ 模长为 1 的同相位极端情形）： $\Delta = 0$ 时所有相位同相、 $\left| \sum_j e^{i\Delta\theta_j} \right|$ 取最大值 $d/2$； $\Delta$ 增大后各通道相位在对数频率轴上散开，和式进入振荡下行。论文用 Abel 分部求和给出该和的上界因子，并绘制了该界随 $\Delta$ 衰减的确定性曲线（非实测曲线）：即使在这一极端情形下， $\left| \sum_j e^{i\Delta\theta_j} \right|$ 也从 $d/2$ 随 $\Delta$ 趋势性衰减。
 
 两个注记。其一，这是典型/平均行为，不是对任意 $q, k$ 的定理—— $h_j$ 由训练塑造，特定头的特定通道可以学会抵抗衰减；去相给的是先验形状，不是硬约束。且衰减不单调：振荡使和式在更大 $\Delta$ 处仍会取到局部峰（revival），只是峰值趋势性走低。其二，与 ALiBi 对照：ALiBi 的衰减是显式钉死的直线（式 (7)），RoPE 的衰减是去相涌现的振荡衰减——带涟漪的近密远疏。
 

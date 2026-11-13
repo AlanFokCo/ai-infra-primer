@@ -32,14 +32,14 @@ $$
 \tilde{p}_{\ell} = \mathrm{softmax}\left( W_U\thinspace x^{(\ell)} \right) \qquad (1)
 $$
 
-**符号**： $\tilde{p}_{\ell} \in \Delta^{V-1}$ ：第 $\ell$ 层读出的词表分布； $W_U \in \mathbb{R}^{V \times d}$ ：输出头（untied；tied 时即 $E$ ，2.2）； $x^{(\ell)}$ ：第 $\ell$ 层后的 stream（2.1 式 (1)）。
+**符号**： $`\tilde{p}_{\ell} \in \Delta^{V-1}`$ ：第 $\ell$ 层读出的词表分布； $W_U \in \mathbb{R}^{V \times d}$ ：输出头（untied；tied 时即 $E$ ，2.2）； $x^{(\ell)}$ ：第 $\ell$ 层后的 stream（2.1 式 (1)）。
 
 出处注记：该方法没有正式论文（源头是 nostalgebraist 2020 年的博客文章），本章按社区通行定义使用、不列引用条目；它作为测量工具的标准化由 TransformerLens 一类库完成（[Nanda & Bloom](../references.md)，[A]）。
 
 两个细节决定读数的可信度：
 
-- **final norm 的取舍**。2.1 式 (1) 里 $W_U$ 之前还有一道 final RMSNorm。中间层读出带不带它是两种约定：不带 norm 忠实于「原样 stream」；带上（ $\mathrm{softmax}(W_U\thinspace \mathrm{RMSNorm}_f(x^{(\ell)}))$ ）校准了 stream 逐层增长的尺度，但 RMSNorm 的增益向量是对终态学出的，套在中间层上是近似。读数的绝对值差一层校准，排序结论通常稳健。
-- **$\tilde{p}_{\ell}$ 的语义**。它不是「第 $\ell$ 层时模型的预测」——模型没有中途做预测的机会——而是「若后续层全部变成恒等映射，此刻的输出将是什么」。
+- **final norm 的取舍**。2.1 式 (1) 里 $W_U$ 之前还有一道 final RMSNorm。中间层读出带不带它是两种约定：不带 norm 忠实于「原样 stream」；带上（ $`\mathrm{softmax}(W_U\thinspace \mathrm{RMSNorm}_f(x^{(\ell)}))`$ ）校准了 stream 逐层增长的尺度，但 RMSNorm 的增益向量是对终态学出的，套在中间层上是近似。读数的绝对值差一层校准，排序结论通常稳健。
+- **$`\tilde{p}_{\ell}`$ 的语义**。它不是「第 $\ell$ 层时模型的预测」——模型没有中途做预测的机会——而是「若后续层全部变成恒等映射，此刻的输出将是什么」。
 
 用途三件：(i) 逐层追踪目标 token 的 logit / rank 曲线，定位「预测成形」的层段；(ii) 定位特定信息（如 IOI 中被复制的名字，§5）首次可被 $W_U$ 读出的位置，为 patching 圈定候选层；(iii) 对照终层读出，检测「已写入但被后续层对冲掉」的信号——纯加法结构里对冲是唯一的删除，必然留下痕迹。
 
@@ -169,7 +169,7 @@ $$
 \mathrm{rec}(i) = \frac{ m\left( f\left( x_r;\thinspace \mathrm{do}\left( h_i \leftarrow h_i(x_c) \right) \right) \right) - m\left( f(x_r) \right) }{ m\left( f(x_c) \right) - m\left( f(x_r) \right) } \qquad (10)
 $$
 
-**符号**：分子：corrupted 跑里只修复组件 $i$ 后恢复的指标量；分母：全恢复量，归一化使 $\mathrm{rec}$ 大致落在 $[0, 1]$ 。读法： $\mathrm{rec}(i) \approx 1$ → 组件 $i$ 单独携带该行为的充分信息； $\approx 0$ → 单独无关（不排除参与组合）。方向反过来——在 clean 跑里做 $\mathrm{do}(h_i \leftarrow 0)$ （zero ablation）或 $\mathrm{do}(h_i \leftarrow \bar{h}_i)$ （均值 ablation， $\bar{h}_i$ 取腐蚀分布上的均值）——测的是必要性。两个方向都要测：IOI 的 backup 教训（§5）正是「必要性为假 + 充分性为真」的组合实例。
+**符号**：分子：corrupted 跑里只修复组件 $i$ 后恢复的指标量；分母：全恢复量，归一化使 $\mathrm{rec}$ 大致落在 $[0, 1]$ 。读法： $\mathrm{rec}(i) \approx 1$ → 组件 $i$ 单独携带该行为的充分信息； $\approx 0$ → 单独无关（不排除参与组合）。方向反过来——在 clean 跑里做 $\mathrm{do}(h_i \leftarrow 0)$ （zero ablation）或 $`\mathrm{do}(h_i \leftarrow \bar{h}_i)`$ （均值 ablation， $`\bar{h}_i`$ 取腐蚀分布上的均值）——测的是必要性。两个方向都要测：IOI 的 backup 教训（§5）正是「必要性为假 + 充分性为真」的组合实例。
 
 两个细化：
 
@@ -184,7 +184,7 @@ $$
 | --- | --- | --- | --- | --- | --- |
 | logit lens（§2） | $W_U$ 投影中间层，式 (1) | 输出坐标系下的中间读数 | 相关 | 层 × 位置 | 非 $W_U$ 方向的信息；读数是否被用 |
 | probing | 冻结激活上训线性探针 | 属性的线性可解码性 | 相关（下限） | 方向 | 模型计算是否使用该信息 |
-| zero / mean ablation | $\mathrm{do}(h_i \leftarrow 0 / \bar{h}_i)$ | 组件必要性 | 因果 | 组件 | 冗余接管（backup）掩盖真功能 |
+| zero / mean ablation | $`\mathrm{do}(h_i \leftarrow 0 / \bar{h}_i)`$ | 组件必要性 | 因果 | 组件 | 冗余接管（backup）掩盖真功能 |
 | activation patching | $\mathrm{do}(h_i \leftarrow h_i(x_c))$ ，式 (10) | 组件对行为的充分贡献 | 因果 | 组件 × 位置 | 组件间的连接结构 |
 | path patching | 逐边替换 | 组件间的因果边 | 因果 | 边 | 成本随节点对平方增长；间接通路 |
 | SAE（§4） | 字典学习，式 (7)(8) | stream 的稀疏特征坐标 | 相关（因果地位需 patching 补） | 特征 | 学出的特征是否=模型在用的特征 |
@@ -208,8 +208,8 @@ Gemma Scope 与 transformer-circuits.pub 系列的自述局限可以压成一句
 | 内容 | 公式 / 数值 | 要点 |
 | --- | --- | --- |
 | read-modify-write | 2.1 式 (2)： $x^{(L)} = x^{(0)} + \sum a_\ell + \sum f_\ell$ | 纯加法 → 可读、可删、可换（§1 三推论），全章地基 |
-| logit lens | 式 (1)： $\tilde{p}_\ell = \mathrm{softmax}(W_U x^{(\ell)})$ | 输出坐标系读中间层；坐标系 / 分布 / 因果三局限；无正式出处（博客 2020） |
-| superposition | 式 (4)(5)： $\hat{x}_i = \lVert W_{:i} \rVert^{2} x_i + \sum_{j \neq i} \langle W_{:i}, W_{:j} \rangle x_j$ ；干扰方差 $\sim (n-1)S/d$ | 随机方向容量 $n \sim \exp(\epsilon^{2} d / 4)$ ；稀疏判据 $nS \ll d$ ；polysemanticity = 换基问题 |
+| logit lens | 式 (1)： $`\tilde{p}_\ell = \mathrm{softmax}(W_U x^{(\ell)})`$ | 输出坐标系读中间层；坐标系 / 分布 / 因果三局限；无正式出处（博客 2020） |
+| superposition | 式 (4)(5)： $`\hat{x}_i = \lVert W_{:i} \rVert^{2} x_i + \sum_{j \neq i} \langle W_{:i}, W_{:j} \rangle x_j`$ ；干扰方差 $\sim (n-1)S/d$ | 随机方向容量 $n \sim \exp(\epsilon^{2} d / 4)$ ；稀疏判据 $nS \ll d$ ；polysemanticity = 换基问题 |
 | SAE | 式 (7)： $\lVert h - Dz \rVert^{2} + \lambda \lVert z \rVert_1$ ；TopK；门控式 (8) | L1 shrinkage → TopK / JumpReLU；按 $L_0$ 归档；Gemma Scope 逐层三挂载点开放 |
 | circuits | IOI：26 heads / 7 类（GPT-2 small，144 heads） | 定指标 → 造腐蚀 → patching → knockout 完备性；backup name mover 教训 |
 | activation patching | 式 (9)(10)：do 算子与恢复率 | 充分性（patch-clean）与必要性（ablation）都要测；path patching 钉边；probing 只给相关下限 |

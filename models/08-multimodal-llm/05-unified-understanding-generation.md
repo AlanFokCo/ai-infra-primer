@@ -213,7 +213,7 @@ $$
 L = L_{LM} + \lambda\thinspace L_{DDPM}, \qquad L_{LM} = -\sum_{s \in \mathcal{T}} \log p_\theta\left( u_s \mid u_{<s} \right), \qquad L_{DDPM} = \mathbb{E}_{t,\thinspace \varepsilon}\hspace{5mu} \sum_{j=1}^{n} \left\Vert \varepsilon^{(j)} - \hat{\varepsilon}_\theta\left( u,\thinspace t \right)_j \right\Vert^{2} \qquad (14)
 $$
 
-**符号**： $\mathcal{T}$：文本 token 位置（含以 BOI 为目标的预测位）；EOI 由协议追加、非 CE 目标； $p_\theta$：softmax 头输出； $\hat{\varepsilon}_\theta(u, t)_j$：主干在 patch 位置 $j$ 的终层隐状态过线性噪声头，回归目标是式 (13) 注入的噪声（ $\varepsilon$-参数化，7.2 默认口径）； $\lambda$：两 loss 的配平标量。
+**符号**： $\mathcal{T}$：文本 token 位置（含以 BOI 为目标的预测位）；EOI 由协议追加、非 CE 目标； $p_\theta$：softmax 头输出； $`\hat{\varepsilon}_\theta(u, t)_j`$：主干在 patch 位置 $j$ 的终层隐状态过线性噪声头，回归目标是式 (13) 注入的噪声（ $\varepsilon$-参数化，7.2 默认口径）； $\lambda$：两 loss 的配平标量。
 
 式 (14) 能在**同一次前向**里成立，靠的是三条位置纪律：(i) 位置类型不相交——文本位置走 softmax 头计 CE，patch 位置走噪声头计回归，两个输出头不共享输出层参数；(ii) 条件结构兼容——patch 位置的条件（前缀文本 + BOI）经 causal attention 流入，与 7.6 的 cross-attention 条件化不同，这里是 in-context 条件：条件就是序列前缀，attention 自己完成注入；(iii) 梯度不冲突于输出头、只交汇于主干—— $\nabla_\theta L$ 两项相加，主干参数同时收 CE 与回归梯度， $\lambda$ 是两个 loss 量级的配平旋钮。与 Chameleon 的单 CE 对照：那是同质目标下的模态混合，这里是异质目标共训——Chameleon 的稳定性问题（§3）换成「两 loss 量级配平」的形态继续存在。
 

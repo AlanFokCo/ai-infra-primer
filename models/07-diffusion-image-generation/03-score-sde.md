@@ -141,7 +141,7 @@ $$
 
 **符号**：换算逐点成立（不只是最优解处），可作为两个网络输出层的代数变换。
 
-score 视角还顺手给出 7.2「 $x_0$-prediction」的概率语义。把式 (7) 的恒等式作用在高斯核上： $(1 - \bar\alpha_t)\thinspace \nabla \log q_t(x_t) = \mathbb{E}_{q(x_0 \mid x_t)}[-x_t + \sqrt{\bar\alpha_t}\thinspace x_0]$，整理得 Tweedie 公式：
+score 视角还顺手给出 7.2「 $x_0$-prediction」的概率语义。把式 (7) 的恒等式作用在高斯核上： $`(1 - \bar\alpha_t)\thinspace \nabla \log q_t(x_t) = \mathbb{E}_{q(x_0 \mid x_t)}[-x_t + \sqrt{\bar\alpha_t}\thinspace x_0]`$，整理得 Tweedie 公式：
 
 $$
 \mathbb{E}\left[ x_0 \mid x_t \right] = \frac{x_t + (1 - \bar\alpha_t)\thinspace s_\theta(x_t, t)}{\sqrt{\bar\alpha_t}} \qquad (10)
@@ -315,7 +315,7 @@ $$
 
 **符号**： $p_1 \approx \mathcal{N}(0, I)$ 已知；积分沿采样轨迹反向重走一遍。
 
-7.1 的对照表里 diffusion 的「似然不可解」至此被补上缺口：**PF-ODE 给出精确似然**，代价写在式 (22) 的 trace 里——精确求迹要对 $d$ 个输入维各做一次向量-Jacobian 积（ $d$ 次 backward 量级/每步）；score-SDE 论文的实现用 Hutchinson 随机估计器 $\mathrm{tr}(J) = \mathbb{E}_u[u^\top J u]$（ $u$ 取 Rademacher 或高斯随机向量，一次 backward 出无偏估计）把每步压到一次额外 backward，再把整条轨迹的散度积分交给黑盒 ODE solver 的容差控制（[Song et al., 2021](../references.md)，[A]；走读锚点 [yang-song/score_sde_pytorch](../references.md)，[A]）。该论文以此在 CIFAR-10 上报告了与 flow 家族同口径的 bits/dim 似然——扩散模型从此同时握住 7.1 表里的两列：高质量采样与精确密度。训练侧对应物是 §3 末尾的账：想让 DSM 目标与这个似然对齐，损失权重取 $\lambda(t) = g(t)^2$。
+7.1 的对照表里 diffusion 的「似然不可解」至此被补上缺口：**PF-ODE 给出精确似然**，代价写在式 (22) 的 trace 里——精确求迹要对 $d$ 个输入维各做一次向量-Jacobian 积（ $d$ 次 backward 量级/每步）；score-SDE 论文的实现用 Hutchinson 随机估计器 $`\mathrm{tr}(J) = \mathbb{E}_u[u^\top J u]`$（ $u$ 取 Rademacher 或高斯随机向量，一次 backward 出无偏估计）把每步压到一次额外 backward，再把整条轨迹的散度积分交给黑盒 ODE solver 的容差控制（[Song et al., 2021](../references.md)，[A]；走读锚点 [yang-song/score_sde_pytorch](../references.md)，[A]）。该论文以此在 CIFAR-10 上报告了与 flow 家族同口径的 bits/dim 似然——扩散模型从此同时握住 7.1 表里的两列：高质量采样与精确密度。训练侧对应物是 §3 末尾的账：想让 DSM 目标与这个似然对齐，损失权重取 $\lambda(t) = g(t)^2$。
 
 ## 7. 统一视角：一个网络，一族采样器
 
@@ -391,7 +391,7 @@ EDM 的结论是机制性的：schedule、参数化、权重、求解器在方�
 | score | $s(x) = \nabla_x \log p(x)$，式 (1) | 消掉归一化常数；Langevin 采样的接口 |
 | score matching | 式 (2)；分部积分版式 (3) | 靶未知 → 散度版每样本 $d$ 次 backward |
 | DSM | 式 (5)；Vincent 等价式 (6) | 条件 score 回归 ≡ 边缘 score 回归（同梯度） |
-| 关键恒等式 | $\nabla \log q_t = \mathbb{E}_{q(x_0 \mid x_t)}[\nabla \log q(x_t \mid x_0)]$，式 (7) | 边缘 score = 条件 score 的后验均值 |
+| 关键恒等式 | $`\nabla \log q_t = \mathbb{E}_{q(x_0 \mid x_t)}[\nabla \log q(x_t \mid x_0)]`$，式 (7) | 边缘 score = 条件 score 的后验均值 |
 | 高斯核靶 | $\nabla \log q(x_t \mid x_0) = -\varepsilon/\sqrt{1-\bar\alpha_t}$，式 (8) | 回归靶 = 注入噪声，训练免费 |
 | score↔$\varepsilon$ | $s_\theta = -\varepsilon_\theta / \sqrt{1-\bar\alpha_t}$，式 (9) | 逐点代数换算 |
 | Tweedie | $\mathbb{E}[x_0 \mid x_t] = (x_t + (1-\bar\alpha_t) s_\theta)/\sqrt{\bar\alpha_t}$，式 (10) | $x_0$-prediction = 后验均值 |
@@ -406,7 +406,7 @@ EDM 的结论是机制性的：schedule、参数化、权重、求解器在方�
 
 ## 练习
 
-1.（推导）补全 Vincent 定理的两处细节：(a) 严格写出式 (7) 推导中「梯度与积分交换」所需的条件，并验证高斯核满足；(b) 证明式 (6) 的常数 $C_t$ 对高斯核等于 $\frac{1}{2}\mathbb{E}_{q_t}\Vert\nabla\log q_t\Vert^2 - \frac{d}{2(1-\bar\alpha_t)}$，从而确认 $J_t \le J_{\mathrm{DSM},t}$ 恒成立（条件期望收缩 $L^2$ 模长： $\mathbb{E}\Vert\mathbb{E}[c \mid x_t]\Vert^2 \le \mathbb{E}\Vert c\Vert^2$）。
+1.（推导）补全 Vincent 定理的两处细节：(a) 严格写出式 (7) 推导中「梯度与积分交换」所需的条件，并验证高斯核满足；(b) 证明式 (6) 的常数 $C_t$ 对高斯核等于 $`\frac{1}{2}\mathbb{E}_{q_t}\Vert\nabla\log q_t\Vert^2 - \frac{d}{2(1-\bar\alpha_t)}`$，从而确认 $J_t \le J_{\mathrm{DSM},t}$ 恒成立（条件期望收缩 $L^2$ 模长： $\mathbb{E}\Vert\mathbb{E}[c \mid x_t]\Vert^2 \le \mathbb{E}\Vert c\Vert^2$）。
 2.（推导）一维闭式全链。设 $p_{\mathrm{data}} = \mathcal{N}(0, 1)$，VE-SDE 取 $\sigma^2(t) = t$。(a) 写出 $q_t$、真 score $s(x, t)$ 与 PF-ODE $dx/dt$；(b) 从 $t = 1$ 到 $t = 0$ 解出 ODE 轨迹 $x(t)$，验证 $x(1) \sim q_1$ 时 $x(0) \sim p_{\mathrm{data}}$；(c) 用式 (23) 核算该轨迹上 $\log p_0$ 与 $\log q_1$ 的差，与散度积分逐项对上。
 3.（计算）linear schedule（7.2 §2.3， $T = 1000$， $\beta_1 = 10^{-4}$、 $\beta_T = 0.02$）下，连续化 $\beta(t) = T \beta_{\lceil tT \rceil}$。(a) 用式 (14) 的积分近似计算 $\bar\alpha(0.5)$ 与 $\bar\alpha(1.0)$，与 7.2 §2.3 表的离散值（ $\bar\alpha_{500} = 0.0786$、 $\bar\alpha_{1000} = 4.04 \times 10^{-5}$）比较相对误差；(b) 由式 (26) 算 $t = 0.5$ 处的 EDM $\sigma$，并给出该 $\sigma$ 下 preconditioning 三个系数的数值（ $\sigma_d = 0.5$）。
 4.（代码）教学用，非优化实现：二维 two-moons 数据上的 DSM + 双采样器对照。(a) 用式 (5)(8) 训练 score MLP（ $t$ 经 sinusoidal embedding 注入，VP 核 $\beta(t)$ 线性）；(b) 同一网络分别跑逆时 SDE 的 Euler–Maruyama（式 (24)）与 PF-ODE 的 Euler（式 (21)），在 100 / 1000 NFE 两档下对比样本散布；(c) 选 5 个数据点沿 PF-ODE 正向积分回 $t = 1$，用式 (23)（二维可精确求迹）报告 $\log p_0$，并与直方图密度估计对照。

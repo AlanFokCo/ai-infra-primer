@@ -68,7 +68,7 @@ $$
 W^{(e)}_i \leftarrow M_i \odot \big(P_i\thinspace \Pi\thinspace \widetilde{W}^{\mathrm{dense}}_{\mathrm{FFN}}\big) + \left(1 - M_i\right) \odot R_i, \qquad \Pr\left[ (M_i)_j = 1 \right] = 0.5 \qquad (4)
 $$
 
-**符号**： $\widetilde{W}^{\mathrm{dense}}_{\mathrm{FFN}}$：源 dense FFN 参数（SwiGLU 三矩阵同法处理）复制 $\lceil n h_E / h_{\mathrm{FFN}} \rceil$ 份后的总参数； $\Pi$：逐拷贝不同的中间维置换（shuffle）； $P_i$：第 $i$ 个 expert 的切片选择（从 shuffle 后拷贝中抽取 $h_E$ 宽的一段，剩余维度丢弃；fine-grained 切分思想同 4.5 式 (14)）； $M_i \in \lbrace0,1\rbrace$：逐参数保留掩码，50% 的位置保留继承值； $R_i$：随机初始化值； $1 - M_i$ 按广播理解；router 打分投影 $W_g \in \mathbb{R}^{d \times N_e}$（4.5 式 (1)）不继承任何旧权重，随机初始化。
+**符号**： $`\widetilde{W}^{\mathrm{dense}}_{\mathrm{FFN}}`$：源 dense FFN 参数（SwiGLU 三矩阵同法处理）复制 $\lceil n h_E / h_{\mathrm{FFN}} \rceil$ 份后的总参数； $\Pi$：逐拷贝不同的中间维置换（shuffle）； $P_i$：第 $i$ 个 expert 的切片选择（从 shuffle 后拷贝中抽取 $h_E$ 宽的一段，剩余维度丢弃；fine-grained 切分思想同 4.5 式 (14)）； $M_i \in \lbrace0,1\rbrace$：逐参数保留掩码，50% 的位置保留继承值； $R_i$：随机初始化值； $1 - M_i$ 按广播理解；router 打分投影 $W_g \in \mathbb{R}^{d \times N_e}$（4.5 式 (1)）不继承任何旧权重，随机初始化。
 
 账：57B total / 14B active。继承的覆盖是部分的——FFN 侧每个 expert 只有一半参数来自 dense checkpoint，另一半与 router 一起从零学起；attention 与 embedding 与 Qwen2-7B 逐项同 shape（3584 hidden / 28 层），直接继承。对照 4.5 式 (1) 的解耦框架：upcycling 用已有 dense checkpoint 替 MoE 的 $N_{\mathrm{tot}}$ 维度预付一部分预训练成本， $N_{\mathrm{act}}$ 口径决定此后的续训与推理价格。
 
@@ -81,7 +81,7 @@ Qwen3-Next 的 model card 用一行字给出布局：「12 × (3 × (Gated Delta
 | 组件 | 公式出处 | 在 Qwen3-Next 的实例 |
 | --- | --- | --- |
 | GDN 状态更新 | 4.3 式 (14)（[Yang et al., 2024](../references.md)，arXiv:2412.06464，[A]） | `linear_num_key_heads=16`、`linear_num_value_heads=32`、头维 128、conv kernel 4；每 value 头状态 $S \in \mathbb{R}^{128 \times 128}$，每层 32 头合计 1 MiB 定长（bf16）；chunkwise 训练直接调 fla 的 `chunk_gated_delta_rule`（[fla-org](../references.md)，[A]） |
-| gated attention 输出门 | 4.4 式 (2) | $o_t = \sigma(W_g u_t) \odot \mathrm{attn}_t$；实现上 gate 由 q_proj 输出切片得到（§4.2 代码证据） |
+| gated attention 输出门 | 4.4 式 (2) | $`o_t = \sigma(W_g u_t) \odot \mathrm{attn}_t`$；实现上 gate 由 q_proj 输出切片得到（§4.2 代码证据） |
 | 3:1 交错与内存账 | 4.4 式 (1) | `full_attention_interval=4`；斜率只剩 12 层 full 的 $12 \times 2\ \mathrm{KiB} = 24$ KiB/token，全 full 反事实的 1/4； $T$ = 262144 时线性项 6.0 GiB + 固定项 36 MiB（4.4 §7 已算） |
 | 高稀疏 MoE | 4.5 式 (1)、稀疏度 $\rho = (k + K_s)/N_e$ | 512 routed + 1 shared、top-10，$`\rho = 11/513 \approx 2.1\%`$——4.5 稀疏度谱的最右端 |
 | MTP | 4.5 式 (19)–(21) | model card 列 MTP 模块：训练期辅助 loss、推理期 self-speculative 草稿头，挂在主干之上不占 48 层预算 |
@@ -156,7 +156,7 @@ rope_theta: 1e7                    所有 full 层共享频率 base；GDN 层不
 读码锚点为 transformers 的 `modeling_qwen3_next.py`（[W] 配套证据，W2 读码确认）：
 
 1. **zero-centered norm**：`Qwen3NextRMSNorm` 的 weight 以 `torch.zeros` 初始化，前向为 `output * (1.0 + self.weight)`——即 $y = \hat{x} \odot (1 + g)$、 $g_0 = 0$（4.4 式 (3)）。增益存成相对恒等的偏差，weight decay 的默认方向是回到恒等映射，对 48 层深主干是逐层「接近恒等、增量塑形」的先验。另有 `Qwen3NextRMSNormGated`（norm 后再乘一道 SiLU 门）挂在 GDN 输出侧。
-2. **gated attention**：前向中 `attn_output * torch.sigmoid(gate)`，`gate` 由 q_proj 输出一并切出——即 $o_t = \sigma(W_g u_t) \odot \mathrm{attn}_t$（4.4 式 (2)）。2.6 的 GLU 门控思想被搬到 attention 输出：逐元素可关断的读出通道。
+2. **gated attention**：前向中 `attn_output * torch.sigmoid(gate)`，`gate` 由 q_proj 输出一并切出——即 $`o_t = \sigma(W_g u_t) \odot \mathrm{attn}_t`$（4.4 式 (2)）。2.6 的 GLU 门控思想被搬到 attention 输出：逐元素可关断的读出通道。
 3. **GDN kernel 不自研**：chunkwise 路径直接调 fla 库的 `chunk_gated_delta_rule`（[fla-org](../references.md)，[A]）——transformers 只做封装，状态布局与 4.3 §8 的本书约定互为转置（4.4 练习 4 处理过同一差异）。
 
 ## 5. 技术开放问题清单

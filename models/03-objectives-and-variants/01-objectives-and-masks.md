@@ -83,13 +83,13 @@ $$
 \mathbb{E}\thinspace L_{\mathrm{MLM}} = 0.8\thinspace \bar{L}_{\mathrm{mask}} + 0.1\thinspace \bar{L}_{\mathrm{rand}} + 0.1\thinspace \bar{L}_{\mathrm{keep}} \qquad (5)
 $$
 
-**符号**： $\bar{L}_b$ ：分支 $b$ 下选中位置的期望 NLL（对数据与分支内随机性取期望）。
+**符号**： $`\bar{L}_b`$ ：分支 $b$ 下选中位置的期望 NLL（对数据与分支内随机性取期望）。
 
 各分支的 Bayes 地板（最优模型也压不下去的残差）：
 
 - **mask 支**： [MASK] 不携带 $x_t$ 的信息，最优预测是上下文条件分布，地板 $H(x_t \mid \mathrm{ctx})$ ；
 - **rand 支**： $u$ 与 $x_t$ 独立，同样只能靠上下文，地板同为 $H(x_t \mid \mathrm{ctx})$ ；
-- **keep 支**： $x'_t = x_t$ 即答案本身，地板 0。
+- **keep 支**： $`x'_t = x_t`$ 即答案本身，地板 0。
 
 混合地板 = $0.9\thinspace H(x_t \mid \mathrm{ctx})$ ——这是**分支可知口径的下界**： [MASK] 支的分支身份可从输入确知，而 keep / rand 两支从显示 token 上不可区分（§3.3 的后验分析），真实地板略高于 $0.9\thinspace H$ ；作为下界它已足够支撑后面的比较论证。结论：一个已达最优的模型，其 MLM 损失读数天然比「纯 mask」目标低约 10%。这个偏移与模型质量无关，是比较任何 MLM 系损失数字之前要先剥掉的常数（§8 回收）。
 
@@ -173,7 +173,7 @@ $$
 
 ### 4.3 2D 位置编码：两维寻址的必要性
 
-blank infilling 对位置系统提出了 CLM / MLM 都没有的需求：预测 $s_{i,\thinspace j}$ 时模型既要知道「在填哪个空」，又要知道「空内第几个」。GLM 的答案：每个 token 带两个位置 id $(p^{(1)}_t,\thinspace p^{(2)}_t)$ ：
+blank infilling 对位置系统提出了 CLM / MLM 都没有的需求：预测 $s_{i,\thinspace j}$ 时模型既要知道「在填哪个空」，又要知道「空内第几个」。GLM 的答案：每个 token 带两个位置 id $`(p^{(1)}_t,\thinspace p^{(2)}_t)`$ ：
 
 $$
 p^{(1)}_t = \begin{cases} \mathrm{idx}(t), & t \in A \\ k_i, & t \in s_i \cup \lbrace[s]_i\rbrace \end{cases} \qquad (9)
@@ -183,7 +183,7 @@ $$
 p^{(2)}_t = \begin{cases} 0, & t \in A \cup \lbrace[s]\rbrace \\ j, & t = s_{i,\thinspace j} \end{cases} \qquad (10)
 $$
 
-**符号**： $A$ ：Part A 的位置集； $\mathrm{idx}(t)$ ：Part A 内的下标； $k_i$ ：span $s_i$ 塌缩出的 [MASK] 在 $x^{c}$ 中的位置； $s_{i,\thinspace j}$ ：第 $i$ 条 span 的第 $j$ 个 token（式 (8) 的记号）； $[s]_i$ ：第 $i$ 条 span 的起始符。读法：Part A 的成员以自身在 $x^{c}$ 中的下标为 $p^{(1)}$ 、 $p^{(2)}$ 取 0；Part B 的成员一律以所填空白的地址为 $p^{(1)}$ 、以空内偏移为 $p^{(2)}$ （起始符偏移 0）。
+**符号**： $A$ ：Part A 的位置集； $\mathrm{idx}(t)$ ：Part A 内的下标； $k_i$ ：span $s_i$ 塌缩出的 [MASK] 在 $x^{c}$ 中的位置； $s_{i,\thinspace j}$ ：第 $i$ 条 span 的第 $j$ 个 token（式 (8) 的记号）； $`[s]_i`$ ：第 $i$ 条 span 的起始符。读法：Part A 的成员以自身在 $x^{c}$ 中的下标为 $p^{(1)}$ 、 $p^{(2)}$ 取 0；Part B 的成员一律以所填空白的地址为 $p^{(1)}$ 、以空内偏移为 $p^{(2)}$ （起始符偏移 0）。
 
 注入为 stream 加性（2.5 §1 的注入点分类）：两张可学绝对位置表（2.5 §2.3 的形态），与 token embedding 三者相加：
 
@@ -341,7 +341,7 @@ $$
 逐族判定：
 
 - **CLM**： $c_t = x_{<t} = G_t$ ，式 (16) 取等。
-- **MLM**： $c_t = x'$ 为整条腐蚀序列，含未来位置的真值（腐蚀只动 15% 的位置——其中 12% 替换为 [MASK]，其余位置真值全露），任何只含过去的 $G_\tau$ 都不满足式 (16)。逐位留一重掩的迭代采样也绕不过：第 $\tau$ 步实际计算的是 $q(x_\tau \mid x_{<\tau},\thinspace \text{[MASK]}_{> \tau})$ ，与训练条件（固定 12% [MASK] 率、其余为真值）不是同一条件分布，且 [MASK] 率随迭代进度持续漂移。更根本地，伪似然（pseudo-likelihood）式连乘 $\prod_t q(x_t \mid x_{\setminus t})$ 不满足链式法则对条件集的嵌套要求（1.1 式 (3)：第 $t$ 个因子只能以前 $t - 1$ 个已生成为条件），它不是任何联合分布的分解——MLM 产出的是一组相容性无保证的局部条件，不是一个可采样的联合。「encoder 形态为何不能直接生成」的完整证明在 3.2。
+- **MLM**： $c_t = x'$ 为整条腐蚀序列，含未来位置的真值（腐蚀只动 15% 的位置——其中 12% 替换为 [MASK]，其余位置真值全露），任何只含过去的 $G_\tau$ 都不满足式 (16)。逐位留一重掩的迭代采样也绕不过：第 $\tau$ 步实际计算的是 $`q(x_\tau \mid x_{<\tau},\thinspace \text{[MASK]}_{> \tau})`$ ，与训练条件（固定 12% [MASK] 率、其余为真值）不是同一条件分布，且 [MASK] 率随迭代进度持续漂移。更根本地，伪似然（pseudo-likelihood）式连乘 $\prod_t q(x_t \mid x_{\setminus t})$ 不满足链式法则对条件集的嵌套要求（1.1 式 (3)：第 $t$ 个因子只能以前 $t - 1$ 个已生成为条件），它不是任何联合分布的分解——MLM 产出的是一组相容性无保证的局部条件，不是一个可采样的联合。「encoder 形态为何不能直接生成」的完整证明在 3.2。
 - **prefix-LM**： $I$ = 前缀，续写区满足式 (16)。
 - **GLM**： $I$ = Part A（ $x^{c}$ 生成前已知），span 逐条生成、span 内因果，条件集 = $x^{c} \cup$ 已生成 span $\cup$ 本 span 前缀，满足式 (16)。
 - **T5 / UL2**： $I$ = encoder 输入，decoder 因果，满足式 (16)。

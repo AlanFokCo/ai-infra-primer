@@ -48,7 +48,7 @@ z_{b,t,:} &= W_U \thinspace \mathrm{RMSNorm}\left(x^{(L)}_{b,t,:}\right)
 \end{aligned} \qquad (1)
 $$
 
-**符号**： $x^{(\ell)} \in \mathbb{R}^{B \times T \times d}$ ：第 $\ell$ 层输出处的 residual stream， $\ell = 1, \ldots, L$ ； $\tilde{x}^{(\ell)}$ ：第 $\ell$ 层 attention 子层之后的中间 stream； $E \in \mathbb{R}^{V \times d}$ ：输入 embedding 矩阵， $E_{x_{b,t}}$ 为按 token id 查出的行向量； $\mathrm{Attn}_{\ell}$ 、 $\mathrm{FFN}_{\ell}$ ：第 $\ell$ 层的两个子层（各自带参数，内部结构见 2.3 / 2.6）； $\mathrm{RMSNorm}$ ：归一化算子，逐位置作用于 $d$ 维（公式与依据见 2.7）； $W_U \in \mathbb{R}^{V \times d}$ ：输出头； $z \in \mathbb{R}^{B \times T \times V}$ ：logits。
+**符号**： $x^{(\ell)} \in \mathbb{R}^{B \times T \times d}$ ：第 $\ell$ 层输出处的 residual stream， $\ell = 1, \ldots, L$ ； $\tilde{x}^{(\ell)}$ ：第 $\ell$ 层 attention 子层之后的中间 stream； $E \in \mathbb{R}^{V \times d}$ ：输入 embedding 矩阵， $E_{x_{b,t}}$ 为按 token id 查出的行向量； $`\mathrm{Attn}_{\ell}`$ 、 $`\mathrm{FFN}_{\ell}`$ ：第 $\ell$ 层的两个子层（各自带参数，内部结构见 2.3 / 2.6）； $\mathrm{RMSNorm}$ ：归一化算子，逐位置作用于 $d$ 维（公式与依据见 2.7）； $W_U \in \mathbb{R}^{V \times d}$ ：输出头； $z \in \mathbb{R}^{B \times T \times V}$ ：logits。
 
 式 (1) 里每个子层的统一形式是「读出归一化后的 stream、把结果加回 stream」，即 Pre-LN 形式的 $x$ ← $x + f(\mathrm{LN}(x))$ 。OLMo 2 用子层输出侧 norm（reordered，非 Pre-LN）： $x$ ← $x + \mathrm{RMSNorm}(f(x))$ ，norm 作用于子层输出而非输入（[Team OLMo et al., 2025](../references.md)，arXiv:2501.00656，[A]，Table 3 与 §3.3.2）——注意展开式 (2) 的纯加法结构在 reordered 下仍然成立，只是和中每项换成归一化后的子层输出；真正破坏纯加法结构的是把 LN 放到加法之后的 Post-LN（见本节末）。三者的梯度行为差异见 2.7。递推可以直接展开：记 $a_\ell$ 、 $f_\ell$ 为第 $\ell$ 层 attention / FFN 子层的输出，则
 
@@ -56,7 +56,7 @@ $$
 x^{(L)} = x^{(0)} + \sum_{\ell=1}^{L} a_{\ell} + \sum_{\ell=1}^{L} f_{\ell} \qquad (2)
 $$
 
-**符号**： $a_\ell = \mathrm{Attn}_{\ell}(\mathrm{RMSNorm}(x^{(\ell-1)}))$ ； $f_\ell = \mathrm{FFN}_{\ell}(\mathrm{RMSNorm}(\tilde{x}^{(\ell)}))$ 。输出是 $2L+1$ 个 $d$ 维向量之和。
+**符号**： $`a_\ell = \mathrm{Attn}_{\ell}(\mathrm{RMSNorm}(x^{(\ell-1)}))`$ ； $`f_\ell = \mathrm{FFN}_{\ell}(\mathrm{RMSNorm}(\tilde{x}^{(\ell)}))`$ 。输出是 $2L+1$ 个 $d$ 维向量之和。
 
 从式 (2) 直接读出三条事实：
 

@@ -62,7 +62,7 @@ $$
 \tilde{x}_t = \mathrm{LR}(h, d)_t + E_p(\hat{p}_t) + E_e(\hat{e}_t) \qquad (4)
 $$
 
-**符号**： $\hat{p}_t, \hat{e}_t$：预测的帧级 pitch / energy 标量； $E_p, E_e$：各自的嵌入变换； $\tilde{x}_t$：加上韵律信息后的帧级表示，送 acoustic model 出 mel。
+**符号**： $`\hat{p}_t, \hat{e}_t`$：预测的帧级 pitch / energy 标量； $E_p, E_e$：各自的嵌入变换； $`\tilde{x}_t`$：加上韵律信息后的帧级表示，送 acoustic model 出 mel。
 
 机制分工：duration 钉节奏骨架（式 (3)），pitch/energy 补韵律色彩（式 (4)）——式 (2) 的 $z$ 在这里被拆成了三个可分离监督的标量场。收益与代价同根：每个模块的输入在训练时是真值、推理时是上游预测——跨模块的 exposure bias；但每个旋钮也因此可人工干预（改 $d_u$ 即改时长），这条性质在 §10 的对照表里是级联路线至今未丢的一格。
 
@@ -156,7 +156,7 @@ $$
 A^{\ast } = \operatorname{arg\thinspace max}_{A \in \mathcal{A}_{\mathrm{mono}}} \sum_{t=1}^{T} \log \mathcal{N}\left( z_t;\thinspace \mu_{a(t)},\thinspace \sigma_{a(t)}^2 \right) \qquad (13)
 $$
 
-**符号**： $\mathcal{A}_{\mathrm{mono}}$：单调对齐集合——每帧恰好指派一个音素、音素下标随帧不减，等价于给每个音素分配正整数时长 $d_u \ge 1$ 且 $\sum_u d_u = T$； $a(t)$：帧 $t$ 被指派的音素； $z_t$：后验采样的第 $t$ 帧 latent。
+**符号**： $`\mathcal{A}_{\mathrm{mono}}`$：单调对齐集合——每帧恰好指派一个音素、音素下标随帧不减，等价于给每个音素分配正整数时长 $d_u \ge 1$ 且 $\sum_u d_u = T$； $a(t)$：帧 $t$ 被指派的音素； $z_t$：后验采样的第 $t$ 帧 latent。
 
 求解结构：单调约束给出与 CTC 同族的格点（10.2 §2.3 的扩展序列在这里换成「音素段」），把 10.2 式 (6) 的「对全部路径求和」换成「对全部对齐取 max」即 Viterbi 式 DP， $O(TU)$ 精确求解——每步训练迭代先跑一次 MAS 得 $`A^{*}`$，再按式 (11) 的 ELBO 更新。与 CTC 的对照读法值得停一拍：同一个「对齐未知」问题，识别侧求和（软，保留全部对齐的不确定性），合成侧取 max（硬，只要一条最可能的）——硬指派恰好给出式 (3) 所需的显式 $d_u$，它也是 stochastic duration predictor 的训练监督来源。duration predictor 本身用 flow 建时长分布（条件于音素编码），推理时采样 $d_u$——同一文本的韵律多样性由这个采样给出，而不是由确定性的时长回归钉死。
 
@@ -180,9 +180,9 @@ $$
 P(C \mid y, \tilde{C}) = P\left( c_{:,1} \mid y,\thinspace \tilde{C}_{:,1} \right) \cdot \prod_{j=2}^{8} P\left( c_{:,j} \mid c_{:,<j},\thinspace y,\thinspace \tilde{C} \right) \qquad (15)
 $$
 
-**符号**： $c_{:,j} = (c_{1,j}, \ldots, c_{T,j})$：第 $j$ 层的整条时间序列； $c_{:,<j}$：第 $1$ 至 $j-1$ 层的全部码； $\tilde{C}_{:,1}$：prompt 的第一层码； $\tilde{C}$：prompt 的全部层。
+**符号**： $c_{:,j} = (c_{1,j}, \ldots, c_{T,j})$：第 $j$ 层的整条时间序列； $c_{:,<j}$：第 $1$ 至 $j-1$ 层的全部码； $`\tilde{C}_{:,1}`$：prompt 的第一层码； $\tilde{C}$：prompt 的全部层。
 
-第一层用 AR（原文：「For the discrete tokens from the first quantizer $c_{:,1}$, we train an autoregressive (AR) decoder-only language model……conditioned on the phoneme sequence and the acoustic prompt $\tilde{C}_{:,1}$」）：
+第一层用 AR（原文：「For the discrete tokens from the first quantizer $c_{:,1}$, we train an autoregressive (AR) decoder-only language model……conditioned on the phoneme sequence and the acoustic prompt $`\tilde{C}_{:,1}`$」）：
 
 $$
 P\left( c_{:,1} \mid y,\thinspace \tilde{C}_{:,1} \right) = \prod_{t=1}^{T} P\left( c_{t,1} \mid c_{<t,1},\thinspace y,\thinspace \tilde{C}_{:,1} \right) \qquad (16)
@@ -309,7 +309,7 @@ $$
 \end{aligned} \qquad (22)
 $$
 
-**符号**： $x$：输入波形（16 kHz）； $E$：speech encoder（卷积块，下采样率 200 → 80 fps 的帧级 latent $h$）； $G$：timbre extractor（Transformer encoder）， $h_t$ 为整句级全局音色向量； $\mathrm{FVQ}_i$：prosody（ $p$）/ content（ $c$）/ acoustic detail（ $d$）三个子流各自的因子化量化器——量化前先把表征投影到 8 维瓶颈空间再查码本、量化后投回原维（information bottleneck：压缩每个码的携带量，挤掉他流信息），量化器数 $N_{q_p} = 1$、 $N_{q_c} = 2$、 $N_{q_d} = 3$，码本大小均 1024； $\mathrm{CLN}(\cdot; h_t)$：conditional layer normalization——三个逐帧子流先求和，再以 $h_t$ 为条件注入音色（原文：「We first add the representation of prosody, content, and acoustic details together and then fuse the timbre information by conditional layer normalization」）； $D$：speech decoder（镜像 encoder，参数量更大）。
+**符号**： $x$：输入波形（16 kHz）； $E$：speech encoder（卷积块，下采样率 200 → 80 fps 的帧级 latent $h$）； $G$：timbre extractor（Transformer encoder）， $h_t$ 为整句级全局音色向量； $`\mathrm{FVQ}_i`$：prosody（ $p$）/ content（ $c$）/ acoustic detail（ $d$）三个子流各自的因子化量化器——量化前先把表征投影到 8 维瓶颈空间再查码本、量化后投回原维（information bottleneck：压缩每个码的携带量，挤掉他流信息），量化器数 $N_{q_p} = 1$、 $N_{q_c} = 2$、 $N_{q_d} = 3$，码本大小均 1024； $\mathrm{CLN}(\cdot; h_t)$：conditional layer normalization——三个逐帧子流先求和，再以 $h_t$ 为条件注入音色（原文：「We first add the representation of prosody, content, and acoustic details together and then fuse the timbre information by conditional layer normalization」）； $D$：speech decoder（镜像 encoder，参数量更大）。
 
 子流「各自纯净」不是分解自动给的，原文的解耦工程有三件。(i) **逐流监督**： $z_p$ 回归逐帧归一化 F0（z-score）； $z_c$ 逐帧音素分类（标签由对齐工具产出）； $h_t$ 说话人分类。(ii) **GRL 交叉清洗**（gradient reversal layer + 对抗分类器）：prosody 流上 phoneme-GRL 洗内容、content 流上 F0-GRL 洗韵律、detail 流上两者皆施、 $z_p + z_c + z_d$ 之和上 speaker-GRL 洗音色——每个子流被显式惩罚「夹带他流信息」。(iii) **detail dropout**：训练时以概率 $p$ 随机置零 $z_d$——detail 流无监督、最容易偷渡内容与韵律，随机丢弃强迫解码器只靠 $z_p + z_c + h_t$ 也能（低保真）重建， $z_d$ 的角色被压回「细节补充」。总损失为 codec 常套件（multi-scale mel 重建、MPD + multi-band multi-scale STFT 判别器对抗、feature matching、codebook / commitment）与上述监督、GRL 各项的加权和。生成侧与分解镜像：factorized diffusion 对 duration / prosody / content / detail 各配一个 diffusion model 顺序生成，timbre 以 prompt 的 $h_t$ 作条件注入——克隆 = 换 timbre 条件、保 content 流；可控性走到极端形态——内容、韵律、音色、声学细节各有独立旋钮；代价是四条生成链的复合复杂度。
 
@@ -360,7 +360,7 @@ $$
 
 1.（推导）VALL-E 两阶段的依赖结构。(a) 把 $8T$ 个码按层主序摊平（先第 1 层全部 $T$ 帧、再第 2 层……），写出纯 AR 分解（每个码条件于摊平序下的全部前驱），给出其严格串行步数；(b) 证明式 (15)–(17) 的联合分布与 (a) 的摊平 AR 相比，恰好只丢掉了层内跨帧依赖 $\lbrace P(c_{t,j} \mid c_{<t,j}, \cdot)\rbrace_{j \ge 2}$，其余条件集相同（逐层核对链式展开的因子）；(c) 帧率 75 fps、 $n_q = 8$、5 秒音频：摊平 AR 与两阶段的串行步数各是多少（KV cache 账按 2.4 口径，NAR 趟内视为一次并行前向），并指出两阶段账里被忽略的一项工程开销。
 
-2.（推导）snake 激活。(a) 由式 (9) 推出式 (10) 并给出 $f'_\alpha$ 的值域；(b) 用 $\sin^2\theta = (1 - \cos 2\theta)/2$ 说明 $\sin^2$ 作用于 $\cos(\omega n)$ 产生倍频分量，进而给出 24 kHz 采样下 15 kHz 谐波的混叠频率（折叠公式： $f \mapsto |f - k f_s|$ 取落入 $[0, f_s/2]$ 者）；(c) $\alpha \to \infty$ 时扰动幅值 $1/\alpha \to 0$ 而振荡频率 $\to \infty$——说明此时 snake 退化成什么函数，并论证训练为何不会把 $\alpha$ 推向无穷（提示：高频周期分量的混叠与 §4 低通的对抗关系）。
+2.（推导）snake 激活。(a) 由式 (9) 推出式 (10) 并给出 $`f'_\alpha`$ 的值域；(b) 用 $\sin^2\theta = (1 - \cos 2\theta)/2$ 说明 $\sin^2$ 作用于 $\cos(\omega n)$ 产生倍频分量，进而给出 24 kHz 采样下 15 kHz 谐波的混叠频率（折叠公式： $f \mapsto |f - k f_s|$ 取落入 $[0, f_s/2]$ 者）；(c) $\alpha \to \infty$ 时扰动幅值 $1/\alpha \to 0$ 而振荡频率 $\to \infty$——说明此时 snake 退化成什么函数，并论证训练为何不会把 $\alpha$ 推向无穷（提示：高频周期分量的混叠与 §4 低通的对抗关系）。
 
 3.（计算）MPD 折叠账。取 $T = 24000$（1 秒 @ 24 kHz）：(a) 按式 (5) 对 $p \in \lbrace2, 3, 5, 7, 11\rbrace$ 分别给出 $X_p$ 的 shape 与尾部需补齐的样本数；(b) 某浊音基频 120 Hz，其周期合多少样本？该周期结构能被哪些 $p$ 的折叠「整除对齐」地捕获、哪些不能（用整除关系论证）？(c) 若把质数周期换成合数周期 $\lbrace2, 4, 8\rbrace$，论证它比 $\lbrace2, 3, 5\rbrace$ 少覆盖哪一族周期结构（举出一个具体基频例子）。
 

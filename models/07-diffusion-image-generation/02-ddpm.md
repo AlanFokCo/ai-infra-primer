@@ -178,11 +178,11 @@ $$
 \mathrm{SNR}_t = \frac{\bar\alpha_t}{1 - \bar\alpha_t} \qquad (9)
 $$
 
-**符号**： $\mathrm{SNR}_t$：第 $t$ 步的信噪功率比；下文用分贝 $\mathrm{SNR}_{\mathrm{dB}} = 10 \log_{10} \mathrm{SNR}_t$。
+**符号**： $`\mathrm{SNR}_t`$：第 $t$ 步的信噪功率比；下文用分贝 $`\mathrm{SNR}_{\mathrm{dB}} = 10 \log_{10} \mathrm{SNR}_t`$。
 
 按式 (2)(7)(8) 计算（数值由公式直接算出，schedule 公式出处如上）：
 
-| $t$ | $\bar\alpha_t$（linear） | $\mathrm{SNR}_{\mathrm{dB}}$（linear） | $\bar\alpha_t$（cosine） | $\mathrm{SNR}_{\mathrm{dB}}$（cosine） |
+| $t$ | $\bar\alpha_t$（linear） | $`\mathrm{SNR}_{\mathrm{dB}}`$（linear） | $\bar\alpha_t$（cosine） | $`\mathrm{SNR}_{\mathrm{dB}}`$（cosine） |
 | --- | --- | --- | --- | --- |
 | 1 | 0.9999 | 40.0 | 0.99996 | 43.8 |
 | 100 | 0.8970 | 9.4 | 0.9721 | 15.4 |
@@ -199,7 +199,7 @@ $$
 \mathrm{SNR}_t = \frac{\cos^2\left( \pi t / 2T \right)}{\sin^2\left( \pi t / 2T \right)}, \qquad \log \mathrm{SNR}_t = 2 \log \cos\left( \frac{\pi t}{2T} \right) - 2 \log \sin\left( \frac{\pi t}{2T} \right)
 $$
 
-对 $u = \pi t / 2T$ 求导： $\frac{d}{du} \log \mathrm{SNR} = -2 \frac{\sin u}{\cos u} - 2 \frac{\cos u}{\sin u} = -\frac{2}{\sin u \cos u} = -\frac{4}{\sin(2u)}$——由 $\sin(2u) \le 1$ 知斜率绝对值 $\ge 4$，最小值 $4$ 在中点 $u = \pi/4$ 处取得，中段近似匀速；两端斜率发散，是整条曲线最陡的部分。带 $s = 0.008$ 时 $\mathrm{SNR}_t = \cos^2(u_t) / (\sin^2(u_t) - \sin^2(u_0))$（由 $\cos^2 a - \cos^2 b = \sin^2 b - \sin^2 a$ 化简）， $\sin^2(u_0) \approx 1.5 \times 10^{-4}$ 只在 $t$ 极小时偏离上式形状。一句话对比：linear-β 的 log-SNR 前半程掉得更急（ $t = 500$ 已 −10.7 dB，同期 cosine 仍在 0 dB 附近）、尾部却留着 $\bar\alpha_T > 0$ 的残余以有限斜率收场；cosine 中段匀速、两端陡，尾部斜率发散恰好把 $\bar\alpha$ 在 $t = T$ 压到 0。同样的 1000 步，cosine 的 $\Delta_t \log \mathrm{SNR}$ 分布更均匀——联系式 (25)（ $w_t \approx \frac{1}{2} \Delta_t \log \mathrm{SNR}$），cosine 的严格 ELBO 权重本身就更平。
+对 $u = \pi t / 2T$ 求导： $\frac{d}{du} \log \mathrm{SNR} = -2 \frac{\sin u}{\cos u} - 2 \frac{\cos u}{\sin u} = -\frac{2}{\sin u \cos u} = -\frac{4}{\sin(2u)}$——由 $\sin(2u) \le 1$ 知斜率绝对值 $\ge 4$，最小值 $4$ 在中点 $u = \pi/4$ 处取得，中段近似匀速；两端斜率发散，是整条曲线最陡的部分。带 $s = 0.008$ 时 $`\mathrm{SNR}_t = \cos^2(u_t) / (\sin^2(u_t) - \sin^2(u_0))`$（由 $\cos^2 a - \cos^2 b = \sin^2 b - \sin^2 a$ 化简）， $\sin^2(u_0) \approx 1.5 \times 10^{-4}$ 只在 $t$ 极小时偏离上式形状。一句话对比：linear-β 的 log-SNR 前半程掉得更急（ $t = 500$ 已 −10.7 dB，同期 cosine 仍在 0 dB 附近）、尾部却留着 $\bar\alpha_T > 0$ 的残余以有限斜率收场；cosine 中段匀速、两端陡，尾部斜率发散恰好把 $\bar\alpha$ 在 $t = T$ 压到 0。同样的 1000 步，cosine 的 $\Delta_t \log \mathrm{SNR}$ 分布更均匀——联系式 (25)（ $w_t \approx \frac{1}{2} \Delta_t \log \mathrm{SNR}$），cosine 的严格 ELBO 权重本身就更平。
 
 **频谱读法**。式 (6) 在傅里叶域逐频率成立（傅里叶变换是正交线性变换，保持各向同性高斯的独立性，噪声谱不混合）： $\hat x_t(f) = \sqrt{\bar\alpha_t}\thinspace \hat x_0(f) + \sqrt{1 - \bar\alpha_t}\thinspace \hat\varepsilon(f)$，其中 $\hat\varepsilon(f)$ 各频率等功率（白噪声 = 平谱）。自然图像的功率谱随频率快速衰减、能量集中在低频（经验事实），于是对每个 $t$ 存在交叉频率 $f_c(t)$： $\bar\alpha_t \cdot P_{\mathrm{img}}(f_c) = (1 - \bar\alpha_t) \cdot P_{\varepsilon}$， $f > f_c$ 的频段信噪比小于 1，信息已被淹没。 $t$ 增大 $\Rightarrow$ $f_c$ 单调下移——**加噪是从高频到低频的逐层淹没，去噪反过来：先恢复低频构图与色块，后恢复高频纹理**。这也解释了生成中途图像「先成形、后出细节」的普遍观察。
 
@@ -428,7 +428,7 @@ $$
 w_t = \frac{1}{2\alpha_t}\left( 1 - \frac{\mathrm{SNR}_t}{\mathrm{SNR}_{t-1}} \right) \approx \frac{1}{2}\thinspace \Delta_t \log \mathrm{SNR} \qquad (25)
 $$
 
-**符号**： $\Delta_t \log \mathrm{SNR} = \log \mathrm{SNR}_{t-1} - \log \mathrm{SNR}_t$；近似号用 $\beta_t$ 小时 $1/(2\alpha_t) \approx 1/2$ 及 $1 - r \approx -\log r$。
+**符号**： $`\Delta_t \log \mathrm{SNR} = \log \mathrm{SNR}_{t-1} - \log \mathrm{SNR}_t`$；近似号用 $\beta_t$ 小时 $1/(2\alpha_t) \approx 1/2$ 及 $1 - r \approx -\log r$。
 
 式 (25) 给出严格 ELBO 的加权画像：**每步的权重 = 该步造成的 SNR 相对下降量**——信息销毁最剧烈的步占最大权重。代入 linear schedule 的端点数值： $w_1 = 1/(2\alpha_1) \approx 0.500$（ $t=1$ 处 $1 - \bar\alpha_1 = \beta_1$， $\beta_1$ 约去）； $w_T = \beta_T / (2\alpha_T(1 - \bar\alpha_T)) = 0.02/(2 \times 0.98 \times 0.99996) \approx 0.0102$。首末相差约 49 倍——**严格 ELBO 把近 50 倍的权重压在小 $t$ 端**，那些步的噪声量 $\beta_1 = 10^{-4}$ 级别，去噪任务接近「把像素微调回量化 bin」。
 
@@ -499,7 +499,7 @@ $$
 
 验证第一式（第二式同理）： $\sqrt{\bar\alpha_t} x_t - \sqrt{1 - \bar\alpha_t}\thinspace v = \sqrt{\bar\alpha_t}(\sqrt{\bar\alpha_t} x_0 + \sqrt{1 - \bar\alpha_t}\thinspace \varepsilon) - \sqrt{1 - \bar\alpha_t}(\sqrt{\bar\alpha_t}\thinspace \varepsilon - \sqrt{1 - \bar\alpha_t}\thinspace x_0) = \bar\alpha_t x_0 + (1 - \bar\alpha_t) x_0 = x_0$（ $\varepsilon$ 两项相消）。式 (28) 的系数全部落在 $[0, 1]$——对照 $x_0$-prediction 的换算式含 $1/\sqrt{\bar\alpha_t}$，在 $t \to T$ 端（ $\bar\alpha_T = 4 \times 10^{-5}$）把网络误差放大约 157 倍；v-prediction 的换算是无除法的，这是它在蒸馏场景（7.4）数值稳定的原因。
 
-同一网络误差经三种 loss 计的相对权重（设 $e = \varepsilon_\theta - \varepsilon$，换算均按式 (16)(27)(28) 一致进行）：由 $x_0$ 误差与 $\varepsilon$ 误差的关系 $\hat x_0 - x_0 = \sqrt{1 - \bar\alpha_t}/\sqrt{\bar\alpha_t}\thinspace e$ 得 $\Vert x_0\text{-loss}\Vert = \Vert e\Vert^2 / \mathrm{SNR}_t$；由式 (27) 与式 (16) 联立得 $\hat v - v = e/\sqrt{\bar\alpha_t}$，即 $\Vert v\text{-loss}\Vert = \Vert e\Vert^2 / \bar\alpha_t$。利用 $1/\bar\alpha_t = 1 + (1 - \bar\alpha_t)/\bar\alpha_t = 1 + 1/\mathrm{SNR}_t$，得到一个精确的加法结构：
+同一网络误差经三种 loss 计的相对权重（设 $e = \varepsilon_\theta - \varepsilon$，换算均按式 (16)(27)(28) 一致进行）：由 $x_0$ 误差与 $\varepsilon$ 误差的关系 $\hat x_0 - x_0 = \sqrt{1 - \bar\alpha_t}/\sqrt{\bar\alpha_t}\thinspace e$ 得 $`\Vert x_0\text{-loss}\Vert = \Vert e\Vert^2 / \mathrm{SNR}_t`$；由式 (27) 与式 (16) 联立得 $\hat v - v = e/\sqrt{\bar\alpha_t}$，即 $\Vert v\text{-loss}\Vert = \Vert e\Vert^2 / \bar\alpha_t$。利用 $`1/\bar\alpha_t = 1 + (1 - \bar\alpha_t)/\bar\alpha_t = 1 + 1/\mathrm{SNR}_t`$，得到一个精确的加法结构：
 
 $$
 \Vert v\text{-loss}\Vert = \Vert e\Vert^2 + \frac{\Vert e\Vert^2}{\mathrm{SNR}_t} = \Vert\varepsilon\text{-loss}\Vert + \Vert x_0\text{-loss}\Vert
@@ -509,9 +509,9 @@ $$
 
 | 直接回归目标 | 同一误差 $e$ 的 loss（相对 $\lVert e \rVert^2$） | 两端行为 |
 | --- | --- | --- |
-| $x_0$ | $\lVert e \rVert^2 / \mathrm{SNR}_t$ | $t \to 0$ 端趋于 0（低压）； $t \to T$ 端放大 $1/\mathrm{SNR}$ 倍 |
+| $x_0$ | $`\lVert e \rVert^2 / \mathrm{SNR}_t`$ | $t \to 0$ 端趋于 0（低压）； $t \to T$ 端放大 $1/\mathrm{SNR}$ 倍 |
 | $\varepsilon$（ $L_{simple}$） | $\lVert e \rVert^2$ | 两端均匀 |
-| $v$ | $\lVert e \rVert^2 / \bar\alpha_t = \lVert e \rVert^2 (1 + 1/\mathrm{SNR}_t)$ | $t \to 0$ 端 $\approx \varepsilon$-loss； $t \to T$ 端 $\approx x_0$-loss——各取两者在该端较平的一侧 |
+| $v$ | $`\lVert e \rVert^2 / \bar\alpha_t = \lVert e \rVert^2 (1 + 1/\mathrm{SNR}_t)`$ | $t \to 0$ 端 $\approx \varepsilon$-loss； $t \to T$ 端 $\approx x_0$-loss——各取两者在该端较平的一侧 |
 
 **术语防混**：iDDPM 的 hybrid objective 里也写作 $v$ 的量是**方差对数插值系数**（式 (30)），均值仍走 $\varepsilon$-参数化，与式 (27) 的 v-prediction 同名不同物，引用文献时勿混（约定页已锁此口径：v-prediction 归 Salimans & Ho）。
 
@@ -560,12 +560,12 @@ t:   [B] ──sinusoidal─┘
 | 前向闭式 | $q(x_t \mid x_0) = \mathcal{N}(\sqrt{\bar\alpha_t} x_0, (1{-}\bar\alpha_t) I)$，式 (5) | 高斯卷积递推 §2.2 |
 | 采样式 | $x_t = \sqrt{\bar\alpha_t} x_0 + \sqrt{1{-}\bar\alpha_t}\thinspace \varepsilon$，式 (6) | 训练并行的支点 |
 | schedule | linear 式 (7)（ $\beta_1{=}10^{-4}, \beta_T{=}0.02$）；cosine 式 (8)（ $s{=}0.008$，clip 0.999） | DDPM / iDDPM |
-| SNR | $\mathrm{SNR}_t = \bar\alpha_t/(1{-}\bar\alpha_t)$，式 (9)；linear $\bar\alpha_T = 4.04{\times}10^{-5}$ | 频谱读法 §2.3 |
+| SNR | $`\mathrm{SNR}_t = \bar\alpha_t/(1{-}\bar\alpha_t)`$，式 (9)；linear $\bar\alpha_T = 4.04{\times}10^{-5}$ | 频谱读法 §2.3 |
 | 后验 | $\tilde\beta_t = \frac{1-\bar\alpha_{t-1}}{1-\bar\alpha_t}\beta_t$、 $\tilde\mu_t$ 式 (14)(15) | Bayes + 配方 §3.2 |
 | $\varepsilon$-参数化 | $\tilde\mu_t = \frac{1}{\sqrt{\alpha_t}}(x_t - \frac{\beta_t}{\sqrt{1-\bar\alpha_t}}\varepsilon)$，式 (17)(18) | §3.3 |
 | ELBO 三项 | $L_T + \sum L_{t-1} + L_0$，式 (21)； $L_T \approx 0$、 $L_0$ 离散高斯 | §4.1 |
 | 逐时 KL | $L_{t-1} = w_t\thinspace \mathbb{E}\lVert \varepsilon - \varepsilon_\theta \rVert^2 + C$，式 (24) | 高斯 KL 式 (22) |
-| SNR 权重 | $w_t = \frac{1}{2\alpha_t}(1 - \mathrm{SNR}_t/\mathrm{SNR}_{t-1})$，式 (25)； $w_1/w_T \approx 49$ | §4.3 |
+| SNR 权重 | $`w_t = \frac{1}{2\alpha_t}(1 - \mathrm{SNR}_t/\mathrm{SNR}_{t-1})`$，式 (25)； $w_1/w_T \approx 49$ | §4.3 |
 | $L_{simple}$ | $\mathbb{E}\lVert \varepsilon - \varepsilon_\theta(x_t, t) \rVert^2$，式 (26) | 丢 $w_t$，FID 更优 |
 | $v$-prediction | $v = \sqrt{\bar\alpha_t}\varepsilon - \sqrt{1{-}\bar\alpha_t}x_0$，式 (27)(28) | Salimans & Ho |
 | $\sigma_t$ | $\beta_t$ vs $\tilde\beta_t$ 式 (29)；iDDPM 学习式 (30) | DDPM / iDDPM |
@@ -574,7 +574,7 @@ t:   [B] ──sinusoidal─┘
 
 1.（推导）跳步边缘分布。用 §2.2 的引理式 (4) 与归纳法证明：对 $s < t$， $q(x_t \mid x_s) = \mathcal{N}(\sqrt{\bar\alpha_t / \bar\alpha_s}\thinspace x_s,\ (1 - \bar\alpha_t / \bar\alpha_s)\thinspace I)$。提示：把 $x_s$ 当作「新的 $x_0$」，注意累计保留率变成比值。这个结果在 7.4 的跳步采样（DDIM）里直接复用。
 2.（推导）补全 §3.2 的 $d$ 维细节：(a) 写出式 (12) 的 $d$ 维版本并验证归一化常数确实给出式 (14) 的方差；(b) 验证 $\tilde\beta_t \le \beta_t$ 与 $\tilde\beta_t \le 1 - \bar\alpha_{t-1}$（后验方差不超过任何一个母方差）；(c) 证明 $\tilde\mu_t$ 的两系数满足：当 $x_t = \sqrt{\bar\alpha_t} x_0 + \sqrt{1 - \bar\alpha_t}\thinspace \varepsilon$ 代回， $\mathbb{E}[\tilde\mu_t \mid x_0] \to x_0$ 于 $t \to 1$。
-3.（计算）linear schedule（式 (7)， $T = 1000$）下：(a) 计算 $\bar\alpha_{500}$ 与 $\mathrm{SNR}_{500}$（dB），对照 §2.3 表；(b) 计算 $w_{500}$（式 (25)）并与 $w_1, w_T$ 比较，说明严格 ELBO 的权重分布形状；(c) 同一 $t$，cosine schedule 的 $\bar\alpha_t$ 是多少？两条曲线在哪个 $t$ 附近 $\mathrm{SNR}$ 差距最大？
+3.（计算）linear schedule（式 (7)， $T = 1000$）下：(a) 计算 $\bar\alpha_{500}$ 与 $`\mathrm{SNR}_{500}`$（dB），对照 §2.3 表；(b) 计算 $w_{500}$（式 (25)）并与 $w_1, w_T$ 比较，说明严格 ELBO 的权重分布形状；(c) 同一 $t$，cosine schedule 的 $\bar\alpha_t$ 是多少？两条曲线在哪个 $t$ 附近 $\mathrm{SNR}$ 差距最大？
 4.（代码）教学用，非优化实现：二维 swiss-roll 数据上的迷你 DDPM。(a) 按式 (7) 预计算 $\lbrace\beta_t, \alpha_t, \bar\alpha_t\rbrace$ 三张表；(b) 用本节 `training_loss` 训练一个 4 层 MLP（ $t$ 经 sinusoidal embedding 拼接输入）；(c) 按 §4.4 采样算法生成 1000 点，与数据散点对比；(d) 对照实验： $\sigma_t^2 = \beta_t$ vs $\tilde\beta_t$（式 (29)），观察样本散布差异。
 
 ## 参考

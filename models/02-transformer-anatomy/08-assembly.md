@@ -4,7 +4,7 @@
 
 ## 1. 整机公式：全下标的标准配方
 
-2.1 式 (1) 用 $\mathrm{Attn}_{\ell}$ 与 $\mathrm{FFN}_{\ell}$ 两个黑箱搭起了 residual stream 递推；本节把黑箱打开，按 Llama-3.1-8B 的标准配方（RMSNorm + Pre-LN + GQA + RoPE + SwiGLU，全无 bias）写出单个 block 的完整形式。取层号 $\ell \in \lbrace1, \ldots, L\rbrace$，输入 $x^{(\ell-1)} \in \mathbb{R}^{B \times T \times d}$：
+2.1 式 (1) 用 $`\mathrm{Attn}_{\ell}`$ 与 $`\mathrm{FFN}_{\ell}`$ 两个黑箱搭起了 residual stream 递推；本节把黑箱打开，按 Llama-3.1-8B 的标准配方（RMSNorm + Pre-LN + GQA + RoPE + SwiGLU，全无 bias）写出单个 block 的完整形式。取层号 $\ell \in \lbrace1, \ldots, L\rbrace$，输入 $x^{(\ell-1)} \in \mathbb{R}^{B \times T \times d}$：
 
 $$
 \begin{aligned}
@@ -38,7 +38,7 @@ $$
 \mathrm{FFN}^{(\ell)}(w)_t = \left( \mathrm{Swish}_1\left( w_t W^{gate} \right) \odot \left( w_t W^{up} \right) \right) W^{down} \qquad (3)
 $$
 
-**符号**： $W^{gate}, W^{up} \in \mathbb{R}^{d \times d_{\mathrm{ff}}}$：门路与值路投影； $W^{down} \in \mathbb{R}^{d_{\mathrm{ff}} \times d}$； $\mathrm{Swish}_1(u) = u \thinspace \sigma(u)$（SiLU，2.6 式 (4)）； $\odot$：逐元素乘。
+**符号**： $W^{gate}, W^{up} \in \mathbb{R}^{d \times d_{\mathrm{ff}}}$：门路与值路投影； $W^{down} \in \mathbb{R}^{d_{\mathrm{ff}} \times d}$； $`\mathrm{Swish}_1(u) = u \thinspace \sigma(u)`$（SiLU，2.6 式 (4)）； $\odot$：逐元素乘。
 
 整机栈在 $L$ 个 block 首尾各加一件：
 
@@ -46,9 +46,9 @@ $$
 x^{(0)}_t = E_{x_t}, \qquad z_t = W_U \thinspace \mathrm{RMSNorm}_f\left( x^{(L)}_t \right), \qquad q_\theta\left( \cdot \mid x_{<t} \right) = \mathrm{softmax}\left( z_{t-1} \right) \qquad (4)
 $$
 
-**符号**： $E \in \mathbb{R}^{V \times d}$：输入 embedding（查表，2.2 式 (7)）； $\mathrm{RMSNorm}_f$：final norm（其必要性 = Pre-LN stream 范数随 $\sqrt{L}$ 增长，2.7 式 (12)）； $W_U \in \mathbb{R}^{V \times d}$：输出头，tie_word_embeddings = false 时与 $E$ 独立（2.2 §9）； $z_t \in \mathbb{R}^{V}$：位置 $t$ 的 logits； $q_\theta(\cdot | x_{<t})$：1.1 式 (2) 的逐位置条件分布。
+**符号**： $E \in \mathbb{R}^{V \times d}$：输入 embedding（查表，2.2 式 (7)）； $`\mathrm{RMSNorm}_f`$：final norm（其必要性 = Pre-LN stream 范数随 $\sqrt{L}$ 增长，2.7 式 (12)）； $W_U \in \mathbb{R}^{V \times d}$：输出头，tie_word_embeddings = false 时与 $E$ 独立（2.2 §9）； $z_t \in \mathbb{R}^{V}$：位置 $t$ 的 logits； $q_\theta(\cdot | x_{<t})$：1.1 式 (2) 的逐位置条件分布。
 
-式 (4) 的两端各管一件事： $E$ 把整数下标变成 $d$ 维向量（gather，不进 FLOPs 账，1.2 §3 口径）； $\mathrm{RMSNorm}_f$ 把随 $\sqrt{L}$ 变粗的 stream 压回 $O(\sqrt{d})$ 再交给输出头； $W_U$ 做一次 $d \to V$ 的 matmul（每 token $2Vd$ FLOPs，不可忽略，§5）；softmax 把 logits 变成分布，采样属 1.1 §8。整机公式在两个工作模式下是同一套：训练 / prefill 时 $T > 1$ 并行打分全部位置（teacher forcing，1.1 §4）；decode 时 $T = 1$、式 (2) 的求和上限由 KV cache 的当前长度扮演（2.4 §4.4）——式 (1)–(4) 一行不改，改的只有输入形状与 $k_{s,g}$、 $v_{s,g}$ 的来源（现算 vs 缓存）。
+式 (4) 的两端各管一件事： $E$ 把整数下标变成 $d$ 维向量（gather，不进 FLOPs 账，1.2 §3 口径）； $`\mathrm{RMSNorm}_f`$ 把随 $\sqrt{L}$ 变粗的 stream 压回 $O(\sqrt{d})$ 再交给输出头； $W_U$ 做一次 $d \to V$ 的 matmul（每 token $2Vd$ FLOPs，不可忽略，§5）；softmax 把 logits 变成分布，采样属 1.1 §8。整机公式在两个工作模式下是同一套：训练 / prefill 时 $T > 1$ 并行打分全部位置（teacher forcing，1.1 §4）；decode 时 $T = 1$、式 (2) 的求和上限由 KV cache 的当前长度扮演（2.4 §4.4）——式 (1)–(4) 一行不改，改的只有输入形状与 $k_{s,g}$、 $v_{s,g}$ 的来源（现算 vs 缓存）。
 
 接线图（一个 block；shape 为 Llama-3.1-8B 数值）：
 
@@ -96,7 +96,7 @@ Llama-3.1-8B 的 config.json 逐字段映射到式 (1)–(4) 的符号（数值�
 | num_key_value_heads | 8 | $H_{kv}$：KV head 数，进分组映射 $g(h)$ | 式 (2)；KV cache（2.4 式 (9)） |
 | （导出）head_dim | 128（ $= d / H_q$） | $D$： $1/\sqrt{D}$ 的缩放、RoPE 的 $D/2$ 个频率通道 | 式 (2) |
 | intermediate_size | 14336 | $d_{\mathrm{ff}} = 3.5d$ | 式 (3)；2.6 §3.3 |
-| hidden_act | silu | $\mathrm{Swish}_1$ | 式 (3) 门函数 |
+| hidden_act | silu | $`\mathrm{Swish}_1`$ | 式 (3) 门函数 |
 | rope_theta | 500000 | $base$： $\theta_j = base^{-2j/D}$ | 式 (2) 的 $R_t$；2.5 式 (16) |
 | max_position_embeddings | 131072 | $T_{\max}$：位置 id 定义域、cache 上限 | 2.4 §5；2.5 §4.5 |
 | rms_norm_eps | 见注 | $\epsilon$：RMSNorm 分母的稳定项 | 2.7 式 (5) |
@@ -441,7 +441,7 @@ $$
 
 **符号**： $a_{\ell} = \mathrm{Attn}^{(\ell)}(\mathrm{Norm}(x^{(\ell-1)}))$； $J_{\mathrm{Norm}}$：归一化的 Jacobian（2.7 式 (10) 一族）。串行形的第一式里 $\partial a_{\ell} / \partial x^{(\ell-1)}$ 就是那条「经 attention 输出的间接路径」：FFN 的梯度要过 attention 的 Jacobian 回流到层输入。并行形的第二式没有这一项——反向图上每层少一条跨分支边，两条分支的梯度各自只经自己的子层 Jacobian 与同一个 $J_{\mathrm{Norm}}$ 到达 $x^{(\ell-1)}$。表示侧的对称事实：串行的 FFN 加工的是「刚混完上下文」的 stream，并行的 FFN 只能读「本层 attention 动手之前」的快照；跨 block 的接力仍在（下一层的 norm 读到加和后的 stream），所以并行形损失的是层内接力，不是层间接力。
 
-吞吐含义全部来自「两分支读同一输入」。代入 Llama-3.1-8B 的形状走一遍：串行形里 attention 侧读 $\mathrm{Norm}_1$ 输出的是一个 $d \times 6144$ 的 QKV GEMM，FFN 侧读 $\mathrm{Norm}_2$ 输出的是一个 $d \times 28672$ 的 gate/up GEMM——两次发射、两个输入张量、中间隔着 attention 的全部计算；并行形里两者读同一份归一化输出，可以列拼成一个 $4096 \times 34816$ 的 GEMM 一次发射，输出侧的 out（ $4096 \times 4096$）与 down（ $14336 \times 4096$）同样可以行拼、结果相加。GEMM 变大变少，tensor core 利用率上升、kernel 发射与调度气泡减少；张量并行下每层两次行并行 all-reduce 合并为一次（两分支输出先求和再通信）；norm 归约每层两次变一次。式 (5) 的账一项不动——省的是墙钟时间里的非计算成分，不是 FLOPs。这与 2.4 §4.4 的 cache 账同构：两处都是「省墙钟 ≠ 省账」。
+吞吐含义全部来自「两分支读同一输入」。代入 Llama-3.1-8B 的形状走一遍：串行形里 attention 侧读 $`\mathrm{Norm}_1`$ 输出的是一个 $d \times 6144$ 的 QKV GEMM，FFN 侧读 $`\mathrm{Norm}_2`$ 输出的是一个 $d \times 28672$ 的 gate/up GEMM——两次发射、两个输入张量、中间隔着 attention 的全部计算；并行形里两者读同一份归一化输出，可以列拼成一个 $4096 \times 34816$ 的 GEMM 一次发射，输出侧的 out（ $4096 \times 4096$）与 down（ $14336 \times 4096$）同样可以行拼、结果相加。GEMM 变大变少，tensor core 利用率上升、kernel 发射与调度气泡减少；张量并行下每层两次行并行 all-reduce 合并为一次（两分支输出先求和再通信）；norm 归约每层两次变一次。式 (5) 的账一项不动——省的是墙钟时间里的非计算成分，不是 FLOPs。这与 2.4 §4.4 的 cache 账同构：两处都是「省墙钟 ≠ 省账」。
 
 推理侧同构：decode 每步是 $B \times 1$ 的小 GEMM，权重读取主导（2.4 §6 的算术强度分析），融合不减少权重字节数，但减少每步的 kernel 发射次数与调度间隙——在小 GEMM  regime 里这些非计算成分的占比更大，并行块的墙钟收益在 decode 端只会更明显。
 

@@ -12,7 +12,7 @@ $$
 \mathrm{LN}(x) = \gamma \odot \hat{x} + \beta, \qquad \hat{x} = \frac{x - \mu}{\sigma}, \qquad \mu = \frac{1}{d} \sum_{i=1}^{d} x_i, \qquad \sigma^{2} = \frac{1}{d} \sum_{i=1}^{d} \left( x_i - \mu \right)^{2} \qquad (1)
 $$
 
-**符号**： $\mu, \sigma^{2}$：沿特征维 $d$ 的均值与方差（实现中加 $\epsilon$ 防除零）； $\gamma, \beta \in \mathbb{R}^{d}$：逐特征可学增益（gain）与偏置； $\odot$：逐分量乘； $\hat{x}$：归一化核，满足 $\sum_i \hat{x}_i = 0$、 $\lVert \hat{x} \rVert_{2} = \sqrt{d}$。
+**符号**： $\mu, \sigma^{2}$：沿特征维 $d$ 的均值与方差（实现中加 $\epsilon$ 防除零）； $\gamma, \beta \in \mathbb{R}^{d}$：逐特征可学增益（gain）与偏置； $\odot$：逐分量乘； $\hat{x}$：归一化核，满足 $`\sum_i \hat{x}_i = 0`$、 $\lVert \hat{x} \rVert_{2} = \sqrt{d}$。
 
 LN 对上游表达施加两个精确的不变性（invariance），这是它对优化几何起塑形作用的结构来源。
 
@@ -173,7 +173,7 @@ $$
 
 ### 5.3 Theorem 1（精确表述）与推导骨架
 
-[Xiong et al., 2020](../references.md)（arXiv:2002.04745，[B]）§3 Theorem 1：假设末层相关量的范数平方——Post-LN 末层 LN 输入（残差和） $\lVert x^{\mathrm{post}}_{L,i} \rVert^{2}$ 与 Pre-LN 末层 LN 输入 $\lVert x^{\mathrm{pre}}_{L+1,i} \rVert^{2}$——对所有**序列位置** $i$ 均 $(\varepsilon, \delta)$-bounded（ $\varepsilon$、 $\delta = \delta(\varepsilon)$ 为小量；下标 $L$ 表明假设只涉末层量， $i$ 是位置指标不是特征维）。这里 $(\varepsilon, \delta)$-bounded 是标量随机变量 $Z = \lVert x \rVert^{2}$ 的集中度条件： $\Pr\left( (Z - \mathbb{E}Z) / \mathbb{E}Z \le \varepsilon \right) \ge 1 - \delta$；分量近似高斯时 $\delta$ 为 $\exp\left( -d\varepsilon^{2}/8 \right)$ 量级——维数越高，范数平方的集中度越强。则以至少 $0.99 - \delta - \varepsilon/(0.9 + \varepsilon)$ 的概率，**初始化时最后一层 FFN 参数** $W^{2,L}$ 的梯度满足
+[Xiong et al., 2020](../references.md)（arXiv:2002.04745，[B]）§3 Theorem 1：假设末层相关量的范数平方——Post-LN 末层 LN 输入（残差和） $`\lVert x^{\mathrm{post}}_{L,i} \rVert^{2}`$ 与 Pre-LN 末层 LN 输入 $`\lVert x^{\mathrm{pre}}_{L+1,i} \rVert^{2}`$——对所有**序列位置** $i$ 均 $(\varepsilon, \delta)$-bounded（ $\varepsilon$、 $\delta = \delta(\varepsilon)$ 为小量；下标 $L$ 表明假设只涉末层量， $i$ 是位置指标不是特征维）。这里 $(\varepsilon, \delta)$-bounded 是标量随机变量 $Z = \lVert x \rVert^{2}$ 的集中度条件： $\Pr\left( (Z - \mathbb{E}Z) / \mathbb{E}Z \le \varepsilon \right) \ge 1 - \delta$；分量近似高斯时 $\delta$ 为 $\exp\left( -d\varepsilon^{2}/8 \right)$ 量级——维数越高，范数平方的集中度越强。则以至少 $0.99 - \delta - \varepsilon/(0.9 + \varepsilon)$ 的概率，**初始化时最后一层 FFN 参数** $W^{2,L}$ 的梯度满足
 
 $$
 \text{Post-LN:} \quad \left\lVert \frac{\partial \tilde{L}}{\partial W^{2,L}} \right\rVert_{F} \le O\left( d \sqrt{\ln d} \right); \qquad \text{Pre-LN:} \quad \left\lVert \frac{\partial \tilde{L}}{\partial W^{2,L}} \right\rVert_{F} \le O\left( d \sqrt{\frac{\ln d}{L}} \right) \qquad (13)
@@ -250,7 +250,7 @@ $$
 
 失控的速度可以量化：2.3 式 (7) 的口径下 logit 标准差正比于 $\lVert q \rVert \thinspace \lVert k \rVert / \sqrt{d_k}$， $q, k$ 范数同乘 $g$ 则 logit 幅度乘 $g^{2}$。初始化时 std $\approx 1$； $g^{2} \approx \sqrt{d_k} = 11.3$、即 $g \approx 3.4$ 时 std 回到 11 量级——即 2.3 §3.2 未缩放情形（ $\sigma_s \approx 11$、行内最大差距 $\Delta \approx 40$ nat、 $p_{\max} \approx 0.8$–$0.94$）的饱和区，梯度再被饱和亏空压制。式 (16) 把这个自由度从激活统计中拿走，饱和回归的唯一通道只剩增益 $\gamma$ 的学习。
 
-这就是 attention logits 爆炸的结构性解法，与 2.3 的初始化缩放互补： $\sqrt{d_k}$ 管出生，QK-Norm 管终生。采用记录：Henry et al. 原文（[B]）；ViT-22B 为同路线的早期大规模实例；OLMo 2 的全维变体（[A]，见上）；**Gemma 3 以 QK-norm 取代 Gemma 2 的 soft-capping**（原文表述为直接替代，[Gemma Team, 2025](../references.md)，arXiv:2503.19786，[A]），且在每个子层前后各放一次 RMSNorm（pre + post RMSNorm）——即 $x + \mathrm{RMSNorm}_{\mathrm{post}}(\mathrm{Attn}(\mathrm{RMSNorm}_{\mathrm{pre}}(x)))$ 的双层夹法。归属边界再划一次：Gemma 2 没有 QK-norm，它的 logit 稳定器只有 §8 的 soft-capping。
+这就是 attention logits 爆炸的结构性解法，与 2.3 的初始化缩放互补： $\sqrt{d_k}$ 管出生，QK-Norm 管终生。采用记录：Henry et al. 原文（[B]）；ViT-22B 为同路线的早期大规模实例；OLMo 2 的全维变体（[A]，见上）；**Gemma 3 以 QK-norm 取代 Gemma 2 的 soft-capping**（原文表述为直接替代，[Gemma Team, 2025](../references.md)，arXiv:2503.19786，[A]），且在每个子层前后各放一次 RMSNorm（pre + post RMSNorm）——即 $`x + \mathrm{RMSNorm}_{\mathrm{post}}(\mathrm{Attn}(\mathrm{RMSNorm}_{\mathrm{pre}}(x)))`$ 的双层夹法。归属边界再划一次：Gemma 2 没有 QK-norm，它的 logit 稳定器只有 §8 的 soft-capping。
 
 ## 8. logit soft-capping：Gemma 2 独占的软钳制
 

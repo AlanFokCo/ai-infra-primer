@@ -58,7 +58,7 @@ $$
 o_t = \sigma\left(W_g u_t\right) \odot \mathrm{attn}_t \qquad (2)
 $$
 
-**符号**： $u_t$：层输入 stream； $\mathrm{attn}_t$：标准 causal attention 输出； $W_g u_t \in \mathbb{R}^{H d_v}$：逐元素门控向量。实现级证据：门控向量由 Q 投影一并切出——`modeling_qwen3_next.py` 的前向是 `attn_output * torch.sigmoid(gate)`，gate 为 q_proj 输出的一段切片。即 2.6 的 GLU 门控思想从 FFN 搬到 attention 输出：逐元素可关断的读出通道。
+**符号**： $u_t$：层输入 stream； $`\mathrm{attn}_t`$：标准 causal attention 输出； $W_g u_t \in \mathbb{R}^{H d_v}$：逐元素门控向量。实现级证据：门控向量由 Q 投影一并切出——`modeling_qwen3_next.py` 的前向是 `attn_output * torch.sigmoid(gate)`，gate 为 q_proj 输出的一段切片。即 2.6 的 GLU 门控思想从 FFN 搬到 attention 输出：逐元素可关断的读出通道。
 
 **zero-centered norm**。`Qwen3NextRMSNorm` 的增益以 `torch.zeros` 初始化、前向为
 
@@ -79,7 +79,7 @@ $$
 **full-attn 层：MLA + NoPE**。full 层用 MLA（`kv_lora_rank=512`、`qk_nope_head_dim=128`、`qk_rope_head_dim=64`、`v_head_dim=128`，与 DeepSeek 谱系同字段），但 `mla_use_nope=true`——RoPE 关闭。这个选择回答两个问题：
 
 1. **为什么可行**：位置对称性已经不在了。NoPE 的顾虑本是 attention 对位置盲（2.5 §5；[Kazemnejad et al., 2023](../references.md)，arXiv:2305.19466，[B] 的对照实验），但那条顾虑的前提是「位置编码只能由 attention 层自己注入」。hybrid 里这个前提不成立：stream 在进入每个 full 层之前已被 KDA 层加工过，而 KDA 递推（4.3 式 (16)）对输入顺序非交换—— $S_t$ 由时序连乘 $\prod_s \mathrm{diag}(\alpha_s)(I - \beta_s k_s k_s^{\top})$ 与秩一写入构成，置换输入序列必然改变状态与读出（练习 2 给出严格表述）。位置信息以「学出来的时间尺度」的形式写进 stream 特征，full 层只需按内容检索，顺序由 linear 层兜底。等距 3:1 布局还保证顺序信号的传输距离有界：周期段内任意 full 层与其上游最近的 full 层之间恰隔 3 层 KDA，与最近 KDA 层至多隔 3 层。
-2. **为什么想要**：NoPE 拆掉 4.1 §4.1 的 RoPE×低秩冲突。无旋转则 $R_{n-t}$ 不再卡在 $W^{UK}$ 与 $c$ 之间，朴素低秩吸收畅通——cache 保持 $d_c + d_R$ = 576 元素 / token / 层（4.1 §4.2 口径；NoPE 只关旋转、不动 config 字段），decode 直接对 latent 打分，4.1 §4.3-4.4 的两笔吸收（ $\tilde{W}_h$ 与 $\widehat{W}_h$）无需 decoupled 通道的配合即全量成立。在这里 RoPE 是花钱买一份 KDA 已经免费提供的位置信号，还顺手堵死吸收——去掉它是双赢，不是妥协。
+2. **为什么想要**：NoPE 拆掉 4.1 §4.1 的 RoPE×低秩冲突。无旋转则 $R_{n-t}$ 不再卡在 $W^{UK}$ 与 $c$ 之间，朴素低秩吸收畅通——cache 保持 $d_c + d_R$ = 576 元素 / token / 层（4.1 §4.2 口径；NoPE 只关旋转、不动 config 字段），decode 直接对 latent 打分，4.1 §4.3-4.4 的两笔吸收（ $`\tilde{W}_h`$ 与 $`\widehat{W}_h`$）无需 decoupled 通道的配合即全量成立。在这里 RoPE 是花钱买一份 KDA 已经免费提供的位置信号，还顺手堵死吸收——去掉它是双赢，不是妥协。
 
 **论文数字**（摘要口径）：公平对照实验用 1.4T tokens（Kimi Linear / GDN-H / MLA 三模型共享语料与 recipe），最终发布 checkpoint 用 5.7T tokens（对齐 Moonlight 预训练量，对照见论文 Appendix D）——两档勿混。KV cache 最多 −75%（§7 对账：7/27 层保持 cache，斜率剩 25.9%）；1M 上下文 decode 吞吐 up to 6×（摘要）、精确值 6.3×（Fig 1(b) 的 TPOT 对照）。摘要同时声明这是公平对照下首个全面超过 full attention 的线性注意力架构——注意该结论在 3:1 hybrid 形态下达成，不是纯 KDA（§8 再议）。
 

@@ -117,9 +117,9 @@ $$
 o_t = \pi \cdot v_1 + (1 - \pi) \cdot \bar{v}_{\mathrm{rest}}, \qquad \bar{v}_{\mathrm{rest}} = \frac{1}{1 - \pi} \sum_{s \ge 2} p_{t,s} v_s \qquad (6)
 $$
 
-**符号**： $\pi = p_{t,1}$：倒在首 token 上的质量； $\bar{v}_{\mathrm{rest}}$：其余位置的加权均值。两个旋钮合读： $\pi \to 1$ 把「无关但非零」的 $\bar{v}_{\mathrm{rest}}$ 压掉， $\Vert v_1\Vert \to 0$ 让 sink 自身的贡献消失——两头都推到时 $o_t \to 0$，这个 head 对该 query 近似静默，而均匀摊开（softmax 的另一默认解）只能给出全体 value 的均值，既不接近零也不受控。训练因此有明确梯度方向：给「无相关 key」的 query 抬升 $\langle q, k_1 \rangle$、压低 $\Vert v_1\Vert$。为什么恰好是位置 1：causal mask 下 $1 \in V(t)$ 对一切 $t$ 成立——它是唯一在所有行、所有层、整条训练数据里都待在归一化域内的位置，是唯一能被稳定塑造成「公共默认 key」的候选。论文的观测与此一致：sink 质量集中在开头几个 token，与其语义无关。
+**符号**： $\pi = p_{t,1}$：倒在首 token 上的质量； $`\bar{v}_{\mathrm{rest}}`$：其余位置的加权均值。两个旋钮合读： $\pi \to 1$ 把「无关但非零」的 $`\bar{v}_{\mathrm{rest}}`$ 压掉， $\Vert v_1\Vert \to 0$ 让 sink 自身的贡献消失——两头都推到时 $o_t \to 0$，这个 head 对该 query 近似静默，而均匀摊开（softmax 的另一默认解）只能给出全体 value 的均值，既不接近零也不受控。训练因此有明确梯度方向：给「无相关 key」的 query 抬升 $\langle q, k_1 \rangle$、压低 $\Vert v_1\Vert$。为什么恰好是位置 1：causal mask 下 $1 \in V(t)$ 对一切 $t$ 成立——它是唯一在所有行、所有层、整条训练数据里都待在归一化域内的位置，是唯一能被稳定塑造成「公共默认 key」的候选。论文的观测与此一致：sink 质量集中在开头几个 token，与其语义无关。
 
-**第三段：驱逐 = 抽掉归一化的出口，剩余列等比放大**。设一行 logit 为 $z_1, \ldots, z_t$， $Z = \sum_j e^{z_j}$， $Z' = \sum_{j \ge 2} e^{z_j}$。驱逐位置 1 后 $p'_s = e^{z_s} / Z'$；由 $1 - p_1 = Z' / Z$ 得
+**第三段：驱逐 = 抽掉归一化的出口，剩余列等比放大**。设一行 logit 为 $z_1, \ldots, z_t$， $Z = \sum_j e^{z_j}$， $Z' = \sum_{j \ge 2} e^{z_j}$。驱逐位置 1 后 $`p'_s = e^{z_s} / Z'`$；由 $1 - p_1 = Z' / Z$ 得
 
 $$
 p'_s = \frac{p_s}{1 - p_1}, \qquad s \ge 2 \qquad (7)
@@ -158,9 +158,9 @@ $$
 \tilde{k}^{cmp}_i = f^{cmp}_K\left(k_{(i-1)d+1}, \ldots, k_{(i-1)d+l}\right), \qquad o^{cmp}_t = \mathrm{Attn}\left(q_t, \tilde{K}^{cmp}_{:t}, \tilde{V}^{cmp}_{:t}\right) \qquad (8)
 $$
 
-**符号**： $f^{cmp}_K$：MLP，输入为块内 $l$ 个 key 的拼接加块内位置编码，输出单个 $d_{\mathrm{head}}$ 维压缩 key（ $\tilde{v}^{cmp}$ 同构）；压缩序列长约 $t / d$——全局信息以 $d$ 倍稀释的分辨率全员在场，needle 的「有没有、大概在哪个块」由这条支路回答。
+**符号**： $`f^{cmp}_K`$：MLP，输入为块内 $l$ 个 key 的拼接加块内位置编码，输出单个 $d_{\mathrm{head}}$ 维压缩 key（ $\tilde{v}^{cmp}$ 同构）；压缩序列长约 $t / d$——全局信息以 $d$ 倍稀释的分辨率全员在场，needle 的「有没有、大概在哪个块」由这条支路回答。
 
-**Selection（选择细粒度）**。细粒度块（块长 $l'$、不重叠）的重要性分数从 compression 支路的真实 attention 权重聚合而来（对齐情形 $l = d = l'$ 时直接复用 $p^{cmp}_t$；一般情形对重叠的压缩块求和），取 top-$n$ 块、用块内**原始** K/V 算精确 attention：
+**Selection（选择细粒度）**。细粒度块（块长 $l'$、不重叠）的重要性分数从 compression 支路的真实 attention 权重聚合而来（对齐情形 $l = d = l'$ 时直接复用 $`p^{cmp}_t`$；一般情形对重叠的压缩块求和），取 top-$n$ 块、用块内**原始** K/V 算精确 attention：
 
 $$
 p^{slc}_t[j] = \sum_{i:\ \mathrm{block}_i\thinspace \cap\thinspace \mathrm{sel}_j \neq \varnothing} p^{cmp}_t[i], \qquad \mathcal{I}_t = \operatorname{TopN}\left( p^{slc}_t,\ n \right) \qquad (9)
@@ -170,9 +170,9 @@ $$
 o^{slc}_t = \mathrm{Attn}\left( q_t,\ \lbrace K_j, V_j\rbrace_{j \in \mathcal{I}_t} \right) \qquad (10)
 $$
 
-**符号**： $p^{cmp}_t = \mathrm{softmax}(q_t^{\top} \tilde{K}^{cmp}_{:t})$：compression 支路的权重行（逐头）； $\mathcal{I}_t$：得分最高的 $n$ 个细块下标。用「粗粒度支路真实打过的分」驱动细粒度选择，选择器与主路共享梯度信号——这是 NSA「native」的第一层含义。
+**符号**： $`p^{cmp}_t = \mathrm{softmax}(q_t^{\top} \tilde{K}^{cmp}_{:t})`$：compression 支路的权重行（逐头）； $`\mathcal{I}_t`$：得分最高的 $n$ 个细块下标。用「粗粒度支路真实打过的分」驱动细粒度选择，选择器与主路共享梯度信号——这是 NSA「native」的第一层含义。
 
-**Sliding（局部细粒度）**。 $o^{win}_t = \mathrm{Attn}(q_t, K_{t-w+1:t}, V_{t-w+1:t})$，近处精确召回不依赖任何打分器。
+**Sliding（局部细粒度）**。 $`o^{win}_t = \mathrm{Attn}(q_t, K_{t-w+1:t}, V_{t-w+1:t})`$，近处精确召回不依赖任何打分器。
 
 **门控合并**：
 
@@ -210,7 +210,7 @@ $$
 I_{t,s} = \sum_{j=1}^{H^{I}} w^{I}_{t,j} \cdot \mathrm{ReLU}\left( \langle q^{I}_{t,j},\ k^{I}_s \rangle \right) \qquad (12)
 $$
 
-**符号**： $H^{I}$：indexer 头数； $q^{I}_{t,j} \in \mathbb{R}^{d_I}$：query 位置 $t$ 在第 $j$ 个 indexer 头上的投影； $k^{I}_s \in \mathbb{R}^{d_I}$：token $s$ 的 indexer key（头间共享一份）； $w^{I}_{t,j}$：query 侧产生的逐头标量权重。ReLU 取代 softmax——逐点打分免归一化、对吞吐友好，且整条 indexer 链路可按 FP8 执行（论文口径）；小维度 + 低精度使「对全历史打分」这件听起来 $O(T^2)$ 的事在常数上远低于 MLA 主路（打分维度 $d_I$ 对主路的 $d_c + d_R$ = 576）。indexer 自带一份小维 key cache（ $d_I$ 维 FP8 / token），字节远小于主 cache。
+**符号**： $H^{I}$：indexer 头数； $`q^{I}_{t,j} \in \mathbb{R}^{d_I}`$：query 位置 $t$ 在第 $j$ 个 indexer 头上的投影； $`k^{I}_s \in \mathbb{R}^{d_I}`$：token $s$ 的 indexer key（头间共享一份）； $`w^{I}_{t,j}`$：query 侧产生的逐头标量权重。ReLU 取代 softmax——逐点打分免归一化、对吞吐友好，且整条 indexer 链路可按 FP8 执行（论文口径）；小维度 + 低精度使「对全历史打分」这件听起来 $O(T^2)$ 的事在常数上远低于 MLA 主路（打分维度 $d_I$ 对主路的 $d_c + d_R$ = 576）。indexer 自带一份小维 key cache（ $d_I$ 维 FP8 / token），字节远小于主 cache。
 
 **选择与主路**。取分数最高的 $K$ 个位置，MLA 只在选中集上算：
 
@@ -218,7 +218,7 @@ $$
 \mathcal{S}_t = \operatorname{TopK}\left( \lbrace I_{t,s}\rbrace_{s < t},\ K \right), \qquad K = 2048 \qquad (13)
 $$
 
-**符号**： $K$ = 2048 为 sparse 训练阶段每 query 的选中数（论文原文口径）。主路即 4.1 式 (9)(10) 的 MLA，求和域从 $\lbrace1..t\rbrace$ 换成 $\mathcal{S}_t$。
+**符号**： $K$ = 2048 为 sparse 训练阶段每 query 的选中数（论文原文口径）。主路即 4.1 式 (9)(10) 的 MLA，求和域从 $\lbrace1..t\rbrace$ 换成 $`\mathcal{S}_t`$。
 
 **账**。训练 / prefill：主 attention 从 $O(T^{2})$ 降到 $O(T \cdot K)$，indexer 打分 $O(T^{2} d_I)$ 但常数小、可 FP8。decode（61 层 MLA、 $t$ = 131072）：每步主路 cache 读取从全量 131072 行降到 2048 行——1.5625%；字节数 $61 \times 2048 \times 576 \times 2$ B ≈ 144 MB / 步，全量对照 $61 \times 131072 \times 576 \times 2$ B ≈ 9.2 GB / 步。**cache 总量不变**（全量 576 元素 / token 仍驻留，选中是每步的运行时行为），减的是带宽与 FLOPs——正是 2.4 式 (11) 分母里 cache 项的削减。论文报告长上下文场景端到端显著加速（[A]；论文正文为定性表述加逐长度成本曲线，按 Fig 3 曲线读数约削减一半）。
 
@@ -230,7 +230,7 @@ $$
 p_{t,s} = \frac{\sum_{h} A^{(h)}_{t,s}}{\sum_{s'}\thinspace \sum_{h} A^{(h)}_{t,s'}}, \qquad \mathcal{L}_{\mathrm{warm}} = \sum_{t} D_{KL}\left( p_{t,:} \thinspace\Vert\thinspace \mathrm{softmax}(I_{t,:}) \right) \qquad (14)
 $$
 
-**符号**： $A^{(h)}_{t,s}$：主模型第 $h$ 头在位置对 $(t, s)$ 上的注意力分数；先跨头求和、再对历史位置 L1 归一化。注意聚合次序不可换：KL 对第一参数非线性，「先头聚合再取 KL」与「逐头 KL 再求和」不等价——论文取前者，target 是全模型一份的 $p_{t,:}$ 而不是逐头一份。
+**符号**： $`A^{(h)}_{t,s}`$：主模型第 $h$ 头在位置对 $(t, s)$ 上的注意力分数；先跨头求和、再对历史位置 L1 归一化。注意聚合次序不可换：KL 对第一参数非线性，「先头聚合再取 KL」与「逐头 KL 再求和」不等价——论文取前者，target 是全模型一份的 $p_{t,:}$ 而不是逐头一份。
 
 主模型不动 ⇒ dense 行为零扰动，indexer 学会「主模型会看哪里」——稀疏化的信息瓶颈被打分器蒸馏预先填平。
 2. **Sparse 训练**：解冻全模型、top-K 生效，端到端语言建模继续训：lr 7.3e-6、15000 步、每步 480 条 128K 序列。顺手一记规模账： $480 \times 131072 \approx 6.3 \times 10^{7}$ token / 步，15000 步合计约 $9.4 \times 10^{11}$ token——sparse 化改造的数据预算接近一万亿 token，「免训练」在这条路线上不成立。indexer 在这一阶段的监督也未断流：top-K 选择本身不可微，语言建模 loss 的梯度到不了打分器——indexer 继续吃式 (14) 同形的 KL 对齐（target 同为头聚合分布，截断到选中集），始终被锚在「主模型真实在看哪里」上，而不是随主模型漂移。
@@ -251,7 +251,7 @@ $$
 o_t = \mathrm{softmax}\left( \frac{q_t\thinspace K_{\mathcal{I}_t}^{\top}}{\sqrt{d_{\mathrm{head}}}} \right) V_{\mathcal{I}_t} \qquad (16)
 $$
 
-**符号**： $\bar{k}_i \in \mathbb{R}^{d_{\mathrm{head}}}$：块 $i$ 的广告向量（均值池化）； $s_i$：query 对块 $i$ 的路由分； $K_{\mathcal{I}_t}, V_{\mathcal{I}_t}$：选中块内全部原始 K/V 的拼接。因果性两条硬约束：含未来位置的块不进候选集；query 当前所在块恒入选（局部连续性免费保底，不靠打分器）。
+**符号**： $`\bar{k}_i \in \mathbb{R}^{d_{\mathrm{head}}}`$：块 $i$ 的广告向量（均值池化）； $s_i$：query 对块 $i$ 的路由分； $`K_{\mathcal{I}_t}, V_{\mathcal{I}_t}`$：选中块内全部原始 K/V 的拼接。因果性两条硬约束：含未来位置的块不进候选集；query 当前所在块恒入选（局部连续性免费保底，不靠打分器）。
 
 三个设计要点。**免训练插入**（论文声明）：打分器零参数（一次均值池化加一次内积），可直接套在已训好的 full-attention 模型上；继续训练进一步缩小与 full 的差距。**kernel 兼容**：块是连续内存，选中块拼接后就是一段变长 dense attention，FlashAttention 的 varlen 接口直接承接——动态选择与 4.1 的精确 kernel 正交叠加。**SWA+MoBA hybrid**：近处滑窗恒可见、远处走块路由，把「近处召回不依赖打分器质量」做成结构保证（论文给出的部署形态）。
 
@@ -289,7 +289,7 @@ $$
 ## 练习
 
 1.（推导）补全式 (3) 的归纳证明：写明「第 $\ell$ 层读窗一步」如何给出递推式 (2)（提示：FFN / norm / 残差逐位置，依赖只经 attention 扩展）。然后：(a) 代入 Mistral-7B（ $L$ = 32、 $w$ = 4096）算精确感受野，说明论文「约 131K」口径与精确值差在哪；(b) 若窗口逐层交替 $w_1, w_2, w_1, w_2, \ldots$，写出 $R$ 的通式；(c) 证明：在纯 SWA 栈中，若把其中一层换成 global（ $V(i) = \lbrace1..i\rbrace$），则该层之后所有层的 $\rho_\ell(t) = 1$。
-2.（推导）sink 账：设一行 logit $z_1, \ldots, z_t$，sink 位置 1 占质量 $\pi$。(a) 由式 (7) 出发，证明驱逐位置 1 后任意两个幸存位置的权重比不变（ $p'_s / p'_j = p_s / p_j$），但输出从 $o = \pi v_1 + (1-\pi)\bar v_{\mathrm{rest}}$ 变为 $\bar v_{\mathrm{rest}}$——何时这个变化剧烈？(b) 证明 $\pi \to 1$ 且 $\Vert v_1\Vert \to 0$ 时 $o_t \to 0$，并把它与「softmax 均匀摊开」这一另一默认解比较：为什么均匀解不能近似 head 静默（提示：全体 value 均值的范数下界由什么决定）？
+2.（推导）sink 账：设一行 logit $z_1, \ldots, z_t$，sink 位置 1 占质量 $\pi$。(a) 由式 (7) 出发，证明驱逐位置 1 后任意两个幸存位置的权重比不变（ $`p'_s / p'_j = p_s / p_j`$），但输出从 $o = \pi v_1 + (1-\pi)\bar v_{\mathrm{rest}}$ 变为 $\bar v_{\mathrm{rest}}$——何时这个变化剧烈？(b) 证明 $\pi \to 1$ 且 $\Vert v_1\Vert \to 0$ 时 $o_t \to 0$，并把它与「softmax 均匀摊开」这一另一默认解比较：为什么均匀解不能近似 head 静默（提示：全体 value 均值的范数下界由什么决定）？
 3.（计算）DSA decode 账：61 层 MLA、576 元素 / token / 层、bf16、 $t$ = 131072、 $K$ = 2048。(a) 验证正文的 144 MB / 步 vs 9.2 GB / 步；(b) 若 indexer key 为 $d_I$ 维 FP8（每 token 每层 $d_I$ 字节），全量打分每步需读 $61 \times t \times d_I$ 字节—— $d_I$ = 128 时这笔账是多少，与主路省下的相比如何？由此说明为什么 indexer「 $O(T^2)$ 打分」在 decode 侧仍成立（提示：2.4 §6 的 memory-bound 结论）。
 4.（代码）教学实现（非优化）：(a) 给 2.3 §8 的 MHA 加 SWA mask（式 (1)），验证 $T \le w$ 时与 full causal 输出逐点相同、 $T > w$ 时窗口内行为一致；(b) 实现 MoBA 式块路由：均值池化打分、top-$k$ 选块、当前块恒选、未来块屏蔽，构造一个 needle 序列（目标块与 query 相关、其余随机），对比 full / SWA / MoBA 在 needle 距离从 $w$ 内移到 $L \cdot w$ 外时的召回行为。
 

@@ -62,7 +62,7 @@ $$
 \mathrm{FLOPs}_{\mathrm{bwd}} = 4N = 2 \times \mathrm{FLOPs}_{\mathrm{fwd}} \qquad (4)
 $$
 
-**符号**： $\mathrm{FLOPs}_{\mathrm{bwd}}$ ：反向传播每 token 的 FLOPs。
+**符号**： $`\mathrm{FLOPs}_{\mathrm{bwd}}`$ ：反向传播每 token 的 FLOPs。
 
 一句话版本：前向每个参数做 1 次 FMA，反向要为输入侧与权重侧各做 1 次，合计每参数每 token 6 次。这个「1 + 2」的结构是通用的：任何 $y = f(x, W)$ 的算子，反向都要给 $x$ 和 $W$ 各算一份梯度；线性层恰好两份都与前向同阶。式 (3) 第二式还埋了一个内存事实：算 $\partial \mathcal{L} / \partial W$ 需要前向的输入 $x_b$ ，所以反向开始前向的激活必须还在显存里——第 8 节账二的来源。
 

@@ -20,7 +20,7 @@ $$
 q\left(x_s^{i} \mid x_t^{i} = M,\ x_0^{i}\right) = \mathrm{Cat}\Big(\frac{\alpha_s - \alpha_t}{1-\alpha_t}\thinspace x_0^{i} + \frac{1-\alpha_s}{1-\alpha_t}\thinspace e_M\Big), \qquad s < t \qquad (2)
 $$
 
-**符号**：首项系数为「揭开」概率，第二项为「保持掩码」概率； $s = 0$ 时揭开概率为 1， $s \to t$ 时退化为保持掩码。reverse 的参数化是一台双向 Transformer $f_\theta(x_t)$：对全部 [M] 位置联合预测干净 token 分布 $\tilde{p}_\theta(x_0^{i} \mid x_t)$，代入式 (2) 替换未知的 $x_0^{i}$。注意与 3.1 的分工：这里用双向表征做**生成**，靠的是迭代细化而非因果分解。
+**符号**：首项系数为「揭开」概率，第二项为「保持掩码」概率； $s = 0$ 时揭开概率为 1， $s \to t$ 时退化为保持掩码。reverse 的参数化是一台双向 Transformer $f_\theta(x_t)$：对全部 [M] 位置联合预测干净 token 分布 $`\tilde{p}_\theta(x_0^{i} \mid x_t)`$，代入式 (2) 替换未知的 $x_0^{i}$。注意与 3.1 的分工：这里用双向表征做**生成**，靠的是迭代细化而非因果分解。
 
 **ELBO → 逐步 CE。** 离散扩散的 ELBO 逐步写出后，每一步的贡献恰好落在该步揭开位置的 CE 上，权重由调度给出：线性调度 $\alpha_t = 1 - t$ 下整串变分塌缩为
 
@@ -28,7 +28,7 @@ $$
 \mathcal{L}(\theta) = \mathbb{E}_{t \sim U(0,1)}\hspace{5mu} \frac{1}{t} \sum_{i:\ x_t^{i} = M} \mathrm{CE}\big(x_0^{i},\ \tilde{p}_\theta(\cdot \mid x_t)\big) \qquad (3)
 $$
 
-**符号**： $t$：掩码率（线性调度下 $1 - \alpha_t = t$）；求和只覆盖被掩位置； $1/t$ 为调度权重（推导为练习 1）。训练循环就三行：均匀采样掩码率 $t$、按 $t$ 独立掩码、只对被掩位置算 CE 并除以 $t$。与 3.1 的 MLM 对照：BERT 把掩码率固定在 15%，式 (3) 把掩码率本身变成被积变量——diffusion LLM 因此与 encoder 家族共享大部分训练基础设施。SEDD（[Lou et al., 2023](../references.md)，arXiv:2310.16834，[A]）走更一般的连续时间马尔可夫链参数化：网络直接学具体分数（concrete score） $s_\theta(x)_y \approx q_t(y)/q_t(x)$（扰动后边际的比值），用分数熵（score entropy，Bregman 散度族的 proper scoring rule，极小点唯一落在真实比值）训练，ELBO 由逐步比值的积分给出；吸收态只是其 rate matrix 的一个特例。
+**符号**： $t$：掩码率（线性调度下 $1 - \alpha_t = t$）；求和只覆盖被掩位置； $1/t$ 为调度权重（推导为练习 1）。训练循环就三行：均匀采样掩码率 $t$、按 $t$ 独立掩码、只对被掩位置算 CE 并除以 $t$。与 3.1 的 MLM 对照：BERT 把掩码率固定在 15%，式 (3) 把掩码率本身变成被积变量——diffusion LLM 因此与 encoder 家族共享大部分训练基础设施。SEDD（[Lou et al., 2023](../references.md)，arXiv:2310.16834，[A]）走更一般的连续时间马尔可夫链参数化：网络直接学具体分数（concrete score） $`s_\theta(x)_y \approx q_t(y)/q_t(x)`$（扰动后边际的比值），用分数熵（score entropy，Bregman 散度族的 proper scoring rule，极小点唯一落在真实比值）训练，ELBO 由逐步比值的积分给出；吸收态只是其 rate matrix 的一个特例。
 
 ```
 前向（式 (1)），t: 0 → 1，逐位置独立腐蚀：

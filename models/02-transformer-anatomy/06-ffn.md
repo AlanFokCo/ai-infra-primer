@@ -76,7 +76,7 @@ $$
 \mathrm{SiLU}(x) = x \thinspace \sigma(x), \qquad \mathrm{Swish}_{\beta}(x) = x \thinspace \sigma(\beta x) \qquad (4)
 $$
 
-**符号**： $\sigma(x) = 1/(1 + e^{-x})$：sigmoid； $\beta$：门的陡度系数。对照 logistic 近似： $\mathrm{GELU} \approx \mathrm{Swish}_{1.702}$——两者几乎同一函数，差别只在 $\beta$。「 $x$ 乘一个 $(0,1)$ 的门」这一公共形式正是 GLU 族要推广的对象：下一步是把门从 $x$ 的逐元素函数换成另一路独立投影。
+**符号**： $\sigma(x) = 1/(1 + e^{-x})$：sigmoid； $\beta$：门的陡度系数。对照 logistic 近似： $`\mathrm{GELU} \approx \mathrm{Swish}_{1.702}`$——两者几乎同一函数，差别只在 $\beta$。「 $x$ 乘一个 $(0,1)$ 的门」这一公共形式正是 GLU 族要推广的对象：下一步是把门从 $x$ 的逐元素函数换成另一路独立投影。
 
 ## 3. 激活 II：GLU 族与 SwiGLU
 
@@ -88,7 +88,7 @@ $$
 \mathrm{FFN}_{\mathrm{GLU}}(x) = \big(\mathrm{act}(xW) \odot xV\big)\thinspace W_2 \qquad (5)
 $$
 
-**符号**： $W, V \in \mathbb{R}^{d \times d_{\mathrm{ff}}'}$：门路与值路投影； $\odot$：逐元素乘； $\mathrm{act}$：门函数，论文逐变体对照 sigmoid（GLU 原形）、ReLU（ReGLU）、GELU（GEGLU）、 $\mathrm{Swish}_1$（SwiGLU）； $W_2 \in \mathbb{R}^{d_{\mathrm{ff}}' \times d}$； $d_{\mathrm{ff}}'$：三矩阵结构的中间维，与两矩阵 $d_{\mathrm{ff}}$ 的关系由式 (8) 钉死。矩阵从两个变三个。
+**符号**： $W, V \in \mathbb{R}^{d \times d_{\mathrm{ff}}'}$：门路与值路投影； $\odot$：逐元素乘； $\mathrm{act}$：门函数，论文逐变体对照 sigmoid（GLU 原形）、ReLU（ReGLU）、GELU（GEGLU）、 $`\mathrm{Swish}_1`$（SwiGLU）； $W_2 \in \mathbb{R}^{d_{\mathrm{ff}}' \times d}$； $d_{\mathrm{ff}}'$：三矩阵结构的中间维，与两矩阵 $d_{\mathrm{ff}}$ 的关系由式 (8) 钉死。矩阵从两个变三个。
 
 数据流：
 
@@ -105,7 +105,7 @@ $$
 \mathrm{SwiGLU}(x) = \big(\mathrm{Swish}_{1}(xW) \odot xV\big)\thinspace W_2 \qquad (6)
 $$
 
-**符号**： $\mathrm{Swish}_1(u) = u\thinspace\sigma(u)$，即式 (4) 的 SiLU。Llama-3.1 与 OLMo 2 的官方实现均为此形（三个 bias-free 线性层 + SiLU 门，§3.4 走读）。
+**符号**： $`\mathrm{Swish}_1(u) = u\thinspace\sigma(u)`$，即式 (4) 的 SiLU。Llama-3.1 与 OLMo 2 的官方实现均为此形（三个 bias-free 线性层 + SiLU 门，§3.4 走读）。
 
 门控（gating）的数学作用分三条。
 
@@ -189,7 +189,7 @@ class SwiGLUFFN(nn.Module):                # 式 (6)：d → d_ff → d
 
 ### 4.1 Geva 分解：把两层 MLP 读成一张记忆表
 
-两矩阵无 bias FFN 可以逐隐单元展开。记 $W_1$ 的第 $i$ 列为 $k_i \in \mathbb{R}^{d}$、 $W_2$ 的第 $i$ 行为 $v_i \in \mathbb{R}^{d}$，则 $(xW_1)_i = k_i \cdot x$，矩阵乘逐列逐行展开：
+两矩阵无 bias FFN 可以逐隐单元展开。记 $W_1$ 的第 $i$ 列为 $k_i \in \mathbb{R}^{d}$、 $W_2$ 的第 $i$ 行为 $v_i \in \mathbb{R}^{d}$，则 $`(xW_1)_i = k_i \cdot x`$，矩阵乘逐列逐行展开：
 
 $$
 \mathrm{FFN}(x) = \sum_{i=1}^{d_{\mathrm{ff}}} \sigma(k_i \cdot x)\hspace{5mu} v_i \qquad (9)
@@ -237,8 +237,8 @@ $$
 | 概念 | 公式 / 数值 | 要点 |
 | --- | --- | --- |
 | 两矩阵 FFN | $\mathrm{FFN}(x) = \sigma(xW_1)W_2$，式 (1) | 逐位置； $d_{\mathrm{ff}} = 4d$ → $8d^{2}$/层 ≈ 2/3 层参数；现代配方无 bias |
-| GELU | $x\thinspace\Phi(x)$，式 (2)(3) | Bernoulli($\Phi(x)$) 随机门的期望；唯一驻点 $`x^{*} \approx -0.75`$； $\approx \mathrm{Swish}_{1.702}$；GPT-2 gelu_new = tanh 近似 [W] |
-| SwiGLU | $(\mathrm{Swish}_1(xW) \odot xV)W_2$，式 (5)(6) | 门控三作用：数据依赖开关、双路梯度（式 (7)）、rank-1 二次型；同参同算力优于 ReLU / GELU 基线 [B] |
+| GELU | $x\thinspace\Phi(x)$，式 (2)(3) | Bernoulli($\Phi(x)$) 随机门的期望；唯一驻点 $`x^{*} \approx -0.75`$； $`\approx \mathrm{Swish}_{1.702}`$；GPT-2 gelu_new = tanh 近似 [W] |
+| SwiGLU | $`(\mathrm{Swish}_1(xW) \odot xV)W_2`$，式 (5)(6) | 门控三作用：数据依赖开关、双路梯度（式 (7)）、rank-1 二次型；同参同算力优于 ReLU / GELU 基线 [B] |
 | 等参数规则 | $3d\thinspace d_{\mathrm{ff}}' = 2d\thinspace d_{\mathrm{ff}}$ ⟹ $d_{\mathrm{ff}}' = 8d/3$，式 (8) | $d = 4096$ → 10922.67；参数与 FLOPs 同一条件钉死；4.5 / Part 5 复用 |
 | 三家对账 | OLMo-2 11008（≈2.69d，43×256）/ Qwen3 12288（3d）/ Llama-3.1 14336（3.5d） | FFN 占层 67% / 78% / 81%；规则是起点非铁律；16384 = 两矩阵宽度直搬，被共同否决 |
 | FFN = KV 记忆 | $\mathrm{FFN}(x) = \sum_i \sigma(k_i \cdot x)\thinspace v_i$，式 (9)(10) | $d_{\mathrm{ff}} \times L$ 条参数化记忆（Llama-3.1-8B 458752 条）；稀疏激活、模式分层、value→词表分布 [B] |

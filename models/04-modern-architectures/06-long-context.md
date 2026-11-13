@@ -159,7 +159,7 @@ $$
 \eta^{\ast } = \operatorname{arg\thinspace min}_{\eta \in \Lambda}\ \mathrm{PPL}_{sW}\left( D_{\mathrm{val}};\ \mathrm{RoPE}(\theta_j / \eta_j) \right), \qquad \Lambda = \left\lbrace \eta : \eta_0 = 1,\ \eta_j \le \eta_{j+1},\ \eta_{d/2-1} \approx s \right\rbrace \qquad (15)
 $$
 
-**符号**： $\mathrm{PPL}_{sW}(D_{\mathrm{val}}; \cdot)$：目标窗长下验证集困惑度；约束集 $\Lambda$ 的三条—— $\eta_0$ = 1、单调不减、最慢通道吃满 $s$——直接来自 §1.4 的两端失效分析（快通道不动、压缩率随波长不降序没有意义）。搜索用进化算法在 $d/2$ 维空间进行；论文报告了 2048K 级扩展与短窗性能的恢复步骤（为短窗重新搜一组因子，[B] 论文口径）。
+**符号**： $`\mathrm{PPL}_{sW}(D_{\mathrm{val}}; \cdot)`$：目标窗长下验证集困惑度；约束集 $\Lambda$ 的三条—— $\eta_0$ = 1、单调不减、最慢通道吃满 $s$——直接来自 §1.4 的两端失效分析（快通道不动、压缩率随波长不降序没有意义）。搜索用进化算法在 $d/2$ 维空间进行；论文报告了 2048K 级扩展与短窗性能的恢复步骤（为短窗重新搜一组因子，[B] 论文口径）。
 
 定位一句话：YaRN 的三段 ramp 是 $\eta_j$ 的手工 3 段参数化，LongRoPE 把它换成逐维搜索——自由度换适配性，代价是搜索管线本身，外加 [B] 级的证据边界（结论以论文实验设置为准）。
 
@@ -274,7 +274,7 @@ effective 侧只有行为测量能填。读法收束全章：claimed 回答的�
 | PI | $\eta_j = s$，式 (7) | 常数曲线；快通道过度压缩；需小预算续训校准 [B] |
 | NTK-aware | $base \to base \cdot s^{d/(d-2)}$， $\eta_j = s^{2j/(d-2)}$，式 (9)(10) | 端点 $\eta_0$ = 1、 $\eta_{d/2-1}$ = $s$；纯频率重参数化 |
 | YaRN | $r_j = W / \lambda_j$ 三段 ramp 式 (12)(13)；温度 $\sqrt{1/t} = 0.1 \ln s + 1$ 式 (14) | DeepSeek-V3： $W$ = 4096、 $s$ = 40、 $\alpha$ = 1、 $\beta$ = 32 → 9 通道全压、11 通道不动、12 通道 ramp； $1/t \approx 1.87$ |
-| LongRoPE | $\operatorname{arg\thinspace min}_{\eta} \mathrm{PPL}_{sW}$，约束 $\eta_0$ = 1 且单调不减，式 (15) | 逐维搜索；[B] 证据边界 |
+| LongRoPE | $`\operatorname{arg\thinspace min}_{\eta} \mathrm{PPL}_{sW}`$，约束 $\eta_0$ = 1 且单调不减，式 (15) | 逐维搜索；[B] 证据边界 |
 | dual-chunk | key 编号 $j\ \mathrm{mod}\ S$ + query 三张表，式 (16)–(18) | 塌缩块身份、保块内顺序；编号上界为常数 $W - 1$（与 $T$ 无关）；Qwen2.5-1M：base $10^{7}$ + DCA + YaRN 温度 |
 | Ring Attention | 序列维 $P$ 段环流 + online softmax | 数学逐点不变；通信实现归 cluster 维度 |
 | 训练配方 | staged extension + 长文档上采样 | Llama-3.1：六阶段 8K→128K、约 800B token（论文口径）；V3：两阶段，扩窗 119K H800 GPU-hours |
@@ -285,7 +285,7 @@ effective 侧只有行为测量能填。读法收束全章：claimed 回答的�
 1.（推导）NTK-aware 的谱性质。(a) 从式 (8) 出发补全式 (9) 到式 (10) 的推导；(b) 证明 PI 下「窗内不满圈」的通道集合不随 $s$ 变化（即 $\lbrace j : s\lambda_j > sW\rbrace = \lbrace j : \lambda_j > W\rbrace$）；(c) 对 NTK-aware 给出不满圈通道集合随 $s$ 变化的条件式，并说明它在快通道端与慢通道端各自相对 PI 是收紧还是放松。
 2.（计算）复算 §1 的三笔账。(a) 式 (1) 的 1M 单层 attention FLOPs 与式 (2) 的交叉点 $`T^{*}`$（Llama-3.1-8B 形态， $N \approx 8 \times 10^{9}$）；(b) §1.2 表中 GQA-8 与 MLA 两行在 $T = 10^{6}$ 的 GiB 数；(c) 由 Kimi-Linear config 的 27 层结构（7 MLA + 20 KDA、KDA 状态 32 heads × $128 \times 128$）推出 1M 总 cache，并算出相对 27 层全 MLA 反事实的削减比例。
 3.（推导）熵稀释与温度。(a) 用 Jensen 不等式证明式 (3) 并给出等号条件；(b) 在 $\Delta$ 固定、 $T \to sT$ 下用式 (4) 写出 $`p^{*}`$ 的渐近衰减率；(c) 由式 (6) 说明「补偿熵增 $\ln s$ 量级 ⟹ $\beta$ 取 $\ln s$ 的函数」这一函数形式论证，并讨论为什么系数 0.1 不能由该论证推出。
-4.（代码）教学实现三条 $\eta_j$ 曲线（教学用，非优化实现）：给定 $base$、 $d$、 $W$、 $s$、 $(\alpha, \beta)$，分别按式 (7)(10)(13) 计算逐通道压缩率，(a) 数值断言三者在 $j = d/2 - 1$ 端点都收敛到 $s$、NTK 与 YaRN 在 $j = 0$ 端为 1；(b) 以 DeepSeek-V3 字段（ $W$ = 4096、 $s$ = 40、 $\alpha$ = 1、 $\beta$ = 32、 $base$ = $10^{4}$、 $d$ = 64）验证「11 通道不动、12 通道 ramp、9 通道全压」的计数；(c) 把三条曲线套进 2.5 §4.8 的 `rope_tables`（把 `inv_freq` 逐项除以 $\eta_j$），断言改造后 $\theta'_j \in [\theta_j / s,\ \theta_j]$ 逐通道成立。
+4.（代码）教学实现三条 $\eta_j$ 曲线（教学用，非优化实现）：给定 $base$、 $d$、 $W$、 $s$、 $(\alpha, \beta)$，分别按式 (7)(10)(13) 计算逐通道压缩率，(a) 数值断言三者在 $j = d/2 - 1$ 端点都收敛到 $s$、NTK 与 YaRN 在 $j = 0$ 端为 1；(b) 以 DeepSeek-V3 字段（ $W$ = 4096、 $s$ = 40、 $\alpha$ = 1、 $\beta$ = 32、 $base$ = $10^{4}$、 $d$ = 64）验证「11 通道不动、12 通道 ramp、9 通道全压」的计数；(c) 把三条曲线套进 2.5 §4.8 的 `rope_tables`（把 `inv_freq` 逐项除以 $\eta_j$），断言改造后 $`\theta'_j \in [\theta_j / s,\ \theta_j]`$ 逐通道成立。
 
 ## 参考
 

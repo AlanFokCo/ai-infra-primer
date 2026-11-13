@@ -329,7 +329,7 @@ $$
 
 progressive distillation（[Salimans & Ho, 2022](../references.md)，arXiv:2202.00512，[A]；v-prediction 的原始出处，见 7.2 §5.1）的基本单元是**步数减半**：学生 $\varepsilon_\psi$ 用一次前向走教师 $\varepsilon_\theta$ 的两步 DDIM（σ=0）。
 
-目标构造：给定 $x_t$（教师时间网格上的偶数点），教师走两步 $t \to t-1 \to t-2$ 得 $x''_{t-2}$；学生要从 $x_t$ 一步到 $t-2$。学生的一步 DDIM（式 (6)， $t \to t-2$）由它的 $\hat x_0^\psi$ 唯一决定，于是「学生该输出什么」可以精确反解——令学生落点等于 $x''_{t-2}$，解出目标数据预测：
+目标构造：给定 $x_t$（教师时间网格上的偶数点），教师走两步 $t \to t-1 \to t-2$ 得 $`x''_{t-2}`$；学生要从 $x_t$ 一步到 $t-2$。学生的一步 DDIM（式 (6)， $t \to t-2$）由它的 $\hat x_0^\psi$ 唯一决定，于是「学生该输出什么」可以精确反解——令学生落点等于 $`x''_{t-2}`$，解出目标数据预测：
 
 $$
 \tilde x_0 = \frac{x''_{t-2}\thinspace \sqrt{1-\bar\alpha_t} - \sqrt{1-\bar\alpha_{t-2}}\hspace{5mu} x_t}{\sqrt{\bar\alpha_{t-2}}\thinspace \sqrt{1-\bar\alpha_t} - \sqrt{\bar\alpha_t}\thinspace \sqrt{1-\bar\alpha_{t-2}}} \qquad (24)
@@ -413,7 +413,7 @@ $$
 
 **符号**： $s_{\mathrm{real}} = \nabla_x \log p_{\mathrm{real}}$：真实（教师）score； $\partial x / \partial \psi$：生成器输出的参数 Jacobian——一次反向传播的事。
 
-**熵项**： $\nabla_\psi\thinspace \mathbb{E}_{z}[\log p_\psi(G_\psi(z))]$。注意这个期望对固定底分布 $z$ 取、即等于 $\mathbb{E}_{p_\psi}[\log p_\psi]$，其梯度拆两件：测度项 $\mathbb{E}_{p_\psi}[\partial_\psi \log p_\psi] = \partial_\psi \int p_\psi\thinspace dx = 0$（密度归一的恒等推论），剩下样本点处的链式项 $\mathbb{E}_{z}[ s_{\mathrm{fake}}(x)\thinspace \partial x / \partial \psi ]$，其中 $s_{\mathrm{fake}} = \nabla_x \log p_\psi$ 是**当前生成分布的 score**。合并得**分布匹配梯度**：
+**熵项**： $`\nabla_\psi\thinspace \mathbb{E}_{z}[\log p_\psi(G_\psi(z))]`$。注意这个期望对固定底分布 $z$ 取、即等于 $`\mathbb{E}_{p_\psi}[\log p_\psi]`$，其梯度拆两件：测度项 $`\mathbb{E}_{p_\psi}[\partial_\psi \log p_\psi] = \partial_\psi \int p_\psi\thinspace dx = 0`$（密度归一的恒等推论），剩下样本点处的链式项 $`\mathbb{E}_{z}[ s_{\mathrm{fake}}(x)\thinspace \partial x / \partial \psi ]`$，其中 $s_{\mathrm{fake}} = \nabla_x \log p_\psi$ 是**当前生成分布的 score**。合并得**分布匹配梯度**：
 
 $$
 \nabla_\psi\thinspace \mathrm{KL}\left( p_\psi \Vert p_{\mathrm{real}} \right) = \mathbb{E}_{z \sim \mathcal{N}(0, I)} \left[ \left( s_{\mathrm{fake}}(x) - s_{\mathrm{real}}(x) \right) \frac{\partial x}{\partial \psi} \right], \qquad x = G_\psi(z) \qquad (32)
