@@ -32,7 +32,7 @@ const readMinutes = Math.max(4, Math.round(fm.cjkChars / 420));
           <a href={`${base}/models/${part.dir}/`}>Part {part.num} · {part.titleZh}</a>
         </nav>
         <p class="ch-num-big">CHAPTER {fm.num}</p>
-        <h1 class="chapter-title" data-pagefind-meta="title">{fm.num} {fm.titleZh}</h1>
+        <h1 class="chapter-title" data-pagefind-meta={`title:${fm.num} ${fm.titleZh}`}>{fm.titleZh}</h1>
         <p class="chapter-title-en">{fm.titleEn}</p>
         <div class="ch-ledger">
           <span>{fm.cjkChars.toLocaleString()} 字</span>

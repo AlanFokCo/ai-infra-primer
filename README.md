@@ -2,6 +2,8 @@
 
 一套 hands-on 的 AI infrastructure primer——from tokens to teraflops：从 token 的数学形式化开始，把模型、训练、推理、硬件、集群五层的技术账算到公式级。中文正文、术语保持英文，所有数值事实带出处并标注证据等级。
 
+**阅读站点（推荐）**：<https://alanfokco.github.io/ai-infra-primer/> — 构建期 KaTeX 渲染、全文搜索、章内目录与阅读进度；由 GitHub Actions 自动构建部署（`.github/workflows/pages.yml`，站点源码在 `site/`）。
+
 ## 五维度导航
 
 | 维度 | 状态 | 范围 |
