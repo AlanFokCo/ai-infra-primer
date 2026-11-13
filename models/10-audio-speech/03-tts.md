@@ -237,7 +237,15 @@ VALL-E 的 token 是声学重建导向的（10.1 §6.2 对照表：纯声学码�
 
 token-to-speech 段是 conditional flow matching（recap 7.5 式 (9)）：以 semantic token 序列（加说话人条件）为条件、在 mel 空间回归条件速度场，再经 §3 的 HiFi-GAN 部件回波形。结构注记：这条链是「LM 路线」与「级联路线」的混血——文本→token 用 LM（拿 in-context 与语言先验的好处），token→mel→波形回到连续域级联（拿 FM 与 vocoder 的音质好处）；codec 的 RVQ 层级结构（VALL-E 的 8 层账）被整个绕开——semantic token 单流逐帧，没有式 (17) 的层间分解问题。
 
-**CosyVoice 2**（[Du et al., 2024](../references.md)，arXiv:2412.10117，[A]）四个改动各值一读。(i) **chunk-aware causal FM**：「enabling both streaming and non-streaming synthesis within a single model」——FM decoder 按 chunk 因果化（第 $k$ 块 mel 只可见第 $\le k$ 块的 token 条件与已生成 mel），同一权重整句输入即非流式、逐块输入即流式——流式与非流式从两套系统并成一套（mask 语义与 10.2 §7 的 chunk attention 同族）。(ii) tokenizer 的 VQ 换 **FSQ**（finite scalar quantization）：「Replacing vector quantization (VQ) in the speech tokenizer with finite scalar quantization (FSQ), improving codebook utilization」——lookup-free 量化族（6.3 §6 的 LFQ 近亲）：每维标量各自取有限档、码本为各维档数之积，无学习码本即无利用率塌缩。(iii) **去掉 text encoder 与 speaker embedding**，直用预训练文本 LLM 主干（Qwen2.5-0.5B）——文本理解整个外包给语言模型先验；speaker 信息随之改由序列条件携带（机制读法：与 §6 的 in-context prompt 逻辑合流）。(iv) token rate 25 Hz（原文：「Our speech tokenizer works at a token rate of 25 Hz, i.e., 25 speech tokens per second」）——LM 侧序列长度是 75 fps 档的三分之一（单码本流的 token/s = fps 本身，10.1 §6.1 对照表的 fps 列），式 (16) 的 AR 段每秒 25 步。
+**CosyVoice 2**（[Du et al., 2024](../references.md)，arXiv:2412.10117，[A]）四个改动各值一读。(i) **chunk-aware causal FM**：「enabling both streaming and non-streaming synthesis within a single model」——FM decoder 按 chunk 因果化（第 $k$ 块 mel 只可见第 $\le k$ 块的 token 条件与已生成 mel），同一权重整句输入即非流式、逐块输入即流式——流式与非流式从两套系统并成一套（mask 语义与 10.2 §7 的 chunk attention 同族）。把这个可见性约束按 2.4 的加性 mask 口径写出（$M_{t,s} = 0$ 为可见、$-\infty$ 为屏蔽，加在 attention logit 上；同 10.2 式 (22)）：
+
+$$
+M_{t,s} = \begin{cases} 0, & s \le \left\lceil t / M \right\rceil \cdot M + (\beta - 1) \cdot M \\ -\infty, & \text{otherwise} \end{cases}, \qquad \beta \in \{1, 2\} \qquad (18)
+$$
+
+**符号**：$t, s$：mel 帧下标（query / key；token 流 25 Hz 经 ×2 上采样对齐到 50 Hz mel 帧轴，条件与生成共用同一帧轴）；$M$：chunk 大小（帧数）；$\beta$：可见性档位——$\beta = 1$ 即 Chunk-M（帧 $t$ 可见至本块末尾 $\lceil t / M \rceil \cdot M$，即第 $k$ 块只见第 $\le k$ 块），$\beta = 2$ 即 Chunk-2M（再多放行一整块）；两个边界档不在参数化内：$M = 1$ 退化出 full-causal（$s \le t$），$M_{t,s} \equiv 0$ 即 non-causal（离线档）。
+
+四档 mask 是单模型双流式的全部机关：训练时每个样本从四档中均匀采样一档（原文：「we randomly sample a mask from the above four masks under the uniform distribution」），推理时按延迟预算选档。两个配套机制。其一，多步 ODE 求积被当作「UNet 重复 10 次的展开深网」（原文口径：NFE = 10），各求积步共享同一 mask——因果性由网络结构保证，求积器本身无需流式改造。其二，可见上下文多的档是上下文少的档的天然教师（原文称 implicit self-distillation）——流式档白得离线档的监督信号。另有两笔帧率账：token 上采样前先过一道 look-ahead 卷积（右侧 padding $P$、kernel $P + 1$ 的 1-D 卷积），给后续全因果模块预供未来信息；首包延迟随块长线性（原文式 (11)：$L_{TTS} = M_{\mathrm{tok}} \cdot (d_{lm} + d_{fm} + d_{voc})$，$M_{\mathrm{tok}}$ 为首包 speech token 数，$d_{lm}, d_{fm}, d_{voc}$ 为 LM / FM / vocoder 的逐 token 耗时）——块长是延迟与质量权衡上的唯一旋钮。(ii) tokenizer 的 VQ 换 **FSQ**（finite scalar quantization）：「Replacing vector quantization (VQ) in the speech tokenizer with finite scalar quantization (FSQ), improving codebook utilization」——lookup-free 量化族（6.3 §6 的 LFQ 近亲）：每维标量各自取有限档、码本为各维档数之积，无学习码本即无利用率塌缩。(iii) **去掉 text encoder 与 speaker embedding**，直用预训练文本 LLM 主干（Qwen2.5-0.5B）——文本理解整个外包给语言模型先验；speaker 信息随之改由序列条件携带（机制读法：与 §6 的 in-context prompt 逻辑合流）。(iv) token rate 25 Hz（原文：「Our speech tokenizer works at a token rate of 25 Hz, i.e., 25 speech tokens per second」）——LM 侧序列长度是 75 fps 档的三分之一（单码本流的 token/s = fps 本身，10.1 §6.1 对照表的 fps 列），式 (16) 的 AR 段每秒 25 步。
 
 **CosyVoice 3**（[Du et al., 2025](../references.md)，arXiv:2505.17589，[A]）：FSQ 模块改插 **MinMo** voice encoder（CV2 为 SenseVoice-Large ASR encoder——两代差异原文直述），主线转向 scale-up + post-training，定位 in-the-wild 语音生成。
 
@@ -252,7 +260,7 @@ token-to-speech 段是 conditional flow matching（recap 7.5 式 (9)）：以 se
 **Filler 对齐**（全路线的关键构造）：文本逐字符用 filler token 补齐到与语音等长（原文：「the text input is simply padded with filler tokens to the same length as input speech」）：
 
 $$
-\tilde{y} \in \left( \mathcal{V}_{\mathrm{char}} \cup \{\text{filler}\} \right)^{T}, \qquad \tilde{y}_t = \begin{cases} y_u, & t \in S_u \\ \text{filler}, & \text{otherwise} \end{cases} \qquad (18)
+\tilde{y} \in \left( \mathcal{V}_{\mathrm{char}} \cup \{\text{filler}\} \right)^{T}, \qquad \tilde{y}_t = \begin{cases} y_u, & t \in S_u \\ \text{filler}, & \text{otherwise} \end{cases} \qquad (19)
 $$
 
 **符号**：$T$：mel 帧数；$S_u$：第 $u$ 个字符实际占据的帧段（训练时即该字符的真实跨度，数据侧构造、无需模型）——帧 $t$ 落在字符 $u$ 的跨度内则该位取字符 $y_u$，全部跨度之外的帧位取 filler。
@@ -262,7 +270,7 @@ $$
 **CFM 目标**（recap 7.5 式 (9) 与 §6 rectified 路径）：取线性插值路径与闭式目标速度
 
 $$
-x_t = (1 - t)\, x_0 + t\, \varepsilon, \qquad u_t(x_t \mid x_0) = \varepsilon - x_0 \qquad (19)
+x_t = (1 - t)\, x_0 + t\, \varepsilon, \qquad u_t(x_t \mid x_0) = \varepsilon - x_0 \qquad (20)
 $$
 
 **符号**：$x_0$：数据端 mel（沿用 7.5 约定：$t = 0$ 数据端、$t = 1$ 噪声端）；$\varepsilon \sim \mathcal{N}(0, I)$；$x_t$：$t$ 时刻的路径点；$u_t$：条件速度场——直线路径下是与 $x_t$ 无关的常向量 $\varepsilon - x_0$。
@@ -270,10 +278,10 @@ $$
 infilling 版 CFM 损失：
 
 $$
-L_{\mathrm{F5}}(\theta) = \mathbb{E}_{t,\, x_0,\, \varepsilon,\, m}\left[ \left\| \left( v_{\theta}\left( x_t^{(m)},\, t,\, c \right) - (\varepsilon - x_0) \right) \odot m \right\|^2 \right] \qquad (20)
+L_{\mathrm{F5}}(\theta) = \mathbb{E}_{t,\, x_0,\, \varepsilon,\, m}\left[ \left\| \left( v_{\theta}\left( x_t^{(m)},\, t,\, c \right) - (\varepsilon - x_0) \right) \odot m \right\|^2 \right] \qquad (21)
 $$
 
-**符号**：$m \in \{0,1\}^{T}$：挖空段指示（1 = 待生成），损失只在挖空段计；$x_t^{(m)}$：模型输入——挖空段取路径点 $x_t$、上下文段保留干净 $x_0$（infilling 的标准构造：未挖部分作为条件一并输入）；$c$：条件 = 式 (18) 的补齐文本（经 ConvNeXt V2 精炼——F5 相对 E2 的第一处增量）连同参考段信息；$v_\theta$：速度网络，DiT 主干（7.6 的骨干选择：序列条件生成 + 全并行前向，与逐帧 mask 结构天然相容）。
+**符号**：$m \in \{0,1\}^{T}$：挖空段指示（1 = 待生成），损失只在挖空段计；$x_t^{(m)}$：模型输入——挖空段取路径点 $x_t$、上下文段保留干净 $x_0$（infilling 的标准构造：未挖部分作为条件一并输入）；$c$：条件 = 式 (19) 的补齐文本（经 ConvNeXt V2 精炼——F5 相对 E2 的第一处增量）连同参考段信息；$v_\theta$：速度网络，DiT 主干（7.6 的骨干选择：序列条件生成 + 全并行前向，与逐帧 mask 结构天然相容）。
 
 ```
 mel 帧轴  t = 1..T
@@ -281,10 +289,10 @@ mel 帧轴  t = 1..T
 │ 上下文段：干净 x0    │ 挖空段：x_t（噪声 → 数据）    │
 │（作为条件输入）       │（损失只算这里，m = 1）        │
 └────────────────────┴─────────────────────────────┘
-文本轴：参考文本 chars + 目标文本 chars，filler 补齐至 T（式 (18)）
+文本轴：参考文本 chars + 目标文本 chars，filler 补齐至 T（式 (19)）
 ```
 
-训练与推理的任务同构：训练 = 随机挖一段学回填；zero-shot 推理 = 把目标整句挖掉，条件给「参考音频 + 参考文本 + 目标文本」——音色从参考段经双向上下文条件流入。与 VALL-E 的对照：一个靠 AR 前缀延续（式 (16)），一个靠掩码上下文场（式 (20)）——「3 秒克隆」的两种机制实现。全 NAR 的延迟结构：生成一句 mel 的串行步数 = ODE 求积步数，与句长无关——式 (16) 的 $T$ 步 AR 税在这里整个不存在。
+训练与推理的任务同构：训练 = 随机挖一段学回填；zero-shot 推理 = 把目标整句挖掉，条件给「参考音频 + 参考文本 + 目标文本」——音色从参考段经双向上下文条件流入。与 VALL-E 的对照：一个靠 AR 前缀延续（式 (16)），一个靠掩码上下文场（式 (21)）——「3 秒克隆」的两种机制实现。全 NAR 的延迟结构：生成一句 mel 的串行步数 = ODE 求积步数，与句长无关——式 (16) 的 $T$ 步 AR 税在这里整个不存在。
 
 **Sway Sampling**（推理时策略；原文：「inference-time Sway Sampling strategy……can be easily applied to existing flow matching based models without retraining」）：ODE 求积的均匀步点 $t_i = i/N$ 换成 warped 步点 $\tau_i = g(t_i)$，其中 $g: [0,1] \to [0,1]$ 单调、$g(0) = 0$、$g(1) = 1$。机制账：第 $i$ 步的有效步长 $\Delta \tau_i \approx g'(\xi_i)/N$——$g'$ 小处步点密、局部截断误差小；$g'$ 大处步点稀。sway 形曲线把密度预算向某一端倾斜（端点固定保证积分区间不变），倾斜方向由一个 sway 系数控制。与 7.5 §8 训练侧 timestep shift 是同一思想搬到推理调度上：不改权重、只改求积节点，所以任何 FM 模型免重训即插——这正是原文强调的迁移性。方向性读法：数据端（$t \to 0$）附近轨迹决定细节纹理，噪声端（$t \to 1$）附近决定全局结构；往哪端倾斜是质量-步数权衡上的可调旋钮，最优方向随数据与骨干而变，属推理超参而非训练配方。
 
@@ -292,7 +300,18 @@ mel 帧轴  t = 1..T
 
 ## 9. 其他路线两件与 2025 一段式
 
-**NaturalSpeech 3 / FACodec**（[Ju et al., 2024](../references.md)，arXiv:2403.03100，[B]——微软未开源）：「factorized vector quantization (FVQ)……decompose speech waveform into distinct subspaces of content, prosody, timbre, and acoustic details」——10.1 §3.3 分离视角的完整产品形态：四个子流各配码本，生成侧各属性流各配一个 diffusion model。克隆 = 换 timbre 子流、保 content 流；可控性走到极端形态——内容、韵律、音色、声学细节各有独立旋钮；代价是四条生成链的复合复杂度。
+**NaturalSpeech 3 / FACodec**（[Ju et al., 2024](../references.md)，arXiv:2403.03100，[B]——微软未开源）：「factorized vector quantization (FVQ)……decompose speech waveform into distinct subspaces of content, prosody, timbre, and acoustic details」——10.1 §3.3 分离视角的完整产品形态。FACodec 的结构是一条「三个因子化码本 + 一个全局音色向量」的分解链：
+
+$$
+\begin{aligned}
+& h = E(x), \qquad h_t = G(h), \qquad z_i = \mathrm{FVQ}_{i}(h), \;\; i \in \{p, c, d\} \\
+& \hat{x} = D\left( \mathrm{CLN}\left( z_p + z_c + z_d;\; h_t \right) \right)
+\end{aligned} \qquad (22)
+$$
+
+**符号**：$x$：输入波形（16 kHz）；$E$：speech encoder（卷积块，下采样率 200 → 80 fps 的帧级 latent $h$）；$G$：timbre extractor（Transformer encoder），$h_t$ 为整句级全局音色向量；$\mathrm{FVQ}_i$：prosody（$p$）/ content（$c$）/ acoustic detail（$d$）三个子流各自的因子化量化器——量化前先把表征投影到 8 维瓶颈空间再查码本、量化后投回原维（information bottleneck：压缩每个码的携带量，挤掉他流信息），量化器数 $N_{q_p} = 1$、$N_{q_c} = 2$、$N_{q_d} = 3$，码本大小均 1024；$\mathrm{CLN}(\cdot; h_t)$：conditional layer normalization——三个逐帧子流先求和，再以 $h_t$ 为条件注入音色（原文：「We first add the representation of prosody, content, and acoustic details together and then fuse the timbre information by conditional layer normalization」）；$D$：speech decoder（镜像 encoder，参数量更大）。
+
+子流「各自纯净」不是分解自动给的，原文的解耦工程有三件。(i) **逐流监督**：$z_p$ 回归逐帧归一化 F0（z-score）；$z_c$ 逐帧音素分类（标签由对齐工具产出）；$h_t$ 说话人分类。(ii) **GRL 交叉清洗**（gradient reversal layer + 对抗分类器）：prosody 流上 phoneme-GRL 洗内容、content 流上 F0-GRL 洗韵律、detail 流上两者皆施、$z_p + z_c + z_d$ 之和上 speaker-GRL 洗音色——每个子流被显式惩罚「夹带他流信息」。(iii) **detail dropout**：训练时以概率 $p$ 随机置零 $z_d$——detail 流无监督、最容易偷渡内容与韵律，随机丢弃强迫解码器只靠 $z_p + z_c + h_t$ 也能（低保真）重建，$z_d$ 的角色被压回「细节补充」。总损失为 codec 常套件（multi-scale mel 重建、MPD + multi-band multi-scale STFT 判别器对抗、feature matching、codebook / commitment）与上述监督、GRL 各项的加权和。生成侧与分解镜像：factorized diffusion 对 duration / prosody / content / detail 各配一个 diffusion model 顺序生成，timbre 以 prompt 的 $h_t$ 作条件注入——克隆 = 换 timbre 条件、保 content 流；可控性走到极端形态——内容、韵律、音色、声学细节各有独立旋钮；代价是四条生成链的复合复杂度。
 
 **MaskGCT**（[Wang et al., 2024](../references.md)，arXiv:2409.00750，[A]——官方实现在 open-mmlab/Amphion）：声学 codec token 上的 mask-predict NAR（7.7 §7 的解码范式搬进语音：全部位点并行出价、按置信度逐轮兑现），两级结构：文本 → 语义 token → 声学 token。与 VALL-E 的对照直接：同样建 codec token，把「AR 第一层 + NAR 其余层」换成 mask-predict 全并行——式 (16) 的 $T$ 步串行税再降一档；代价是伪似然族的老问题（7.7 §7：迭代伪似然乘积不等于联合似然）。
 
@@ -307,13 +326,13 @@ mel 帧轴  t = 1..T
 
 | 维度 | 级联（FastSpeech2 / VITS + §3 vocoder） | LM 系（VALL-E / CosyVoice） | FM/diffusion 系（VoiceBox / E2 / F5 / NS3） |
 | --- | --- | --- | --- |
-| 生成单元 | mel 帧 + 波形（vocoder 出口） | codec token（式 (15)） | mel（infilling，式 (20)） |
-| 对齐来源 | 显式：duration model / forced alignment / MAS（式 (3)(13)） | LM 隐式学（前缀 + AR 延续） | filler 补齐构造（式 (18)） |
+| 生成单元 | mel 帧 + 波形（vocoder 出口） | codec token（式 (15)） | mel（infilling，式 (21)） |
+| 对齐来源 | 显式：duration model / forced alignment / MAS（式 (3)(13)） | LM 隐式学（前缀 + AR 延续） | filler 补齐构造（式 (19)） |
 | 长度 $T$ 决策 | duration predictor（VITS 随机采样，多样韵律） | AR 学到自行终止 | 外生给定（按参考语速估计） |
-| 音色克隆 | speaker embedding / d-vector | 3s prompt in-context（式 (16)） | infilling 上下文参考段（式 (20)） |
+| 音色克隆 | speaker embedding / d-vector | 3s prompt in-context（式 (16)） | infilling 上下文参考段（式 (21)） |
 | 串行步数（每秒音频，教学账） | 各模块全并行；vocoder 帧级可流式 | AR $T$ 步 + 7 趟层间（75 fps 档 → 75+7；CV2 25 Hz → 25 步） | ODE $N$ 步 × 全句并行 |
-| 流式 | vocoder 天然帧级流式 | chunk-aware causal FM（CV2 单模型双流式） | 整句 ODE，流式需切块改造 |
-| 可控性 | 逐旋钮可人工覆盖（duration/pitch/energy） | prompt 工程 + 采样器补丁（VALL-E 2） | mask 几何 + 参考段；NS3 子流旋钮 |
+| 流式 | vocoder 天然帧级流式 | chunk-aware causal FM（式 (18)，CV2 单模型双流式） | 整句 ODE，流式需切块改造 |
+| 可控性 | 逐旋钮可人工覆盖（duration/pitch/energy） | prompt 工程 + 采样器补丁（VALL-E 2） | mask 几何 + 参考段；NS3 子流旋钮（式 (22)） |
 | 典型失败模式 | 误差沿模块链累积、拼接感 | 重复坍缩/漏字（repetition aware sampling 的对象） | 长度外生错配（$T$ 给错全盘偏） |
 | 本章证据形态 | HiFi-GAN/VITS [A]，FastSpeech2 [B] | VALL-E 系 [B]，CosyVoice 系 [A] | VoiceBox/E2/NS3 [B]，F5-TTS [A] |
 
@@ -332,8 +351,9 @@ mel 帧轴  t = 1..T
 | VITS | 式 (11) 条件 ELBO；式 (12) flow 增强先验（训练用 $f^{-1}$、采样用 $f$）；式 (13) MAS 硬对齐（Viterbi 式 DP）；式 (14) 五项总目标 | §5 |
 | VALL-E | 式 (15) 按层链式；式 (16) AR 第一层；式 (17) NAR 第 2–8 层层内并行；3s prompt = 前缀条件化 | §6 |
 | VALL-E 2 [B] | repetition aware sampling（重复坍缩补丁）+ grouped code modeling（步长按组放大） | §6 |
-| CosyVoice 系 | 监督语义 token（ASR encoder 内插 VQ；官方生态称 S3Tokenizer）；CV2：chunk-aware causal FM 双流式、FSQ、直用 Qwen2.5-0.5B、25 Hz；CV3：MinMo voice encoder | §7 |
-| F5-TTS | 式 (18) filler 对齐；式 (19) 线性路径 $u_t = \varepsilon - x_0$；式 (20) infilling CFM；Sway Sampling = 免重训的求积步点 warping | §8 |
+| CosyVoice 系 | 监督语义 token（ASR encoder 内插 VQ；官方生态称 S3Tokenizer）；CV2：式 (18) chunk-aware 四档 mask 双流式、FSQ、直用 Qwen2.5-0.5B、25 Hz；CV3：MinMo voice encoder | §7 |
+| F5-TTS | 式 (19) filler 对齐；式 (20) 线性路径 $u_t = \varepsilon - x_0$；式 (21) infilling CFM；Sway Sampling = 免重训的求积步点 warping | §8 |
+| NS3 / FACodec [B] | 式 (22)：三 FVQ 子流 + 全局音色向量 CLN 注入；逐流监督 + GRL 交叉清洗 + detail dropout 保解耦 | §9 |
 | 三路线对照 | 对齐来源 / 音色克隆 / 串行步数 / 流式 / 可控性 / 失败模式 | §10 表 |
 
 ## 练习
@@ -355,12 +375,12 @@ mel 帧轴  t = 1..T
 - [Wang et al., 2023](../references.md)：Neural Codec Language Models are Zero-Shot Text to Speech Synthesizers（VALL-E），arXiv:2301.02111，[B]（key: vall-e）——式 (15)–(17) 两阶段分解与 3s prompt；微软未开源
 - [Chen et al., 2024](../references.md)：VALL-E 2: Neural Codec Language Models are Human Parity Zero-Shot Text to Speech Synthesizers，arXiv:2406.05370，[B]（key: vall-e-2）——repetition aware sampling、grouped code modeling；未开源
 - [Du et al., 2024](../references.md)：CosyVoice: A Scalable Multilingual Zero-shot Text-to-speech Synthesizer based on Supervised Semantic Tokens，arXiv:2407.05407，[A]（key: cosyvoice）——监督语义 token（ASR encoder 内插 VQ）+ LLM + conditional FM decoder
-- [Du et al., 2024](../references.md)：CosyVoice 2: Scalable Streaming Speech Synthesis with Large Language Models，arXiv:2412.10117，[A]（key: cosyvoice2）——chunk-aware causal FM、FSQ、25 Hz、Qwen2.5-0.5B 主干
+- [Du et al., 2024](../references.md)：CosyVoice 2: Scalable Streaming Speech Synthesis with Large Language Models，arXiv:2412.10117，[A]（key: cosyvoice2）——式 (18) chunk-aware causal FM 四档 mask（训练均匀采样）、FSQ、25 Hz、Qwen2.5-0.5B 主干
 - [Du et al., 2025](../references.md)：CosyVoice 3: Towards In-the-wild Speech Generation via Scaling-up and Post-training，arXiv:2505.17589，[A]（key: cosyvoice3）——FSQ 改插 MinMo voice encoder
-- [Chen et al., 2024](../references.md)：F5-TTS: A Fairytaler that Fakes Fluent and Faithful Speech with Flow Matching，arXiv:2410.06885，[A]（key: f5-tts）——式 (18)–(20)：filler 补齐、infilling CFM、ConvNeXt V2、Sway Sampling
+- [Chen et al., 2024](../references.md)：F5-TTS: A Fairytaler that Fakes Fluent and Faithful Speech with Flow Matching，arXiv:2410.06885，[A]（key: f5-tts）——式 (19)–(21)：filler 补齐、infilling CFM、ConvNeXt V2、Sway Sampling
 - [Eskimez et al., 2024](../references.md)：E2 TTS: Embarrassingly Easy Fully Non-Autoregressive Zero-Shot TTS，arXiv:2406.18009，[B]（key: e2-tts）——逐字符 filler + FM mel + audio infilling 前驱形态；微软未开源
 - [Le et al., 2023](../references.md)：Voicebox: Text-Guided Multilingual Universal Speech Generation at Scale，arXiv:2306.15687，[B]（key: voicebox）——text-guided speech infilling + FM/OT path；Meta 未开源
-- [Ju et al., 2024](../references.md)：NaturalSpeech 3: Zero-Shot Speech Synthesis with Factorized Codec and Diffusion Models，arXiv:2403.03100，[B]（key: naturalspeech3）——FACodec FVQ 四子流分解 + 各流 diffusion；微软未开源
+- [Ju et al., 2024](../references.md)：NaturalSpeech 3: Zero-Shot Speech Synthesis with Factorized Codec and Diffusion Models，arXiv:2403.03100，[B]（key: naturalspeech3）——式 (22) FACodec 三 FVQ 子流 + CLN 全局音色融合，逐流监督 / GRL / detail dropout 解耦 + 各流 diffusion；微软未开源
 - [Wang et al., 2024](../references.md)：MaskGCT: Zero-Shot Text-to-Speech with Masked Generative Codec Transformer，arXiv:2409.00750，[A]（key: maskgct）——声学 token 上 mask-predict NAR，语义→声学两级；实现在 Amphion
 - [Deng et al., 2025](../references.md)：IndexTTS: An Industrial-Level Controllable and Efficient Zero-Shot Text-To-Speech System，arXiv:2502.05512，[A]（key: indextts）——GPT 式 AR、拼音纠错、标点控停
 - [Zhou et al., 2025](../references.md)：IndexTTS2: A Breakthrough in Emotionally Expressive and Duration-Controlled Auto-Regressive Zero-Shot Text-to-Speech，arXiv:2506.21619，[A]（key: indextts2）——情感表达 + 时长可控 AR
