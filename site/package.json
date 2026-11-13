@@ -1,0 +1,27 @@
+{
+  "name": "ai-infra-primer-site",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npm run build:content && astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "build:content": "node scripts/build-content.mjs",
+    "test": "node --test tests/",
+    "qa": "npm run build:content && npm run build && npx pagefind --site dist && node scripts/check-links.mjs && node scripts/qa-shots.mjs"
+  },
+  "dependencies": {
+    "@astrojs/sitemap": "^3.6.0",
+    "astro": "^5.16.0",
+    "katex": "^0.16.25",
+    "rehype-katex": "^7.0.1",
+    "remark-math": "^6.0.0",
+    "unist-util-visit": "^5.0.0"
+  },
+  "devDependencies": {
+    "pagefind": "^1.4.0",
+    "playwright": "^1.56.0",
+    "typescript": "^5.9.0"
+  }
+}

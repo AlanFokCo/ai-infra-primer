@@ -5,3 +5,10 @@ docs/superpowers/
 # Python
 __pycache__/
 *.pyc
+
+# Site build artifacts
+site/node_modules/
+site/dist/
+site/src/generated/
+site/.astro/
+site/qa/

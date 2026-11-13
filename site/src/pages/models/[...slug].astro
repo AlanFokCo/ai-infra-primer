@@ -1,0 +1,93 @@
+---
+import Base from '../../layouts/Base.astro';
+import manifest from '../../generated/manifest.json';
+
+export function getStaticPaths() {
+  const modules = import.meta.glob('../../generated/chapters/*/*.md', { eager: true });
+  const bySlug = {};
+  for (const [path, mod] of Object.entries(modules)) {
+    const m = path.match(/chapters\/(.+)\.md$/);
+    if (m) bySlug[m[1]] = mod;
+  }
+
+  const paths = [];
+  for (const part of manifest.parts) {
+    // Part 页
+    paths.push({ params: { slug: part.dir }, props: { kind: 'part', part } });
+    // 章节页
+    for (const ch of part.chapters) {
+      paths.push({
+        params: { slug: ch.slug },
+        props: { kind: 'chapter', part, chapterMeta: ch, mod: bySlug[ch.slug] },
+      });
+    }
+  }
+  return paths;
+}
+
+const { kind, part, chapterMeta, mod } = Astro.props;
+const base = import.meta.env.BASE_URL;
+
+let Content = null;
+let headings = [];
+let fm = null;
+if (kind === 'chapter') {
+  Content = mod.default;
+  headings = mod.headings ?? [];
+  fm = mod.frontmatter;
+}
+const flatEntry = kind === 'chapter' ? manifest.flat.find((c) => c.slug === chapterMeta.slug) : null;
+---
+
+{
+  kind === 'part' ? (
+    <Base title={`Part ${part.num} · ${part.titleEn}`} description={part.tagline}>
+      <h1>
+        Part {part.num} · {part.titleZh}（{part.titleEn}）
+      </h1>
+      <p>{part.tagline}</p>
+      <ol>
+        {part.chapters.map((c) => (
+          <li>
+            <a href={`${base}/models/${c.slug}/`}>
+              {c.num} {c.titleZh}
+            </a>
+            <small>（{c.titleEn}）</small>
+          </li>
+        ))}
+      </ol>
+    </Base>
+  ) : (
+    <Base title={`${fm.num} ${fm.titleZh}`} description={fm.positioning}>
+      <article>
+        <header>
+          <p>
+            <a href={`${base}/models/${part.dir}/`}>
+              Part {part.num} · {part.titleZh}
+            </a>
+          </p>
+          <h1>
+            {fm.num} {fm.titleZh}
+          </h1>
+          <p>
+            <em>{fm.titleEn}</em>
+          </p>
+          <p>{fm.positioning}</p>
+        </header>
+        <Content />
+        <nav>
+          {flatEntry?.prev && (
+            <a href={`${base}/models/${flatEntry.prev.slug}/`}>
+              ← {flatEntry.prev.num} {flatEntry.prev.titleZh}
+            </a>
+          )}
+          {flatEntry?.next && (
+            <a href={`${base}/models/${flatEntry.next.slug}/`}>
+              {flatEntry.next.num} {flatEntry.next.titleZh} →
+            </a>
+          )}
+        </nav>
+      </article>
+    </Base>
+  )
+}
