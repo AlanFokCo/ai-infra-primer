@@ -28,6 +28,13 @@ test('代码围栏内的类链接文本不动', () => {
   assert.equal(lines[2], '[b](../references.md)');
 });
 
+test('跨维度 README 链接指向 GitHub 源', () => {
+  const src = '见 [inference 维度](../../inference/README.md) 与 [cluster](../../cluster/README.md)';
+  const out = rewriteLinks(src, ctx);
+  assert.ok(out.includes('](https://github.com/AlanFokCo/ai-infra-primer/blob/main/inference/README.md)'));
+  assert.ok(out.includes('](https://github.com/AlanFokCo/ai-infra-primer/blob/main/cluster/README.md)'));
+});
+
 test('真实语料：references.md 相对链接清零', () => {
   const src = chapter('02-transformer-anatomy/03-attention-mechanism.md');
   const out = rewriteLinks(src, ctx);

@@ -11,6 +11,11 @@ export function rehypeHeadingIds() {
         node.properties.id = `sec-${n}`;
         n += 1;
       }
+      // KaTeX 的 MathML 层（含 LaTeX 源码 annotation）不进搜索索引
+      const cls = node.properties?.className;
+      if (Array.isArray(cls) && cls.includes('katex-mathml')) {
+        node.properties['data-pagefind-ignore'] = true;
+      }
     });
   };
 }

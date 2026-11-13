@@ -21,7 +21,9 @@ const missing = [];
 
 for (const file of walk(DIST)) {
   pages += 1;
-  const html = readFileSync(file, 'utf8');
+  const html = readFileSync(file, 'utf8')
+    .replace(/<script[\s\S]*?<\/script>/g, '') // 内联脚本里的模板字符串不是链接
+    .replace(/<style[\s\S]*?<\/style>/g, '');
   const attrs = html.matchAll(/(?:href|src)="([^"]+)"/g);
   for (const [, url] of attrs) {
     if (/^(https?:|mailto:|#|data:|javascript:)/.test(url)) continue;

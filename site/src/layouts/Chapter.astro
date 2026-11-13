@@ -32,7 +32,7 @@ const readMinutes = Math.max(4, Math.round(fm.cjkChars / 420));
           <a href={`${base}/models/${part.dir}/`}>Part {part.num} · {part.titleZh}</a>
         </nav>
         <p class="ch-num-big">CHAPTER {fm.num}</p>
-        <h1 class="chapter-title">{fm.titleZh}</h1>
+        <h1 class="chapter-title" data-pagefind-meta="title">{fm.num} {fm.titleZh}</h1>
         <p class="chapter-title-en">{fm.titleEn}</p>
         <div class="ch-ledger">
           <span>{fm.cjkChars.toLocaleString()} 字</span>
@@ -71,13 +71,17 @@ const readMinutes = Math.max(4, Math.round(fm.cjkChars / 420));
       </div>
     </header>
 
-    <PartNav part={part} currentSlug={`${part.dir}/${fm.file}`} />
+    <div data-pagefind-ignore>
+      <PartNav part={part} currentSlug={`${part.dir}/${fm.file}`} />
+    </div>
 
-    <article class="prose">
+    <article class="prose" data-pagefind-body>
       <slot />
     </article>
 
-    <TocRail headings={headings} />
+    <div data-pagefind-ignore>
+      <TocRail headings={headings} />
+    </div>
 
     <nav class="chapter-pager" aria-label="上下章">
       <span>

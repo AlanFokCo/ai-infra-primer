@@ -43,6 +43,11 @@ function rewriteTarget(target, base) {
   // ../references.md 或 ../references.md#anchor
   const refMatch = target.match(/^\.\.\/references\.md(#.*)?$/);
   if (refMatch) return `${base}/models/references/${refMatch[1] ?? ''}`;
+  // 跨维度链接（../../inference/README.md 等）：维度未上线，指向 GitHub 仓库源
+  const dimMatch = target.match(/^\.\.\/\.\.\/([\da-z-]+)\/(README\.md)$/);
+  if (dimMatch) {
+    return `https://github.com/AlanFokCo/ai-infra-primer/blob/main/${dimMatch[1]}/${dimMatch[2]}`;
+  }
   // 章节文件链接：bare 同目录（02-x.md）或 ../NN-dir/MM-y.md
   const chapMatch = target.match(/^(\.\.\/)?((\d{2}-[\da-z-]+)\/)?(\d{2}-[\da-z-]+)\.md(#.*)?$/);
   if (chapMatch) {

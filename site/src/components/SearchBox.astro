@@ -1,0 +1,215 @@
+---
+// Pagefind 静态搜索：懒加载索引，overlay 交互，/ 或 ⌘K 唤起
+const base = import.meta.env.BASE_URL;
+---
+
+<button class="search-trigger" data-search-open aria-label="搜索（/）" title="搜索（/）">
+  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+    <circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.5" />
+    <path d="M11 11 L14.5 14.5" stroke="currentColor" stroke-width="1.5" />
+  </svg>
+  <span class="search-hint">搜索</span>
+  <kbd>/</kbd>
+</button>
+
+<div class="search-overlay" data-search-overlay hidden>
+  <div class="search-panel" role="dialog" aria-label="站内搜索">
+    <div class="search-head">
+      <input
+        type="search"
+        placeholder="搜章节、术语、公式符号…"
+        aria-label="搜索"
+        data-search-input
+        autocomplete="off"
+      />
+      <kbd>esc</kbd>
+    </div>
+    <ol class="search-results" data-search-results></ol>
+    <p class="search-empty" data-search-empty hidden>没有匹配的内容。</p>
+  </div>
+</div>
+
+<script is:inline>
+  const trigger = document.querySelector('[data-search-open]');
+  const overlay = document.querySelector('[data-search-overlay]');
+  const input = document.querySelector('[data-search-input]');
+  const resultsEl = document.querySelector('[data-search-results]');
+  const emptyEl = document.querySelector('[data-search-empty]');
+  let pagefind = null;
+  let loadFailed = false;
+
+  async function ensureIndex() {
+    if (pagefind || loadFailed) return;
+    try {
+      const base = document.documentElement.dataset.base || '';
+      pagefind = await import(`${base}/pagefind/pagefind.js`);
+      await pagefind.init();
+    } catch (e) {
+      loadFailed = true;
+    }
+  }
+
+  function openSearch() {
+    overlay.hidden = false;
+    document.body.style.overflow = 'hidden';
+    input.focus();
+    ensureIndex().then(() => {
+      if (loadFailed && !resultsEl.dataset.hinted) {
+        resultsEl.dataset.hinted = '1';
+        resultsEl.innerHTML = '<li class="search-note">搜索索引未构建（本地 dev 模式）。线上版本含全文索引。</li>';
+      }
+      // 索引就绪后若已有输入，补跑一次
+      if (pagefind && input.value.trim()) runSearch();
+    });
+  }
+  function closeSearch() {
+    overlay.hidden = true;
+    document.body.style.overflow = '';
+  }
+
+  trigger?.addEventListener('click', openSearch);
+  overlay?.addEventListener('click', (e) => {
+    if (e.target === overlay) closeSearch();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === '/' && !e.metaKey && !e.ctrlKey && !/INPUT|TEXTAREA/.test(document.activeElement?.tagName ?? '')) {
+      e.preventDefault();
+      openSearch();
+    }
+    if (e.key === 'Escape' && !overlay.hidden) closeSearch();
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      e.preventDefault();
+      openSearch();
+    }
+  });
+
+  let debounce = 0;
+  input?.addEventListener('input', () => {
+    clearTimeout(debounce);
+    debounce = setTimeout(runSearch, 160);
+  });
+
+  async function runSearch() {
+    const q = input.value.trim();
+    resultsEl.innerHTML = '';
+    emptyEl.hidden = true;
+    if (!q || !pagefind) return;
+    const search = await pagefind.search(q);
+    const items = await Promise.all(results_slice(results_of(search)));
+    if (items.length === 0) {
+      emptyEl.hidden = false;
+      return;
+    }
+    resultsEl.innerHTML = items
+      .map(
+        (d) => `<li><a href="${d.url}">
+          <span class="sr-title">${d.meta?.title ?? d.url}</span>
+          <span class="sr-excerpt">${d.excerpt}</span>
+        </a></li>`
+      )
+      .join('');
+    resultsEl.querySelectorAll('a').forEach((a) =>
+      a.addEventListener('click', closeSearch)
+    );
+  }
+  function results_of(s) { return s.results.slice(0, 8); }
+  function results_slice(rs) { return rs.map((r) => r.data()); }
+</script>
+
+<style is:global>
+  .search-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2);
+    background: none;
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    color: var(--ink-soft);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    cursor: pointer;
+  }
+  .search-trigger:hover { border-color: var(--seal); color: var(--seal); }
+  .search-trigger kbd {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: var(--ink-faint);
+    border: 1px solid var(--rule-soft);
+    border-radius: 2px;
+    padding: 0 0.3em;
+  }
+  .search-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    background: color-mix(in srgb, var(--paper) 82%, transparent);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    padding: calc(var(--header-h) + 8vh) var(--page-gutter) 0;
+  }
+  .search-panel {
+    max-width: 38rem;
+    margin: 0 auto;
+    background: var(--paper-raised);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    box-shadow: 0 24px 64px -24px rgb(24 27 32 / 0.35);
+    overflow: hidden;
+  }
+  .search-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--rule);
+  }
+  .search-head input {
+    flex: 1;
+    border: none;
+    background: none;
+    font-size: var(--text-md);
+    font-family: var(--font-sans);
+    color: var(--ink);
+    outline: none;
+  }
+  .search-head kbd {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: var(--ink-faint);
+    border: 1px solid var(--rule-soft);
+    border-radius: 2px;
+    padding: 0.1em 0.4em;
+  }
+  .search-results {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 55vh;
+    overflow-y: auto;
+  }
+  .search-results:empty { display: none; }
+  .search-results a {
+    display: block;
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--rule-soft);
+  }
+  .search-results a:hover { background: var(--seal-wash); }
+  .sr-title {
+    display: block;
+    font-family: var(--font-serif);
+    font-weight: 700;
+    font-size: var(--text-base);
+    color: var(--ink);
+    margin-bottom: 2px;
+  }
+  .sr-excerpt {
+    display: block;
+    font-size: var(--text-xs);
+    color: var(--ink-faint);
+    line-height: 1.7;
+  }
+  .sr-excerpt mark { background: var(--seal-wash); color: var(--seal-deep); padding: 0 0.1em; }
+  .search-note { padding: var(--space-4); font-size: var(--text-sm); color: var(--ink-faint); }
+  .search-empty { padding: var(--space-4); font-size: var(--text-sm); color: var(--ink-faint); margin: 0; }
+</style>

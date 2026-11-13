@@ -12,6 +12,7 @@ import 'katex/dist/katex.min.css';
 import '../styles/tokens.css';
 import '../styles/base.css';
 import manifest from '../generated/manifest.json';
+import SearchBox from '../components/SearchBox.astro';
 
 interface Props {
   title: string;
@@ -31,7 +32,7 @@ const isModels = path.startsWith(`${base}/models`);
 const isRefs = path.startsWith(`${base}/models/references`);
 ---
 
-<html lang="zh-CN">
+<html lang="zh-CN" data-base={base}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -44,11 +45,12 @@ const isRefs = path.startsWith(`${base}/models/references`);
   </head>
   <body>
     <a class="skip-link" href="#main">跳到正文</a>
-    <header class="site-header">
+    <header class="site-header" data-pagefind-ignore>
       <a class="site-wordmark" href={`${base}/`} aria-label="ai-infra-primer 首页">
         <span class="site-seal" aria-hidden="true">算</span>
         <span class="wordmark-text">ai-infra-primer</span>
       </a>
+      <SearchBox />
       <nav class="site-nav" aria-label="主导航">
         <a href={`${base}/models/`} aria-current={isModels && !isRefs ? 'page' : undefined}>教程</a>
         <a href={`${base}/models/references/`} aria-current={isRefs ? 'page' : undefined}>文献</a>
@@ -58,7 +60,7 @@ const isRefs = path.startsWith(`${base}/models/references`);
     <main id="main">
       <slot />
     </main>
-    <footer class="site-footer">
+    <footer class="site-footer" data-pagefind-ignore>
       <span class="colophon">
         {stats.chapters} 章 · {stats.parts} Part · {(stats.totalCjk / 10000).toFixed(1)} 万字 · {stats.formulas ?? '—'} 式
       </span>
