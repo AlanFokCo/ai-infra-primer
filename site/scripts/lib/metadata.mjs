@@ -31,6 +31,23 @@ export function parseChapter(source, relPath) {
     ),
   ].sort();
 
+  // TOC：h2/h3 按文档序编 sec-N（rehype-heading-ids 插件在 HTML 侧按同序写 id）
+  const headings = [];
+  {
+    let inFence = false;
+    for (const line of source.split('\n')) {
+      if (/^```/.test(line)) {
+        inFence = !inFence;
+        continue;
+      }
+      if (inFence) continue;
+      const h = line.match(/^(#{2,3})\s+(.+)$/);
+      if (h) {
+        headings.push({ depth: h[1].length, text: h[2].trim(), id: `sec-${headings.length}` });
+      }
+    }
+  }
+
   return {
     partDir,
     file,
@@ -40,6 +57,7 @@ export function parseChapter(source, relPath) {
     metaLine: { raw: metaRaw, positioning, prerequisites, anchors },
     cjkChars,
     evidenceLevels,
+    headings,
   };
 }
 

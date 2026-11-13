@@ -1,5 +1,6 @@
 ---
 import Base from '../../layouts/Base.astro';
+import Chapter from '../../layouts/Chapter.astro';
 import manifest from '../../generated/manifest.json';
 
 export function getStaticPaths() {
@@ -12,9 +13,7 @@ export function getStaticPaths() {
 
   const paths = [];
   for (const part of manifest.parts) {
-    // Part 页
     paths.push({ params: { slug: part.dir }, props: { kind: 'part', part } });
-    // 章节页
     for (const ch of part.chapters) {
       paths.push({
         params: { slug: ch.slug },
@@ -28,66 +27,156 @@ export function getStaticPaths() {
 const { kind, part, chapterMeta, mod } = Astro.props;
 const base = import.meta.env.BASE_URL;
 
-let Content = null;
-let headings = [];
-let fm = null;
-if (kind === 'chapter') {
-  Content = mod.default;
-  headings = mod.headings ?? [];
-  fm = mod.frontmatter;
+if (kind === 'chapter' && !mod) {
+  throw new Error(`章节模块缺失: ${chapterMeta.slug}`);
 }
+
+const Content = kind === 'chapter' ? mod.default : null;
+const fm = kind === 'chapter' ? mod.frontmatter : null;
+const headings = fm?.headings ?? [];
 const flatEntry = kind === 'chapter' ? manifest.flat.find((c) => c.slug === chapterMeta.slug) : null;
+
+const partCjk = part.chapters.reduce((n, c) => n + c.cjkChars, 0);
+const partFormulas = part.chapters.reduce((n, c) => n + (c.formulas ?? 0), 0);
 ---
 
 {
   kind === 'part' ? (
-    <Base title={`Part ${part.num} · ${part.titleEn}`} description={part.tagline}>
-      <h1>
-        Part {part.num} · {part.titleZh}（{part.titleEn}）
-      </h1>
-      <p>{part.tagline}</p>
-      <ol>
-        {part.chapters.map((c) => (
-          <li>
-            <a href={`${base}/models/${c.slug}/`}>
-              {c.num} {c.titleZh}
-            </a>
-            <small>（{c.titleEn}）</small>
-          </li>
-        ))}
-      </ol>
+    <Base title={`Part ${part.num} · ${part.titleZh}`} description={part.tagline}>
+      <div class="part-page">
+        <nav class="breadcrumb" aria-label="面包屑">
+          <a href={`${base}/models/`}>models</a>
+          <span class="sep">/</span>
+          <span>Part {part.num}</span>
+        </nav>
+        <header class="part-head">
+          <p class="ch-num-big">PART {part.num}</p>
+          <h1 class="part-title">{part.titleZh}</h1>
+          <p class="part-title-en">{part.titleEn}</p>
+          <p class="part-tagline-lead">{part.tagline}</p>
+          <p class="ch-ledger">
+            <span>{part.chapters.length} 章</span>
+            <span>{(partCjk / 10000).toFixed(1)} 万字</span>
+            <span>{partFormulas.toLocaleString('en-US')} 式</span>
+          </p>
+        </header>
+        <ol class="chapter-ledger">
+          {part.chapters.map((c) => (
+            <li>
+              <a class="chapter-row" href={`${base}/models/${c.slug}/`}>
+                <span class="chapter-row-num">{c.num}</span>
+                <span class="chapter-row-titles">
+                  <span class="chapter-row-zh">{c.titleZh}</span>
+                  <span class="chapter-row-en">{c.titleEn}</span>
+                </span>
+                <span class="chapter-row-stats">
+                  {(c.cjkChars / 1000).toFixed(1)}k 字 · {c.formulas ?? 0} 式
+                </span>
+              </a>
+            </li>
+          ))}
+        </ol>
+      </div>
     </Base>
   ) : (
-    <Base title={`${fm.num} ${fm.titleZh}`} description={fm.positioning}>
-      <article>
-        <header>
-          <p>
-            <a href={`${base}/models/${part.dir}/`}>
-              Part {part.num} · {part.titleZh}
-            </a>
-          </p>
-          <h1>
-            {fm.num} {fm.titleZh}
-          </h1>
-          <p>
-            <em>{fm.titleEn}</em>
-          </p>
-          <p>{fm.positioning}</p>
-        </header>
-        <Content />
-        <nav>
-          {flatEntry?.prev && (
-            <a href={`${base}/models/${flatEntry.prev.slug}/`}>
-              ← {flatEntry.prev.num} {flatEntry.prev.titleZh}
-            </a>
-          )}
-          {flatEntry?.next && (
-            <a href={`${base}/models/${flatEntry.next.slug}/`}>
-              {flatEntry.next.num} {flatEntry.next.titleZh} →
-            </a>
-          )}
-        </nav>
-      </article>
-    </Base>
+    <Chapter part={part} fm={fm} headings={headings} prev={flatEntry.prev} next={flatEntry.next}>
+      <Content />
+    </Chapter>
   )
 }
+
+<style>
+  .part-page {
+    max-width: var(--prose-width);
+    margin: 0 auto;
+    padding: var(--space-8) var(--page-gutter) var(--space-16);
+  }
+  .breadcrumb {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--ink-faint);
+    margin-bottom: var(--space-6);
+    display: flex;
+    gap: var(--space-2);
+  }
+  .breadcrumb a:hover { color: var(--seal); }
+  .breadcrumb .sep { color: var(--rule); }
+  .ch-num-big {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--seal);
+    letter-spacing: 0.08em;
+    margin-bottom: var(--space-2);
+  }
+  .part-title {
+    font-family: var(--font-serif);
+    font-weight: 900;
+    font-size: var(--text-2xl);
+    margin: 0 0 var(--space-2);
+  }
+  .part-title-en {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-weight: 600;
+    font-size: var(--text-md);
+    color: var(--ink-faint);
+    margin: 0 0 var(--space-4);
+  }
+  .part-tagline-lead {
+    color: var(--ink-soft);
+    line-height: 1.85;
+    margin: 0 0 var(--space-4);
+  }
+  .ch-ledger {
+    display: flex;
+    gap: var(--space-4);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: var(--ink-faint);
+    margin: 0 0 var(--space-8);
+  }
+  .chapter-ledger {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border-top: 1px solid var(--rule);
+  }
+  .chapter-row {
+    display: grid;
+    grid-template-columns: 3rem 1fr auto;
+    gap: var(--space-4);
+    align-items: baseline;
+    padding: var(--space-4) var(--space-2);
+    border-bottom: 1px solid var(--rule);
+    transition: background var(--dur-fast) var(--ease-out);
+  }
+  .chapter-row:hover { background: var(--seal-wash); }
+  .chapter-row-num {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--seal);
+  }
+  .chapter-row-zh {
+    font-family: var(--font-serif);
+    font-weight: 700;
+    font-size: var(--text-md);
+    display: block;
+  }
+  .chapter-row-en {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: var(--ink-faint);
+    display: block;
+    margin-top: 2px;
+  }
+  .chapter-row-stats {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: var(--ink-faint);
+    white-space: nowrap;
+  }
+  @media (max-width: 40rem) {
+    .chapter-row { grid-template-columns: 2.4rem 1fr; }
+    .chapter-row-stats { display: none; }
+  }
+</style>

@@ -1,0 +1,33 @@
+---
+interface Props {
+  part: {
+    num: number;
+    dir: string;
+    titleZh: string;
+    titleEn: string;
+    chapters: { num: string; slug: string; titleZh: string }[];
+  };
+  currentSlug?: string;
+}
+const { part, currentSlug } = Astro.props;
+const base = import.meta.env.BASE_URL;
+---
+
+<nav class="part-nav" aria-label={`Part ${part.num} 章节导航`}>
+  <a class="nav-part" href={`${base}/models/${part.dir}/`}>
+    <span class="nav-part-num">PART {part.num}</span>
+    <span class="nav-part-title">{part.titleZh}</span>
+  </a>
+  <ol>
+    {
+      part.chapters.map((c) => (
+        <li>
+          <a href={`${base}/models/${c.slug}/`} aria-current={c.slug === currentSlug ? 'page' : undefined}>
+            <span class="ch-num">{c.num}</span>
+            <span>{c.titleZh}</span>
+          </a>
+        </li>
+      ))
+    }
+  </ol>
+</nav>

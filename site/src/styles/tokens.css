@@ -1,0 +1,81 @@
+/* ============================================================
+   ai-infra-primer 设计令牌 — 「算清楚的教程」
+   纸面 manuscript + 工程账本 + 朱砂审定印
+   ============================================================ */
+
+:root {
+  /* --- 纸与墨 --- */
+  --paper: #f7f6f2;          /* 绘图纸：冷于奶油，避免泛黄的温吞 */
+  --paper-raised: #fdfcf9;   /* 浮起面：代码行内、徽章底 */
+  --paper-sunk: #efede6;     /* 沉下面：表格斑马、图版边 */
+  --ink: #181b20;            /* 主墨色：带蓝底的近黑 */
+  --ink-soft: #454b57;       /* 次级文字 */
+  --ink-faint: #767c8a;      /* 注记、页边 */
+  --rule: #d9d6cc;           /* 主细线：账本行线 */
+  --rule-soft: #e7e5db;      /* 次细线 */
+
+  /* --- 印与证 --- */
+  --seal: #a83228;           /* 朱砂：唯一 accent，审定/核验之印 */
+  --seal-deep: #8a2620;
+  --seal-wash: #f3e5e2;      /* 朱砂淡染：hover 底 */
+  --grade-a: #a83228;        /* [A] 正式 paper + 代码 + 权重 */
+  --grade-b: #2b5a8e;        /* [B] 有 paper 无官方代码 */
+  --grade-c: #9a6a1f;        /* [C] 闭源披露 */
+  --grade-w: #5c6b66;        /* [W] 开放权重无 paper */
+
+  /* --- 字体 --- */
+  --font-serif: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+  --font-sans: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SF Mono', ui-monospace, 'Cascadia Mono', monospace;
+
+  /* --- 字阶（1.25~1.333 混合，CJK 优化） --- */
+  --text-2xs: 0.6875rem;   /* 11px 印章、角标 */
+  --text-xs: 0.75rem;      /* 12px 数据标签 */
+  --text-sm: 0.8125rem;    /* 13px 次级 */
+  --text-base: 0.9375rem;  /* 15px 界面 */
+  --text-prose: 1.0625rem; /* 17px 正文（CJK 长读） */
+  --text-md: 1.25rem;      /* 20px */
+  --text-lg: 1.5625rem;    /* 25px */
+  --text-xl: 2rem;         /* 32px */
+  --text-2xl: 2.625rem;    /* 42px */
+  --text-hero: clamp(2.75rem, 7.2vw, 5.25rem); /* 44→84px */
+
+  /* --- 行高 --- */
+  --leading-prose: 1.95;   /* CJK 长文 */
+  --leading-ui: 1.6;
+  --leading-tight: 1.2;
+
+  /* --- 布局 --- */
+  --prose-width: 39rem;        /* 正文栏 ≈ CJK 37 字/行 */
+  --rail-left: 15rem;          /* Part 导航栏 */
+  --rail-right: 13.5rem;       /* 章内 TOC 栏 */
+  --page-gutter: clamp(1.25rem, 4vw, 3rem);
+  --header-h: 3.5rem;
+
+  /* --- 间距 --- */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2.5rem;
+  --space-12: 4rem;
+  --space-16: 6.5rem;
+
+  /* --- 动效 --- */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 120ms;
+  --dur-med: 320ms;
+
+  /* --- 图版（代码/ASCII 图的深色面板） --- */
+  --plate: #181b20;
+  --plate-ink: #e8e6df;
+  --plate-faint: #9aa0ab;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur-med: 0ms;
+  }
+}

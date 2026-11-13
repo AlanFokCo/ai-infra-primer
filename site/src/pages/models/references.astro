@@ -1,0 +1,226 @@
+---
+import Base from '../../layouts/Base.astro';
+import refs from '../../generated/references.json';
+
+const base = import.meta.env.BASE_URL;
+const total = refs.groups.reduce((n, g) => n + g.entries.length, 0);
+
+const levelClass = (lv: string) => {
+  const m = lv.match(/\[([ABCW])\]/);
+  if (m) return `badge badge-${m[1].toLowerCase()}`;
+  return 'badge badge-ref';
+};
+const levelText = (lv: string) => {
+  const m = lv.match(/\[([ABCW])\]/);
+  return m ? m[1] : '教';
+};
+
+// arXiv ID / URL → 可点链接
+function linkFor(idOrUrl: string): string | null {
+  if (/^https?:\/\//.test(idOrUrl)) return idOrUrl;
+  if (/^\d{4}\.\d{4,5}(v\d+)?$/.test(idOrUrl)) return `https://arxiv.org/abs/${idOrUrl}`;
+  return null;
+}
+---
+
+<Base title="文献索引" description={`models 维度全部引用：${total} 条，按 Part 分组，含证据等级与核实日期。`}>
+  <div class="refs-page">
+    <header class="refs-head">
+      <nav class="breadcrumb" aria-label="面包屑">
+        <a href={`${base}/models/`}>models</a>
+        <span class="sep">/</span>
+        <span>references</span>
+      </nav>
+      <h1 class="refs-title">文献索引</h1>
+      <p class="refs-lede">
+        全部 {total} 条引用，按 Part 分组。证据分级：
+        <span class="badge badge-a">A</span> 论文+代码+权重，
+        <span class="badge badge-b">B</span> 有论文无官方代码，
+        <span class="badge badge-c">C</span> 闭源披露，
+        <span class="badge badge-w">W</span> 开放权重无论文，
+        <span class="badge badge-ref">教</span> 教学参照。
+      </p>
+    </header>
+
+    {
+      refs.groups.map((g) => (
+        <section class="refs-group" aria-labelledby={`ref-${g.part.replace(/\s/g, '')}`}>
+          <h2 id={`ref-${g.part.replace(/\s/g, '')}`} class="refs-part">
+            <span class="mono-num">{g.part.replace('Part ', 'P')}</span>
+            {g.title}
+            <span class="refs-count">{g.entries.length} 条</span>
+          </h2>
+          <div class="table-scroll">
+          <table class="refs-table">
+            <thead>
+              <tr>
+                <th>标题</th>
+                <th>作者</th>
+                <th>出处</th>
+                <th>级</th>
+                <th>核实</th>
+                <th>被引</th>
+              </tr>
+            </thead>
+            <tbody>
+              {g.entries.map((e) => {
+                const url = linkFor(e.idOrUrl);
+                return (
+                  <tr id={`k-${e.key}`}>
+                    <td class="ref-title">
+                      {url ? <a href={url} rel="noopener">{e.title}</a> : e.title}
+                    </td>
+                    <td class="ref-authors">{e.authors}</td>
+                    <td class="ref-id mono">{e.idOrUrl}</td>
+                    <td><span class={levelClass(e.level)} title={e.level}>{levelText(e.level)}</span></td>
+                    <td class="mono ref-date">{e.verified}</td>
+                    <td class="mono ref-cited">{e.citedBy}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          </div>
+        </section>
+      ))
+    }
+
+    {refs.glossary && (
+      <section class="refs-glossary" aria-labelledby="glossary-h">
+        <h2 id="glossary-h" class="refs-part">术语表</h2>
+        <div class="glossary-body">
+          {refs.glossary.split('\n\n').map((para) => {
+            if (para.startsWith('|')) {
+              // 术语表若为表格，按行渲染
+              const rows = para.split('\n').filter((l) => l.startsWith('|'));
+              const cells = rows.map((r) => r.split('|').slice(1, -1).map((c) => c.trim()));
+              const head = cells[0];
+              const body = cells.slice(2);
+              return (
+                <div class="table-scroll">
+                  <table class="refs-table">
+                    <thead>
+                      <tr>{head.map((h) => <th>{h}</th>)}</tr>
+                    </thead>
+                    <tbody>
+                      {body.map((row) => (
+                        <tr>{row.map((c) => <td>{c}</td>)}</tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            }
+            return <p>{para}</p>;
+          })}
+        </div>
+      </section>
+    )}
+  </div>
+</Base>
+
+<style>
+  .refs-page {
+    max-width: 64rem;
+    margin: 0 auto;
+    padding: var(--space-8) var(--page-gutter) var(--space-16);
+  }
+  .breadcrumb {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--ink-faint);
+    margin-bottom: var(--space-6);
+    display: flex;
+    gap: var(--space-2);
+  }
+  .breadcrumb a:hover { color: var(--seal); }
+  .breadcrumb .sep { color: var(--rule); }
+  .refs-title {
+    font-family: var(--font-serif);
+    font-weight: 900;
+    font-size: var(--text-2xl);
+    margin: 0 0 var(--space-4);
+  }
+  .refs-lede {
+    color: var(--ink-soft);
+    line-height: 2.1;
+    max-width: 44em;
+    margin: 0 0 var(--space-12);
+  }
+  .refs-group { margin-bottom: var(--space-12); }
+  .refs-part {
+    font-family: var(--font-serif);
+    font-weight: 700;
+    font-size: var(--text-lg);
+    margin: 0 0 var(--space-4);
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
+  }
+  .mono-num { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--seal); }
+  .refs-count {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: var(--ink-faint);
+    font-weight: 400;
+  }
+  .table-scroll { overflow-x: auto; scrollbar-width: thin; }
+  .refs-table {
+    width: 100%;
+    min-width: 40rem;
+    border-collapse: collapse;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    font-size: var(--text-sm);
+  }
+  .refs-table th {
+    font-family: var(--font-mono);
+    font-weight: 500;
+    font-size: var(--text-2xs);
+    color: var(--ink-faint);
+    text-align: left;
+    padding: var(--space-2) var(--space-3) var(--space-2) 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .refs-table td {
+    padding: var(--space-2) var(--space-3) var(--space-2) 0;
+    border-bottom: 1px solid var(--rule-soft);
+    vertical-align: top;
+    line-height: 1.7;
+  }
+  .refs-table tbody tr:last-child td { border-bottom: none; }
+  .refs-table tbody tr:hover td { background: var(--paper-sunk); }
+  .ref-title a { border-bottom: 1px solid var(--rule); }
+  .ref-title a:hover { color: var(--seal); border-bottom-color: var(--seal); }
+  .ref-authors { color: var(--ink-soft); white-space: nowrap; }
+  .mono { font-family: var(--font-mono); }
+  .ref-id { font-size: var(--text-2xs); color: var(--ink-soft); word-break: break-all; }
+  .ref-date, .ref-cited { font-size: var(--text-2xs); color: var(--ink-faint); white-space: nowrap; }
+  .glossary-body { font-size: var(--text-sm); color: var(--ink-soft); line-height: 1.9; }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.5em;
+    height: 1.5em;
+    padding: 0 0.3em;
+    border: 1.2px solid currentColor;
+    border-radius: 2px;
+    font-family: var(--font-mono);
+    font-size: 0.78em;
+    font-weight: 600;
+    line-height: 1;
+  }
+  .badge-a { color: var(--grade-a); }
+  .badge-b { color: var(--grade-b); }
+  .badge-c { color: var(--grade-c); }
+  .badge-w { color: var(--grade-w); }
+  .badge-ref { color: var(--ink-faint); }
+
+  @media (max-width: 40rem) {
+    .ref-authors, .ref-date { display: none; }
+    .refs-table th:nth-child(2), .refs-table th:nth-child(5) { display: none; }
+  }
+</style>

@@ -1,0 +1,418 @@
+/* ============================================================
+   chapter — 章节阅读体验：稿纸三栏、正文精排、图版与账本
+   ============================================================ */
+
+.chapter-shell {
+  display: grid;
+  grid-template-columns: var(--rail-left) minmax(0, var(--prose-width)) var(--rail-right);
+  column-gap: clamp(1.5rem, 3.5vw, 3.5rem);
+  row-gap: 0;
+  /* 栏宽 + 间距 + 两侧 gutter 全计入，确保中轨始终 ≥ 正文宽 */
+  max-width: calc(
+    var(--rail-left) + var(--prose-width) + var(--rail-right) +
+    2 * 3.5rem + 2 * 3rem
+  );
+  margin: 0 auto;
+  padding: 0 var(--page-gutter) var(--space-16);
+  justify-content: center;
+}
+
+/* ---------- 左栏：Part 导航 ---------- */
+.part-nav {
+  position: sticky;
+  top: calc(var(--header-h) + 1.5rem);
+  align-self: start;
+  max-height: calc(100vh - var(--header-h) - 3rem);
+  overflow-y: auto;
+  font-size: var(--text-sm);
+  scrollbar-width: thin;
+}
+.part-nav .nav-part {
+  display: block;
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--rule);
+}
+.part-nav .nav-part-num {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--seal);
+  display: block;
+}
+.part-nav .nav-part-title {
+  font-family: var(--font-serif);
+  font-weight: 700;
+  font-size: var(--text-base);
+  color: var(--ink);
+}
+.part-nav ol { list-style: none; margin: 0; padding: 0; }
+.part-nav li { margin: 0; }
+.part-nav li a {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  padding: 0.3rem 0 0.3rem var(--space-3);
+  border-left: 2px solid transparent;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+.part-nav li a .ch-num {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--ink-faint);
+  flex-shrink: 0;
+}
+.part-nav li a:hover { color: var(--ink); }
+.part-nav li a[aria-current] {
+  color: var(--seal);
+  border-left-color: var(--seal);
+  background: linear-gradient(to right, var(--seal-wash), transparent 70%);
+}
+.part-nav li a[aria-current] .ch-num { color: var(--seal); }
+
+/* ---------- 右栏：章内 TOC ---------- */
+.toc-rail {
+  position: sticky;
+  top: calc(var(--header-h) + 1.5rem);
+  align-self: start;
+  max-height: calc(100vh - var(--header-h) - 3rem);
+  overflow-y: auto;
+  font-size: var(--text-xs);
+  scrollbar-width: thin;
+}
+.toc-rail .toc-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--ink-faint);
+  display: block;
+  margin-bottom: var(--space-3);
+}
+.toc-rail ol { list-style: none; margin: 0; padding: 0; }
+.toc-rail a {
+  display: block;
+  padding: 0.28rem 0 0.28rem var(--space-3);
+  border-left: 2px solid var(--rule-soft);
+  color: var(--ink-faint);
+  line-height: 1.55;
+}
+.toc-rail a.depth-3 { padding-left: calc(var(--space-3) + 0.9em); font-size: var(--text-2xs); }
+.toc-rail a:hover { color: var(--ink); }
+.toc-rail a.active {
+  color: var(--seal);
+  border-left-color: var(--seal);
+}
+
+/* ---------- 章头 ---------- */
+.chapter-head {
+  grid-column: 1 / -1;
+  padding-top: var(--space-6);
+}
+.chapter-head .head-inner {
+  max-width: var(--prose-width);
+  margin: 0 auto;
+}
+.breadcrumb {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+  margin-bottom: var(--space-6);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.chapter-head .breadcrumb {
+  /* 在章头内部，不加额外 margin */
+}
+.breadcrumb a:hover { color: var(--seal); }
+.breadcrumb .sep { color: var(--rule); }
+
+.ch-num-big {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--seal);
+  letter-spacing: 0.08em;
+  margin-bottom: var(--space-2);
+}
+.chapter-title {
+  font-family: var(--font-serif);
+  font-weight: 900;
+  font-size: var(--text-2xl);
+  line-height: 1.25;
+  margin: 0 0 var(--space-2);
+  letter-spacing: 0.01em;
+}
+.chapter-title-en {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 600;
+  font-size: var(--text-md);
+  color: var(--ink-faint);
+  margin: 0 0 var(--space-6);
+}
+.ch-ledger {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--ink-faint);
+  margin-bottom: var(--space-6);
+}
+
+/* 档案面板：定位 / 前置 / 锚点 */
+.dossier {
+  border: 1px solid var(--rule);
+  background: var(--paper-raised);
+  margin: 0 0 var(--space-8);
+}
+.dossier-row {
+  display: grid;
+  grid-template-columns: 4.5rem 1fr;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--rule-soft);
+  font-size: var(--text-sm);
+  line-height: 1.8;
+}
+.dossier-row:last-child { border-bottom: none; }
+.dossier-row dt {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--ink-faint);
+  padding-top: 0.35em;
+}
+.dossier-row dd { margin: 0; color: var(--ink-soft); }
+.dossier-row .katex { font-size: 1em; }
+
+/* 证据章 */
+.evidence-badges { display: inline-flex; gap: 6px; }
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5em;
+  height: 1.5em;
+  padding: 0 0.3em;
+  border: 1.2px solid currentColor;
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  font-size: 0.78em;
+  font-weight: 600;
+  line-height: 1;
+  transform: rotate(-2deg);
+  user-select: none;
+}
+.badge-a { color: var(--grade-a); }
+.badge-b { color: var(--grade-b); }
+.badge-c { color: var(--grade-c); }
+.badge-w { color: var(--grade-w); }
+.badge-ref { color: var(--ink-faint); }
+
+/* ---------- 正文 ---------- */
+.prose {
+  max-width: var(--prose-width);
+  min-width: 0; /* grid item：允许缩到 min-content 以下，宽公式由子元素自滚动承接 */
+  margin: 0 auto;
+  font-size: var(--text-prose);
+  line-height: var(--leading-prose);
+  overflow-wrap: break-word;
+}
+.prose > :first-child { margin-top: 0; }
+
+.prose p { margin: 0 0 1.4em; }
+
+.prose h2 {
+  font-family: var(--font-serif);
+  font-weight: 700;
+  font-size: var(--text-lg);
+  line-height: 1.4;
+  margin: 3.2em 0 1em;
+  padding-bottom: 0.4em;
+  border-bottom: 1px solid var(--rule);
+}
+.prose h2:first-of-type { margin-top: 0; }
+.prose h3 {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: var(--text-md);
+  margin: 2.4em 0 0.8em;
+  color: var(--ink);
+}
+.prose h4 {
+  font-size: var(--text-prose);
+  font-weight: 700;
+  margin: 2em 0 0.6em;
+}
+
+.prose a {
+  color: var(--ink);
+  border-bottom: 1px solid var(--rule);
+  transition: color var(--dur-fast), border-color var(--dur-fast);
+}
+.prose a:hover { color: var(--seal); border-bottom-color: var(--seal); }
+
+.prose strong { font-weight: 700; }
+.prose em { font-style: italic; }
+
+.prose ul, .prose ol { padding-left: 1.6em; margin: 0 0 1.4em; }
+.prose li { margin-bottom: 0.5em; }
+.prose li::marker { color: var(--seal); }
+
+.prose hr { border: none; border-top: 1px solid var(--rule); margin: var(--space-8) 0; }
+
+/* 引用块（正文中的，非档案面板） */
+.prose blockquote {
+  margin: 1.6em 0;
+  padding: var(--space-2) var(--space-4);
+  border-left: 2px solid var(--seal);
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  font-size: 0.95em;
+}
+.prose blockquote p:last-child { margin-bottom: 0; }
+
+/* ---------- 公式 ---------- */
+.prose .katex { font-size: 1.04em; }
+/* 行内公式不可换行，最长者 ~620px：允许其作为原子 inline-block 横向滚动，
+   否则 min-content 会把移动端网格轨顶爆 */
+.prose p .katex, .prose li .katex, .prose td .katex, .prose th .katex,
+.prose h2 .katex, .prose h3 .katex, .prose blockquote .katex,
+.dossier dd .katex {
+  display: inline-block;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  vertical-align: bottom;
+  scrollbar-width: none;
+  padding-bottom: 0.15em; /* 给下伸部留位，避免被裁 */
+}
+.prose p .katex::-webkit-scrollbar, .prose li .katex::-webkit-scrollbar,
+.prose td .katex::-webkit-scrollbar, .dossier dd .katex::-webkit-scrollbar { display: none; }
+.prose .katex-display {
+  margin: 1.9em 0;
+  padding: 0.2em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+.prose .katex-display .katex { font-size: 1.08em; }
+
+/* ---------- 表格：账本 ---------- */
+.prose table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 1.6em 0 2em;
+  font-size: var(--text-sm);
+  line-height: 1.7;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  scrollbar-width: thin;
+}
+.prose thead th {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: var(--text-2xs);
+  color: var(--ink-faint);
+  text-align: left;
+  padding: var(--space-2) var(--space-4) var(--space-2) 0;
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
+}
+.prose tbody td {
+  padding: var(--space-2) var(--space-4) var(--space-2) 0;
+  border-bottom: 1px solid var(--rule-soft);
+  vertical-align: top;
+}
+.prose tbody tr:last-child td { border-bottom: none; }
+.prose tbody tr:hover td { background: var(--paper-sunk); }
+.prose td .katex, .prose th .katex { font-size: 1em; }
+
+/* ---------- 图版：代码与 ASCII 图 ---------- */
+.prose pre {
+  margin: 1.8em 0;
+  padding: var(--space-4) var(--space-6);
+  background: var(--plate);
+  border-radius: 3px;
+  overflow-x: auto;
+  font-size: var(--text-sm);
+  line-height: 1.75;
+  scrollbar-width: thin;
+  box-shadow: 0 1px 0 var(--rule-soft);
+}
+.prose pre code {
+  font-family: var(--font-mono);
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+}
+/* 无语言标记的 pre（ASCII 结构图）：同样上图版 */
+.prose pre:not(.astro-code) {
+  color: var(--plate-ink);
+  letter-spacing: 0;
+}
+
+/* 行内代码 */
+.prose :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-soft);
+  border-radius: 2px;
+  padding: 0.1em 0.35em;
+  white-space: nowrap;
+}
+
+/* ---------- 上下章 ---------- */
+.chapter-pager {
+  grid-column: 1 / -1;
+  max-width: var(--prose-width);
+  margin: var(--space-12) auto 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  border-top: 1px solid var(--rule);
+  padding-top: var(--space-6);
+}
+.pager-link { display: block; padding: var(--space-3) 0; }
+.pager-link .pager-dir {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--ink-faint);
+  display: block;
+  margin-bottom: var(--space-1);
+}
+.pager-link .pager-title {
+  font-family: var(--font-serif);
+  font-weight: 700;
+  font-size: var(--text-base);
+  color: var(--ink);
+}
+.pager-link:hover .pager-title { color: var(--seal); }
+.pager-next { text-align: right; }
+
+/* ---------- 阅读进度 ---------- */
+.reading-progress {
+  position: fixed;
+  top: var(--header-h);
+  left: 0;
+  height: 2px;
+  width: 0;
+  background: var(--seal);
+  z-index: 60;
+  transition: width 80ms linear;
+}
+
+/* ---------- 响应式 ---------- */
+@media (max-width: 82rem) {
+  .chapter-shell { grid-template-columns: minmax(0, var(--prose-width)) var(--rail-right); }
+  .part-nav { display: none; }
+}
+@media (max-width: 60rem) {
+  .chapter-shell { grid-template-columns: minmax(0, 1fr); }
+  .toc-rail { display: none; }
+  .chapter-pager { grid-template-columns: 1fr; }
+  .pager-next { text-align: left; }
+}

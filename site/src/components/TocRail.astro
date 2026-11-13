@@ -1,0 +1,73 @@
+---
+import { richText } from '../lib/richtext.mjs';
+
+interface Props {
+  headings: { depth: number; id: string; text: string }[];
+}
+const { headings } = Astro.props;
+const items = headings.filter((h) => h.depth === 2 || h.depth === 3);
+---
+
+{
+  items.length > 0 && (
+    <nav class="toc-rail" aria-label="本章目录" data-toc>
+      <span class="toc-label">本章</span>
+      <ol>
+        {items.map((h) => (
+          <li>
+            <a
+              href={`#${h.id}`}
+              class={`depth-${h.depth}`}
+              data-toc-link={h.id}
+              set:html={richText(h.text)}
+            />
+          </li>
+        ))}
+      </ol>
+    </nav>
+  )
+}
+
+<script>
+  // scroll-spy：当前视口内最靠上的小节高亮
+  const links = document.querySelectorAll('[data-toc-link]');
+  if (links.length > 0) {
+    const map = new Map();
+    links.forEach((a) => {
+      const el = document.getElementById(a.dataset.tocLink);
+      if (el) map.set(el, a);
+    });
+    const spy = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) {
+            links.forEach((a) => a.classList.remove('active'));
+            map.get(e.target)?.classList.add('active');
+          }
+        }
+      },
+      { rootMargin: '-80px 0px -70% 0px', threshold: 0 }
+    );
+    map.forEach((_, el) => spy.observe(el));
+  }
+
+  // 阅读进度条
+  const bar = document.querySelector('.reading-progress');
+  if (bar) {
+    let ticking = false;
+    const update = () => {
+      const doc = document.documentElement;
+      const max = doc.scrollHeight - doc.clientHeight;
+      const pct = max > 0 ? Math.min(1, doc.scrollTop / max) : 1;
+      bar.style.width = `${(pct * 100).toFixed(2)}%`;
+      ticking = false;
+    };
+    addEventListener('scroll', () => {
+      if (!ticking) {
+        ticking = true;
+        requestAnimationFrame(update);
+      }
+    }, { passive: true });
+    update();
+  }
+</script>

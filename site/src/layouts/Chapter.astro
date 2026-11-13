@@ -1,0 +1,101 @@
+---
+import Base from './Base.astro';
+import PartNav from '../components/PartNav.astro';
+import TocRail from '../components/TocRail.astro';
+import { richWithBadges } from '../lib/richtext.mjs';
+import '../styles/chapter.css';
+
+interface Props {
+  part: any;
+  fm: any;
+  headings: { depth: number; slug: string; text: string }[];
+  prev: { slug: string; num: string; titleZh: string } | null;
+  next: { slug: string; num: string; titleZh: string } | null;
+}
+
+const { part, fm, headings, prev, next } = Astro.props;
+const base = import.meta.env.BASE_URL;
+
+const rich = richWithBadges;
+const readMinutes = Math.max(4, Math.round(fm.cjkChars / 420));
+---
+
+<Base title={`${fm.num} ${fm.titleZh}`} description={`${fm.num} ${fm.titleZh}（${fm.titleEn}）— ai-infra-primer models 维度`}>
+  <div class="reading-progress" aria-hidden="true"></div>
+
+  <div class="chapter-shell">
+    <header class="chapter-head">
+      <div class="head-inner">
+        <nav class="breadcrumb" aria-label="面包屑">
+          <a href={`${base}/models/`}>models</a>
+          <span class="sep">/</span>
+          <a href={`${base}/models/${part.dir}/`}>Part {part.num} · {part.titleZh}</a>
+        </nav>
+        <p class="ch-num-big">CHAPTER {fm.num}</p>
+        <h1 class="chapter-title">{fm.titleZh}</h1>
+        <p class="chapter-title-en">{fm.titleEn}</p>
+        <div class="ch-ledger">
+          <span>{fm.cjkChars.toLocaleString()} 字</span>
+          <span>{fm.formulas} 式</span>
+          <span>约 {readMinutes} 分钟</span>
+          {fm.evidenceLevels.length > 0 && (
+            <span class="evidence-badges">
+              {fm.evidenceLevels.map((g: string) =>
+                g === '教学参照' ? (
+                  <span class="badge badge-ref" title="教学参照">教</span>
+                ) : (
+                  <span class={`badge badge-${g.toLowerCase()}`} title={`证据等级 ${g}`}>{g}</span>
+                )
+              )}
+            </span>
+          )}
+        </div>
+        <dl class="dossier">
+          <div class="dossier-row">
+            <dt>定位</dt>
+            <dd set:html={rich(fm.positioning)} />
+          </div>
+          {fm.prerequisites && (
+            <div class="dossier-row">
+              <dt>前置</dt>
+              <dd set:html={rich(fm.prerequisites.replace(/^前置：/, ''))} />
+            </div>
+          )}
+          {fm.anchors && (
+            <div class="dossier-row">
+              <dt>锚点</dt>
+              <dd set:html={rich(fm.anchors.replace(/^锚点：/, ''))} />
+            </div>
+          )}
+        </dl>
+      </div>
+    </header>
+
+    <PartNav part={part} currentSlug={`${part.dir}/${fm.file}`} />
+
+    <article class="prose">
+      <slot />
+    </article>
+
+    <TocRail headings={headings} />
+
+    <nav class="chapter-pager" aria-label="上下章">
+      <span>
+        {prev && (
+          <a class="pager-link" href={`${base}/models/${prev.slug}/`}>
+            <span class="pager-dir">上一章 {prev.num}</span>
+            <span class="pager-title">{prev.titleZh}</span>
+          </a>
+        )}
+      </span>
+      <span class="pager-next">
+        {next && (
+          <a class="pager-link" href={`${base}/models/${next.slug}/`}>
+            <span class="pager-dir">下一章 {next.num}</span>
+            <span class="pager-title">{next.titleZh}</span>
+          </a>
+        )}
+      </span>
+    </nav>
+  </div>
+</Base>

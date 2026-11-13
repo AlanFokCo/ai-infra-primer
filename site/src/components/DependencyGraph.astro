@@ -1,0 +1,71 @@
+---
+import manifest from '../generated/manifest.json';
+const base = import.meta.env.BASE_URL;
+// 主干 P1→P5 在上排，支线 P6→P10 在下排；坐标手工调定
+const nodes = [
+  { x: 80, y: 44, n: 1 }, { x: 260, y: 44, n: 2 }, { x: 440, y: 44, n: 3 },
+  { x: 620, y: 44, n: 4 }, { x: 800, y: 44, n: 5 },
+  { x: 170, y: 184, n: 6 }, { x: 440, y: 184, n: 7 },
+  { x: 620, y: 184, n: 8 }, { x: 800, y: 184, n: 9 },
+  { x: 300, y: 322, n: 10 },
+];
+---
+
+<svg viewBox="0 0 960 400" role="img" aria-label="Part 依赖图：主干 P1 到 P5，支线 P6 到 P10" class="dep-graph">
+  <defs>
+    <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L8,4 L0,8" fill="none" stroke="var(--ink-faint)" stroke-width="1.2" />
+    </marker>
+  </defs>
+  <g class="edges">
+    <!-- 主干 -->
+    <line x1="172" y1="70" x2="254" y2="70" marker-end="url(#arrow)" />
+    <line x1="352" y1="70" x2="434" y2="70" marker-end="url(#arrow)" />
+    <line x1="532" y1="70" x2="614" y2="70" marker-end="url(#arrow)" />
+    <line x1="712" y1="70" x2="794" y2="70" marker-end="url(#arrow)" />
+    <!-- P2 → P6 -->
+    <path d="M285 96 C 285 150, 225 150, 222 178" marker-end="url(#arrow)" />
+    <!-- P6 → P7 -->
+    <line x1="262" y1="210" x2="434" y2="210" marker-end="url(#arrow)" />
+    <!-- P7 → P8, P7 → P9 -->
+    <line x1="532" y1="210" x2="614" y2="210" marker-end="url(#arrow)" />
+    <line x1="712" y1="210" x2="794" y2="210" marker-end="url(#arrow)" />
+    <!-- P6 → P10 (RVQ codec) -->
+    <path d="M190 236 C 160 300, 260 296, 292 318" marker-end="url(#arrow)" />
+    <text x="196" y="292" class="edge-label">RVQ codec</text>
+  </g>
+  {
+    nodes.map((node) => {
+      const p = manifest.parts[node.n - 1];
+      return (
+        <a href={`${base}/models/${p.dir}/`} class="graph-node">
+          <g transform={`translate(${node.x}, ${node.y})`}>
+            <rect width="92" height="52" rx="2" />
+            <text x="12" y="20" class="node-num">P{node.n}</text>
+            <text x="12" y="40" class="node-title">{p.titleZh}</text>
+          </g>
+        </a>
+      );
+    })
+  }
+</svg>
+
+<style>
+  .dep-graph { display: block; min-width: 720px; width: 100%; height: auto; }
+  .edges line, .edges path {
+    stroke: var(--ink-faint);
+    stroke-width: 1;
+    fill: none;
+    opacity: 0.75;
+  }
+  .edge-label { font-family: var(--font-mono); font-size: 10px; fill: var(--ink-faint); }
+  .graph-node rect {
+    fill: var(--paper);
+    stroke: var(--rule);
+    stroke-width: 1;
+    transition: fill var(--dur-fast) var(--ease-out), stroke var(--dur-fast) var(--ease-out);
+  }
+  .graph-node .node-num { font-family: var(--font-mono); font-size: 10px; fill: var(--seal); }
+  .graph-node .node-title { font-family: var(--font-serif); font-weight: 700; font-size: 13px; fill: var(--ink); }
+  .graph-node:hover rect { fill: var(--seal-wash); stroke: var(--seal); }
+</style>

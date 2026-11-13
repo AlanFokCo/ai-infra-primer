@@ -1,0 +1,184 @@
+---
+import Base from '../../layouts/Base.astro';
+import DependencyGraph from '../../components/DependencyGraph.astro';
+import manifest from '../../generated/manifest.json';
+
+const base = import.meta.env.BASE_URL;
+const stats = manifest.stats;
+---
+
+<Base title="models 维度" description="生成式模型的数学：文本 LLM 主干、视觉表征、扩散生图、多模态 LLM、视频生成、语音音频，10 Part / 51 章，全部公式级。">
+  <div class="models-page">
+    <header class="models-head">
+      <p class="ch-num-big">DIMENSION 01 / 05</p>
+      <h1 class="models-title">models <span class="title-zh">模型</span></h1>
+      <p class="models-lede">
+        生成式模型的数学：文本 LLM 主干、视觉表征、扩散生图、多模态 LLM、视频生成、语音音频。
+        关键公式完整推导不跳步、逐公式附符号表、与官方实现代码对照；
+        数值事实全部带出处并标注证据等级。
+      </p>
+      <p class="ch-ledger">
+        <span>{stats.chapters} 章</span>
+        <span>{(stats.totalCjk / 10000).toFixed(1)} 万字</span>
+        <span>{stats.formulas.toLocaleString('en-US')} 式</span>
+        <span>全部已审结</span>
+      </p>
+    </header>
+
+    <section aria-labelledby="dep-h" class="models-section">
+      <h2 id="dep-h" class="section-title">依赖图</h2>
+      <p class="section-note">
+        主干 P1→P2→P3→P4→P5 是文本 LLM 线，按序读。支线从 P2 分出：P6 讲图像如何变成 latent / token，
+        P7 在其上建扩散数学，P8 复用 P6 的 ViT / CLIP 与 P7 的扩散目标，P9 把 P7 的 DiT 扩到时空维，
+        P10 复用 P6.3 的 RVQ 公式建音频 codec。
+      </p>
+      <div class="graph-wrap">
+        <DependencyGraph />
+      </div>
+    </section>
+
+    <section aria-labelledby="pre-h" class="models-section">
+      <h2 id="pre-h" class="section-title">前置知识</h2>
+      <ul class="pre-list">
+        <li><strong>线性代数</strong>——矩阵乘法与 rank、内积与投影、特征分解；张量 shape 全书统一 [B, T, H, D] 记法</li>
+        <li><strong>概率论</strong>——条件分布与边缘化、期望、KL 散度、高斯分布、Bayes 规则；7.3 / 7.5 另需 ODE 直觉</li>
+        <li><strong>Python / PyTorch</strong>——能读官方 modeling 代码；代码走读锚点是 transformers、flash-attention、diffusers 等 repo 的具体文件与函数</li>
+      </ul>
+      <p class="section-note">章节自包含：每个公式附符号表；跨章前置概念给链接，不重复展开。</p>
+    </section>
+
+    <section aria-labelledby="all-h" class="models-section">
+      <h2 id="all-h" class="section-title">全部章节</h2>
+      {
+        manifest.parts.map((p) => (
+          <div class="index-part">
+            <h3 class="index-part-head">
+              <a href={`${base}/models/${p.dir}/`}>
+                <span class="mono-num">P{p.num}</span>
+                <span class="part-zh">{p.titleZh}</span>
+                <span class="part-en">{p.titleEn}</span>
+              </a>
+            </h3>
+            <ol class="index-list">
+              {p.chapters.map((c) => (
+                <li>
+                  <a class="index-row" href={`${base}/models/${c.slug}/`}>
+                    <span class="mono-num">{c.num}</span>
+                    <span class="index-title">{c.titleZh}</span>
+                    <span class="index-stats">{(c.cjkChars / 1000).toFixed(1)}k 字 · {c.formulas ?? 0} 式</span>
+                  </a>
+                </li>
+              ))}
+            </ol>
+          </div>
+        ))
+      }
+    </section>
+  </div>
+</Base>
+
+<style>
+  .models-page {
+    max-width: 56rem;
+    margin: 0 auto;
+    padding: var(--space-8) var(--page-gutter) var(--space-16);
+  }
+  .ch-num-big {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--seal);
+    letter-spacing: 0.08em;
+    margin-bottom: var(--space-2);
+  }
+  .models-title {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: var(--text-2xl);
+    margin: 0 0 var(--space-2);
+  }
+  .models-title .title-zh {
+    font-family: var(--font-serif);
+    font-weight: 900;
+    margin-left: var(--space-3);
+  }
+  .models-lede {
+    font-size: var(--text-md);
+    line-height: 1.9;
+    color: var(--ink-soft);
+    max-width: 36em;
+    margin: 0 0 var(--space-4);
+  }
+  .ch-ledger {
+    display: flex;
+    gap: var(--space-4);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: var(--ink-faint);
+    margin: 0 0 var(--space-12);
+  }
+  .models-section { margin-bottom: var(--space-12); }
+  .section-title {
+    font-family: var(--font-serif);
+    font-weight: 700;
+    font-size: var(--text-xl);
+    margin: 0 0 var(--space-3);
+  }
+  .section-note {
+    color: var(--ink-faint);
+    font-size: var(--text-sm);
+    line-height: 1.9;
+    margin: 0 0 var(--space-6);
+    max-width: 44em;
+  }
+  .graph-wrap {
+    border: 1px solid var(--rule);
+    background: var(--paper-raised);
+    padding: var(--space-6);
+    overflow-x: auto;
+  }
+  .pre-list {
+    margin: 0 0 var(--space-4);
+    padding-left: 1.4em;
+    color: var(--ink-soft);
+    line-height: 1.9;
+    font-size: var(--text-base);
+  }
+  .pre-list li { margin-bottom: var(--space-2); }
+  .pre-list li::marker { color: var(--seal); }
+  .pre-list strong { color: var(--ink); }
+
+  .index-part { margin-bottom: var(--space-8); }
+  .index-part-head { margin: 0 0 var(--space-2); }
+  .index-part-head a {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
+  }
+  .index-part-head a:hover .part-zh { color: var(--seal); }
+  .mono-num { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--seal); }
+  .part-zh { font-family: var(--font-serif); font-weight: 700; font-size: var(--text-md); }
+  .part-en { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-faint); }
+  .index-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule); }
+  .index-row {
+    display: grid;
+    grid-template-columns: 3rem 1fr auto;
+    gap: var(--space-4);
+    align-items: baseline;
+    padding: var(--space-2) var(--space-2);
+    border-bottom: 1px solid var(--rule-soft);
+    font-size: var(--text-sm);
+    transition: background var(--dur-fast) var(--ease-out);
+  }
+  .index-row:hover { background: var(--seal-wash); }
+  .index-title { color: var(--ink); }
+  .index-stats {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: var(--ink-faint);
+    white-space: nowrap;
+  }
+  @media (max-width: 40rem) {
+    .index-stats { display: none; }
+    .index-row { grid-template-columns: 2.6rem 1fr; }
+  }
+</style>

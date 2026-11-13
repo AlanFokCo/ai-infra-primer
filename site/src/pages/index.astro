@@ -1,15 +1,163 @@
 ---
+import katex from 'katex';
+import Base from '../layouts/Base.astro';
+import DependencyGraph from '../components/DependencyGraph.astro';
+import manifest from '../generated/manifest.json';
+import '../styles/landing.css';
+
 const base = import.meta.env.BASE_URL;
+const stats = manifest.stats;
+
+// hero 推导链：四条独立公式，逐拍显影（纯 CSS delay，无 JS）
+const beats = [
+  { tex: 'o = \\sum_{s=1}^{T} p_s \\, v_s', note: '交付——输出是权重的凸组合' },
+  { tex: 'p_s = \\frac{\\exp(z_s)}{\\sum_{j=1}^{T} \\exp(z_j)}', note: '软化——可导的 argmax' },
+  { tex: 'z_s = \\langle q, k_s \\rangle \\, / \\, \\sqrt{d_k}', note: '校准——方差收编到 1' },
+  {
+    tex: '\\mathrm{Attention}(Q,K,V) = \\mathrm{softmax}\\left(\\frac{QK^{\\top}}{\\sqrt{d_k}}\\right) V',
+    note: '合成——式 (4)，2.3 章拆到底的那一条',
+    final: true,
+  },
+].map((b) => ({ ...b, html: katex.renderToString(b.tex, { displayMode: true, throwOnError: true }) }));
+
+const dimensions = [
+  { key: 'models', zh: '模型', en: 'models', scope: '生成式模型的数学：文本主干、视觉、扩散、多模态、视频、语音', status: `${stats.chapters} 章已审结`, live: true },
+  { key: 'training', zh: '训练', en: 'training', scope: 'optimizer、RLHF（PPO / GRPO）、FP8、分布式训练策略', status: 'forthcoming', live: false },
+  { key: 'inference', zh: '推理', en: 'inference', scope: 'continuous batching、PagedAttention、speculative decoding', status: 'forthcoming', live: false },
+  { key: 'gpu', zh: '硬件', en: 'gpu', scope: '内存层级、roofline、FlashAttention 等算子的实现层', status: 'forthcoming', live: false },
+  { key: 'cluster', zh: '集群', en: 'cluster', scope: 'EP、all-to-all、Ring Attention、网络拓扑', status: 'forthcoming', live: false },
+];
 ---
 
-<html lang="zh-CN">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ai-infra-primer</title>
-  </head>
-  <body>
-    <h1>ai-infra-primer — from tokens to teraflops</h1>
-    <p><a href={`${base}/models/`}>models 维度</a></p>
-  </body>
-</html>
+<Base title="首页">
+  <!-- ============ hero：标本盘上的推导链 ============ -->
+  <section class="hero">
+    <div class="hero-grid">
+      <div class="hero-copy">
+        <h1 class="hero-title">
+          从 <span class="hero-latin">token</span><br />
+          到 <span class="hero-latin">teraflops</span><span class="hero-seal" aria-hidden="true">算</span>
+        </h1>
+        <p class="hero-sub">
+          一套把 AI 基础设施算到公式级的中文教程——模型、训练、推理、硬件、集群，
+          五层的技术账，逐式推导，逐数标注证据。
+        </p>
+        <dl class="ledger-strip" aria-label="全书账目">
+          <div><dt>章节</dt><dd>{stats.chapters}</dd></div>
+          <div><dt>Part</dt><dd>{stats.parts}</dd></div>
+          <div><dt>正文字数</dt><dd>{(stats.totalCjk / 10000).toFixed(1)}<small> 万</small></dd></div>
+          <div><dt>公式</dt><dd>{stats.formulas.toLocaleString('en-US')}</dd></div>
+        </dl>
+        <p class="hero-cta">
+          <a class="cta-primary" href={`${base}/models/`}>进入教程</a>
+          <a class="cta-quiet" href={`${base}/models/01-foundations/01-formulation/`}>从 1.1 开始读</a>
+        </p>
+      </div>
+
+      <figure class="specimen" aria-label="attention 公式推导链标本">
+        <figcaption class="specimen-head">
+          <span>标本 01</span>
+          <span>attention · 推导链</span>
+        </figcaption>
+        <div class="specimen-body">
+          {
+            beats.map((b, i) => (
+              <div class:list={['beat', b.final && 'beat-final']} style={`--beat: ${i}`}>
+                <div class="beat-formula" set:html={b.html} />
+                <p class="beat-note">
+                  <span class="beat-step">{'①②③④'[i]}</span>
+                  {b.note}
+                </p>
+              </div>
+            ))
+          }
+        </div>
+        <figcaption class="specimen-foot">
+          <span class="stamp" aria-label="证据等级 A">A</span>
+          <span>Vaswani et al. 2017 · 推导见 2.3</span>
+          <a href={`${base}/models/02-transformer-anatomy/03-attention-mechanism/`}>读这一章</a>
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ============ 五维度账本 ============ -->
+  <section class="section" aria-labelledby="dim-h">
+    <h2 id="dim-h" class="section-title">五个维度，一张账</h2>
+    <p class="section-note">维度边界按机制归属划分；交叉处只做链接，不重复展开。</p>
+    <table class="ledger">
+      <thead>
+        <tr><th>维度</th><th>范围</th><th class="num-col">状态</th></tr>
+      </thead>
+      <tbody>
+        {
+          dimensions.map((d) => (
+            <tr class:list={[!d.live && 'forthcoming']}>
+              <td class="dim-name">
+                {d.live ? (
+                  <a href={`${base}/models/`}>
+                    <span class="dim-zh">{d.zh}</span>
+                    <span class="dim-en">{d.en}</span>
+                  </a>
+                ) : (
+                  <>
+                    <span class="dim-zh">{d.zh}</span>
+                    <span class="dim-en">{d.en}</span>
+                  </>
+                )}
+              </td>
+              <td class="dim-scope">{d.scope}</td>
+              <td class="num-col status">{d.status}</td>
+            </tr>
+          ))
+        }
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ============ models 索引 ============ -->
+  <section class="section" aria-labelledby="idx-h">
+    <h2 id="idx-h" class="section-title">models 索引</h2>
+    <p class="section-note">十个 Part，五十一章。主干 P1→P5 按序读，支线从 P2 分出。</p>
+    <ol class="part-index">
+      {
+        manifest.parts.map((p) => (
+          <li>
+            <a class="part-row" href={`${base}/models/${p.dir}/`}>
+              <span class="part-num">P{p.num}</span>
+              <span class="part-titles">
+                <span class="part-zh">{p.titleZh}</span>
+                <span class="part-en">{p.titleEn}</span>
+              </span>
+              <span class="part-tagline">{p.tagline}</span>
+              <span class="part-count">{p.chapters.length} 章</span>
+            </a>
+          </li>
+        ))
+      }
+    </ol>
+  </section>
+
+  <!-- ============ 阅读路径 ============ -->
+  <section class="section" aria-labelledby="path-h">
+    <h2 id="path-h" class="section-title">阅读路径</h2>
+    <p class="section-note">
+      P2 各章是后续一切的公共前置——attention、KV cache、RoPE、RMSNorm 的推导只在那里写一遍。
+    </p>
+    <div class="graph-wrap">
+      <DependencyGraph />
+    </div>
+  </section>
+
+  <!-- ============ 写法声明 ============ -->
+  <section class="section creed" aria-labelledby="creed-h">
+    <h2 id="creed-h" class="section-title">写法</h2>
+    <ul class="creed-list">
+      <li>每个公式跟符号表，推导不跳关键步。</li>
+      <li>所有数值事实带出处，证据分四级：[A] 论文+代码+权重齐，[B] 有论文无官方代码，[C] 闭源披露，[W] 开放权重无论文。</li>
+      <li>「为什么」用机制、数学和账回答，不用年代顺序回答。</li>
+      <li>每章经独立 evaluator 对抗审查，强制重推导关键公式后方放行。</li>
+    </ul>
+  </section>
+</Base>
+

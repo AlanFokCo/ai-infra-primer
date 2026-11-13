@@ -35,7 +35,7 @@ function main() {
   const manifest = { generatedAt: new Date().toISOString().slice(0, 10), parts: [] };
   let chapterCount = 0;
   let totalCjk = 0;
-  let backtickResidue = 0;
+  let totalFormulas = 0;
 
   for (const part of PARTS) {
     const partPath = path.join(MODELS, part.dir);
@@ -54,19 +54,22 @@ function main() {
       let body = transformMath(source);
       const after = countBacktickMath(body);
       if (after !== 0) throw new Error(`${relPath}: $'...'$ 转换残留 ${after}/${before}`);
-      backtickResidue += after;
       if (/\\thinspace\b|\\negthinspace\b|\\hspace\{[45]mu\}/.test(body)) {
         throw new Error(`${relPath}: 间距命令回映残留`);
       }
+
+      // 公式计数（转换后口径：display 块 + 行内）——在下方计入 frontmatter
 
       body = rewriteLinks(body, { base: BASE, partDir: part.dir });
       if (body.includes('](../references.md')) {
         throw new Error(`${relPath}: references 相对链接重写残留`);
       }
 
-      // 生成文件：frontmatter + 正文（去掉源 H1；metadata 块留在正文首个 blockquote，
-      // 经 remark-math 渲染公式，由章节布局以 CSS 特化呈现）
+      // 生成文件：frontmatter + 正文（去掉源 H1 与 metadata 块——两者由章节布局
+      // 从 frontmatter 以设计化版面呈现，meta 内的 $...$ 由布局侧 KaTeX 渲染）
       const bodyStripped = stripHeaderBlock(body);
+      const chapterFormulas = countFormulas(body);
+      totalFormulas += chapterFormulas;
       const frontmatter = toFrontmatter({
         num: meta.num,
         titleZh: meta.titleZh,
@@ -77,7 +80,9 @@ function main() {
         partTitleZh: part.titleZh,
         file: meta.file,
         cjkChars: meta.cjkChars,
+        formulas: chapterFormulas,
         evidenceLevels: meta.evidenceLevels,
+        headings: meta.headings,
         positioning: transformMath(meta.metaLine.positioning),
         prerequisites: transformMath(meta.metaLine.prerequisites),
         anchors: transformMath(meta.metaLine.anchors),
@@ -93,6 +98,7 @@ function main() {
         titleEn: meta.titleEn,
         slug: `${part.dir}/${meta.file}`,
         cjkChars: meta.cjkChars,
+        formulas: chapterFormulas,
         evidenceLevels: meta.evidenceLevels,
       });
       chapterCount += 1;
@@ -118,7 +124,7 @@ function main() {
     ch.next = i < flat.length - 1 ? { slug: flat[i + 1].slug, num: flat[i + 1].num, titleZh: flat[i + 1].titleZh } : null;
   });
   manifest.flat = flat;
-  manifest.stats = { chapters: chapterCount, parts: PARTS.length, totalCjk };
+  manifest.stats = { chapters: chapterCount, parts: PARTS.length, totalCjk, formulas: totalFormulas };
 
   writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 2));
 
@@ -138,15 +144,39 @@ function main() {
   );
 }
 
-/** 去掉源文件 H1 行（页面布局用 frontmatter 呈现标题；metadata 块保留在正文） */
+/** display $$...$$ + 行内 $...$ 计数（跳过代码围栏） */
+function countFormulas(body) {
+  const lines = body.split('\n');
+  let inFence = false;
+  const prose = [];
+  for (const line of lines) {
+    if (/^```/.test(line)) inFence = !inFence;
+    else if (!inFence) prose.push(line);
+  }
+  const text = prose.join('\n');
+  const display = text.match(/\$\$[\s\S]+?\$\$/g) || [];
+  const withoutDisplay = text.replace(/\$\$[\s\S]+?\$\$/g, '');
+  const inline = withoutDisplay.match(/\$[^$\n]+?\$/g) || [];
+  return display.length + inline.length;
+}
+
+/** 去掉源文件 H1 行与紧随的 metadata 引用块（页面布局从 frontmatter 呈现二者） */
 function stripHeaderBlock(body) {
   const lines = body.split('\n');
   const out = [];
   let h1Skipped = false;
+  let metaSkipped = false;
   for (const line of lines) {
     if (!h1Skipped && /^#\s+/.test(line)) {
       h1Skipped = true;
       continue;
+    }
+    if (h1Skipped && !metaSkipped) {
+      if (line.trim() === '') continue; // H1 与引用块之间的空行
+      if (/^>\s?/.test(line)) {
+        metaSkipped = true;
+        continue;
+      }
     }
     out.push(line);
   }
