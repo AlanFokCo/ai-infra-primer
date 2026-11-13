@@ -24,17 +24,20 @@
 - GitHub 原生 LaTeX：行内 `$...$`，独立 `$$...$$`。
 - 每个公式后跟符号表；推导不跳关键步；重要公式编号（章内 `(1)(2)...`）便于交叉引用。
 - 张量 shape 统一 `[B, T, H, D]` 记法，关键运算处标注 shape。
-- GitHub 渲染探测：§3.1 白名单已按官方文档保守锁定（T6，2026-11-10）；因锁定时仓库无远端，首次推送 GitHub 后用 `docs/math-render-probe.md` 逐项人工复核，失败项从白名单移除并回改受影响章节。
+- GitHub 渲染探测：白名单与配套写作规则已于 2026-11-13 完成 GitHub 实测复核（P1-P21，结果见 `docs/math-render-probe.md` 核对记录）；以下三条为实测确认的硬性规则。
+- **开口侧 flanking（实测）**：行内开口 `$` 紧贴 CJK 字符或全角标点（：；，。（）「」—— 等）时 GitHub 不解析该公式，渲染为裸源码——开口 `$` 与前文之间必须留一个空格；闭口 `$` 紧贴中文实测无影响。
+- **反斜杠反转义陷阱（实测）**：GitHub 的 Markdown 管线先把数学内容里「`\` + ASCII 标点」反转义、再交给 MathJax——`\{`→`{`（集合花括号消失）、`\|`→`|`（双竖线变单竖线）、`\,`→`,`、`\;`→`;`、`\!`→`!`（间距命令变成可见标点）、`\%`→`%`（注释符吞掉行内后文）、`\#`→`#`（MathJax 直接报错）。源码禁用这些写法，映射：`\{`/`\}`→`\lbrace`/`\rbrace`；`\|`→`\Vert`；`\,`→`\thinspace`；`\;`→`\hspace{5mu}`；`\:`→`\hspace{4mu}`；`\!`→`\negthinspace`；`\ `（反斜杠空格）实测不受影响。例外：GFM 表格单元格内 `\|` 是表格转义（渲染为单竖线 `|`），保持原样。
+- **`*` 与 `\%`、`\#` 的保护形式（实测）**：行内公式含 `*` 会被 Markdown 强调配对吞掉两个公式之间的全部内容；含 `\%`/`\#` 同上陷阱。行内一律改用 `` $`...`$ `` 包裹（code span 保护内容，且开口不受 flanking 限制、可紧贴中文）。display 块无 backtick 形式：`*` 改写为 `\ast`（同形）；`\%`/`\#` 改写为 `\text{％}`/`\text{＃}`（全角）。
 
 #### 3.1 公式语法白名单（已锁定 · T6 · 2026-11-10）
 
-**状态：已锁定。** 依据为 GitHub 官方文档与 MathJax 官方文档（证据见本节末 [G1]-[G3] / [M1]-[M2]）。锁定时仓库尚无远端、无法直接观测渲染，故只取文档证据支持的最保守子集；`docs/math-render-probe.md` 为下表每项构造备有最小用例（P1-P18），首次推送 GitHub 后人工核对，失败项从本表删除并回改受影响章节。
+**状态：已锁定；2026-11-13 经 GitHub 实测复核（P1-P19 全部核对、新增 P20-P21，记录见 `docs/math-render-probe.md` 核对记录区）。** 依据为 GitHub 官方文档与 MathJax 官方文档（证据见本节末 [G1]-[G3] / [M1]-[M2]）外加 2026-11-13 渲染实测（证据 [R1]，见本节末）。初版锁定时仓库尚无远端、只取文档证据支持的最保守子集；实测复核确认表中构造全部可渲染，并据此确认 §3 三条硬规则（开口侧 flanking、反斜杠反转义、`*` 强调冲突）。注意：白名单约束的是**源码写法**——`\,`、`\;`、`\:`、`\!`、`\{`、`\}`、`\|`、`\%`、`\#`、裸 `*` 虽是合法 MathJax，但会被 GitHub 的 Markdown 预处理破坏，已从源码白名单移除（替代写法见下表与 §3）。
 
 全书公式只允许使用下表语法：
 
 | 类别 | 语法 | 证据 |
 | --- | --- | --- |
-| 行内公式 | `$...$`；`$` 内侧不留空格（社区惯例，[G1] 未明文，待 P12 探测复核）；与中文相邻时两侧加空格，仍不渲染改用 `` $`...`$ `` | [G1] |
+| 行内公式 | `$...$`；`$` 内侧不留空格（P12e 实测不渲染）；开口 `$` 不得紧贴 CJK 字符/全角标点（P12a/P12d 实测不渲染），与前文留一个空格，闭口侧不受限（实测）；含 `*`、`\%`、`\#` 时改用 `` $`...`$ ``（P12c/P21 实测渲染且内容受保护） | [G1][R1] |
 | display 公式 | `$$...$$` 独立成块，前后空行 | [G1][G2] |
 | 对齐环境 | `\begin{aligned} ... \end{aligned}`（仅在 `$$` 块内使用） | [M1] |
 | 分段环境 | `\begin{cases} ... \end{cases}` | [M1] |
@@ -46,11 +49,13 @@
 | 关系 / 箭头 / 近似 | `\to`、`\rightarrow`、`\mapsto`、`\Rightarrow`、`\Longrightarrow`、`\Leftarrow`、`\Leftrightarrow`、`\Longleftrightarrow`、`\approx`、`\sim`、`\simeq`、`\propto`、`\equiv`、`\ll`、`\gg`、`\subset`、`\subseteq`、`\supset`、`\supseteq` | [M2] |
 | 分式变体 / 积分 / 大型运算 | `\dfrac`、`\tfrac`、`\int`、`\oint`、`\bigcup`、`\bigcap` | [M2] |
 | 微分 / 修饰符号 | `\partial`、`\nabla`、`\hat{}`、`\tilde{}`、`\vec{}`、`\dot{}`、`\ddot{}`、`\overline{}`、`\underline{}`、`\widehat{}`、`\widetilde{}` | [M2] |
-| 定界符 | 伸缩配对 `\left( \right)`、`\left[ \right]`、`\left\{ \right\}`、`\left\| \right\|`、`\left\langle \right\rangle`、`\left. ... \right\|`（`.` 为空占位）；裸 `\{`、`\}`、`\|` 为 base symbol，允许直接使用（无需 `\left\right`） | [G1][M2] |
+| 定界符 | 伸缩配对 `\left( \right)`、`\left[ \right]`、`\left\langle \right\rangle`、`\left. ... \right|`（`.` 为空占位）；花括号与双竖线用 `\lbrace`、`\rbrace`、`\Vert`（含 `\left\lbrace \right\rbrace`、`\left\Vert \right\Vert` 伸缩形式）；裸 `|` 单竖线不受影响 | [G1][M2][R1] |
 | 固定尺寸定界符 | `\big(` `\big)`、`\Big(` `\Big)`、`\bigg(` `\bigg)`、`\Bigg(` `\Bigg)` 配对（`\bigl` / `\bigr` 等左右变体同收）——W1 波末收编（2026-11-11），2.2 式 (4)(13) 与 2.6 式 (5)(6) 已有使用先例；probe 文件 P17 待首次推送后复核 | [M2] |
 | 补充符号 | `\lceil` `\rceil`、`\ne`（`\neq` 同义）、`\leftarrow`、`\cup`、`\circ`、`\perp`、`\square`——W2 波末收编（2026-11-12），W2 章节已有使用先例（`\lceil`/`\rceil`：4.1 §5、4.5 式 (11)；`\cup`：3.1 式 (9)(10)(16)；`\circ`：4.3 §9；`\perp`/`\square`/`\ne`：4.3 §5/§10；`\leftarrow`：4.7 式 (9)(10)）；probe 文件 P18 待首次推送后复核 | [M2] |
 | 补充符号（W4） | `\det`、`\varnothing`——W4 波末收编（2026-11-12），章节已有使用先例（`\det`：7.1 式 (4) 及同节正文、练习 2；`\varnothing`：4.2 式 (9)、7.4 §4 CFG 段式 (17)(18)(20)(23) 及正文）；probe 文件 P19 待首次推送后复核 | [M2] |
-| 间距 | `\,`（thin）、`\:`（medium）、`\;`（thick）、`\!`（negative） | [M2] |
+| 间距 | `\ `（控制空格）、`\quad`、`\qquad`；细间距/负间距用 `\thinspace`、`\negthinspace`，其余用 `\hspace{<N>mu}`（如 5mu 代 `\;`）；`\,`、`\:`、`\;`、`\!` 因反转义陷阱禁用（§3） | [M2][R1] |
+| 补充命令（2026-11-13 收编，W1-W7 章节在用、渲染实测正常，本条补账） | `\ell`、`\notin`、`\cap`、`\mathbf`、`\leftrightarrow`、`\mp`、`\angle`、`\lfloor`、`\rfloor`、`\longrightarrow` | [M2][R1] |
+| 反转义替代命令（2026-11-13 收编） | `\lbrace`、`\rbrace`、`\Vert`、`\thinspace`、`\negthinspace`、`\hspace`、`\ast`（display 内代 `*`）；display 内 `\%`/`\#` 用 `\text{％}`/`\text{＃}` | [M2][R1] |
 | 其他 | `\mathcal{}`、`\operatorname{}`、`\operatorname*{}`（星号变体 [M1]/[M2] 未单列，P15 重点复核，复核前优先用不带星形式）、`\binom{n}{k}`、`\dbinom{n}{k}`、`\tbinom{n}{k}`、`\Pr`、`\stackrel{}{}`、`\underbrace{}_{}`、`\overbrace{}^{}`、`\times`、`\setminus`、`\forall`、`\exists`、`\oplus`、`\oslash`、`\ldots`、`\cdots`、`\vdots`、`\ddots` | [M2]（`\operatorname`、`\binom` 族亦见 [M1]） |
 | 数集 / 算子字体 | `\mathbb{R}`、`\mathrm{softmax}` | [M2] |
 | 均值记号 | `\bar\alpha` | [M2] |
@@ -58,7 +63,7 @@
 | 内积 | `\langle q, k \rangle` | [M2] |
 | 公式内文字 | `\text{...}`（内放中文为探测项 P7b，未复核前只放 ASCII） | [M2] |
 
-**表格渲染注**：GFM 表格按词法切列、不识别 code span；上表 code span 内的 `\|` 是 GFM 转义写法，渲染后显示为单个竖线字符（反斜杠不显示）。这些单元格所述语法的真实 LaTeX 源码为反斜线紧接竖线，与 `docs/math-render-probe.md` P11/P15 源码区一致。
+**表格渲染注**：GFM 表格按词法切列、不识别 code span；上表 code span 内的 `\|` 是 GFM 转义写法，渲染后显示为单个竖线字符（反斜杠不显示）。同样的原因，表格单元格内的行内公式里 `\|` 也按表格转义处理、渲染为单竖线——这是表格内唯一允许保留 `\|` 的位置（2026-11-13 实测确认）。
 
 **禁止**（不在白名单，一律不用）：`align` / `align*` / `equation` / `gather` / `split` / `multline` 等带编号或顶层多行环境（对齐需求由 `aligned` 覆盖）；`\newcommand` / `\DeclareMathOperator` 等宏定义；`\boxed`、`\color` 等装饰命令；`math` 围栏代码块（全书统一用 `$$`，避免两套写法并存）。
 
@@ -68,9 +73,10 @@
 - [G2] GitHub Blog, "Math support in Markdown"（2022-05-19 发布，2024-05-21 更新）：<https://github.blog/news-insights/product-news/math-support-in-markdown/>。`$` / `$$` 定界符原生支持，MathJax 渲染。
 - [G3] GitHub Changelog（2022-06-28）`math` 围栏代码块：<https://github.blog/changelog/2022-06-28-fenced-block-syntax-for-mathematical-expressions/>。
 - [M1] MathJax Docs, "ams" 扩展：<https://docs.mathjax.org/en/latest/input/tex/extensions/ams.html>。原文："This extension is already loaded in all the components that include the TeX input jax, other than `input/tex-base`"；环境清单明确含 `aligned`、`cases`、`bmatrix`、`pmatrix`；宏清单含 `\lVert`、`\rVert`。
-- [M2] MathJax Docs, "Supported TeX/LaTeX commands"：<https://docs.mathjax.org/en/latest/input/tex/macros/index.html>。base 宏含 `\text`、`\mathbb`、`\mathrm`、`\sqrt`、`\langle`、`\rangle`、`\bar`、`\vert`、`\Vert`、`\mid`、`\frac`、`\sum`、`\prod`，及基础函数 / 关系与运算符 `\exp`、`\log`、`\ln`、`\sin`、`\cos`、`\tanh`、`\min`、`\max`、`\sup`、`\inf`、`\top`、`\in`、`\le`、`\ge`、`\neq`、`\infty`、`\pm`、`\cdot`、`\odot`、`\otimes`、`\quad`、`\qquad`（2026-11-10 逐项核对存在）；希腊字母小写常用集（`\varsigma`/`\varpi`/`\varrho`/`\varkappa` 变体亦存在但未收）与常用大写、关系/箭头/近似符、`\dfrac`/`\tfrac`/`\int`/`\oint`/`\bigcup`/`\bigcap`、`\partial`/`\nabla`/修饰符号（`\hat`/`\tilde`/`\vec`/`\dot`/`\ddot`/`\overline`/`\underline`/`\widehat`/`\widetilde`）、`\left`/`\right` 伸缩定界符（[G1] 官方示例亦用 `\left( \right)`）与同页 base 定界符族 `\big` / `\Big` / `\bigg` / `\Bigg`（2026-11-11 收编时核对）、`\mathcal`/`\operatorname`/`\stackrel`/`\underbrace`/`\overbrace`、`\times`/`\setminus`/`\forall`/`\exists`/`\oplus`/`\oslash`、`\ldots`/`\cdots`/`\vdots`/`\ddots`、薄空格 `\,`、`\{`、`\}` 与裸竖线符号同页逐项核对存在（2026-11-10）；大写箭头 `\Rightarrow`、`\Longrightarrow`、`\Leftarrow`、`\Leftrightarrow`、`\Longleftrightarrow`，间距 `\;`、`\:`、`\!`，`\Pr`，及 `\binom`、`\dbinom`、`\tbinom`（亦见 [M1]）同页逐项核对存在（2026-11-10）；补充符号 `\lceil`、`\rceil`、`\ne`、`\leftarrow`、`\cup`、`\circ`、`\perp`、`\square` 同页逐项核对存在（2026-11-12，W2 波末收编）；函数 `\det` 与空集符 `\varnothing` 同页逐项核对存在（2026-11-12，W4 波末收编）。
+- [M2] MathJax Docs, "Supported TeX/LaTeX commands"：<https://docs.mathjax.org/en/latest/input/tex/macros/index.html>。base 宏含 `\text`、`\mathbb`、`\mathrm`、`\sqrt`、`\langle`、`\rangle`、`\bar`、`\vert`、`\Vert`、`\mid`、`\frac`、`\sum`、`\prod`，及基础函数 / 关系与运算符 `\exp`、`\log`、`\ln`、`\sin`、`\cos`、`\tanh`、`\min`、`\max`、`\sup`、`\inf`、`\top`、`\in`、`\le`、`\ge`、`\neq`、`\infty`、`\pm`、`\cdot`、`\odot`、`\otimes`、`\quad`、`\qquad`（2026-11-10 逐项核对存在）；希腊字母小写常用集（`\varsigma`/`\varpi`/`\varrho`/`\varkappa` 变体亦存在但未收）与常用大写、关系/箭头/近似符、`\dfrac`/`\tfrac`/`\int`/`\oint`/`\bigcup`/`\bigcap`、`\partial`/`\nabla`/修饰符号（`\hat`/`\tilde`/`\vec`/`\dot`/`\ddot`/`\overline`/`\underline`/`\widehat`/`\widetilde`）、`\left`/`\right` 伸缩定界符（[G1] 官方示例亦用 `\left( \right)`）与同页 base 定界符族 `\big` / `\Big` / `\bigg` / `\Bigg`（2026-11-11 收编时核对）、`\mathcal`/`\operatorname`/`\stackrel`/`\underbrace`/`\overbrace`、`\times`/`\setminus`/`\forall`/`\exists`/`\oplus`/`\oslash`、`\ldots`/`\cdots`/`\vdots`/`\ddots`、薄空格 `\,`、`\{`、`\}` 与裸竖线符号同页逐项核对存在（2026-11-10）；大写箭头 `\Rightarrow`、`\Longrightarrow`、`\Leftarrow`、`\Leftrightarrow`、`\Longleftrightarrow`，间距 `\;`、`\:`、`\!`，`\Pr`，及 `\binom`、`\dbinom`、`\tbinom`（亦见 [M1]）同页逐项核对存在（2026-11-10）；补充符号 `\lceil`、`\rceil`、`\ne`、`\leftarrow`、`\cup`、`\circ`、`\perp`、`\square` 同页逐项核对存在（2026-11-12，W2 波末收编）；函数 `\det` 与空集符 `\varnothing` 同页逐项核对存在（2026-11-12，W4 波末收编）；`\ell`、`\notin`、`\cap`、`\mathbf`、`\leftrightarrow`、`\mp`、`\angle`、`\lfloor`、`\rfloor`、`\longrightarrow`、`\lbrace`、`\rbrace`、`\thinspace`、`\negthinspace`、`\hspace`、`\ast` 同页逐项核对存在（2026-11-13，渲染复核时收编）。
+- [R1] GitHub 渲染实测（2026-11-13）：经 `gh api repos/AlanFokCo/ai-infra-primer/contents/<path> -H "Accept: application/vnd.github.html+json"` 拉取 51 章渲染后 HTML 逐式核对，并用 agent-browser 加载 github.com 页面检查 MathJax 实际输出（MathML `data-latex` 与 `merror` 报错）；临时 gist 探测确认开口侧 flanking 边界、`` $`...`$ `` 保护形式与替代命令可用性。探测用例与结果记录见 `docs/math-render-probe.md`。
 
-**已知边界**（官方文档未覆盖，列为探测项，首次推送后复核）：行内 `$...$` 紧贴中文字符或中文标点的解析行为（探测项 P12）——写作规则定为「行内公式与中文之间一律加空格」；`\text{}` 内放中文（探测项 P7b）；`\operatorname*` 星号变体未在 [M1]/[M2] 单列（探测项 P15，复核前优先用 `\operatorname`）。
+**已知边界复核结论（2026-11-13 实测，[R1]）**：行内 `$...$` 开口 `$` 紧贴 CJK 字符或全角标点不渲染（P12a/P12d 确认，规则升级为 §3 硬规则），闭口侧紧贴中文不受影响，`` $`...`$ `` 形式可紧贴中文；`$` 内侧留空格不渲染（P12e 确认）；`\text{}` 内中文渲染正常（P7b）；`\operatorname*` 星号变体在 GitHub 的 MathJax 配置下报「macros are not allowed」错误（P15 实测）——禁用星号变体，一律用 `\operatorname`；`\medspace`、`\thickspace` MathJax 不支持（按字面文本显示），禁用。
 
 ### 4. 代码
 

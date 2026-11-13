@@ -4,24 +4,24 @@
 
 ## 1. 互补性论证：两条边界的拼接
 
-4.3 §10 的结论：固定状态 $S \in \mathbb{R}^{d_v \times d_k}$ 的单头精确联想容量不超过 $d_k$ 对，$n \gg d_k$ 后误差必然显形；softmax attention 的 KV cache（2.4 式 (9)）逐对原样驻留、检索无结构上限，代价是内存随 $T$ 线性。两个极端的致命项互为对方的强项——hybrid 架构（linear state 层与 full attention 层交错堆叠）把同一模型的 $L$ 层分成两组：
+4.3 §10 的结论：固定状态 $S \in \mathbb{R}^{d_v \times d_k}$ 的单头精确联想容量不超过 $d_k$ 对， $n \gg d_k$ 后误差必然显形；softmax attention 的 KV cache（2.4 式 (9)）逐对原样驻留、检索无结构上限，代价是内存随 $T$ 线性。两个极端的致命项互为对方的强项——hybrid 架构（linear state 层与 full attention 层交错堆叠）把同一模型的 $L$ 层分成两组：
 
 - $L_{\mathrm{lin}}$ 个 linear 层（GDN / KDA / Mamba / lightning）：状态定长、decode 每 token $O(H d_v d_k)$；
 - $L_{\mathrm{full}}$ 个 full attention 层：KV cache 随 $T$ 增长、精确检索无结构上限。
 
-decode 单序列内存（$B$ = 1、元素字节数 $b$）：
+decode 单序列内存（ $B$ = 1、元素字节数 $b$）：
 
 $$
-M(T) = \underbrace{L_{\mathrm{lin}} \cdot H\, d_v d_k \cdot b}_{\mathrm{fixed}} + \underbrace{L_{\mathrm{full}} \cdot c_{\mathrm{kv}} \cdot T \cdot b}_{\mathrm{growth}} \qquad (1)
+M(T) = \underbrace{L_{\mathrm{lin}} \cdot H\thinspace d_v d_k \cdot b}_{\mathrm{fixed}} + \underbrace{L_{\mathrm{full}} \cdot c_{\mathrm{kv}} \cdot T \cdot b}_{\mathrm{growth}} \qquad (1)
 $$
 
-**符号**：$H$：linear 层的（value）头数；$d_v, d_k$：状态两轴（4.3 约定布局）；$c_{\mathrm{kv}}$：full 层每 token 每层 KV 元素数（GQA：$2 H_{kv} d_{\mathrm{head}}$，4.1 式 (3)；MLA：$d_c + d_R$，4.1 §4.2）。
+**符号**： $H$：linear 层的（value）头数； $d_v, d_k$：状态两轴（4.3 约定布局）； $c_{\mathrm{kv}}$：full 层每 token 每层 KV 元素数（GQA： $2 H_{kv} d_{\mathrm{head}}$，4.1 式 (3)；MLA： $d_c + d_R$，4.1 §4.2）。
 
-交错比 $r:1$（$r = L_{\mathrm{lin}} / L_{\mathrm{full}}$）把线性项斜率压到全 full 反事实的 $1/(r+1)$：3:1 是 4 倍、7:1 是 8 倍（§7 实数）。注意省的是斜率不是截距——固定项在几千 token 后就被线性项超过，hybrid 的账在长上下文才兑现。
+交错比 $r:1$（ $r = L_{\mathrm{lin}} / L_{\mathrm{full}}$）把线性项斜率压到全 full 反事实的 $1/(r+1)$：3:1 是 4 倍、7:1 是 8 倍（§7 实数）。注意省的是斜率不是截距——固定项在几千 token 后就被线性项超过，hybrid 的账在长上下文才兑现。
 
-把 4.3 §10 的刻度代入一下，看清「受限」到底限在哪。单头 $d_k$ = 128 时精确联想预算 128 对；随机键下加性状态的读出信噪比约为 $d_k / (n-1)$，$n$ = 1024 时已跌到约 0.125（约 −9 dB）——逐位复制类任务在千 token 量级就出问题，远早于任何长上下文窗口。而同一层换成 KV cache：每对 $(k_s, v_s)$ 原样驻留，读出误差为零，代价是 $T$ = 131072 时单头单层 64 MiB 的读取量（4.3 §3 的 decode 账）。这就是 4.3 §10 结尾「数据库 vs 充分统计量」两个极端的实数形状：一个把内存当检索精度付，一个把检索精度当内存省。hybrid 的赌注是：自然语言负载里需要逐位精确检索的 key 是稀疏的，把检索能力集中到少数层、让多数层只扛压缩后的统计结构，两个极端可以各取所长。
+把 4.3 §10 的刻度代入一下，看清「受限」到底限在哪。单头 $d_k$ = 128 时精确联想预算 128 对；随机键下加性状态的读出信噪比约为 $d_k / (n-1)$， $n$ = 1024 时已跌到约 0.125（约 −9 dB）——逐位复制类任务在千 token 量级就出问题，远早于任何长上下文窗口。而同一层换成 KV cache：每对 $(k_s, v_s)$ 原样驻留，读出误差为零，代价是 $T$ = 131072 时单头单层 64 MiB 的读取量（4.3 §3 的 decode 账）。这就是 4.3 §10 结尾「数据库 vs 充分统计量」两个极端的实数形状：一个把内存当检索精度付，一个把检索精度当内存省。hybrid 的赌注是：自然语言负载里需要逐位精确检索的 key 是稀疏的，把检索能力集中到少数层、让多数层只扛压缩后的统计结构，两个极端可以各取所长。
 
-decode 算力一侧同构：linear 层每 token 读出 $+$ 写入约 $4 H d_v d_k$ FLOPs，与 $T$ 无关；full 层每 token 打分约 $4 H_q d_{\mathrm{head}} T$ FLOPs，随 $T$ 线性。hybrid 因此同时压两笔斜率——内存（式 (1)）与 decode FLOPs——而保留的检索能力按层数只剩 $1/(r+1)$ 份。$r$ 的全部权衡就压在这两个比值上。
+decode 算力一侧同构：linear 层每 token 读出 $+$ 写入约 $4 H d_v d_k$ FLOPs，与 $T$ 无关；full 层每 token 打分约 $4 H_q d_{\mathrm{head}} T$ FLOPs，随 $T$ 线性。hybrid 因此同时压两笔斜率——内存（式 (1)）与 decode FLOPs——而保留的检索能力按层数只剩 $1/(r+1)$ 份。 $r$ 的全部权衡就压在这两个比值上。
 
 检索一侧的机制论证：精确回忆只需 full 层兜底。一项内容只要驻留在某个 full 层的 cache 里，该层就能在任意距离外逐位读回；linear 层在其间充当压缩传输。等距铺开（每 $r+1$ 层一个 full）还有一层回路角度的好处：4.7 的 induction 式「前驱 + 检索」两段回路需要两个 attention 层先后配合，等距布局保证序列任意位置附近都有可用的层对。这是本书的机制读法，不是任一论文的 ablation 结论；各论文的实证边界见 §8。
 
@@ -58,7 +58,7 @@ $$
 o_t = \sigma\left(W_g u_t\right) \odot \mathrm{attn}_t \qquad (2)
 $$
 
-**符号**：$u_t$：层输入 stream；$\mathrm{attn}_t$：标准 causal attention 输出；$W_g u_t \in \mathbb{R}^{H d_v}$：逐元素门控向量。实现级证据：门控向量由 Q 投影一并切出——`modeling_qwen3_next.py` 的前向是 `attn_output * torch.sigmoid(gate)`，gate 为 q_proj 输出的一段切片。即 2.6 的 GLU 门控思想从 FFN 搬到 attention 输出：逐元素可关断的读出通道。
+**符号**： $u_t$：层输入 stream； $\mathrm{attn}_t$：标准 causal attention 输出； $W_g u_t \in \mathbb{R}^{H d_v}$：逐元素门控向量。实现级证据：门控向量由 Q 投影一并切出——`modeling_qwen3_next.py` 的前向是 `attn_output * torch.sigmoid(gate)`，gate 为 q_proj 输出的一段切片。即 2.6 的 GLU 门控思想从 FFN 搬到 attention 输出：逐元素可关断的读出通道。
 
 **zero-centered norm**。`Qwen3NextRMSNorm` 的增益以 `torch.zeros` 初始化、前向为
 
@@ -66,7 +66,7 @@ $$
 y = \hat{x} \odot \left( 1 + g \right), \qquad g_0 = 0 \qquad (3)
 $$
 
-**符号**：$\hat{x}$：RMS 归一化后的 stream；$g$：逐通道增益。这正是 2.7 的 zero-centered 增益定义——增益存成相对恒等的偏差，weight decay 把 $g$ 拉回恒等映射而非零映射：对 48 层深的 hybrid 主干，这个先验让「逐层接近恒等、增量式塑形」成为衰减动力学的默认方向，与 2.7 的 DeepNorm 讨论同向但实现更轻。另有 `Qwen3NextRMSNormGated`（norm 后再乘一道 SiLU 门），挂在 GDN 输出侧。
+**符号**： $\hat{x}$：RMS 归一化后的 stream； $g$：逐通道增益。这正是 2.7 的 zero-centered 增益定义——增益存成相对恒等的偏差，weight decay 把 $g$ 拉回恒等映射而非零映射：对 48 层深的 hybrid 主干，这个先验让「逐层接近恒等、增量式塑形」成为衰减动力学的默认方向，与 2.7 的 DeepNorm 讨论同向但实现更轻。另有 `Qwen3NextRMSNormGated`（norm 后再乘一道 SiLU 门），挂在 GDN 输出侧。
 
 **MTP 与窗口**。model card 另列 Multi-Token Prediction（MTP）模块：训练时作为多步预测的辅助 loss，推理时可作 self-speculative 解码的草稿头——目标式与接受率结构统一在 4.5 处理，本章只登记它与层型配比正交这一事实（草稿头挂在主干之上，不占 36 : 12 的层数预算）。上下文原生 262,144（config `max_position_embeddings`、`rope_theta=10^{7}`）、可扩到 1,010,000（model card）；长度泛化手段归 4.6。其余 config 字段一并登记：hidden 2048、vocab 151936（与 Qwen3 同 tokenizer）。
 
@@ -74,12 +74,12 @@ $$
 
 证据等级 [A]：论文 arXiv:2510.26692 + 官方 repo MoonshotAI/Kimi-Linear + 开放权重（config 2026-11-11 实测）。
 
-**布局**。27 层 = 20 KDA + 7 full attention：config 的 `linear_attn_config.kda_layers=[1,2,3,5,…,26]`、`full_attn_layers=[4,8,12,16,20,24,27]`（同字段下 `head_dim=128`、`num_heads=32`、`short_conv_kernel_size=4`）。KDA 更新式即 4.3 式 (16)：key 侧逐通道遗忘 $\mathrm{diag}(\alpha_t)$、$\alpha_t \in \mathbb{R}^{d_k}$，加 delta-rule 定点擦除；20 层合计 20 MiB 定长状态（§7）。MoE 侧：256 experts、top-8、1 shared、sigmoid router、`routed_scaling_factor=2.446`、`first_k_dense_replace=1`（首层 dense）。总参数 48B、激活 3B（论文）。其余 config 字段：hidden 2304、intermediate 9216、`moe_intermediate_size=1024`、`model_max_length=1048576`（1M）、vocab 163840、`tie_word_embeddings=false`。顶层另有 `head_dim=72`、`num_attention_heads=32`、`rope_theta=10^{4}` 字段——full 层的 KV 维度以 `mla_*` 字段为准（下段），顶层字段按 config 实测登记、不作维度论据。
+**布局**。27 层 = 20 KDA + 7 full attention：config 的 `linear_attn_config.kda_layers=[1,2,3,5,…,26]`、`full_attn_layers=[4,8,12,16,20,24,27]`（同字段下 `head_dim=128`、`num_heads=32`、`short_conv_kernel_size=4`）。KDA 更新式即 4.3 式 (16)：key 侧逐通道遗忘 $\mathrm{diag}(\alpha_t)$、 $\alpha_t \in \mathbb{R}^{d_k}$，加 delta-rule 定点擦除；20 层合计 20 MiB 定长状态（§7）。MoE 侧：256 experts、top-8、1 shared、sigmoid router、`routed_scaling_factor=2.446`、`first_k_dense_replace=1`（首层 dense）。总参数 48B、激活 3B（论文）。其余 config 字段：hidden 2304、intermediate 9216、`moe_intermediate_size=1024`、`model_max_length=1048576`（1M）、vocab 163840、`tie_word_embeddings=false`。顶层另有 `head_dim=72`、`num_attention_heads=32`、`rope_theta=10^{4}` 字段——full 层的 KV 维度以 `mla_*` 字段为准（下段），顶层字段按 config 实测登记、不作维度论据。
 
 **full-attn 层：MLA + NoPE**。full 层用 MLA（`kv_lora_rank=512`、`qk_nope_head_dim=128`、`qk_rope_head_dim=64`、`v_head_dim=128`，与 DeepSeek 谱系同字段），但 `mla_use_nope=true`——RoPE 关闭。这个选择回答两个问题：
 
-1. **为什么可行**：位置对称性已经不在了。NoPE 的顾虑本是 attention 对位置盲（2.5 §5；[Kazemnejad et al., 2023](../references.md)，arXiv:2305.19466，[B] 的对照实验），但那条顾虑的前提是「位置编码只能由 attention 层自己注入」。hybrid 里这个前提不成立：stream 在进入每个 full 层之前已被 KDA 层加工过，而 KDA 递推（4.3 式 (16)）对输入顺序非交换——$S_t$ 由时序连乘 $\prod_s \mathrm{diag}(\alpha_s)(I - \beta_s k_s k_s^{\top})$ 与秩一写入构成，置换输入序列必然改变状态与读出（练习 2 给出严格表述）。位置信息以「学出来的时间尺度」的形式写进 stream 特征，full 层只需按内容检索，顺序由 linear 层兜底。等距 3:1 布局还保证顺序信号的传输距离有界：周期段内任意 full 层与其上游最近的 full 层之间恰隔 3 层 KDA，与最近 KDA 层至多隔 3 层。
-2. **为什么想要**：NoPE 拆掉 4.1 §4.1 的 RoPE×低秩冲突。无旋转则 $R_{n-t}$ 不再卡在 $W^{UK}$ 与 $c$ 之间，朴素低秩吸收畅通——cache 保持 $d_c + d_R$ = 576 元素 / token / 层（4.1 §4.2 口径；NoPE 只关旋转、不动 config 字段），decode 直接对 latent 打分，4.1 §4.3-4.4 的两笔吸收（$\tilde{W}_h$ 与 $\widehat{W}_h$）无需 decoupled 通道的配合即全量成立。在这里 RoPE 是花钱买一份 KDA 已经免费提供的位置信号，还顺手堵死吸收——去掉它是双赢，不是妥协。
+1. **为什么可行**：位置对称性已经不在了。NoPE 的顾虑本是 attention 对位置盲（2.5 §5；[Kazemnejad et al., 2023](../references.md)，arXiv:2305.19466，[B] 的对照实验），但那条顾虑的前提是「位置编码只能由 attention 层自己注入」。hybrid 里这个前提不成立：stream 在进入每个 full 层之前已被 KDA 层加工过，而 KDA 递推（4.3 式 (16)）对输入顺序非交换—— $S_t$ 由时序连乘 $\prod_s \mathrm{diag}(\alpha_s)(I - \beta_s k_s k_s^{\top})$ 与秩一写入构成，置换输入序列必然改变状态与读出（练习 2 给出严格表述）。位置信息以「学出来的时间尺度」的形式写进 stream 特征，full 层只需按内容检索，顺序由 linear 层兜底。等距 3:1 布局还保证顺序信号的传输距离有界：周期段内任意 full 层与其上游最近的 full 层之间恰隔 3 层 KDA，与最近 KDA 层至多隔 3 层。
+2. **为什么想要**：NoPE 拆掉 4.1 §4.1 的 RoPE×低秩冲突。无旋转则 $R_{n-t}$ 不再卡在 $W^{UK}$ 与 $c$ 之间，朴素低秩吸收畅通——cache 保持 $d_c + d_R$ = 576 元素 / token / 层（4.1 §4.2 口径；NoPE 只关旋转、不动 config 字段），decode 直接对 latent 打分，4.1 §4.3-4.4 的两笔吸收（ $\tilde{W}_h$ 与 $\widehat{W}_h$）无需 decoupled 通道的配合即全量成立。在这里 RoPE 是花钱买一份 KDA 已经免费提供的位置信号，还顺手堵死吸收——去掉它是双赢，不是妥协。
 
 **论文数字**（摘要口径）：公平对照实验用 1.4T tokens（Kimi Linear / GDN-H / MLA 三模型共享语料与 recipe），最终发布 checkpoint 用 5.7T tokens（对齐 Moonlight 预训练量，对照见论文 Appendix D）——两档勿混。KV cache 最多 −75%（§7 对账：7/27 层保持 cache，斜率剩 25.9%）；1M 上下文 decode 吞吐 up to 6×（摘要）、精确值 6.3×（Fig 1(b) 的 TPOT 对照）。摘要同时声明这是公平对照下首个全面超过 full attention 的线性注意力架构——注意该结论在 3:1 hybrid 形态下达成，不是纯 KDA（§8 再议）。
 
@@ -99,7 +99,7 @@ Kimi K3（arXiv:2607.24653，[A]；权重全量发布）把 4.3-4.4 的 KDA 主�
 
 ## 7. 内存账统一表：固定 state vs 线性 KV
 
-把式 (1) 逐项代入各模型 config（$B$ = 1、bf16、$b$ = 2）。每层数字：
+把式 (1) 逐项代入各模型 config（ $B$ = 1、bf16、 $b$ = 2）。每层数字：
 
 | 模型 | linear 层每层状态（固定） | full 层每层 KV（每 token） |
 | --- | --- | --- |
@@ -117,7 +117,7 @@ Kimi K3（arXiv:2607.24653，[A]；权重全量发布）把 4.3-4.4 的 KDA 主�
 
 三笔对账。其一，Kimi Linear 的斜率比 7/27 = 25.9% 即 cache 减少 74.1%——论文摘要「up to −75%」的来源就是 3:1 交错的层数比，不是额外的压缩技术。其二，固定项在线性项面前很快退场：Kimi Linear 的每层交叉点约 1 MiB / 1152 B ≈ 910 token，全模型口径约 2600 token 后线性项主导——hybrid 的真实收益是「斜率 ÷ (r+1)」，窗越长兑现越足；反过来，短窗（千 token 内）部署下 hybrid 的内存优势基本不兑现，这时它买到的是 decode 算力与吞吐。其三，decode 吞吐同向放大：1M 上下文下 Kimi Linear 每 token 的 full 层 cache 读取约 7.9 GiB，全 MLA 反事实约 30 GiB（KDA 层每 token 另读 20 × 1 MiB 定长状态，与 $T$ 无关）——读取比值约 3.9× 且随 $T$ 继续拉大；论文实测 6.3×（Fig 1(b)）还包含 kernel 与算力侧因素，按论文口径引。
 
-decode 算力账顺带登记（§1 的第二笔斜率）。linear 层每 token 读出加写入约 $4 H d_v d_k$：Qwen3-Next 每 GDN 层 $4 \times 32 \times 128 \times 128 \approx 2.1$M FLOPs，固定；full 层每 token 打分约 $4 H_q d_{\mathrm{head}} T$ = $4 \times 16 \times 256 \times T$ ≈ $16 T$ K FLOPs，$T$ = 262,144 时约 4.3G FLOPs——单层 full 的打分已是单层 GDN 的两千倍，且差距随 $T$ 线性拉大。hybrid 把 decode 的逐 token 算力同样变成「大固定项 + 小线性项」，这是 6.3× 吞吐数字在内存账之外的另一半账面来源。
+decode 算力账顺带登记（§1 的第二笔斜率）。linear 层每 token 读出加写入约 $4 H d_v d_k$：Qwen3-Next 每 GDN 层 $4 \times 32 \times 128 \times 128 \approx 2.1$M FLOPs，固定；full 层每 token 打分约 $4 H_q d_{\mathrm{head}} T$ = $4 \times 16 \times 256 \times T$ ≈ $16 T$ K FLOPs， $T$ = 262,144 时约 4.3G FLOPs——单层 full 的打分已是单层 GDN 的两千倍，且差距随 $T$ 线性拉大。hybrid 把 decode 的逐 token 算力同样变成「大固定项 + 小线性项」，这是 6.3× 吞吐数字在内存账之外的另一半账面来源。
 
 ## 8. 质量边界与设计空间
 
@@ -150,7 +150,7 @@ decode 算力账顺带登记（§1 的第二笔斜率）。linear 层每 token �
 
 1.（计算）用式 (1) 复核 Qwen3-Next 在扩展窗 $T$ = 1,010,000 下的全模型 decode 内存；同窗长下「48 层全 GDN」与「48 层全 full」两个反事实各是多少？写出三者的截距与斜率结构，并解释为什么「全 GDN」反事实在实践中不成立（提示：§1 的 rank 界论证）。
 2.（推导）Kimi Linear 的 NoPE 论证。设某层 KDA 的读出为 $o_t = S_t q_t$（4.3 式 (16)）。证明：对任意非平凡位置置换 $\pi$，KDA 层输出序列不满足置换等变（与 2.3 的 attention 置换等变性对照），即顺序信息已进入 stream；由此说明「full 层 NoPE 仍可获得位置信息」的完整机制链条，并指出该论证对「full 层放在第 1 层」为何失效。
-3.（计算）MiniMax-Text-01 在 4M 外推档、$B$ = 8 并发下，full 层 cache 总量与单卡 80 GB HBM 的关系；若要塞进单卡，full 层每 token 每层 KV 元素数 $c_{\mathrm{kv}}$ 需压到什么量级？列出可走的 4.1 路线（GQA 组数 / MLA latent 维）各一条。
+3.（计算）MiniMax-Text-01 在 4M 外推档、 $B$ = 8 并发下，full 层 cache 总量与单卡 80 GB HBM 的关系；若要塞进单卡，full 层每 token 每层 KV 元素数 $c_{\mathrm{kv}}$ 需压到什么量级？列出可走的 4.1 路线（GQA 组数 / MLA latent 维）各一条。
 4.（代码）对照 transformers `modeling_qwen3_next.py` 的 `Qwen3NextAttention` 门控切片与 `Qwen3NextRMSNorm` 前向，写约 30 行教学版复现式 (2)(3)（教学用，非优化实现）；再对 `torch_recurrent_gated_delta_rule` 的状态布局 $(d_k, d_v)$ 与本书约定 $S \in \mathbb{R}^{d_v \times d_k}$ 的差异写一段注记（4.3 §8 布局注记）。
 
 ## 参考

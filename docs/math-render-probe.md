@@ -1,7 +1,7 @@
 # GitHub MathJax 渲染探测（math-render-probe）
 
-> **用途**：本仓库暂无远端，GitHub 的 MathJax 渲染效果无法直接观测。本文件为 `STYLE_GUIDE.md` §3.1 公式语法白名单中的每一项构造提供一个最小用例（P1-P19）。
-> **首次推送 GitHub 后，必须以渲染视图打开本文件、逐项人工核对一次**；任一用例渲染失败，将对应构造从 `STYLE_GUIDE.md` §3.1 白名单移除，并回改已使用它的章节。核对结果填入文末「核对记录」表。
+> **用途**：本文件为 `STYLE_GUIDE.md` §3.1 公式语法白名单中的每一项构造提供一个最小用例（P1-P19，2026-11-13 复核后新增 P20-P21）。
+> ~~首次推送 GitHub 后逐项人工核对~~ ——**已于 2026-11-13 完成复核**，结论与三处新发现的处置见文末「核对记录」；P11/P15 两个用例已按复核结论改写为现行白名单语法。
 
 ## 证据来源（访问日期均为 2026-11-10）
 
@@ -203,13 +203,15 @@ $$
 
 预期结果：尖括号内积符号正确（不是小于/大于号）。
 
-### P11 · 范数与竖线（`\lVert \rVert`、`\|`、`\vert`、`\Vert`、`\mid`）
+### P11 · 范数与竖线（`\lVert \rVert`、`\vert`、`\Vert`、`\mid`）
 
-源码：`残差分支要求 $\lVert x \rVert_2$ 有界；简写 $\|x\|_2$ 等价；条件概率 $p(y \mid x)$ 用关系竖线；单竖线 $\vert x \vert$、双竖线 $\Vert x \Vert$ 亦直接书写；集合 $\{ x \mid x > 0 \}$ 与裸竖线 $|x|$ 为 base symbol 直写。`
+源码：`残差分支要求 $\lVert x \rVert_2$ 有界；条件概率 $p(y \mid x)$ 用关系竖线；单竖线 $\vert x \vert$、双竖线 $\Vert x \Vert$ 亦直接书写；集合 $\lbrace x \mid x > 0 \rbrace$ 与裸竖线 $|x|$ 为 base symbol 直写。`
 
-实时渲染：残差分支要求 $\lVert x \rVert_2$ 有界；简写 $\|x\|_2$ 等价；条件概率 $p(y \mid x)$ 用关系竖线；单竖线 $\vert x \vert$、双竖线 $\Vert x \Vert$ 亦直接书写；集合 $\{ x \mid x > 0 \}$ 与裸竖线 $|x|$ 为 base symbol 直写。
+实时渲染：残差分支要求 $\lVert x \rVert_2$ 有界；条件概率 $p(y \mid x)$ 用关系竖线；单竖线 $\vert x \vert$、双竖线 $\Vert x \Vert$ 亦直接书写；集合 $\lbrace x \mid x > 0 \rbrace$ 与裸竖线 $|x|$ 为 base symbol 直写。
 
-预期结果：两种范数写法显示为双竖线、下标 2 就位；`\mid` 两侧带关系间距；`\vert`/`\Vert` 显示为单 / 双竖线；`\{`、`\}` 显示为花括号，裸 `|` 显示为单竖线。
+预期结果：范数显示为双竖线、下标 2 就位；`\mid` 两侧带关系间距；`\vert`/`\Vert` 显示为单 / 双竖线；`\lbrace`/`\rbrace` 显示为花括号，裸 `|` 显示为单竖线。
+
+**2026-11-13 复核**：初版用例中的 `$\|x\|_2$` 与 `$\{ ... \}$` 实测被反转义陷阱破坏（`\|`→`|` 双竖线变单竖线；`\{`/`\}`→`{}` 花括号不显示）——两种写法已从白名单移除并回改全书；本用例已更新为替代写法，`\lbrace`/`\rbrace`/`\Vert` 渲染正确（见 P20/P21）。
 
 ### P12 · 行内 `$...$` 与中文相邻的边界（官方文档未说明，重点核对）
 
@@ -301,11 +303,11 @@ $$
 $$
 
 $$
-\left( \frac{a}{b} \right), \quad \left[ x \right], \quad \left\{ x \right\}, \quad \left| x \right|, \quad \left\| x \right\|, \quad \left\langle q, k \right\rangle, \quad \left. \frac{\partial f}{\partial x} \right|_{x=0}
+\left( \frac{a}{b} \right), \quad \left[ x \right], \quad \left\lbrace x \right\rbrace, \quad \left| x \right|, \quad \left\Vert x \right\Vert, \quad \left\langle q, k \right\rangle, \quad \left. \frac{\partial f}{\partial x} \right|_{x=0}
 $$
 
 $$
-\mathcal{L}(\theta), \quad \operatorname*{arg\,min}_{\theta} \mathcal{L}(\theta), \quad x \stackrel{\mathrm{def}}{=} y, \quad \underbrace{\frac{1}{n} \sum_{i=1}^{n} L_i}_{\text{mean}}, \quad \overbrace{x_1 + \cdots + x_n}^{n}, \quad A \times B, \quad A \setminus B, \quad A \oplus B, \quad A \oslash B, \quad \forall x, \quad \exists y, \quad x_1, \ldots, x_n, \quad \vdots, \quad \ddots
+\mathcal{L}(\theta), \quad \operatorname{arg\thinspace min}_{\theta} \mathcal{L}(\theta), \quad x \stackrel{\mathrm{def}}{=} y, \quad \underbrace{\frac{1}{n} \sum_{i=1}^{n} L_i}_{\text{mean}}, \quad \overbrace{x_1 + \cdots + x_n}^{n}, \quad A \times B, \quad A \setminus B, \quad A \oplus B, \quad A \oslash B, \quad \forall x, \quad \exists y, \quad x_1, \ldots, x_n, \quad \vdots, \quad \ddots
 $$
 ```
 
@@ -324,14 +326,16 @@ $$
 $$
 
 $$
-\left( \frac{a}{b} \right), \quad \left[ x \right], \quad \left\{ x \right\}, \quad \left| x \right|, \quad \left\| x \right\|, \quad \left\langle q, k \right\rangle, \quad \left. \frac{\partial f}{\partial x} \right|_{x=0}
+\left( \frac{a}{b} \right), \quad \left[ x \right], \quad \left\lbrace x \right\rbrace, \quad \left| x \right|, \quad \left\Vert x \right\Vert, \quad \left\langle q, k \right\rangle, \quad \left. \frac{\partial f}{\partial x} \right|_{x=0}
 $$
 
 $$
-\mathcal{L}(\theta), \quad \operatorname*{arg\,min}_{\theta} \mathcal{L}(\theta), \quad x \stackrel{\mathrm{def}}{=} y, \quad \underbrace{\frac{1}{n} \sum_{i=1}^{n} L_i}_{\text{mean}}, \quad \overbrace{x_1 + \cdots + x_n}^{n}, \quad A \times B, \quad A \setminus B, \quad A \oplus B, \quad A \oslash B, \quad \forall x, \quad \exists y, \quad x_1, \ldots, x_n, \quad \vdots, \quad \ddots
+\mathcal{L}(\theta), \quad \operatorname{arg\thinspace min}_{\theta} \mathcal{L}(\theta), \quad x \stackrel{\mathrm{def}}{=} y, \quad \underbrace{\frac{1}{n} \sum_{i=1}^{n} L_i}_{\text{mean}}, \quad \overbrace{x_1 + \cdots + x_n}^{n}, \quad A \times B, \quad A \setminus B, \quad A \oplus B, \quad A \oslash B, \quad \forall x, \quad \exists y, \quad x_1, \ldots, x_n, \quad \vdots, \quad \ddots
 $$
 
-预期结果：五行全部渲染；`\left...\right` 定界符随内容伸缩，`\left. \right|` 只显示右竖线；`\underbrace`/`\overbrace` 带上下标注；`\dfrac` 大分式、`\tfrac` 小分式；`\operatorname*{arg\,min}` 的 `\theta` 在 display 模式位于正下方——**若 `\operatorname*` 红色报错，白名单该行退化为 `\operatorname`（不带星）**。
+预期结果：五行全部渲染；`\left...\right` 定界符随内容伸缩，`\left. \right|` 只显示右竖线；`\underbrace`/`\overbrace` 带上下标注；`\dfrac` 大分式、`\tfrac` 小分式；`\operatorname{arg\thinspace min}` 显示直立算子名。
+
+**2026-11-13 复核**：初版用例实测两处失败——`\operatorname*`（星号变体）在 GitHub 的 MathJax 配置下报「The following macros are not allowed: operatorname」，**星号变体禁用、一律用 `\operatorname`**；`\left\{ x \right\}` 中 `\{` 被反转义为 `{` 导致 `\left{` 报「Missing or unrecognized delimiter for \left」——花括号一律用 `\lbrace`/`\rbrace` 形式（本用例已更新）。
 
 ### P16 · 大写箭头 / 间距 / 二项式 / `\Pr`（基础命令，[M2] 直接证据；`\binom` 族亦见 [M1]）
 
@@ -421,30 +425,60 @@ $$
 
 预期结果：`\det` 渲染为直立函数名 det（行列式）、`\varnothing` 渲染为空集符 ∅；任一红色报错则从白名单移除该符号并回改对应章节（`\det`：7.1 式 (4) 及同节正文、练习 2；`\varnothing`：4.2 式 (9)、7.4 §4 CFG 段式 (17)(18)(20)(23) 及正文）。
 
+### P20 · 2026-11-13 收编命令复合用例（[M2] 直接证据 + 渲染实测 [R1]）
+
+源码：
+
+```tex
+$$
+\ell \notin \mathbb{R}, \quad A \cap B, \quad \mathbf{x}, \quad a \leftrightarrow b, \quad b \mp c, \quad \angle \theta, \quad \lfloor x \rfloor, \quad u \longrightarrow v, \quad i^{\ast}
+$$
+```
+
+实时渲染：
+
+$$
+\ell \notin \mathbb{R}, \quad A \cap B, \quad \mathbf{x}, \quad a \leftrightarrow b, \quad b \mp c, \quad \angle \theta, \quad \lfloor x \rfloor, \quad u \longrightarrow v, \quad i^{\ast}
+$$
+
+预期结果：全部渲染——`\ell` 为花体 ℓ、`\notin` 为斜杠属于号、`\cap` 交集、`\mathbf` 粗体、双箭头/正负号/角符号/下取整/长箭头/星号各就各位。
+
+### P21 · 反转义陷阱替代写法与保护形式（2026-11-13 新增，全部实测）
+
+实时渲染（每行一种确认可用的写法）：
+
+- 花括号：$\lbrace 0, 1 \rbrace$；双竖线：$\Vert x \Vert$；细间距：$a \thinspace b$；5mu 间距：$a \hspace{5mu} b$；负间距：$a \negthinspace b$；控制空格：$a \ b$。
+- backtick 保护形式（内容含 `*` / `\%` / `\#` 时使用，可紧贴中文）：$`x^{*}`$ 、 $`15\%`$ 、紧贴中文$`x`$测试。
+- display 内星号：$$i^{\ast}$$（display 无 backtick 形式；display 内 `\%`/`\#` 用 `\text{％}`/`\text{＃}`）。
+
+**禁用写法及实测后果**：`\{`/`\}`→花括号不显示；`\|`→双竖线变单竖线；`\,`/`\;`/`\!`→显示为逗号/分号/叹号；`\%`→`%` 注释符吞掉后文；`\#`→MathJax 报错；行内 `$...$` 含裸 `*`→强调配对吞内容；display 内裸 `*`→变成 `_`。`\medspace`、`\thickspace` MathJax 不支持（显示为字面文本），同样禁用。
+
 ## 核对清单
 
 | 用例 | 覆盖的白名单构造 | 预期 | 核对结果 |
 | --- | --- | --- | --- |
-| P1 | display `$$...$$`；`\frac`；`\sum_{j=1}^{n}`；上下标；`\mathrm{}` | 渲染 | 待首次推送后填写 |
-| P2 | 行内 `$...$`；`\sqrt{}`；下标 | 渲染 | 待首次推送后填写 |
-| P3 | `aligned` | 渲染 | 待首次推送后填写 |
-| P4 | `cases` | 渲染 | 待首次推送后填写 |
-| P5 | `bmatrix` | 渲染 | 待首次推送后填写 |
-| P6 | `pmatrix` | 渲染 | 待首次推送后填写 |
-| P7a | `\text{}`（ASCII） | 渲染 | 待首次推送后填写 |
-| P7b | `\text{}` 内中文（边界） | 未知，待实测 | 待首次推送后填写 |
-| P8 | `\mathbb{R}` | 渲染 | 待首次推送后填写 |
-| P9 | `\bar\alpha`；`\prod_{s=1}^{t}` | 渲染 | 待首次推送后填写 |
-| P10 | `\langle q, k \rangle` | 渲染 | 待首次推送后填写 |
-| P11 | `\lVert x \rVert`；`\|x\|`；`\vert`；`\Vert`；`\mid`；裸 `\{`、`\}`、`\|` | 渲染 | 待首次推送后填写 |
+| P1 | display `$$...$$`；`\frac`；`\sum_{j=1}^{n}`；上下标；`\mathrm{}` | 渲染 | 渲染正常 ✓ |
+| P2 | 行内 `$...$`；`\sqrt{}`；下标 | 渲染 | 渲染正常 ✓ |
+| P3 | `aligned` | 渲染 | 渲染正常 ✓ |
+| P4 | `cases` | 渲染 | 渲染正常 ✓ |
+| P5 | `bmatrix` | 渲染 | 渲染正常 ✓ |
+| P6 | `pmatrix` | 渲染 | 渲染正常 ✓ |
+| P7a | `\text{}`（ASCII） | 渲染 | 渲染正常 ✓ |
+| P7b | `\text{}` 内中文（边界） | 未知，待实测 | 渲染正常 ✓（中文 \text 可用） |
+| P8 | `\mathbb{R}` | 渲染 | 渲染正常 ✓ |
+| P9 | `\bar\alpha`；`\prod_{s=1}^{t}` | 渲染 | 渲染正常 ✓ |
+| P10 | `\langle q, k \rangle` | 渲染 | 渲染正常 ✓ |
+| P11 | `\lVert x \rVert`；`\|x\|`；`\vert`；`\Vert`；`\mid`；裸 `\{`、`\}`、`\|` | 渲染 | 部分失败已处置：`\|`→`|`（双竖线变单竖线）、`\{`/`\}` 花括号不显示——从白名单移除并回改全书；用例已改写为 `\lbrace`/`\rbrace`/`\Vert` ✓ |
 | P12a-e | 行内 `$...$` 与中文/中文标点相邻、`$` 内侧空格（边界） | a/d/e 未知，b/c 渲染 | 待首次推送后填写 |
-| P13 | 基础函数/关系与运算符：`\ln`、`\sin`、`\cos`、`\tanh`、`\min`、`\max`、`\sup`、`\inf`、`\neq`、`\pm`、`\cdot`、`\odot`、`\otimes`、`\qquad` | 渲染 | 待首次推送后填写 |
-| P14 | 希腊字母小写常用集 26 个 + 大写 9 个（基础命令，[M2] 直接证据） | 渲染 | 待首次推送后填写 |
-| P15 | 关系/箭头/近似；`\dfrac`/`\tfrac`/`\int`/`\oint`/`\bigcup`/`\bigcap`；`\partial`/`\nabla`/修饰符号；`\left...\right` 伸缩定界符；`\mathcal`/`\operatorname*`/`\stackrel`/`\underbrace`/`\overbrace`/`\times`/`\setminus`/`\forall`/`\exists`/`\oplus`/`\oslash`/省略号/`\,`（基础命令，[M2] 直接证据） | 渲染；`\operatorname*` 重点复核 | 待首次推送后填写 |
-| P16 | 大写箭头（`\Rightarrow` 等 5 个）；间距 `\:`、`\;`、`\!`（`\,` 见 P15）；`\binom`/`\dbinom`/`\tbinom`；`\Pr`（基础命令，[M2] 直接证据） | 渲染 | 待首次推送后填写 |
-| P17 | `\big` / `\Big` / `\bigg` / `\Bigg` 固定尺寸定界符（基础命令，[M2] 直接证据；2026-11-11 随 W1 波末白名单收编补入） | 渲染且尺寸逐档递增 | 待首次推送后填写 |
-| P18 | `\lceil` / `\rceil` / `\ne` / `\leftarrow` / `\cup` / `\circ` / `\perp` / `\square` 补充符号复合用例（基础命令，[M2] 直接证据；2026-11-12 随 W2 波末白名单收编补入） | 渲染 | 待首次推送后填写 |
-| P19 | `\det` / `\varnothing` 复合用例（基础命令，[M2] 直接证据；2026-11-12 随 W4 波末白名单收编补入） | 渲染 | 待首次推送后填写 |
+| P13 | 基础函数/关系与运算符：`\ln`、`\sin`、`\cos`、`\tanh`、`\min`、`\max`、`\sup`、`\inf`、`\neq`、`\pm`、`\cdot`、`\odot`、`\otimes`、`\qquad` | 渲染 | 渲染正常 ✓ |
+| P14 | 希腊字母小写常用集 26 个 + 大写 9 个（基础命令，[M2] 直接证据） | 渲染 | 渲染正常 ✓ |
+| P15 | 关系/箭头/近似；`\dfrac`/`\tfrac`/`\int`/`\oint`/`\bigcup`/`\bigcap`；`\partial`/`\nabla`/修饰符号；`\left...\right` 伸缩定界符；`\mathcal`/`\operatorname*`/`\stackrel`/`\underbrace`/`\overbrace`/`\times`/`\setminus`/`\forall`/`\exists`/`\oplus`/`\oslash`/省略号/`\,`（基础命令，[M2] 直接证据） | 渲染；`\operatorname*` 重点复核 | 两处失败已处置：`\operatorname*` 报 macros are not allowed（禁用星号变体）；`\left\{` 因反转义报缺定界符（改用 `\left\lbrace`）；其余渲染正常 ✓ |
+| P16 | 大写箭头（`\Rightarrow` 等 5 个）；间距 `\:`、`\;`、`\!`（`\,` 见 P15）；`\binom`/`\dbinom`/`\tbinom`；`\Pr`（基础命令，[M2] 直接证据） | 渲染 | 源码层面渲染但内容被反转义破坏：`\,`→`,`、`\;`→`;`、`\!`→`!`（间距变标点）——三种写法禁用，替代为 `\thinspace`/`\hspace{5mu}`/`\negthinspace`；其余渲染正常 ✓ |
+| P17 | `\big` / `\Big` / `\bigg` / `\Bigg` 固定尺寸定界符（基础命令，[M2] 直接证据；2026-11-11 随 W1 波末白名单收编补入） | 渲染且尺寸逐档递增 | 渲染正常 ✓ |
+| P18 | `\lceil` / `\rceil` / `\ne` / `\leftarrow` / `\cup` / `\circ` / `\perp` / `\square` 补充符号复合用例（基础命令，[M2] 直接证据；2026-11-12 随 W2 波末白名单收编补入） | 渲染 | 渲染正常 ✓ |
+| P19 | `\det` / `\varnothing` 复合用例（基础命令，[M2] 直接证据；2026-11-12 随 W4 波末白名单收编补入） | 渲染 | 渲染正常 ✓ |
+| P20 | 2026-11-13 收编命令复合用例（`\ell`/`\notin`/`\cap`/`\mathbf`/`\leftrightarrow`/`\mp`/`\angle`/`\lfloor`/`\rfloor`/`\longrightarrow`/`\ast`） | 渲染 | 渲染正常 ✓ |
+| P21 | 反转义替代写法与保护形式（`\lbrace`/`\rbrace`/`\Vert`/`\thinspace`/`\hspace{5mu}`/`\negthinspace`/`` $`...`$ ``） | 渲染 | 渲染正常 ✓（临时 gist 探测 + 本页复核双重确认） |
 
 注：本表 code span 内的 `\|` 是 GFM 表格转义写法，渲染后显示为单个竖线字符（反斜杠不显示）；真实 LaTeX 源码以 P11 源码区为准。
 
@@ -452,4 +486,4 @@ $$
 
 | 日期 | 核对人 | 结论 | 失败项及处置 |
 | --- | --- | --- | --- |
-| （待首次推送 GitHub 后填写） | | | |
+| 2026-11-13 | Codex（gh api 渲染管线 + agent-browser 检视 MathJax 输出） | P1-P19 全部核对；P12a/d/e 按预期不渲染（规则成立）、P12b/c 与其余用例渲染正常；新发现并处置三处：反转义陷阱（`\{`/`\|`/`\,`/`\;`/`\!`/`\%`/`\#`）、`*` 强调冲突、`\operatorname*` 被禁——STYLE_GUIDE §3/§3.1 已更新，全书 51 章已回改 | 失败项及处置见 P11/P15/P16 行与 §3；新增 P20/P21 复核通过 |

@@ -1,6 +1,6 @@
 # 1.2 参数、计算、内存的账（Accounting for Parameters, Compute, and Memory）
 
-> 本章把 config.json 里的几个整数变成训练与推理的 FLOPs 账和字节账：每 token 前向 ≈ 2N、训练总量 C ≈ 6ND、参数 bf16 = 2N bytes，外加激活与 KV cache 两笔随序列长度涨的账 | 前置：1.1（$f_\theta$ 、 $d$ 、 $V$ 、 $T$ 记号） | 锚点：Llama-3.1-8B config [A]、DeepSeek-V3 config [A]、Kaplan et al. [B]、DeepSeek-V3 技术报告 [A]
+> 本章把 config.json 里的几个整数变成训练与推理的 FLOPs 账和字节账：每 token 前向 ≈ 2N、训练总量 C ≈ 6ND、参数 bf16 = 2N bytes，外加激活与 KV cache 两笔随序列长度涨的账 | 前置：1.1（ $f_\theta$ 、 $d$ 、 $V$ 、 $T$ 记号） | 锚点：Llama-3.1-8B config [A]、DeepSeek-V3 config [A]、Kaplan et al. [B]、DeepSeek-V3 技术报告 [A]
 
 ## 1. 一笔真实账单：2.788M H800-hours 从哪来
 
@@ -18,15 +18,15 @@ $$
 Y_{ij} = \sum_{s=1}^{k} X_{is} W_{sj}
 $$
 
-**符号**：$m$ ：左矩阵行数（token 维）；$k$ ：收缩维；$n$ ：输出维；$s$ ：求和哑指标。
+**符号**： $m$ ：左矩阵行数（token 维）； $k$ ：收缩维； $n$ ：输出维； $s$ ：求和哑指标。
 
-每个 $Y_{ij}$ 要 $k$ 次乘法加 $k-1$ 次加法，共 $2k-1$ 次浮点运算；$Y$ 有 $mn$ 个元素，故
+每个 $Y_{ij}$ 要 $k$ 次乘法加 $k-1$ 次加法，共 $2k-1$ 次浮点运算； $Y$ 有 $mn$ 个元素，故
 
 $$
 \mathrm{FLOPs}(XW) = mn(2k-1) \approx 2mnk \qquad (1)
 $$
 
-**符号**：$\mathrm{FLOPs}(\cdot)$ ：该运算的浮点运算次数（floating-point operations，计数；速率单位 FLOPS 是每秒次数）。 $k$ 取千位量级时 $2k-1 \approx 2k$ 的相对误差小于 0.1%，全书忽略。
+**符号**： $\mathrm{FLOPs}(\cdot)$ ：该运算的浮点运算次数（floating-point operations，计数；速率单位 FLOPS 是每秒次数）。 $k$ 取千位量级时 $2k-1 \approx 2k$ 的相对误差小于 0.1%，全书忽略。
 
 两点注记。第一，硬件一侧的对应物是融合乘加（fused multiply-add, FMA）：一条指令完成一次乘加，GPU 峰值算力按每周期 FMA 数乘 2 标称，所以式 (1) 既是算法账也是硬件账。部分文献按 MAC（multiply-accumulate）计数，1 MAC = 2 FLOPs，本书统一用 FLOPs，换算只差系数 2。第二，训练时左矩阵的 $m$ 是整个 batch 的 token 数 $B \cdot T$ ：teacher forcing（1.1 第 4 节）让一次前向并行打分全部 $T$ 个位置，所以「per token」账就是总账除以 token 数，本章默认按 per token 记。
 
@@ -35,10 +35,10 @@ $$
 线性层 $y = xW$ 作用在单 token 上： $x \in \mathbb{R}^{1 \times k}$ 、 $W \in \mathbb{R}^{k \times n}$ ，由式 (1) 得 FLOPs $= 2kn$ ，恰好是 $W$ 元素数的 2 倍——每个参数恰好参与一次 FMA。decoder-only 主干除输入 embedding 查表（gather，无乘加）外全是线性层的复合：QKV 投影、out 投影、FFN 三个矩阵、输出头（1.1 式 (2) 的 $W$ ）都是 matmul。逐层求和：
 
 $$
-\mathrm{FLOPs}_{\mathrm{fwd}} \approx \sum_{W} 2 \, |W| = 2N \qquad (2)
+\mathrm{FLOPs}_{\mathrm{fwd}} \approx \sum_{W} 2 \thinspace |W| = 2N \qquad (2)
 $$
 
-**符号**：$N$ ：参与 matmul 的参数量；$|W|$ ：矩阵 $W$ 的元素个数。口径约定：输入 embedding 矩阵查表不耗 FLOPs，不计入 $N$ ；tie_word_embeddings = false 时输出头是独立矩阵且做 matmul，应计入 $N$ ——这是式 (2) 的全量口径；第 9 节实例为逐项对账改用层参数口径、输出头单列，两种口径的换算关系在该节开头给出。两者常被一起混淆：它们 shape 相同（都是 $V \times d$ ）、在内存账里各占一份 $Vd$ ，但 FLOPs 账里一个是查表（0）、一个是完整的 $2Vd$ ——Llama-3.1-8B 的输出头每 token $1.05 \times 10^{9}$ FLOPs，约占前向的 7%，不可忽略。RMSNorm、SiLU、residual add 等 elementwise 运算每层每 token 只有 $O(d)$ 次，相对 $2N$ 低约一个 $d$ 因子，忽略。
+**符号**： $N$ ：参与 matmul 的参数量； $|W|$ ：矩阵 $W$ 的元素个数。口径约定：输入 embedding 矩阵查表不耗 FLOPs，不计入 $N$ ；tie_word_embeddings = false 时输出头是独立矩阵且做 matmul，应计入 $N$ ——这是式 (2) 的全量口径；第 9 节实例为逐项对账改用层参数口径、输出头单列，两种口径的换算关系在该节开头给出。两者常被一起混淆：它们 shape 相同（都是 $V \times d$ ）、在内存账里各占一份 $Vd$ ，但 FLOPs 账里一个是查表（0）、一个是完整的 $2Vd$ ——Llama-3.1-8B 的输出头每 token $1.05 \times 10^{9}$ FLOPs，约占前向的 7%，不可忽略。RMSNorm、SiLU、residual add 等 elementwise 运算每层每 token 只有 $O(d)$ 次，相对 $2N$ 低约一个 $d$ 因子，忽略。
 
 看个具体形状。Llama-3.1-8B 的 FFN up 投影是 $[1, 4096] \times [4096, 14336]$ ：由式 (1) 得 $2 \times 4096 \times 14336 = 1.17 \times 10^{8}$ FLOPs，而该矩阵有 $5.87 \times 10^{7}$ 个参数——恰好 2 倍。QKV 投影 $[1, 4096] \times [4096, 6144]$ 同理得 $5.03 \times 10^{7}$ 。每个线性层都满足这个 2 倍关系，求和即式 (2)。
 
@@ -54,7 +54,7 @@ $$
 \frac{\partial \mathcal{L}}{\partial x} = G W^{\top}, \qquad \frac{\partial \mathcal{L}}{\partial W} = \sum_{b=1}^{B_{\mathrm{tok}}} x_b^{\top} G_b \qquad (3)
 $$
 
-**符号**：$B_{\mathrm{tok}}$ ：该 step 参与梯度累加的 token 总数；$b$ ：token 下标；$x_b \in \mathbb{R}^{1 \times k}$ 、 $G_b \in \mathbb{R}^{1 \times n}$ 。
+**符号**： $B_{\mathrm{tok}}$ ：该 step 参与梯度累加的 token 总数； $b$ ：token 下标； $x_b \in \mathbb{R}^{1 \times k}$ 、 $G_b \in \mathbb{R}^{1 \times n}$ 。
 
 逐笔数：第一式是 $[1 \times n]$ 乘 $[n \times k]$ ，由式 (1) 每 token $2nk$ FLOPs，与前向相同。第二式是外积在 batch 上的累加：单个 token 的外积 $x_b^{\top} G_b$ 有 $kn$ 个元素、每元素一次乘法，看似只有 $nk$ ；但梯度要跨 $B_{\mathrm{tok}}$ 个 token 累加进同一份 $\partial \mathcal{L} / \partial W$ ，每个 token 对每个权重元素完成一次「乘并加进累加器」的 FMA，于是每 token $2nk$ FLOPs。两笔相加：
 
@@ -62,7 +62,7 @@ $$
 \mathrm{FLOPs}_{\mathrm{bwd}} = 4N = 2 \times \mathrm{FLOPs}_{\mathrm{fwd}} \qquad (4)
 $$
 
-**符号**：$\mathrm{FLOPs}_{\mathrm{bwd}}$ ：反向传播每 token 的 FLOPs。
+**符号**： $\mathrm{FLOPs}_{\mathrm{bwd}}$ ：反向传播每 token 的 FLOPs。
 
 一句话版本：前向每个参数做 1 次 FMA，反向要为输入侧与权重侧各做 1 次，合计每参数每 token 6 次。这个「1 + 2」的结构是通用的：任何 $y = f(x, W)$ 的算子，反向都要给 $x$ 和 $W$ 各算一份梯度；线性层恰好两份都与前向同阶。式 (3) 第二式还埋了一个内存事实：算 $\partial \mathcal{L} / \partial W$ 需要前向的输入 $x_b$ ，所以反向开始前向的激活必须还在显存里——第 8 节账二的来源。
 
@@ -76,7 +76,7 @@ $$
 C = 6ND \qquad (5)
 $$
 
-**符号**：$C$ ：训练总计算量（FLOPs）；$D$ ：训练处理的 token 总数，重复数据按通过次数计。这个框架与逐运算的 per-token 分解出自 [Kaplan et al., 2020](../references.md)（arXiv:2001.08361，[B]）的附录。
+**符号**： $C$ ：训练总计算量（FLOPs）； $D$ ：训练处理的 token 总数，重复数据按通过次数计。这个框架与逐运算的 per-token 分解出自 [Kaplan et al., 2020](../references.md)（arXiv:2001.08361，[B]）的附录。
 
 式 (5) 是本书复用最多的账式：1.3 的 compute-optimal 推导以它为约束条件，4.5 用它换算 MoE 训练成本，Part 5 的案例章用它对账各家技术报告。它也反向使用：给定算力预算 $C$ ，式 (5) 圈定 $ND = C/6$ 的可行集合， $N$ 与 $D$ 怎么分是 1.3 的 compute-optimal 问题。量级直觉：Llama-3.1-8B 规模（ $N = 6.98 \times 10^{9}$ ，第 9 节）每训 1T token 要 $4.2 \times 10^{22}$ FLOPs。再反过来：一个 1024 卡集群、每卡持续 $3.4 \times 10^{14}$ FLOPS（第 9 节从 DeepSeek-V3 报告推出的量级），跑 30 天提供 $9.0 \times 10^{23}$ FLOPs——够 8B 规模训约 22T token，或 70B 规模训约 2.1T token；预算固定时「模型大一档」与「数据多一档」不可兼得，这就是 scaling law 要回答的分配问题（1.3）。
 
@@ -84,21 +84,21 @@ $$
 
 1. **dense 前向**：每 token 激活全部参数。MoE 模型把 $N$ 换成激活参数 $N_{\mathrm{act}}$ 是近似（假设 expert 负载均衡），第 9 节的 DeepSeek-V3 算例即用此口径。
 2. **忽略 attention 二次项**：成立条件是 $2LTd \ll 2N$ 即 $T \ll N/(Ld)$ ，换算实例见第 6 节。
-3. **无激活重计算**：梯度检查点（gradient checkpointing）全开大约多付一次前向，$C$ 涨到 $8ND$ 量级（练习 4）；重计算策略属 training 维度。
+3. **无激活重计算**：梯度检查点（gradient checkpointing）全开大约多付一次前向， $C$ 涨到 $8ND$ 量级（练习 4）；重计算策略属 training 维度。
 4. **只计 matmul**：elementwise、通信、IO 不计；后两者归 cluster 维度。
 5. **optimizer step 摊薄**：AdamW 的参数更新是 $O(N)$ 逐元素运算，摊到一个 step 的 $B_{\mathrm{tok}}$ 个 token 上每 token 只有 $O(N / B_{\mathrm{tok}})$ ，相对 $6N$ 可忽略。
 
-## 6. attention 的二次项：$2LT^{2}d$ 单算
+## 6. attention 的二次项： $2LT^{2}d$ 单算
 
-位置 $t$ 的 query 对 $t$ 个可见 key 各做一次长度 $d_{\mathrm{head}}$ 的内积（ $QK^{\top}$ ），再对 $t$ 个 value 做加权和（ $PV$ ）：每个 head 每个位置 $4 \, t \, d_{\mathrm{head}}$ FLOPs。乘 $H_q$ 个 head（ $H_q \, d_{\mathrm{head}} = d$ ），对位置求和，乘 $L$ 层：
+位置 $t$ 的 query 对 $t$ 个可见 key 各做一次长度 $d_{\mathrm{head}}$ 的内积（ $QK^{\top}$ ），再对 $t$ 个 value 做加权和（ $PV$ ）：每个 head 每个位置 $4 \thinspace t \thinspace d_{\mathrm{head}}$ FLOPs。乘 $H_q$ 个 head（ $H_q \thinspace d_{\mathrm{head}} = d$ ），对位置求和，乘 $L$ 层：
 
 $$
 C_{\mathrm{attn}} = L \sum_{t=1}^{T} 4td = 2LT(T+1)d \approx 2LT^{2}d \qquad (6)
 $$
 
-**符号**：$C_{\mathrm{attn}}$ ：一条长度 $T$ 序列一次前向的 attention matmul FLOPs。causal mask 使位置 $t$ 只见 $t$ 个 key（1.1 式 (8) 的下三角 $M$ ）， $\sum_{t} t = T(T+1)/2$ 把系数从 4 压到 2；$T$ 上千时 $T(T+1) \approx T^{2}$ ，近似误差小于 0.1%。不打 causal mask 的双向场景（encoder 类，见 3.2）系数回到 4。
+**符号**： $C_{\mathrm{attn}}$ ：一条长度 $T$ 序列一次前向的 attention matmul FLOPs。causal mask 使位置 $t$ 只见 $t$ 个 key（1.1 式 (8) 的下三角 $M$ ）， $\sum_{t} t = T(T+1)/2$ 把系数从 4 压到 2； $T$ 上千时 $T(T+1) \approx T^{2}$ ，近似误差小于 0.1%。不打 causal mask 的双向场景（encoder 类，见 3.2）系数回到 4。
 
-平均每 token $2LTd$ ——对 $T$ 线性，对全序列就是 $T^{2}$ 。注意这笔账按 $H_q$ 计： $PV$ 的输出有 $H_q$ 个头，GQA 共享 K、V 削减的是 K/V 投影参数与 KV cache（第 7、8 节），不削减打分与加权和本身——所以即使 GQA 模型，式 (6) 里的 $d$ 仍是 $H_q d_{\mathrm{head}} = 4096$ 。它什么时候追平参数账 $2N$ ？令两者相等解出 $T^{*} = N/(Ld)$ 。代入 Llama-3.1-8B（ $N \approx 6.98 \times 10^{9}$ ，层参数口径，第 9 节开头声明并逐项加出；换全量口径 $T^{*}$ 差不到 8%，结论不变）： $T^{*} = 6.98 \times 10^{9} / (32 \times 4096) \approx 5.3 \times 10^{4}$ 。三个 $T$ 值下 attention 项占每 token 前向（ $2N$ + 输出头 $\approx 1.50 \times 10^{10}$ ）的比例：
+平均每 token $2LTd$ ——对 $T$ 线性，对全序列就是 $T^{2}$ 。注意这笔账按 $H_q$ 计： $PV$ 的输出有 $H_q$ 个头，GQA 共享 K、V 削减的是 K/V 投影参数与 KV cache（第 7、8 节），不削减打分与加权和本身——所以即使 GQA 模型，式 (6) 里的 $d$ 仍是 $H_q d_{\mathrm{head}} = 4096$ 。它什么时候追平参数账 $2N$ ？令两者相等解出 $`T^{*} = N/(Ld)`$ 。代入 Llama-3.1-8B（ $N \approx 6.98 \times 10^{9}$ ，层参数口径，第 9 节开头声明并逐项加出；换全量口径 $`T^{*}`$ 差不到 8%，结论不变）： $`T^{*} = 6.98 \times 10^{9} / (32 \times 4096) \approx 5.3 \times 10^{4}`$ 。三个 $T$ 值下 attention 项占每 token 前向（ $2N$ + 输出头 $\approx 1.50 \times 10^{10}$ ）的比例：
 
 | $T$ | $2LTd$ /token | 占前向比例 |
 | --- | --- | --- |
@@ -114,10 +114,10 @@ $$
 
 | 运算 | shape（ $[m,k] \times [k,n]$ ） | FLOPs 公式 | 数值 |
 | --- | --- | --- | --- |
-| QKV 投影 | $[1, d] \times [d, (H_q + 2H_{kv}) \, d_{\mathrm{head}}]$ | $2d (H_q + 2H_{kv}) \, d_{\mathrm{head}}$ | 50.3 M |
+| QKV 投影 | $[1, d] \times [d, (H_q + 2H_{kv}) \thinspace d_{\mathrm{head}}]$ | $2d (H_q + 2H_{kv}) \thinspace d_{\mathrm{head}}$ | 50.3 M |
 | attention 打分与加权和 | $QK^{\top}$ 、 $PV$ （causal 平均 $T/2$ ） | $2Td$ | 33.6 M @ $T=4096$ |
 | out 投影 | $[1, d] \times [d, d]$ | $2d^{2}$ | 33.6 M |
-| FFN（SwiGLU 三矩阵） | $[1, d] \times [d, d_{\mathrm{ff}}]$ 两次 + $[1, d_{\mathrm{ff}}] \times [d_{\mathrm{ff}}, d]$ | $6 d \, d_{\mathrm{ff}}$ | 352.3 M |
+| FFN（SwiGLU 三矩阵） | $[1, d] \times [d, d_{\mathrm{ff}}]$ 两次 + $[1, d_{\mathrm{ff}}] \times [d_{\mathrm{ff}}, d]$ | $6 d \thinspace d_{\mathrm{ff}}$ | 352.3 M |
 
 GQA 的痕迹在第一行： $H_q + 2H_{kv} = 32 + 16 = 48$ 个 head 维而非 MHA（multi-head attention， $H_{kv} = H_q$ 的标准形，2.3 展开）的 $3H_q = 96$ ，QKV 投影比 MHA 减半。FFN 占层内 81%——Llama-3.1 取 $d_{\mathrm{ff}} = 14336 = 3.5d$ ，比等参数经验规则 $(8/3)d$ 更宽，为什么是这个数的账见 2.6（SwiGLU 的结构与 SiLU 激活也在 2.6； $\odot$ 为逐元素乘）。四行里只有 attention 行随 $T$ 变： $T$ 从 4096 拉到 131072 时，其他三行不动，attention 行从 33.6 M 涨到 $1.07 \times 10^{9}$ ，从层内第三大户变成超过其余三行之和。读这张表的方式：矩阵形状列是推导（每个数来自 config 的哪个字段），FLOPs 公式列是机制，数值列是结论；换任何模型的 config 都能照此重算。
 
@@ -155,8 +155,8 @@ $$
 | 存下的张量 | shape（每 token） | 元素数 |
 | --- | --- | --- |
 | RMSNorm1 输出 | $[d]$ | 4096 |
-| Q、K、V | $[(H_q + 2H_{kv}) \, d_{\mathrm{head}}]$ | 6144 |
-| softmax 概率 $P$ | $[H_q, \, t]$ ，causal 平均 $t = T/2$ | $16T$ |
+| Q、K、V | $[(H_q + 2H_{kv}) \thinspace d_{\mathrm{head}}]$ | 6144 |
+| softmax 概率 $P$ | $[H_q, \thinspace t]$ ，causal 平均 $t = T/2$ | $16T$ |
 | attention 输出 | $[d]$ | 4096 |
 | RMSNorm2 输出 | $[d]$ | 4096 |
 | FFN up / gate / SiLU⊙up | $[d_{\mathrm{ff}}]$ × 3 | 43008 |
@@ -168,27 +168,27 @@ $$
 \mathrm{Mem}_{\mathrm{act}} \approx B \cdot T \cdot L \cdot (65536 + 16T) \cdot 2 \text{ bytes}
 $$
 
-**符号**：最后一项因子 2 是 bf16 字节数；$65536$ 来自上表定长项之和， $16T$ 来自 $P$ 。换个模型重算时，定长项的一般形式是每层每 token $\approx 4d + (H_q + 2H_{kv}) \, d_{\mathrm{head}} + 3 d_{\mathrm{ff}}$ 个元素（norm 输出、attn 输出、层输入各一个 $d$ ，QKV 一份，SwiGLU 三份 $d_{\mathrm{ff}}$ ），随 $T$ 增长项是 $H_q \cdot T/2$ 个概率元素；具体实现存哪些张量有差异，但量级与增长阶由这两个结构项定。
+**符号**：最后一项因子 2 是 bf16 字节数； $65536$ 来自上表定长项之和， $16T$ 来自 $P$ 。换个模型重算时，定长项的一般形式是每层每 token $\approx 4d + (H_q + 2H_{kv}) \thinspace d_{\mathrm{head}} + 3 d_{\mathrm{ff}}$ 个元素（norm 输出、attn 输出、层输入各一个 $d$ ，QKV 一份，SwiGLU 三份 $d_{\mathrm{ff}}$ ），随 $T$ 增长项是 $H_q \cdot T/2$ 个概率元素；具体实现存哪些张量有差异，但量级与增长阶由这两个结构项定。
 
 代入数值看两个增长点。 $T = 4096$ 时每层每 token 256 KB，乘 32 层约 8 MB/token； $B=8$ 、 $T=4096$ 的一个 step 就是 256 GiB。把 $T$ 拉到 131072： $16T$ 项从 65536 涨到 $2.1 \times 10^{6}$ ，每 token 激活约 138 MB，其中 softmax 概率 $P$ 占 97%。随 $B \cdot T$ 线性的部分是激活检查点（activation checkpointing，重计算换显存，属 training 维度）的动机；随 $T$ 二次的部分是 FlashAttention 不存 $P$ 、反向时重算的动机（4.1 展开）。另外输出头 logits $[V]$ 每 token $128256 \times 4$ bytes（fp32）≈ 0.5 MB，大 batch 下需要分块 cross-entropy（training 维度）。
 
 **账三：KV cache**。推理时每层的 K、V 可以缓存以避免逐 token 重算前缀——可缓存性的推导与完整公式在 2.4，此处只登记它在预算中的位置：
 
 $$
-\mathrm{Mem}_{\mathrm{KV}} = 2 \, L \, H_{kv} \, d_{\mathrm{head}} \, T \, B \, b \text{ bytes}
+\mathrm{Mem}_{\mathrm{KV}} = 2 \thinspace L \thinspace H_{kv} \thinspace d_{\mathrm{head}} \thinspace T \thinspace B \thinspace b \text{ bytes}
 $$
 
-**符号**：$b$ = 每元素字节数（bf16 = 2）；系数 2 来自 K、V 两份。代入 Llama-3.1-8B（ $H_{kv}=8$ 、 $d_{\mathrm{head}}=128$ 、满窗 $T=131072$ 、 $B=1$ 、bf16）得 16 GiB——与权重本身同量级（cache 16 GiB 对权重约 15 GiB），长上下文推理的第一大户。压缩它（MQA / GQA / MLA）是 4.1 的主题。
+**符号**： $b$ = 每元素字节数（bf16 = 2）；系数 2 来自 K、V 两份。代入 Llama-3.1-8B（ $H_{kv}=8$ 、 $d_{\mathrm{head}}=128$ 、满窗 $T=131072$ 、 $B=1$ 、bf16）得 16 GiB——与权重本身同量级（cache 16 GiB 对权重约 15 GiB），长上下文推理的第一大户。压缩它（MQA / GQA / MLA）是 4.1 的主题。
 
 这笔账还连着第 10 节的算术强度：decode 每生成一个 token，都要把整个 cache 读一遍（当前 query 与全部历史 K、V 做 attention），即满窗时每 token 额外搬动 16 GiB，与读权重的 16 GB 同量级——长上下文服务的带宽预算里，cache 读取与权重读取是并列的两大项，这是 2.4 与 inference 维度展开的话题。
 
 **账四：优化器态**。AdamW 每个参数带两个矩估计，混合精度训练再存一份 fp32 主权重：
 
 $$
-\mathrm{Mem}_{\mathrm{opt}} = \underbrace{4N}_{\text{fp32 master}} + \underbrace{cN}_{m} + \underbrace{cN}_{v} = (4 + 2c) \, N \text{ bytes} \qquad (8)
+\mathrm{Mem}_{\mathrm{opt}} = \underbrace{4N}_{\text{fp32 master}} + \underbrace{cN}_{m} + \underbrace{cN}_{v} = (4 + 2c) \thinspace N \text{ bytes} \qquad (8)
 $$
 
-**符号**：$m$ 、 $v$ ：AdamW 的一阶、二阶矩估计；$c$ ：矩估计存储字节数。fp32 矩估计 $c=4$ 得 $12N$ ；8-bit 量化矩估计 $c=1$ 得 $6N$ ——优化器态 $6N \sim 12N$ bytes 的区间由此而来。
+**符号**： $m$ 、 $v$ ：AdamW 的一阶、二阶矩估计； $c$ ：矩估计存储字节数。fp32 矩估计 $c=4$ 得 $12N$ ；8-bit 量化矩估计 $c=1$ 得 $6N$ ——优化器态 $6N \sim 12N$ bytes 的区间由此而来。
 
 Llama-3.1-8B 的训练态权重相关账（bf16 工作权重 + bf16 梯度 + 优化器态）：
 
@@ -204,10 +204,10 @@ Llama-3.1-8B 的训练态权重相关账（bf16 工作权重 + bf16 梯度 + 优
 
 ## 9. 实例演算：Llama-3.1-8B 与 DeepSeek-V3
 
-**Llama-3.1-8B 参数逐项**（config 数值乘出来，config 字段见 [Llama-3.1-8B config](../references.md)，[A]）。先固定口径：本节实例中的 $N$ 取层参数口径，即下面逐项加出的 $6.98 \times 10^{9}$ ，untied 输出头作为单列加项；式 (2) 符号表的 $N$ 是全量口径（含输出头， $7.50 \times 10^{9}$ ）。两种口径的换算只有一行： $N_{\mathrm{full}} = N + Vd$ ，于是前向 $2N_{\mathrm{full}} = 2N + 2Vd$ ——下文「前向 $2N$ + 输出头 $2Vd$ 」的写法即按此展开， $T^{*}$ 与训练账同此口径。
+**Llama-3.1-8B 参数逐项**（config 数值乘出来，config 字段见 [Llama-3.1-8B config](../references.md)，[A]）。先固定口径：本节实例中的 $N$ 取层参数口径，即下面逐项加出的 $6.98 \times 10^{9}$ ，untied 输出头作为单列加项；式 (2) 符号表的 $N$ 是全量口径（含输出头， $7.50 \times 10^{9}$ ）。两种口径的换算只有一行： $N_{\mathrm{full}} = N + Vd$ ，于是前向 $2N_{\mathrm{full}} = 2N + 2Vd$ ——下文「前向 $2N$ + 输出头 $2Vd$ 」的写法即按此展开， $`T^{*}`$ 与训练账同此口径。
 
 - 每层 attention：Q 投影 $d^{2}$ = 16777216，K、V 投影 $2 \times d \times H_{kv} d_{\mathrm{head}} = 2 \times 4096 \times 1024$ = 8388608，out 投影 $d^{2}$ = 16777216，小计 41943040；
-- 每层 FFN： $3 d \, d_{\mathrm{ff}} = 3 \times 4096 \times 14336$ = 176160768；
+- 每层 FFN： $3 d \thinspace d_{\mathrm{ff}} = 3 \times 4096 \times 14336$ = 176160768；
 - 层计 218103808，乘 $L=32$ 得 6979321856，即 $N \approx 6.98 \times 10^{9}$ ——式 (2)(6) 用的就是它；
 - embedding $Vd$ = 525336576，独立输出头同值；总参数 $6979321856 + 2 \times 525336576 = 8029995008 \approx 8.03 \times 10^{9}$ ，「8B」名实相符。
 
@@ -219,7 +219,7 @@ $$
 C \approx 6 \times 37 \times 10^{9} \times 14.8 \times 10^{12} = 3.29 \times 10^{24} \text{ FLOPs} \qquad (9)
 $$
 
-**符号**：$N_{\mathrm{act}}$ ：MoE 每 token 实际激活的参数量，替代式 (5) 中的 $N$ 。
+**符号**： $N_{\mathrm{act}}$ ：MoE 每 token 实际激活的参数量，替代式 (5) 中的 $N$ 。
 
 对账分三步，关键在第二步的口径对齐。第一步，训练每 token $6 N_{\mathrm{act}} = 2.22 \times 10^{11}$ FLOPs（222 G），前向 $7.4 \times 10^{10}$ （74 G）。第二步：式 (9) 的 $D$ = 14.8T 是 pre-training 语料，对应的工时也必须取 Table 1 拆分中的 pre-training 部分 $2.664 \times 10^{6}$ GPU-hours（全训练 2.788M = pre 2664K + context extension 119K + post-training 5K，extension 与 post 的 12.4 万卡时对应另一批 token 与 FLOPs），乘 3600 秒得 $9.59 \times 10^{9}$ GPU-秒，与式 (9) 相除得每卡平均持续 $3.43 \times 10^{14}$ FLOPS。第三步交叉验证：14.8T token 摊到 2.664M GPU-hour 是每卡每小时 $5.6 \times 10^{6}$ token、每秒约 1543 token；用每 token 222 G 反乘回去， $1543 \times 2.22 \times 10^{11} = 3.43 \times 10^{14}$ FLOPS，与第二步一致。若误用全训练 2.788M 小时数去除 pre-training 的 FLOPs，得到 $3.27 \times 10^{14}$ ——只差 5%，但口径已经混了。这个派生量本身模型无关；它对应多高的算力利用率（MFU，model FLOPs utilization）取决于 H800 的峰值口径，属 gpu 与 training 维度（练习 3 请读者自己查峰值并算出 MFU）。此处能下的结论是：14.8T token、37B 激活、2.664M pre-training GPU-hours 三个论文数字与 6ND 框架互相自洽。
 

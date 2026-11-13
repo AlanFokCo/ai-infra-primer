@@ -9,12 +9,12 @@
 8.1 式 (1) 把 VLM 形式化为条件 LM；训练它就是最大化训练样本中回答部分的似然。设一条样本拼接后的完整序列为 $x_1, \ldots, x_S$（system + user prompt + 视觉段 + assistant 回答，视觉段占其中 $M$ 个位置），定义掩码：
 
 $$
-m_s = \begin{cases} 1, & s \in \mathrm{response} \\ 0, & \mathrm{otherwise} \end{cases}, \qquad L = -\sum_{s=1}^{S} m_s \log p\!\left( x_s \mid x_{<s} \right) \qquad (1)
+m_s = \begin{cases} 1, & s \in \mathrm{response} \\ 0, & \mathrm{otherwise} \end{cases}, \qquad L = -\sum_{s=1}^{S} m_s \log p\negthinspace\left( x_s \mid x_{<s} \right) \qquad (1)
 $$
 
-**符号**：$S$：拼接后总长度（文本 + 视觉段）；response 指 assistant 回答段；$x_{<s}$ 里已经混着视觉段——input-level 接入下（8.1 式 (3)）它是序列的一部分，条件化不需要任何特殊记号。式 (1) 与纯文本 SFT 的 loss 形式完全一致：VLM 的训练目标没有引入任何新 loss，全部的新东西在「$m_s$ 怎么取」。
+**符号**： $S$：拼接后总长度（文本 + 视觉段）；response 指 assistant 回答段； $x_{<s}$ 里已经混着视觉段——input-level 接入下（8.1 式 (3)）它是序列的一部分，条件化不需要任何特殊记号。式 (1) 与纯文本 SFT 的 loss 形式完全一致：VLM 的训练目标没有引入任何新 loss，全部的新东西在「 $m_s$ 怎么取」。
 
-被 mask 掉的两类位置各有机制理由。**视觉 token**：$v$ 是连续向量行（8.1 式 (2)），不在文本词表上，输出头的 softmax 根本给不出它的标签——没有 ground truth 可计；它们在序列里的角色是条件（建 KV、供后续 attend），不是预测目标。**prompt token**：建模对象是 $p(\text{response} \mid \text{prompt},\, x_{img})$，prompt 是给定的条件；对 prompt 计 loss 等于让模型学「生成用户的问题」——方向与推理时的条件化相反，还把有限的监督容量花在复述输入上。一个特例：stage 1 的 caption 预训练里，回答就是整条输出（图 → caption），response 覆盖 caption 全部 token；多轮对话样本里 response 是各 assistant 轮的并集，$m_s$ 逐段揭开。
+被 mask 掉的两类位置各有机制理由。**视觉 token**： $v$ 是连续向量行（8.1 式 (2)），不在文本词表上，输出头的 softmax 根本给不出它的标签——没有 ground truth 可计；它们在序列里的角色是条件（建 KV、供后续 attend），不是预测目标。**prompt token**：建模对象是 $p(\text{response} \mid \text{prompt},\thinspace x_{img})$，prompt 是给定的条件；对 prompt 计 loss 等于让模型学「生成用户的问题」——方向与推理时的条件化相反，还把有限的监督容量花在复述输入上。一个特例：stage 1 的 caption 预训练里，回答就是整条输出（图 → caption），response 覆盖 caption 全部 token；多轮对话样本里 response 是各 assistant 轮的并集， $m_s$ 逐段揭开。
 
 ```
 一条单轮样本的序列布局与 m_s：
@@ -41,7 +41,7 @@ def build_labels(input_ids, response_spans, ignore_index=-100):
 
 ### 1.3 有效 token 账
 
-训练 FLOPs 按全序列 $S$ 计，监督信号只按 $\sum_s m_s$ 计，两者之比 $\eta = \sum_s m_s / S$ 是这条样本的监督密度。算一笔典型账：AnyRes 4 切图 $M = 2880$（8.1 §4 口径）+ system/prompt 500 token + 回答 150 token，$\eta \approx 150 / 3530 \approx 4\%$。$\eta$ 低不等于浪费——视觉段与 prompt 的 forward 是条件化的必要成本；但它解释了数据工程的两个共同动作：把多条 QA 打进一条序列（packing，摊薄条件段的重复成本），以及把回答写长写密（dense caption，§2.2 的 Molmo 路线——同样的视觉 forward 成本，换取更多 loss token 且逐对象接地）。$\eta$ 也是读各家数据配方的一把尺：同样的 token 总量，监督密度可以差出一个量级。
+训练 FLOPs 按全序列 $S$ 计，监督信号只按 $\sum_s m_s$ 计，两者之比 $\eta = \sum_s m_s / S$ 是这条样本的监督密度。算一笔典型账：AnyRes 4 切图 $M = 2880$（8.1 §4 口径）+ system/prompt 500 token + 回答 150 token，$`\eta \approx 150 / 3530 \approx 4\%`$。 $\eta$ 低不等于浪费——视觉段与 prompt 的 forward 是条件化的必要成本；但它解释了数据工程的两个共同动作：把多条 QA 打进一条序列（packing，摊薄条件段的重复成本），以及把回答写长写密（dense caption，§2.2 的 Molmo 路线——同样的视觉 forward 成本，换取更多 loss token 且逐对象接地）。 $\eta$ 也是读各家数据配方的一把尺：同样的 token 总量，监督密度可以差出一个量级。
 
 ## 2. 多阶段配方：对齐 → 指令 → 偏好
 
@@ -56,7 +56,7 @@ caption 数据             模板与 special token 定型        幻觉专项（
 
 ### 2.1 stage 1：对齐预训练——只训 connector
 
-冻结 ViT 与 LLM，只训 $\phi$；数据是 web 规模 image-caption 对（LLaVA-1.5 口径 558K 条，8.2 §2 已锁；工业配方大几个量级）。这一阶段学什么，8.1 §5 已给过论证：几十万级图文对就能把 $v$ 对齐进 LLM 的 embedding 空间 ⇒ connector 学的是**空间对齐**（把视觉塔已备好的语义特征变换进 LLM 可读的坐标系），不是内容补全。8.2 §1 留下的「自由度 (iii) 表征翻译由训练目标完成」，兑现处就是这里：式 (1) 的梯度只经过 $v$ 回传，$\phi$ 被迫把视觉特征摆进 LLM 词表近旁「可续写」的区域——对齐是 loss 几何的推论，不是额外设计的模块。
+冻结 ViT 与 LLM，只训 $\phi$；数据是 web 规模 image-caption 对（LLaVA-1.5 口径 558K 条，8.2 §2 已锁；工业配方大几个量级）。这一阶段学什么，8.1 §5 已给过论证：几十万级图文对就能把 $v$ 对齐进 LLM 的 embedding 空间 ⇒ connector 学的是**空间对齐**（把视觉塔已备好的语义特征变换进 LLM 可读的坐标系），不是内容补全。8.2 §1 留下的「自由度 (iii) 表征翻译由训练目标完成」，兑现处就是这里：式 (1) 的梯度只经过 $v$ 回传， $\phi$ 被迫把视觉特征摆进 LLM 词表近旁「可续写」的区域——对齐是 loss 几何的推论，不是额外设计的模块。
 
 为什么先冻双塔：caption 数据噪声大（alt-text 与图像内容错位是常态），一上来就解冻 LLM，低质文本分布会直接污染语言能力；冻结时全部对齐误差由千万级参数的 connector 吸收，双塔的预训练资产零风险。stage 1 的产物会看图、会写 caption，但指令遵循为零——它没见过指令格式。
 
@@ -116,10 +116,10 @@ $$
 为什么 VLM 会「不看图说话」？把模型的输出分布与同一模型闭眼（不给图）的分布对比，定义逐位置的视觉接地强度：
 
 $$
-G_t = D_{KL}\left( p(\cdot \mid y_{<t},\, x_{img}) \;\Vert\; p(\cdot \mid y_{<t}) \right) \qquad (3)
+G_t = D_{KL}\left( p(\cdot \mid y_{<t},\thinspace x_{img}) \hspace{5mu}\Vert\hspace{5mu} p(\cdot \mid y_{<t}) \right) \qquad (3)
 $$
 
-**符号**：右端是同一模型在视觉条件缺失下的输出分布。$G_t \approx 0$ 意味着第 $t$ 步的生成与闭眼无异——该位置的词是语言先验选的。压低 $G_t$ 的三个机制性因素（机制假设级表述：各论文的探针与消融方向一致，但「VLM 内部何时何地丢失视觉证据」没有闭合理论，本节不断言超出论文的结论）：
+**符号**：右端是同一模型在视觉条件缺失下的输出分布。 $G_t \approx 0$ 意味着第 $t$ 步的生成与闭眼无异——该位置的词是语言先验选的。压低 $G_t$ 的三个机制性因素（机制假设级表述：各论文的探针与消融方向一致，但「VLM 内部何时何地丢失视觉证据」没有闭合理论，本节不断言超出论文的结论）：
 
 (a) **监督的不对称**：式 (1) 只监督文本 token——caption 的文本先验（「街景常配车」「餐桌常配餐具」这类对象共现统计）是降低训练 loss 的合法 shortcut，视觉证据只是特征之一，先验在式 (1) 下不受任何惩罚；
 (b) **条件占比与稀释**：视觉段 $M$ 相对全序列小，decode 到长回答后段时文本前缀主导 attention（8.1 §4 的 token 账在生成侧的再现）——「回答后段更易退化」的经典观察出自 CHAIR 系工作（非本章锚点文献，不挂引用、仅作背景）；
@@ -127,7 +127,7 @@ $$
 
 VCD 论文的机制分析与 (a)(c) 同向：**视觉不确定性放大语言先验与统计偏差**——给输入图像逐级加噪（视觉不确定性增大）后，模型对高频对象、以及与图内对象高频共现的对象的幻觉倾向显著上升；先验的具体形态即训练语料中的对象分布不均与虚假共现相关（对照实验口径，[Leng et al., 2023](../references.md)，arXiv:2311.16922，[A]）。
 
-式 (3) 同时给出一个探针：逐位置算 $G_t$、找生成路径上 $G_t$ 塌陷的区间，就是「闭眼续写」的高发位。注意方向：$G_t \approx 0$ 推出该位置不接地，是幻觉的高发条件；反过来 $G_t$ 大并不保证 faithful（图像可以改变分布、但改向错误方向）——精确表述与反例构造留作练习 3。
+式 (3) 同时给出一个探针：逐位置算 $G_t$、找生成路径上 $G_t$ 塌陷的区间，就是「闭眼续写」的高发位。注意方向： $G_t \approx 0$ 推出该位置不接地，是幻觉的高发条件；反过来 $G_t$ 大并不保证 faithful（图像可以改变分布、但改向错误方向）——精确表述与反例构造留作练习 3。
 
 ### 4.3 缓解：数据侧与解码侧
 
@@ -136,10 +136,10 @@ VCD 论文的机制分析与 (a)(c) 同向：**视觉不确定性放大语言先
 **解码侧**（事后，不碰权重）：视觉对比解码（visual contrastive decoding，VCD，[Leng et al., 2023](../references.md)，arXiv:2311.16922，[A]；官方代码 DAMO-NLP-SG/VCD）。推理时并行构造一个视觉条件受损的分布，把先验成分从主分布里减掉：
 
 $$
-\tilde p(y_t) = \mathrm{softmax}\left( (1 + \alpha)\, \ell_{img}(y_t) - \alpha\, \ell_{noise}(y_t) \right) \qquad (4)
+\tilde p(y_t) = \mathrm{softmax}\left( (1 + \alpha)\thinspace \ell_{img}(y_t) - \alpha\thinspace \ell_{noise}(y_t) \right) \qquad (4)
 $$
 
-**符号**：$\ell_{img}$：原条件下输出头的 logit（论文记号口径）；$\ell_{noise}$：图像经扩散前向加噪、视觉内容被摧毁后的条件 logit；$\alpha > 0$：对比强度。机制读法：受损条件下视觉证据被抽掉、剩下的主要是语言先验与共现偏差，减法恰把「不看图也会说的成分」从主分布里压掉——对照式 (3)，VCD 是推理时放大 $G_t$ 的操作。论文同式还带一条可信度截断：只在原分布高置信的候选 token 集上施加对比、集外置零——否则减法会把主分布里概率近零的 token 的 logit 差放大成奇异峰（推导留作练习 2）。代价账：每步 decode 两次前向（原条件 + 受损条件），推理成本翻倍；$\alpha$ 逐任务调。
+**符号**： $\ell_{img}$：原条件下输出头的 logit（论文记号口径）； $\ell_{noise}$：图像经扩散前向加噪、视觉内容被摧毁后的条件 logit； $\alpha > 0$：对比强度。机制读法：受损条件下视觉证据被抽掉、剩下的主要是语言先验与共现偏差，减法恰把「不看图也会说的成分」从主分布里压掉——对照式 (3)，VCD 是推理时放大 $G_t$ 的操作。论文同式还带一条可信度截断：只在原分布高置信的候选 token 集上施加对比、集外置零——否则减法会把主分布里概率近零的 token 的 logit 差放大成奇异峰（推导留作练习 2）。代价账：每步 decode 两次前向（原条件 + 受损条件），推理成本翻倍； $\alpha$ 逐任务调。
 
 定位一句话：VCD 是事后补丁，治本是数据与训练侧；它的存在同时构成对 §4.2 机制假设的操控验证——若幻觉与语言先验无关，减先验就不该有效，而它有效（引论文主表）。
 
@@ -164,7 +164,7 @@ $$
 
 (a) **选项偏置**：模型对选项标记与顺序有位置先验，打乱选项顺序分数会动——同一模型同一题、不同排布不同分，分差里有多少是能力、多少是偏好，需要协议层面控制（循环排布取平均是常见做法）。
 
-(b) **猜测基线压缩信号区间**：$k$ 选 1 的随机基线是 $1/k$（4 选 1 即 25%），真实信号被压在 $[1/k,\, 1]$ 的区间里——两个模型差 5 个点，在 75 个点的有效区间上读与在 100 个点刻度上读，观感完全不同；报分差前先把基线减掉。
+(b) **猜测基线压缩信号区间**： $k$ 选 1 的随机基线是 $1/k$（4 选 1 即 25%），真实信号被压在 $[1/k,\thinspace 1]$ 的区间里——两个模型差 5 个点，在 75 个点的有效区间上读与在 100 个点刻度上读，观感完全不同；报分差前先把基线减掉。
 
 (c) **判别-生成错位与盲测泄漏**：多选测「从选项里挑」，部署形态是开放生成；且相当比例的题目可以不看图、靠文本先验答对（选项本身泄漏信息、常识可解）——若同一 benchmark 上纯文本盲测基线显著高于随机，说明题目本身可被语言先验破解，视觉增益要从分数里单独减去这项。这条与 §4.2 是同一枚硬币的两面：先验压过证据既是幻觉的机制，也是虚高分的机制。
 
@@ -180,16 +180,16 @@ tech report 的分数是「在作者的评测协议下」的数字：prompt 模�
 | 有效 token 账 | $\eta = \sum_s m_s / S$ | AnyRes 图 + 短回答下 $\eta$ 可低至约 4%；packing 与 dense caption 是提 $\eta$ 的两条数据工程路线 |
 | 多阶段配方 | §2.4 表 | stage 1 对齐只训 connector（冻双塔）→ stage 2 指令解冻 LLM（纯文本数据必留）→ stage 3 偏好对齐（幻觉专项 chosen/rejected；算法归 training 维度） |
 | 交错图文 | §3 | `<image>` 占位 → 展开成 $M$ 行 → labels 恒 $-100$；多图 M-RoPE 段基址递增、文本相对结构不变；训练/推理模板须逐 token 一致 |
-| 幻觉形式化 | 式 (2)(3) | 断言集减证据集；$G_t$ = 视觉接地强度，$G_t \approx 0$ 即闭眼续写；三机制：监督不对称、条件稀释、先验泄漏 |
-| VCD | 式 (4) | $(1+\alpha)\,\ell_{img} - \alpha\,\ell_{noise}$ + 候选集截断；每步两次前向换幻觉率下降 |
-| 评测方法论 | §5 | 四类 benchmark；多选题三坑（选项偏置、$1/k$ 基线、判别-生成错位）；读表三看（协议、基线、开放生成证据） |
+| 幻觉形式化 | 式 (2)(3) | 断言集减证据集； $G_t$ = 视觉接地强度， $G_t \approx 0$ 即闭眼续写；三机制：监督不对称、条件稀释、先验泄漏 |
+| VCD | 式 (4) | $(1+\alpha)\thinspace\ell_{img} - \alpha\thinspace\ell_{noise}$ + 候选集截断；每步两次前向换幻觉率下降 |
+| 评测方法论 | §5 | 四类 benchmark；多选题三坑（选项偏置、 $1/k$ 基线、判别-生成错位）；读表三看（协议、基线、开放生成证据） |
 
 ## 练习
 
-1.（计算）一条样本：system 100 token + user prompt 200 token + AnyRes 4 切图（$M = 2880$）+ assistant 回答 150 token。(a) 算 $\eta$。(b) 把 4 条同构 QA pack 进一条序列（各带各的图，共享一份 system），序列总长与 $\eta$ 各是多少？(c) 解释为什么 $\eta$ 不影响 forward FLOPs、只影响监督密度；被 mask 的视觉 token 在反向传播里真的没有梯度吗（提示：它们对 response 的 loss 有贡献路径）？
-2.（推导）VCD 式 (4)。(a) 证明当 $\ell_{noise} = \ell_{img}$（视觉条件无贡献）时 $\tilde p = \mathrm{softmax}(\ell_{img})$。(b) 设 token $y^{*}$ 满足 $\ell_{img}(y^{*}) \ll 0$ 且 $\ell_{noise}(y^{*}) < \ell_{img}(y^{*})$（主分布几乎不要它、受损分布更排斥它）：把式 (4) 的分子项改写为 $\ell_{img} + \alpha(\ell_{img} - \ell_{noise})$，分析它随 $\alpha$ 的行为，说明候选集截断防的是哪种失效模式。(c) 讨论 $\alpha \to \infty$ 时 $\tilde p$ 集中到什么样的 token 上。
-3.（推导）式 (3) 的 $G_t$。(a) 用 KL 散度的性质说明 $G_t \ge 0$、$G_t = 0$ 当且仅当两分布相等。(b) 构造一个 $G_t$ 大但回答仍幻觉的例子（提示：图像可以改变分布、但改向错误方向），据此说明「$G_t$ 小是幻觉的高发条件而非必要条件」。(c) 讨论用 $G_t$ 做幻觉探针的漏报与误报来源。
-4.（代码）教学实现 VCD 解码一步（非优化实现）：输入 `logits_img`、`logits_noise`（均 $\mathbb{R}^{|\mathcal{V}|}$）、$\alpha$、截断阈值 $\beta \in (0, 1)$；先按 $p_{img} \ge \beta \cdot \max p_{img}$ 取候选集，再在候选集上计算式 (4)、集外置零，输出归一化分布。写清与贪心采样的接口。
+1.（计算）一条样本：system 100 token + user prompt 200 token + AnyRes 4 切图（ $M = 2880$）+ assistant 回答 150 token。(a) 算 $\eta$。(b) 把 4 条同构 QA pack 进一条序列（各带各的图，共享一份 system），序列总长与 $\eta$ 各是多少？(c) 解释为什么 $\eta$ 不影响 forward FLOPs、只影响监督密度；被 mask 的视觉 token 在反向传播里真的没有梯度吗（提示：它们对 response 的 loss 有贡献路径）？
+2.（推导）VCD 式 (4)。(a) 证明当 $\ell_{noise} = \ell_{img}$（视觉条件无贡献）时 $\tilde p = \mathrm{softmax}(\ell_{img})$。(b) 设 token $`y^{*}`$ 满足 $`\ell_{img}(y^{*}) \ll 0`$ 且 $`\ell_{noise}(y^{*}) < \ell_{img}(y^{*})`$（主分布几乎不要它、受损分布更排斥它）：把式 (4) 的分子项改写为 $\ell_{img} + \alpha(\ell_{img} - \ell_{noise})$，分析它随 $\alpha$ 的行为，说明候选集截断防的是哪种失效模式。(c) 讨论 $\alpha \to \infty$ 时 $\tilde p$ 集中到什么样的 token 上。
+3.（推导）式 (3) 的 $G_t$。(a) 用 KL 散度的性质说明 $G_t \ge 0$、 $G_t = 0$ 当且仅当两分布相等。(b) 构造一个 $G_t$ 大但回答仍幻觉的例子（提示：图像可以改变分布、但改向错误方向），据此说明「 $G_t$ 小是幻觉的高发条件而非必要条件」。(c) 讨论用 $G_t$ 做幻觉探针的漏报与误报来源。
+4.（代码）教学实现 VCD 解码一步（非优化实现）：输入 `logits_img`、`logits_noise`（均 $\mathbb{R}^{|\mathcal{V}|}$）、 $\alpha$、截断阈值 $\beta \in (0, 1)$；先按 $p_{img} \ge \beta \cdot \max p_{img}$ 取候选集，再在候选集上计算式 (4)、集外置零，输出归一化分布。写清与贪心采样的接口。
 
 ## 参考
 

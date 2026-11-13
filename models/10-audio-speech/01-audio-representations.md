@@ -2,7 +2,7 @@
 
 > 音频进模型之前只有两种形态——连续谱特征（log-mel，100 fps 量级）与离散 token（semantic / acoustic 两类）；本章把前者（STFT/mel 公式链）与后者（HuBERT 系 semantic token、SoundStream 到 X-codec2 六家 neural codec）的公式与参数账一次结清，codec 六家的 fps / $n_q$ / $K$ / bitrate 对照表是 Part 10 其余三章的公共底座 | 前置：1.1（CE/NLL）、2.4（KV cache 账）、3.1（masked prediction/MLM）、6.2（InfoNCE 式 (2)-(5)）、6.3（VQ/RVQ 式 (20)(21)、离散 vs 连续选择表 §7.4）、8.1（VLM connector 同构） | 锚点：facebookresearch/encodec [A]、kyutai-labs/moshi（Mimi 实现 moshi/moshi/models/compression.py）[A]、descriptinc/descript-audio-codec [A]、facebookresearch/fairseq（HuBERT：examples/hubert）[A]、kyutai/mimi config [A]；SoundStream [B]、w2v-BERT [B]
 
-记号约定（本 Part 统一）：波形 $x[n]$（离散时间采样，采样率 $f_s$）；STFT 谱 $X[m, k]$（$m$ 帧下标、$k$ 频点下标）；**帧率 fps 与 token rate 区分**——fps = codec/encoder 每秒帧数，token rate = fps × 每秒并发的 codebook 数（如 Mimi $8 \times 12.5 = 100$ tok/s）；RVQ 记号沿用 6.3——$r_1 = z$，$e_i = Q_i(r_i)$，$r_{i+1} = r_i - e_i$，codebook 数 $n_q$、大小 $K$。
+记号约定（本 Part 统一）：波形 $x[n]$（离散时间采样，采样率 $f_s$）；STFT 谱 $X[m, k]$（ $m$ 帧下标、 $k$ 频点下标）；**帧率 fps 与 token rate 区分**——fps = codec/encoder 每秒帧数，token rate = fps × 每秒并发的 codebook 数（如 Mimi $8 \times 12.5 = 100$ tok/s）；RVQ 记号沿用 6.3—— $r_1 = z$， $e_i = Q_i(r_i)$， $r_{i+1} = r_i - e_i$，codebook 数 $n_q$、大小 $K$。
 
 ## 1. 数字音频：采样率三档与 Nyquist 账
 
@@ -10,7 +10,7 @@
 
 $$f_{\max} = f_s / 2 \qquad (1)$$
 
-**符号**：$f_{\max}$：无混叠可表示的最高频率。三档常用采样率的账：16 kHz（语音识别档，上限 8 kHz）、24 kHz（语音合成与 neural codec 主流档，上限 12 kHz）、44.1 kHz（音乐档，上限 22.05 kHz）。语音信息集中在低频段，8 kHz 上限对识别与可懂度已富余；音乐的高频泛音才需要 44.1 kHz 的带宽。选 $f_s$ 就是选带宽预算：采样率直接乘进每秒样本数，进而乘进后续每个环节的算力与码率账。
+**符号**： $f_{\max}$：无混叠可表示的最高频率。三档常用采样率的账：16 kHz（语音识别档，上限 8 kHz）、24 kHz（语音合成与 neural codec 主流档，上限 12 kHz）、44.1 kHz（音乐档，上限 22.05 kHz）。语音信息集中在低频段，8 kHz 上限对识别与可懂度已富余；音乐的高频泛音才需要 44.1 kHz 的带宽。选 $f_s$ 就是选带宽预算：采样率直接乘进每秒样本数，进而乘进后续每个环节的算力与码率账。
 
 原始 PCM 的码率账给出压缩任务的量级参照：24 kHz、16 bit、单声道波形是 $24000 \times 16 = 384$ kbps；本章 §4 的 SoundStream 在同采样率下做到 6 kbps（64 倍压缩），§5 的 X-codec2 在 16 kHz 下做到 0.8 kbps（对 $16000 \times 16 = 256$ kbps 的 PCM 是 320 倍）。neural codec 的设计空间就是在「bitrate × 重建质量 × token 结构」三个旋钮之间做交易——第三个旋钮是 LLM 时代才出现的，§5 与 §6 会看清它的分量。
 
@@ -20,11 +20,11 @@ $$f_{\max} = f_s / 2 \qquad (1)$$
 
 波形本身对模型不友好：采样点级时间序列（24 kHz → 每秒 24000 个点）既长又没有直接的频率可读性。短时傅里叶变换（STFT）把波形切成重叠的帧、逐帧做 DFT，得到时频联合表征：
 
-$$X[m, k] = \sum_{n} x[n]\, w[n - mH]\, e^{-j 2\pi k n / N} \qquad (2)$$
+$$X[m, k] = \sum_{n} x[n]\thinspace w[n - mH]\thinspace e^{-j 2\pi k n / N} \qquad (2)$$
 
-**符号**：$w$：窗函数（长度 $N_w$ 个采样点）；$H$：hop（相邻帧起点间距，样本数）；$N$：DFT 点数（$N \ge N_w$）；$k = 0, \ldots, N/2$ 为有效单边频点。$X[m, k]$ 是复数，幅度谱 $|X[m, k]|$ 与功率谱 $|X[m, k]|^2$ 是下游特征的原料。
+**符号**： $w$：窗函数（长度 $N_w$ 个采样点）； $H$：hop（相邻帧起点间距，样本数）； $N$：DFT 点数（ $N \ge N_w$）； $k = 0, \ldots, N/2$ 为有效单边频点。 $X[m, k]$ 是复数，幅度谱 $|X[m, k]|$ 与功率谱 $|X[m, k]|^2$ 是下游特征的原料。
 
-hop 决定帧率：$fps = f_s / H$。标准语音档 16 kHz / 25 ms 窗 / 10 ms hop：$N_w = 0.025 \times 16000 = 400$，$H = 160$，帧率 $= 16000/160 = 100$ fps。窗大于 hop（$N_w > H$）时相邻帧共享一段波形，帧间相位连续可读。
+hop 决定帧率： $fps = f_s / H$。标准语音档 16 kHz / 25 ms 窗 / 10 ms hop： $N_w = 0.025 \times 16000 = 400$， $H = 160$，帧率 $= 16000/160 = 100$ fps。窗大于 hop（ $N_w > H$）时相邻帧共享一段波形，帧间相位连续可读。
 
 式 (2) 的输出是复数，下游特征链只取幅度：相位谱 $\angle X[m, k]$ 逐帧逐频点摆动剧烈、没有幅度谱那样的可读结构，建模价值低；而它丢掉的信息（精细定时）在感知上本就弱。代价是单向的——log-mel 这条路走不到波形重建，回波形要靠 codec 的 decoder（§4）或 vocoder 从幅度谱反推相位（10.3 的 HiFi-GAN 系）。理解与压缩两条路线在「相位」这个岔口分开。
 
@@ -34,7 +34,7 @@ hop 决定帧率：$fps = f_s / H$。标准语音档 16 kHz / 25 ms 窗 / 10 ms 
 
 $$\Delta t \cdot \Delta f \sim \frac{N_w}{f_s} \cdot \frac{f_s}{N_w} = 1 \qquad (3)$$
 
-**符号**：$\sim$ 表量级关系（常数因子由窗形决定）。25 ms @ 16 kHz：$\Delta f \approx 40$ Hz、$\Delta t \approx 25$ ms。频率分辨率要提一倍，窗就得加长一倍、时间分辨率同倍率让出——不存在「两个方向都更细」的窗长选择。语音取 25 ms 的理由在信号特性：音素持续数十毫秒量级，25 ms 窗内谱近似平稳（短时平稳假设），而 40 Hz 的频率分辨率足以读清谱包络。
+**符号**： $\sim$ 表量级关系（常数因子由窗形决定）。25 ms @ 16 kHz： $\Delta f \approx 40$ Hz、 $\Delta t \approx 25$ ms。频率分辨率要提一倍，窗就得加长一倍、时间分辨率同倍率让出——不存在「两个方向都更细」的窗长选择。语音取 25 ms 的理由在信号特性：音素持续数十毫秒量级，25 ms 窗内谱近似平稳（短时平稳假设），而 40 Hz 的频率分辨率足以读清谱包络。
 
 ### 2.3 mel filterbank 与 log 压缩
 
@@ -42,11 +42,11 @@ STFT 的 $N/2 + 1$ 个频点在线性频率轴上等间距，与听感的非线�
 
 $$m = 2595 \log_{10}\left(1 + \frac{f}{700}\right) \qquad (4)$$
 
-与 Slaney 式（另一套常用刻度，差异在分段形式与归一化，不展开推导）。mel filterbank 是一组在 mel 轴上等距、换算回 Hz 轴后低频密高频疏的三角滤波器，写成矩阵 $M \in \mathbb{R}^{K \times (N/2 + 1)}$（$K$ = mel 通道数），作用在功率谱上再加 log：
+与 Slaney 式（另一套常用刻度，差异在分段形式与归一化，不展开推导）。mel filterbank 是一组在 mel 轴上等距、换算回 Hz 轴后低频密高频疏的三角滤波器，写成矩阵 $M \in \mathbb{R}^{K \times (N/2 + 1)}$（ $K$ = mel 通道数），作用在功率谱上再加 log：
 
 $$S_{\text{mel}}[m, :] = \log\left(M \cdot |X[m, :]|^2\right) \qquad (5)$$
 
-**符号**：$S_{\text{mel}}[m, :] \in \mathbb{R}^{K}$：第 $m$ 帧的 log-mel 特征向量。两步各有分工：mel 重排把表征密度移到感知敏感的低频段；log 压缩把声强的乘法关系变加法（Weber-Fechner 式的感知对数律），同时压缩动态范围，数值尺度更合优化的胃口。
+**符号**： $S_{\text{mel}}[m, :] \in \mathbb{R}^{K}$：第 $m$ 帧的 log-mel 特征向量。两步各有分工：mel 重排把表征密度移到感知敏感的低频段；log 压缩把声强的乘法关系变加法（Weber-Fechner 式的感知对数律），同时压缩动态范围，数值尺度更合优化的胃口。
 
 实例锚定：Whisper 前端就是这条链的标准取值——16 kHz 重采样、25 ms 窗 / 10 ms hop、80 通道 log-mel，帧率 100 fps（[Radford et al., 2022](../references.md)，arXiv:2212.04356，[A]）；10.2 的 Whisper 走读直接沿用这套参数。
 
@@ -72,7 +72,7 @@ HuBERT（[Hsu et al., 2021](../references.md)，arXiv:2106.07447，[A]；官方�
 
 $$L_{\text{MP}} = - \frac{1}{|\mathcal{M}|} \sum_{t \in \mathcal{M}} \log P_{\theta}\left(z_t \mid \tilde{x}\right) \qquad (6)$$
 
-**符号**：$\mathcal{M}$：被 mask 的帧集合；$\tilde{x}$：加 mask 后的输入；$z_t$：第 $t$ 帧的簇标签；$P_\theta$：模型输出的簇分布。式 (6) 与 3.1 式 (4) 的 MLM 同构——把「词表」换成「k-means 簇表」，掩码预测机制照搬。符号约定一处：HuBERT 原文按 log-likelihood 最大化写法（不带负号、不归一化），本书从 1.1 起 CE/NLL 一律取最小化口径，式 (6) 据此取负并按 $|\mathcal{M}|$ 归一——两种写法差一个符号约定，优化方向相同。迭代闭环：本轮训出的隐层表征比上一轮更干净，用它重新聚类得到更好的标签再训下一轮。论文口径：起步教师是一个 100 簇的 k-means，共做两轮聚类迭代。
+**符号**： $\mathcal{M}$：被 mask 的帧集合； $\tilde{x}$：加 mask 后的输入； $z_t$：第 $t$ 帧的簇标签； $P_\theta$：模型输出的簇分布。式 (6) 与 3.1 式 (4) 的 MLM 同构——把「词表」换成「k-means 簇表」，掩码预测机制照搬。符号约定一处：HuBERT 原文按 log-likelihood 最大化写法（不带负号、不归一化），本书从 1.1 起 CE/NLL 一律取最小化口径，式 (6) 据此取负并按 $|\mathcal{M}|$ 归一——两种写法差一个符号约定，优化方向相同。迭代闭环：本轮训出的隐层表征比上一轮更干净，用它重新聚类得到更好的标签再训下一轮。论文口径：起步教师是一个 100 簇的 k-means，共做两轮聚类迭代。
 
 ### 3.2 w2v-BERT：对比 + masked 两段式
 
@@ -103,15 +103,15 @@ z ∈ R^{T'×d}（latent，fps = 75）                  │
 训练期另挂判别器（multi-scale STFT 系）作用于 x̂
 ```
 
-量化与码率的数学在 6.3 §5 已推完：残差递推 $r_{i+1} = r_i - e_i$（6.3 式 (20)）、有效词表 $K^{n_q}$、以及本章反复套用的 bitrate 公式（6.3 式 (21)，$f_{\text{rate}}$ 换成音频帧率 fps）：
+量化与码率的数学在 6.3 §5 已推完：残差递推 $r_{i+1} = r_i - e_i$（6.3 式 (20)）、有效词表 $K^{n_q}$、以及本章反复套用的 bitrate 公式（6.3 式 (21)， $f_{\text{rate}}$ 换成音频帧率 fps）：
 
 $$b = n_q \cdot \log_2 K \cdot fps \qquad (7)$$
 
-**符号**：$b$：码率（bit/s）。式 (7) 不是本书的通用化——SoundStream 原文即此式（「The number of bits used to encode a single frame is equal to $N_q \log_2 N$」，乘帧率即码率）。RVQ 的分级结构顺带给出码率伸缩机制：只传前 $m < n_q$ 级即得低码率版本，不必重训。
+**符号**： $b$：码率（bit/s）。式 (7) 不是本书的通用化——SoundStream 原文即此式（「The number of bits used to encode a single frame is equal to $N_q \log_2 N$」，乘帧率即码率）。RVQ 的分级结构顺带给出码率伸缩机制：只传前 $m < n_q$ 级即得低码率版本，不必重训。
 
 ### 4.1 SoundStream：骨架与 6 kbps 实例账
 
-SoundStream（[Zeghidour et al., 2021](../references.md)，arXiv:2107.03312，[B]——Google 未开源官方代码，数字引论文原文）确立了上面的骨架：24 kHz 输入，encoder 各级 stride 乘积 320 → latent 帧率 $24000 / 320 = 75$ Hz（原文：「each second of audio at sampling rate $f_s = 24000$ Hz is represented by $S = 75$ frames」）。式 (7) 的原文实例账：6000 bps 档每帧 80 bit，$n_q = 8$ 个量化器、各配 $2^{80/8} = 1024$ 码本：
+SoundStream（[Zeghidour et al., 2021](../references.md)，arXiv:2107.03312，[B]——Google 未开源官方代码，数字引论文原文）确立了上面的骨架：24 kHz 输入，encoder 各级 stride 乘积 320 → latent 帧率 $24000 / 320 = 75$ Hz（原文：「each second of audio at sampling rate $f_s = 24000$ Hz is represented by $S = 75$ frames」）。式 (7) 的原文实例账：6000 bps 档每帧 80 bit， $n_q = 8$ 个量化器、各配 $2^{80/8} = 1024$ 码本：
 
 $$8 \times \log_2 1024 \times 75 = 8 \times 10 \times 75 = 6000 \text{ bps} = 6 \text{ kbps} \qquad (8)$$
 
@@ -119,13 +119,13 @@ $$8 \times \log_2 1024 \times 75 = 8 \times 10 \times 75 = 6000 \text{ bps} = 6 
 
 ### 4.2 EnCodec：挡位账与 multi-scale STFT 判别器
 
-EnCodec（[Défossez et al., 2022](../references.md)，arXiv:2210.13438，[A]；官方代码 [encodec-repo](../references.md)，[A]）同骨架，带宽旋钮摆在码本数上：24 kHz 模型每秒 75 个 latent step（48 kHz 模型 150 个），最多 32 个 codebook（48 kHz 模型 16 个）、每个 1024 entry（10 bit）。带宽挡位 = 码本数 2/4/8/16/32，代入式 (7)：$n_q \times 10 \times 75$ = 1.5 / 3 / 6 / 12 / 24 kbps，五挡逐项可复算。
+EnCodec（[Défossez et al., 2022](../references.md)，arXiv:2210.13438，[A]；官方代码 [encodec-repo](../references.md)，[A]）同骨架，带宽旋钮摆在码本数上：24 kHz 模型每秒 75 个 latent step（48 kHz 模型 150 个），最多 32 个 codebook（48 kHz 模型 16 个）、每个 1024 entry（10 bit）。带宽挡位 = 码本数 2/4/8/16/32，代入式 (7)： $n_q \times 10 \times 75$ = 1.5 / 3 / 6 / 12 / 24 kbps，五挡逐项可复算。
 
-重建质量由判别器顶住。multi-scale STFT discriminator 是一族判别器 $\{D_s\}$，各自作用在不同窗长的 STFT 幅度谱上，对抗项按尺度求和：
+重建质量由判别器顶住。multi-scale STFT discriminator 是一族判别器 $\lbrace D_s\rbrace$，各自作用在不同窗长的 STFT 幅度谱上，对抗项按尺度求和：
 
-$$L_{\text{adv}} = \sum_{s=1}^{5} \ell\left(D_s\left(\left|\mathrm{STFT}_{N_s}(x)\right|\right),\; D_s\left(\left|\mathrm{STFT}_{N_s}(\hat{x})\right|\right)\right), \qquad N_s \in \{2048, 1024, 512, 256, 128\} \qquad (9)$$
+$$L_{\text{adv}} = \sum_{s=1}^{5} \ell\left(D_s\left(\left|\mathrm{STFT}_{N_s}(x)\right|\right),\hspace{5mu} D_s\left(\left|\mathrm{STFT}_{N_s}(\hat{x})\right|\right)\right), \qquad N_s \in \lbrace2048, 1024, 512, 256, 128\rbrace \qquad (9)$$
 
-**符号**：$\mathrm{STFT}_{N_s}$：窗长 $N_s$ 的 STFT；$\ell$：具体 GAN 损失形式（各家实现有差异，机制不依赖其选择）。式 (9) 与式 (3) 连起来读：单个判别器只钉一对 $(\Delta t, \Delta f)$，五个窗长就是五对互补分辨率——长窗抓谐波与音高结构（频率细），短窗抓瞬态与爆破音（时间细）——重建谱在时频两维同时被盯住。另有一条可选的 Transformer LM 熵编码支路（对码流再压一档），此处一笔带过。
+**符号**： $\mathrm{STFT}_{N_s}$：窗长 $N_s$ 的 STFT； $\ell$：具体 GAN 损失形式（各家实现有差异，机制不依赖其选择）。式 (9) 与式 (3) 连起来读：单个判别器只钉一对 $(\Delta t, \Delta f)$，五个窗长就是五对互补分辨率——长窗抓谐波与音高结构（频率细），短窗抓瞬态与爆破音（时间细）——重建谱在时频两维同时被盯住。另有一条可选的 Transformer LM 熵编码支路（对码流再压一档），此处一笔带过。
 
 ### 4.3 DAC：factorized codes 与 dropout 修正
 
@@ -137,7 +137,7 @@ $$9 \times 10 \times 86 = 7740 \text{ bps} \approx 8 \text{ kbps} \qquad (10)$$
 
 ## 5. Acoustic tokens II：低帧率与单码本——Mimi / WavTokenizer / X-codec2
 
-§4 三家的 fps 在 75–86、$n_q$ 在 8–32，token rate 600 tok/s 起步。codec token 要进 LM 逐帧自回归（10.3/10.4 的用法），token rate 直接乘进序列长度与 KV cache 账——降 fps、减码本数由此成为主攻方向。
+§4 三家的 fps 在 75–86、 $n_q$ 在 8–32，token rate 600 tok/s 起步。codec token 要进 LM 逐帧自回归（10.3/10.4 的用法），token rate 直接乘进序列长度与 KV cache 账——降 fps、减码本数由此成为主攻方向。
 
 ### 5.1 Mimi：split-RVQ 与语义蒸馏（Moshi 的 codec）
 
@@ -147,7 +147,7 @@ Mimi（Moshi 论文 §3.3，[Défossez et al., 2024](../references.md)，arXiv:2
 
 $$\hat{z} = e_{\text{sem}} + \sum_{i=1}^{7} e_i, \qquad e_{\text{sem}} = Q_{\text{sem}}(z) \qquad (11)$$
 
-**符号**：$Q_{\text{sem}}$：语义 VQ（plain VQ，单级）；$e_i$：声学 RVQ 第 $i$ 级输出（级内残差递推同 6.3 式 (20)）。
+**符号**： $Q_{\text{sem}}$：语义 VQ（plain VQ，单级）； $e_i$：声学 RVQ 第 $i$ 级输出（级内残差递推同 6.3 式 (20)）。
 
 ```
 latent z（12.5 fps）
@@ -159,11 +159,11 @@ latent z（12.5 fps）
 
 语义支路的训练信号是对 WavLM 表征的蒸馏——余弦距离口径：
 
-$$L_{\text{distill}} = \sum_t \left(1 - \cos\left(g(e_{\text{sem}, t}),\, u_t\right)\right) \qquad (12)$$
+$$L_{\text{distill}} = \sum_t \left(1 - \cos\left(g(e_{\text{sem}, t}),\thinspace u_t\right)\right) \qquad (12)$$
 
-**符号**：$u_t$：WavLM 在第 $t$ 帧的 embedding（50 Hz 输出经 stride 4 average pooling 对齐到 12.5 Hz，non-causal pooling 是原文强调的细节）；$g$：可学线性投影（原文口径：作用于量化器输出侧、投到 1024 d——「a linear projection with an output dimension of 1024 to the output of the first RVQ level」）；$e_{\text{sem}, t}$：语义量化器输出。拆开的原因是目标冲突（原文：蒸馏显著提升第一量化器的音素可分性，但「it also affects audio quality negatively」）——把蒸馏压进同一条 RVQ 链的第 1 级，语义目标会拖着整条链牺牲音质；split 之后蒸馏只作用在 $e_{\text{sem}}$ 一路，声学 RVQ 专心补重建。这正是 §3.3 的 content/speaker 分离视角在 codec 内部的重演。
+**符号**： $u_t$：WavLM 在第 $t$ 帧的 embedding（50 Hz 输出经 stride 4 average pooling 对齐到 12.5 Hz，non-causal pooling 是原文强调的细节）； $g$：可学线性投影（原文口径：作用于量化器输出侧、投到 1024 d——「a linear projection with an output dimension of 1024 to the output of the first RVQ level」）； $e_{\text{sem}, t}$：语义量化器输出。拆开的原因是目标冲突（原文：蒸馏显著提升第一量化器的音素可分性，但「it also affects audio quality negatively」）——把蒸馏压进同一条 RVQ 链的第 1 级，语义目标会拖着整条链牺牲音质；split 之后蒸馏只作用在 $e_{\text{sem}}$ 一路，声学 RVQ 专心补重建。这正是 §3.3 的 content/speaker 分离视角在 codec 内部的重演。
 
-bitrate 账（原文实例）：$n_q = 8$（1 语义 + 7 声学）、$K = 2048$（11 bit）、12.5 Hz：
+bitrate 账（原文实例）： $n_q = 8$（1 语义 + 7 声学）、 $K = 2048$（11 bit）、12.5 Hz：
 
 $$8 \times \log_2 2048 \times 12.5 = 8 \times 11 \times 12.5 = 1100 \text{ bps} = 1.1 \text{ kbps} \qquad (13)$$
 
@@ -171,7 +171,7 @@ token rate $= 8 \times 12.5 = 100$ tok/s——LM 侧成本是 §4 档的六分�
 
 ### 5.2 WavTokenizer：单码本极压缩
 
-WavTokenizer（[Ji et al., 2024](../references.md)，arXiv:2408.16532，[A]）把结构简化到底：24 kHz 音频每秒只要单个量化器的 75（极端档 40）个 token。单码本 $K = 4096$（论文码本表中该行利用率 100%；另有 1024（亦 100% 利用率）/ 8192 / 16384 三档）。按式 (7) 现推：$\log_2 4096 = 12$ bit，$1 \times 12 \times 75 = 900$ bps，40 fps 档 $480$ bps。单码本顺手消掉了 RVQ 的层级结构——LM 侧不必处理「一帧多码」的层间依赖，这个依赖在生成侧的代价 10.4 会细算。
+WavTokenizer（[Ji et al., 2024](../references.md)，arXiv:2408.16532，[A]）把结构简化到底：24 kHz 音频每秒只要单个量化器的 75（极端档 40）个 token。单码本 $K = 4096$（论文码本表中该行利用率 100%；另有 1024（亦 100% 利用率）/ 8192 / 16384 三档）。按式 (7) 现推： $\log_2 4096 = 12$ bit， $1 \times 12 \times 75 = 900$ bps，40 fps 档 $480$ bps。单码本顺手消掉了 RVQ 的层级结构——LM 侧不必处理「一帧多码」的层间依赖，这个依赖在生成侧的代价 10.4 会细算。
 
 ### 5.3 X-codec2：语义-声学统一单码本
 
@@ -192,7 +192,7 @@ $$1 \times 16 \times 50 = 800 \text{ bps} = 0.8 \text{ kbps} \qquad (14)$$
 | WavTokenizer | 24 kHz | 75（40） | 1 | 4096 | 0.9（0.48）kbps，现推 | §5.2，[A] |
 | X-codec2 | 16 kHz | 50 | 1 | 65536 | 0.8 kbps | 式 (14)，[A] |
 
-读表三条：其一，三个旋钮各有分工——fps 定 LM 侧序列长度，$n_q$ 定每帧的结构复杂度，$K$ 定单码容量；其二，六家 bitrate 全部落在式 (7) 的取值网格上，报码率不报 $(n_q, K, fps)$ 的论文无从复算，本表只收可复算的行；其三，75+ fps 与 12.5 fps 之间是设计目标的代差——Mimi 之后「codec 为 LM 服务」成为显式目标，低 token rate 优先于保真冗余。
+读表三条：其一，三个旋钮各有分工——fps 定 LM 侧序列长度， $n_q$ 定每帧的结构复杂度， $K$ 定单码容量；其二，六家 bitrate 全部落在式 (7) 的取值网格上，报码率不报 $(n_q, K, fps)$ 的论文无从复算，本表只收可复算的行；其三，75+ fps 与 12.5 fps 之间是设计目标的代差——Mimi 之后「codec 为 LM 服务」成为显式目标，低 token rate 优先于保真冗余。
 
 ### 6.2 semantic vs acoustic 对照表
 
@@ -220,10 +220,10 @@ $$1 \times 16 \times 50 = 800 \text{ bps} = 0.8 \text{ kbps} \qquad (14)$$
 
 | 主题 | 公式 / 数值 | 要点 |
 | --- | --- | --- |
-| 采样账 | 式 (1)：$f_{\max} = f_s / 2$；24k/16bit 单声道 PCM = 384 kbps | 三档 16k/24k/44.1k；codec 6 kbps = 64× 压缩 |
-| STFT | 式 (2)；帧率 $f_s / H$；16k/25ms/10ms → 100 fps | 式 (3) 时频不确定性：$\Delta t \cdot \Delta f \sim 1$，一个旋钮管两个分辨率 |
+| 采样账 | 式 (1)： $f_{\max} = f_s / 2$；24k/16bit 单声道 PCM = 384 kbps | 三档 16k/24k/44.1k；codec 6 kbps = 64× 压缩 |
+| STFT | 式 (2)；帧率 $f_s / H$；16k/25ms/10ms → 100 fps | 式 (3) 时频不确定性： $\Delta t \cdot \Delta f \sim 1$，一个旋钮管两个分辨率 |
 | log-mel | 式 (4)(5)：HTK 刻度 + 三角滤波器组 + log | Whisper 档 80 通道 100 fps；100 fps vs 文本 ~10 fps = CTC 的动机 |
-| RVQ bitrate | 式 (7)：$b = n_q \log_2 K \cdot fps$（6.3 式 (21) 复用） | 六家对照表全部落在此式网格上 |
+| RVQ bitrate | 式 (7)： $b = n_q \log_2 K \cdot fps$（6.3 式 (21) 复用） | 六家对照表全部落在此式网格上 |
 | semantic tokens | 式 (6)：HuBERT 两轮 k-means + masked prediction | 抓内容、弃细节、不可解码；w2v-BERT = 对比 + MLM 两段式 |
 | SoundStream 系 | 式 (8)：8×10×75 = 6 kbps；dropout 覆盖 3–18 kbps | 骨架：conv encoder（stride 320 → 75 Hz）+ RVQ + 判别器 |
 | EnCodec / DAC | 五挡 1.5–24 kbps；式 (10)：9×10×86 ≈ 8 kbps @ 44.1k | 式 (9) multi-scale STFT 判别器 5 窗长；DAC factorized codes |
@@ -233,7 +233,7 @@ $$1 \times 16 \times 50 = 800 \text{ bps} = 0.8 \text{ kbps} \qquad (14)$$
 ## 练习
 
 1.（计算）bitrate 账逐项复算。(a) 用式 (7) 复算 §6.1 表六家的 bitrate 列，验证与原文值/现推值一致；(b) SoundStream 的 3–18 kbps 可变范围在 $K = 1024$、75 fps 下对应 $n_q$ 的取值范围；(c) EnCodec 五挡 1.5/3/6/12/24 kbps 各对应的码本数；(d) 若 Mimi 把码本从 2048 加到 4096、其余不动，bitrate 与 token rate 各变为多少（注意区分两者）。
-2.（计算）STFT 特征账。44.1 kHz 音乐、40 ms 窗、20 ms hop：(a) $N_w$、$H$、帧率、$\Delta f$ 各是多少；(b) 1 分钟音频的 log-mel 序列多长；(c) 同一段音频过 DAC（86 fps、$n_q = 9$），LM 侧每秒要建模多少 token，与 (b) 的帧率口径对比。
+2.（计算）STFT 特征账。44.1 kHz 音乐、40 ms 窗、20 ms hop：(a) $N_w$、 $H$、帧率、 $\Delta f$ 各是多少；(b) 1 分钟音频的 log-mel 序列多长；(c) 同一段音频过 DAC（86 fps、 $n_q = 9$），LM 侧每秒要建模多少 token，与 (b) 的帧率口径对比。
 3.（推导）时频不确定性。从 $\Delta f \sim f_s / N_w$ 与窗持续 $N_w / f_s$ 出发：(a) 说明为什么 16 kHz 下要 5 Hz 频率分辨率就必须放弃 10 ms 级时间分辨率（给出所需窗长）；(b) 算式 (9) 的 5 个窗长 [2048, 1024, 512, 256, 128] 在 24 kHz 下各自的 $\Delta f$ 与 $\Delta t$ 量级，说明多分辨率判别各盯什么现象。
 4.（分析）token 形态选择。给定三个任务——(i) ASR 前端特征、(ii) 零样本 TTS 音色克隆的表征、(iii) 全双工 speech LM 的生成单元——从 §6.2 对照表的维度逐项论证各应选哪类 token，并指出每种选择放弃了什么。
 
@@ -246,7 +246,7 @@ $$1 \times 16 \times 50 = 800 \text{ bps} = 0.8 \text{ kbps} \qquad (14)$$
 - [Hsu et al., 2021](../references.md)：HuBERT: Self-Supervised Speech Representation Learning by Masked Prediction of Hidden Units，arXiv:2106.07447，[A]（key: hubert）——100 簇 k-means 起步教师、两轮聚类迭代、masked prediction（式 (6) 口径）
 - [Chung et al., 2021](../references.md)：W2v-BERT: Combining Contrastive Learning and Masked Language Modeling for Self-Supervised Speech Pre-Training，arXiv:2108.06209，[B]（key: w2v-bert）——对比产离散 token + MLM 主目标；Google 未释官方实现
 - [Ji et al., 2024](../references.md)：WavTokenizer: an Efficient Acoustic Discrete Codec Tokenizer for Audio Language Modeling，arXiv:2408.16532，[A]（key: wavtokenizer）——单码本 $K = 4096$（利用率 100%）、24 kHz 每秒 75（40）token
-- [Ye et al., 2025](../references.md)：Llasa: Scaling Train-Time and Inference-Time Compute for Llama-based Speech Synthesis（X-codec2 出处），arXiv:2502.04128，[A]（key: xcodec2）——语义-声学统一单码本、16 kHz / 320 下采样 = 50 fps、$K = 65536$ → 0.8 kbps（式 (14)）
+- [Ye et al., 2025](../references.md)：Llasa: Scaling Train-Time and Inference-Time Compute for Llama-based Speech Synthesis（X-codec2 出处），arXiv:2502.04128，[A]（key: xcodec2）——语义-声学统一单码本、16 kHz / 320 下采样 = 50 fps、 $K = 65536$ → 0.8 kbps（式 (14)）
 - [Radford et al., 2022](../references.md)：Robust Speech Recognition via Large-Scale Weak Supervision（Whisper），arXiv:2212.04356，[A]（key: whisper）——16 kHz / 25 ms / 10 ms / 80 通道 log-mel 标准档实例
 - [Ju et al., 2024](../references.md)：NaturalSpeech 3，arXiv:2403.03100，[B]（key: naturalspeech3）——FACodec 的 content / prosody / timbre / acoustic details 子空间分解视角
 - [facebookresearch/encodec](../references.md)：[A]（key: encodec-repo）；[kyutai-labs/moshi](../references.md)：[A]（key: moshi-repo，moshi/moshi/models/compression.py 的 `MimiModel`）；[descriptinc/descript-audio-codec](../references.md)：[A]（key: dac-repo）；[facebookresearch/fairseq](../references.md)：[A]（key: fairseq-repo，examples/hubert）；[kyutai/mimi config](../references.md)：[A]（key: mimi-config）——codebook_size 2048、frame_rate 12.5、hidden_size 512

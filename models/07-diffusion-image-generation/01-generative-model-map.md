@@ -15,10 +15,10 @@ DDPM 的默认配置从纯噪声采出一张图要 1000 次网络前向（[Ho et
 
 - **优化什么**：精确似然、似然的下界、minimax 对抗目标，还是一个回归目标；
 - **怎么采样**：一次前向、顺序串行，还是沿时间轴迭代；
-- **似然可解性**：$\log p_\theta(x)$ 能不能算出来、多贵——它决定模型能不能做密度估计、异常检测、按似然排序这类任务；
+- **似然可解性**： $\log p_\theta(x)$ 能不能算出来、多贵——它决定模型能不能做密度估计、异常检测、按似然排序这类任务；
 - **mode 行为**：模型覆盖数据全部 mode 还是坍缩到少数几个。
 
-记号约定在此登记一次，本 Part 全部章节遵守（与 7.2 及锚点 SD3 的口径一致）：**$x_0$ = 数据端、$t = 1$ = 纯噪声端；前向过程（加噪）方向 $t: 0 \to 1$，反向过程（采样）方向 $t: 1 \to 0$**；噪声 $\varepsilon \sim \mathcal{N}(0, I)$；$\alpha_t = 1 - \beta_t$、$\bar\alpha_t = \prod_{s \le t} \alpha_s$。扩散语境下「建模对象 $x_0$」按场景指像素或 6.3 的 latent $z$，7.6 展开这条分工。五个家族里只有扩散与 FM 需要这条时间轴约定，其余四节只用通用概率记号；7.5 另附 FM 原文献的约定映射框，本章不提前引入。
+记号约定在此登记一次，本 Part 全部章节遵守（与 7.2 及锚点 SD3 的口径一致）：**$x_0$ = 数据端、 $t = 1$ = 纯噪声端；前向过程（加噪）方向 $t: 0 \to 1$，反向过程（采样）方向 $t: 1 \to 0$**；噪声 $\varepsilon \sim \mathcal{N}(0, I)$； $\alpha_t = 1 - \beta_t$、 $\bar\alpha_t = \prod_{s \le t} \alpha_s$。扩散语境下「建模对象 $x_0$」按场景指像素或 6.3 的 latent $z$，7.6 展开这条分工。五个家族里只有扩散与 FM 需要这条时间轴约定，其余四节只用通用概率记号；7.5 另附 FM 原文献的约定映射框，本章不提前引入。
 
 ## 2. AR：精确似然与顺序采样
 
@@ -28,31 +28,31 @@ $$
 L_{AR}(\theta) = -\sum_{t=1}^{T} \log p_\theta(x_t \mid x_{<t}) \qquad (1)
 $$
 
-**符号**：$x_{<t} = (x_1, \ldots, x_{t-1})$：位置 $t$ 之前的全部 token；$T$：序列长度。式 (1) 与 1.1 式 (4) 的 per-token NLL 差常数因子 $1/T$——本章取未归一化的整序列求和口径，1.1 取逐位置平均口径；与 cross-entropy 的同一性论证见 1.1 §4，此处只列结论。
+**符号**： $x_{<t} = (x_1, \ldots, x_{t-1})$：位置 $t$ 之前的全部 token； $T$：序列长度。式 (1) 与 1.1 式 (4) 的 per-token NLL 差常数因子 $1/T$——本章取未归一化的整序列求和口径，1.1 取逐位置平均口径；与 cross-entropy 的同一性论证见 1.1 §4，此处只列结论。
 
 把式 (1) 放进四坐标：
 
-- **优化什么**：精确似然。$\log p_\theta(x)$ 逐位相加即得，没有近似项、没有下界缝隙。
-- **怎么采样**：祖先采样（ancestral sampling，1.1 §8）——从 bos 出发逐位置采 $x_t \sim p_\theta(\cdot \mid x_{<t})$，$T$ 步严格串行，第 $t$ 步必须等前 $t-1$ 步落地。一张 $256 \times 256$ 图像经 f16 离散 tokenizer 切成 $16 \times 16 = 256$ 个 token，就是 256 次串行前向；训练侧靠教师强制（teacher forcing）一次前向并行算完全部 $T$ 个位置，训练并行、生成串行的不对称由此而来（1.1 §4）。
+- **优化什么**：精确似然。 $\log p_\theta(x)$ 逐位相加即得，没有近似项、没有下界缝隙。
+- **怎么采样**：祖先采样（ancestral sampling，1.1 §8）——从 bos 出发逐位置采 $x_t \sim p_\theta(\cdot \mid x_{<t})$， $T$ 步严格串行，第 $t$ 步必须等前 $t-1$ 步落地。一张 $256 \times 256$ 图像经 f16 离散 tokenizer 切成 $16 \times 16 = 256$ 个 token，就是 256 次串行前向；训练侧靠教师强制（teacher forcing）一次前向并行算完全部 $T$ 个位置，训练并行、生成串行的不对称由此而来（1.1 §4）。
 - **似然**：精确且便宜，评估一个样本只要一次前向。
-- **mode 行为**：MLE 优化的是 $\mathrm{KL}(p_{data} \| p_\theta)$（1.1 式 (6)），数据里出现的每个 mode 都必须分到概率，否则 $\log p_\theta \to -\infty$ 的惩罚无界——行为是全覆盖（mean-seeking）。
+- **mode 行为**：MLE 优化的是 $\mathrm{KL}(p_{data} \Vert p_\theta)$（1.1 式 (6)），数据里出现的每个 mode 都必须分到概率，否则 $\log p_\theta \to -\infty$ 的惩罚无界——行为是全覆盖（mean-seeking）。
 
 AR 进图像的前置工序是离散化：连续像素必须先经 6.3 的 VQ 族 tokenizer 变成 codebook 下标网格，图像才成为「词表 $K$、长度 $hw$ 的序列」，与文本同构。代价是生成质量先被 tokenizer 的重建上限卡一道（6.3 §1 的账）。收益是与 LLM 的原生可组合性：同一套 decoder-only 主干、同一个 next-token 目标，图像只是另一种语言——这条线连同 raster 顺序之外的选择（next-scale、mask-predict）在 7.7 展开。
 
 ## 3. VAE：只给似然的下界
 
-VAE 的目标在 6.3 已完整推导，此处只登记结论。潜变量模型 $p_\theta(x) = \int p_\theta(x \mid z)\, p(z)\, dz$ 的高维积分不可解，引入摊销后验 $q_\phi(z \mid x)$ 后得到证据下界
+VAE 的目标在 6.3 已完整推导，此处只登记结论。潜变量模型 $p_\theta(x) = \int p_\theta(x \mid z)\thinspace p(z)\thinspace dz$ 的高维积分不可解，引入摊销后验 $q_\phi(z \mid x)$ 后得到证据下界
 
 $$
-\log p_\theta(x) \ge \underbrace{\mathbb{E}_{q_\phi(z \mid x)}\left[ \log p_\theta(x \mid z) \right]}_{\text{recon}} - \mathrm{KL}\left( q_\phi(z \mid x)\, \|\, p(z) \right) = \mathrm{ELBO}(\theta, \phi; x) \qquad (2)
+\log p_\theta(x) \ge \underbrace{\mathbb{E}_{q_\phi(z \mid x)}\left[ \log p_\theta(x \mid z) \right]}_{\text{recon}} - \mathrm{KL}\left( q_\phi(z \mid x)\thinspace \Vert\thinspace p(z) \right) = \mathrm{ELBO}(\theta, \phi; x) \qquad (2)
 $$
 
-**符号**：$z$：latent；$\phi$：encoder 参数；recon 项：后验采样 $z$ 后 decoder 给 $x$ 的对数似然；第二项把后验往先验 $p(z) = \mathcal{N}(0, I)$ 上拉。gap 精确等于 $\mathrm{KL}(q_\phi(z \mid x) \| p_\theta(z \mid x))$（6.3 式 (4)）：encoder 容量决定下界松紧。推导（Jensen 与 KL 非负性两条路径、reparameterization、Gaussian KL 闭式）见 6.3 §2，本章不重复。
+**符号**： $z$：latent； $\phi$：encoder 参数；recon 项：后验采样 $z$ 后 decoder 给 $x$ 的对数似然；第二项把后验往先验 $p(z) = \mathcal{N}(0, I)$ 上拉。gap 精确等于 $\mathrm{KL}(q_\phi(z \mid x) \Vert p_\theta(z \mid x))$（6.3 式 (4)）：encoder 容量决定下界松紧。推导（Jensen 与 KL 非负性两条路径、reparameterization、Gaussian KL 闭式）见 6.3 §2，本章不重复。
 
 四坐标读法：
 
 - **优化什么**：似然的下界。最大化 ELBO 只在 $q_\phi$ 等于真后验时才等价于最大化似然本身。
-- **怎么采样**：一次前向——$z \sim \mathcal{N}(0, I)$，$\hat{x} = \mu_\theta(z)$，全并行，无串行结构。
+- **怎么采样**：一次前向—— $z \sim \mathcal{N}(0, I)$， $\hat{x} = \mu_\theta(z)$，全并行，无串行结构。
 - **似然**：不可解，只有下界；逐点精确似然无从谈起。
 - **mode 行为**：目标仍是 MLE 方向的近似，覆盖行为同 AR 族；但高斯 decoder 的 recon 项是 MSE，对多 mode 的条件分布取条件均值——输出偏向各 mode 的平均，视觉上即模糊。decoder 过强时的 posterior collapse（后验塌成先验、latent 被忽略）机制见 6.3 §2.6。
 
@@ -66,14 +66,14 @@ $$
 \min_G \max_D V(D, G) = \mathbb{E}_{x \sim p_{data}}\left[ \log D(x) \right] + \mathbb{E}_{z \sim p_z(z)}\left[ \log \left( 1 - D(G(z)) \right) \right] \qquad (3)
 $$
 
-**符号**：$D(x) \in (0, 1)$：$x$ 被判为真实样本的概率；$p_z$：噪声先验（通常 $\mathcal{N}(0, I)$）；$G(z)$：生成样本。$D$ 的方向是分类正确率，$G$ 的方向是让 $D$ 在假样本上打高分。
+**符号**： $D(x) \in (0, 1)$： $x$ 被判为真实样本的概率； $p_z$：噪声先验（通常 $\mathcal{N}(0, I)$）； $G(z)$：生成样本。 $D$ 的方向是分类正确率， $G$ 的方向是让 $D$ 在假样本上打高分。
 
 四坐标：
 
 - **优化什么**：minimax 目标。式 (3) 从头到尾没有出现 $p_\theta(x)$——密度从未被显式表示，更没有似然梯度。固定 $G$ 时最优判别器有闭式，代回后 $G$ 端等价于最小化一个 JS 散度（练习 1 推导），这就是 GAN 与「距离 $p_{data}$」之间全部的联系。
-- **怎么采样**：一次前向，$z \to G(z)$，与 VAE 同为最快一档。
+- **怎么采样**：一次前向， $z \to G(z)$，与 VAE 同为最快一档。
 - **似然**：不存在，连下界都没有。
-- **mode 行为**：**模式坍缩（mode dropping）**——式 (3) 只奖励「生成的样本骗过 $D$」，不奖励「覆盖 $p_{data}$ 的全部 mode」；$G$ 把全部质量堆到少数几个逼真 mode 上时，$D$ 拿不出任何梯度去惩罚那些缺席的 mode，因为没有一项损失在度量覆盖度。
+- **mode 行为**：**模式坍缩（mode dropping）**——式 (3) 只奖励「生成的样本骗过 $D$」，不奖励「覆盖 $p_{data}$ 的全部 mode」； $G$ 把全部质量堆到少数几个逼真 mode 上时， $D$ 拿不出任何梯度去惩罚那些缺席的 mode，因为没有一项损失在度量覆盖度。
 
 按本书范围决策，GAN 不展开：训练技巧、架构演化、稳定性方案均不专列章节。对抗 loss 作为组件在用处就地讲——VQGAN 的 PatchGAN 感知项已在 6.3 §4 拆解，扩散蒸馏里的对抗分量（DMD2）在 7.4 就地给公式。
 
@@ -85,16 +85,16 @@ $$
 \log p_X(x) = \log p_Z\left( f_\theta(x) \right) + \log \left| \det \frac{\partial f_\theta(x)}{\partial x} \right| \qquad (4)
 $$
 
-**符号**：$p_Z$：latent 空间的简单先验（通常 $\mathcal{N}(0, I)$）；$\frac{\partial f_\theta}{\partial x}$：$f_\theta$ 在 $x$ 处的 Jacobian 矩阵；$\det$：行列式，度量该映射在 $x$ 处的局部体积缩放。第二项是变量替换的全部修正：映射把体积撑大处，密度相应压低。
+**符号**： $p_Z$：latent 空间的简单先验（通常 $\mathcal{N}(0, I)$）； $\frac{\partial f_\theta}{\partial x}$： $f_\theta$ 在 $x$ 处的 Jacobian 矩阵； $\det$：行列式，度量该映射在 $x$ 处的局部体积缩放。第二项是变量替换的全部修正：映射把体积撑大处，密度相应压低。
 
-式 (4) 的两项都必须可算，这把架构设计卡进一条窄缝：$f_\theta$ 必须双射（维度不变、可逆）、且每层 Jacobian 的 $\log|\det|$ 必须便宜。稠密层的行列式是 $O(d^{3})$，图像维度下不可行；Glow（[Kingma & Dhariwal, 2018](../references.md)，arXiv:1807.03039，[A]）的代表性解法是 invertible $1 \times 1$ convolution——把通道混合写成每个空间位置共享的一个 $c \times c$ 矩阵，全图的 $\log|\det|$ 坍缩成 $hw \cdot \log|\det W|$，一次行列式计算服务所有空间位置（练习 2 算这笔账）。
+式 (4) 的两项都必须可算，这把架构设计卡进一条窄缝： $f_\theta$ 必须双射（维度不变、可逆）、且每层 Jacobian 的 $\log|\det|$ 必须便宜。稠密层的行列式是 $O(d^{3})$，图像维度下不可行；Glow（[Kingma & Dhariwal, 2018](../references.md)，arXiv:1807.03039，[A]）的代表性解法是 invertible $1 \times 1$ convolution——把通道混合写成每个空间位置共享的一个 $c \times c$ 矩阵，全图的 $\log|\det|$ 坍缩成 $hw \cdot \log|\det W|$，一次行列式计算服务所有空间位置（练习 2 算这笔账）。
 
 双射还附带一个其他家族没有的副产品：编码方向 $z = f_\theta(x)$ 免费。任何真实样本都能精确反演回 latent 并读出自己的似然，插值、属性编辑在 $z$ 空间是精确坐标操作而不是近似投影——VAE 的 encoder 只给近似后验，GAN 连 encoder 都没有（要反演一个真实样本得额外做优化或训一个编码器）。
 
 四坐标：
 
 - **优化什么**：精确似然，直接对式 (4) 做 MLE，与 AR 同为「密度可算」一族。
-- **怎么采样**：一次逆映射——$z \sim p_Z$，$x = f_\theta^{-1}(z)$，单方向一遍前向。
+- **怎么采样**：一次逆映射—— $z \sim p_Z$， $x = f_\theta^{-1}(z)$，单方向一遍前向。
 - **似然**：精确，这是 flow 的主卖点：异常检测、密度排序、精确 bits/dim 评估都直接可用。
 - **mode 行为**：精确 MLE，覆盖行为同 AR；但双射约束是硬性的——同维、处处可逆的架构在表达任意扭曲的密度时比无约束网络吃力，样本质量受架构可逆性的天花板限制。
 
@@ -105,30 +105,30 @@ Flow 的框架在另一条世界线里复活：把离散的双射层换成连续
 扩散把「一步生成」拆成一条时间轴。前向过程（加噪）是固定的、无参数的：按调度把数据逐步混入高斯噪声，其闭式（7.2 推导）为
 
 $$
-q(x_t \mid x_0) = \mathcal{N}\left( \sqrt{\bar\alpha_t}\, x_0,\ (1 - \bar\alpha_t)\, I \right), \qquad x_t = \sqrt{\bar\alpha_t}\, x_0 + \sqrt{1 - \bar\alpha_t}\, \varepsilon \qquad (5)
+q(x_t \mid x_0) = \mathcal{N}\left( \sqrt{\bar\alpha_t}\thinspace x_0,\ (1 - \bar\alpha_t)\thinspace I \right), \qquad x_t = \sqrt{\bar\alpha_t}\thinspace x_0 + \sqrt{1 - \bar\alpha_t}\thinspace \varepsilon \qquad (5)
 $$
 
-**符号**：$x_0 \sim p_{data}$：数据；$\varepsilon \sim \mathcal{N}(0, I)$；$\bar\alpha_t$：从 1 单调衰减到约 0 的调度量（$\bar\alpha_0 = 1$ 为数据端、$\bar\alpha_1 \approx 0$ 为纯噪声端，与第 1 节的约定一致）。采样式给出任意 $t$ 的一步到位加噪，不需要逐层递推。
+**符号**： $x_0 \sim p_{data}$：数据； $\varepsilon \sim \mathcal{N}(0, I)$； $\bar\alpha_t$：从 1 单调衰减到约 0 的调度量（ $\bar\alpha_0 = 1$ 为数据端、 $\bar\alpha_1 \approx 0$ 为纯噪声端，与第 1 节的约定一致）。采样式给出任意 $t$ 的一步到位加噪，不需要逐层递推。
 
 训练目标不是似然而是一个回归：网络 $\varepsilon_\theta(x_t, t)$ 学习从加噪样本里预测被混入的噪声
 
 $$
-L_{simple} = \mathbb{E}_{t,\, x_0,\, \varepsilon}\left[ \left\| \varepsilon - \varepsilon_\theta(x_t, t) \right\|^2 \right] \qquad (6)
+L_{simple} = \mathbb{E}_{t,\thinspace x_0,\thinspace \varepsilon}\left[ \left\Vert \varepsilon - \varepsilon_\theta(x_t, t) \right\Vert^2 \right] \qquad (6)
 $$
 
-**符号**：$t$：均匀采样的时间；$x_t$ 按式 (5) 现场构造。式 (6) 看起来与似然无关，7.2 将推导它是扩散 ELBO 去掉一项 SNR 加权后的简化形——「回归噪声」与「最大化似然下界」是同一个目标的两种权重。等价地，$\varepsilon_\theta$ 与 score（7.3 定义）只差一个时间相关的标量因子：$s_\theta = -\varepsilon_\theta / \sqrt{1 - \bar\alpha_t}$。
+**符号**： $t$：均匀采样的时间； $x_t$ 按式 (5) 现场构造。式 (6) 看起来与似然无关，7.2 将推导它是扩散 ELBO 去掉一项 SNR 加权后的简化形——「回归噪声」与「最大化似然下界」是同一个目标的两种权重。等价地， $\varepsilon_\theta$ 与 score（7.3 定义）只差一个时间相关的标量因子： $s_\theta = -\varepsilon_\theta / \sqrt{1 - \bar\alpha_t}$。
 
 flow matching 是同族的另一种参数化。取线性插值路径与恒定目标速度
 
 $$
-x_t = (1 - t)\, x_0 + t\, \varepsilon, \qquad u_t = \varepsilon - x_0 \qquad (7)
+x_t = (1 - t)\thinspace x_0 + t\thinspace \varepsilon, \qquad u_t = \varepsilon - x_0 \qquad (7)
 $$
 
 $$
-L_{FM} = \mathbb{E}_{t,\, x_0,\, \varepsilon}\left[ \left\| v_\theta(x_t, t) - u_t \right\|^2 \right] \qquad (8)
+L_{FM} = \mathbb{E}_{t,\thinspace x_0,\thinspace \varepsilon}\left[ \left\Vert v_\theta(x_t, t) - u_t \right\Vert^2 \right] \qquad (8)
 $$
 
-**符号**：$v_\theta$：回归速度场（velocity field）的网络；$u_t$：沿直线路径的恒定速度。式 (7)(8) 与式 (5)(6) 是同一 Gaussian 路径族在不同坐标下的写法，换算表在 7.5 给出（含与 Lipman 原文「$x_1$ = 数据」约定的映射框，本书一律用 $x_0$ = 数据）。
+**符号**： $v_\theta$：回归速度场（velocity field）的网络； $u_t$：沿直线路径的恒定速度。式 (7)(8) 与式 (5)(6) 是同一 Gaussian 路径族在不同坐标下的写法，换算表在 7.5 给出（含与 Lipman 原文「 $x_1$ = 数据」约定的映射框，本书一律用 $x_0$ = 数据）。
 
 四坐标：
 
@@ -212,18 +212,18 @@ $$
 | Flow | 式 (4)：change of variables | 精确 | 1 步逆映射 | 覆盖，架构受限 | 7.5 连续版入口 |
 | Diffusion/FM | 式 (6)(8)：噪声/速度回归 | ELBO / 精确但贵 | 迭代 $t: 1 \to 0$ | 覆盖好 | 7.2-7.6 |
 
-公式清单：式 (1) AR 负对数似然；式 (2) VAE 的 ELBO（recap 6.3）；式 (3) GAN minimax；式 (4) flow 的 change of variables；式 (5) 扩散前向闭式 $q(x_t \mid x_0)$；式 (6) $L_{simple}$；式 (7) 线性路径与目标速度 $u_t = \varepsilon - x_0$；式 (8) FM 回归目标。约定登记：$x_0$ = 数据、$t = 1$ = 噪声端、采样 $t: 1 \to 0$。
+公式清单：式 (1) AR 负对数似然；式 (2) VAE 的 ELBO（recap 6.3）；式 (3) GAN minimax；式 (4) flow 的 change of variables；式 (5) 扩散前向闭式 $q(x_t \mid x_0)$；式 (6) $L_{simple}$；式 (7) 线性路径与目标速度 $u_t = \varepsilon - x_0$；式 (8) FM 回归目标。约定登记： $x_0$ = 数据、 $t = 1$ = 噪声端、采样 $t: 1 \to 0$。
 
 ## 练习
 
-1.（推导）固定 $G$，证明式 (3) 的最优判别器为 $D^{*}(x) = p_{data}(x) / \big(p_{data}(x) + p_g(x)\big)$（提示：$V$ 对 $D(x)$ 逐点取极值）；代回 $V(D^{*}, G)$，证明 $\min_G$ 端等价于最小化 $2 \cdot \mathrm{JSD}(p_{data} \| p_g) - \log 4$。用该结论解释 mode dropping 为何不被惩罚：JSD 有界（$\le \log 2$），$p_g$ 放弃一个 mode 至多付出有界代价，对比 MLE 中 $\log p_\theta \to -\infty$ 的无界惩罚。
-2.（计算）Flow 的行列式账：$32 \times 32 \times 4$ 的 latent（f8），比较 (a) 稠密双射层 $d = 4096$，$\log|\det|$ 一次 $O(d^{3})$；(b) Glow 的 invertible $1 \times 1$ conv：单矩阵 $W \in \mathbb{R}^{4 \times 4}$，全图 $\log|\det| = 32 \cdot 32 \cdot \log|\det W|$。各算一次前向中行列式项的标量运算量级，并说明 (b) 把什么计算换成了什么。
-3.（计算）采样总账：$256 \times 256$ 图像经 f16 tokenizer 得 256 个 token。AR 顺序采样 256 步（KV cache 下第 $t$ 步只算 1 个新 token），diffusion 以 NFE = 20 计、每步处理全部 256 个 latent 位置。比较两者的「网络处理 token 总数」量级；再指出这个账忽略了哪两个使比较不严格的因素（提示：每步的计算深度、序列并行性）。
+1.（推导）固定 $G$，证明式 (3) 的最优判别器为 $`D^{*}(x) = p_{data}(x) / \big(p_{data}(x) + p_g(x)\big)`$（提示： $V$ 对 $D(x)$ 逐点取极值）；代回 $`V(D^{*}, G)`$，证明 $\min_G$ 端等价于最小化 $2 \cdot \mathrm{JSD}(p_{data} \Vert p_g) - \log 4$。用该结论解释 mode dropping 为何不被惩罚：JSD 有界（ $\le \log 2$）， $p_g$ 放弃一个 mode 至多付出有界代价，对比 MLE 中 $\log p_\theta \to -\infty$ 的无界惩罚。
+2.（计算）Flow 的行列式账： $32 \times 32 \times 4$ 的 latent（f8），比较 (a) 稠密双射层 $d = 4096$， $\log|\det|$ 一次 $O(d^{3})$；(b) Glow 的 invertible $1 \times 1$ conv：单矩阵 $W \in \mathbb{R}^{4 \times 4}$，全图 $\log|\det| = 32 \cdot 32 \cdot \log|\det W|$。各算一次前向中行列式项的标量运算量级，并说明 (b) 把什么计算换成了什么。
+3.（计算）采样总账： $256 \times 256$ 图像经 f16 tokenizer 得 256 个 token。AR 顺序采样 256 步（KV cache 下第 $t$ 步只算 1 个新 token），diffusion 以 NFE = 20 计、每步处理全部 256 个 latent 位置。比较两者的「网络处理 token 总数」量级；再指出这个账忽略了哪两个使比较不严格的因素（提示：每步的计算深度、序列并行性）。
 4.（分析）三个场景各选一个家族并给机制理由：(a) 工业质检的异常检测，需要逐样本精确 $\log p(x)$；(b) 与现有 LLM 共享主干的图文统一生成；(c) 端侧实时预览，只允许 1-2 次网络前向。说明每个选择放弃了什么。
 
 ## 参考
 
-- [Goodfellow et al., 2014](../references.md)：Generative Adversarial Networks，arXiv:1406.2661，[A]（key: gan）——式 (3) minimax 目标；练习 1 的 $D^{*}$ 与 JSD 结论
+- [Goodfellow et al., 2014](../references.md)：Generative Adversarial Networks，arXiv:1406.2661，[A]（key: gan）——式 (3) minimax 目标；练习 1 的 $`D^{*}`$ 与 JSD 结论
 - [Kingma & Dhariwal, 2018](../references.md)：Glow: Generative Flow with Invertible 1x1 Convolutions，arXiv:1807.03039，[A]（key: glow）——式 (4) 的工程化：invertible $1 \times 1$ conv 与精确似然
-- [Ho et al., 2020](../references.md)：Denoising Diffusion Probabilistic Models，arXiv:2006.11239，[A]（key: ddpm）——式 (5)(6) 出处；$T = 1000$ 默认配置；推导见 7.2
+- [Ho et al., 2020](../references.md)：Denoising Diffusion Probabilistic Models，arXiv:2006.11239，[A]（key: ddpm）——式 (5)(6) 出处； $T = 1000$ 默认配置；推导见 7.2
 - [Kingma & Welling, 2013](../references.md)：Auto-Encoding Variational Bayes，arXiv:1312.6114，[A]（key: vae）——式 (2) ELBO；完整推导见 6.3

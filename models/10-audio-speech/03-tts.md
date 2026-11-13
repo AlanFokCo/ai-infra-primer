@@ -1,8 +1,8 @@
 # 10.3 语音合成（Text-to-Speech Synthesis）
 
-> 合成是识别的逆问题，但不是它的镜像：$P(x \mid y)$ 是一对多映射——同一文本有无数种合法读法——必须有一个潜变量来吸收「说话方式」（时长、韵律、音高、音色），三条路线正是这个潜变量的三种安置方案：级联管线把它拆成显式监督模块（duration/pitch/energy），LM 路线把它压进 codec token 上的 softmax 分布，FM 路线把它交给噪声与 infilling 构造。本章给每条路线一个推导锚点：HiFi-GAN 的 MPD 质数周期折叠与 feature matching（vocoder 的对抗工程）、VITS 的 VAE+flow+MAS 统一目标、VALL-E 的 AR+NAR 两阶段分解、F5-TTS 的 infilling CFM 与 Sway Sampling；最后落级联 / LM / FM 三路线对照表 | 前置：1.1（CE 与采样）、2.4（KV cache 账）、6.3（ELBO 式 (3)、VQ/RVQ、LFQ）、7.1（GAN minimax 式 (3)、flow change-of-variables 式 (4)）、7.5（FM 式 (7)、CFM 式 (9)、rectified flow、timestep shift）、7.6（DiT）、7.7（mask-predict）、10.1（codec 六家账与式 (7) bitrate、semantic vs acoustic 对照）、10.2（对齐作为潜变量的另一种处理、前缀条件化式 (21)） | 锚点：jik876/hifi-gan（models.py）[A]、jaywalnut310/vits [A]、QwenAudio/CosyVoice [A]、SWivid/F5-TTS [A]、open-mmlab/Amphion（MaskGCT）[A]；VALL-E / VALL-E 2 / E2-TTS / VoiceBox / NS3 均 [B]（无官方代码，公式引论文原文）
+> 合成是识别的逆问题，但不是它的镜像： $P(x \mid y)$ 是一对多映射——同一文本有无数种合法读法——必须有一个潜变量来吸收「说话方式」（时长、韵律、音高、音色），三条路线正是这个潜变量的三种安置方案：级联管线把它拆成显式监督模块（duration/pitch/energy），LM 路线把它压进 codec token 上的 softmax 分布，FM 路线把它交给噪声与 infilling 构造。本章给每条路线一个推导锚点：HiFi-GAN 的 MPD 质数周期折叠与 feature matching（vocoder 的对抗工程）、VITS 的 VAE+flow+MAS 统一目标、VALL-E 的 AR+NAR 两阶段分解、F5-TTS 的 infilling CFM 与 Sway Sampling；最后落级联 / LM / FM 三路线对照表 | 前置：1.1（CE 与采样）、2.4（KV cache 账）、6.3（ELBO 式 (3)、VQ/RVQ、LFQ）、7.1（GAN minimax 式 (3)、flow change-of-variables 式 (4)）、7.5（FM 式 (7)、CFM 式 (9)、rectified flow、timestep shift）、7.6（DiT）、7.7（mask-predict）、10.1（codec 六家账与式 (7) bitrate、semantic vs acoustic 对照）、10.2（对齐作为潜变量的另一种处理、前缀条件化式 (21)） | 锚点：jik876/hifi-gan（models.py）[A]、jaywalnut310/vits [A]、QwenAudio/CosyVoice [A]、SWivid/F5-TTS [A]、open-mmlab/Amphion（MaskGCT）[A]；VALL-E / VALL-E 2 / E2-TTS / VoiceBox / NS3 均 [B]（无官方代码，公式引论文原文）
 
-记号约定（沿用 10.1/10.2）：文本序列 $y = (y_1, \ldots, y_U)$（音素或字符级，$U$ 约 10 fps 量级）；声学侧两种形态——mel 帧序列 $x \in \mathbb{R}^{T \times K}$（$T$ 帧，100 fps 量级）与 codec 码矩阵 $C \in \{0, \ldots, K-1\}^{T \times n_q}$（$c_{t,j}$ = 帧 $t$ 第 $j$ 个量化器的码，RVQ 记号同 10.1）；波形 $x[n]$。两处 $K$ 各自定义（mel 通道数 / 码本大小），随 10.1 惯例并置、按上下文区分。
+记号约定（沿用 10.1/10.2）：文本序列 $y = (y_1, \ldots, y_U)$（音素或字符级， $U$ 约 10 fps 量级）；声学侧两种形态——mel 帧序列 $x \in \mathbb{R}^{T \times K}$（ $T$ 帧，100 fps 量级）与 codec 码矩阵 $C \in \lbrace0, \ldots, K-1\rbrace^{T \times n_q}$（ $c_{t,j}$ = 帧 $t$ 第 $j$ 个量化器的码，RVQ 记号同 10.1）；波形 $x[n]$。两处 $K$ 各自定义（mel 通道数 / 码本大小），随 10.1 惯例并置、按上下文区分。
 
 ## 1. 形式化：一对多映射是 TTS 的第一约束
 
@@ -12,19 +12,19 @@ $$
 P(x \mid y), \qquad T \gg U \qquad (1)
 $$
 
-**符号**：$x$：mel 帧序列或波形（本节按 mel 口径）；$y$：文本序列。方向一反过来，10.2 的两个困难各自变形。其一，长度不匹配从「多对一」变「一对多」：约 10 fps 的文本要撑出 100 fps 的声学帧，每个音素占多少帧（duration/alignment）从「要边缘化掉的冗余」变成「必须显式或隐式决定的生成量」。其二，识别的输出在多数情形下近似唯一（转写错一字即错），合成的输出天然一对多：同一句话可以快慢、升降、喜悲，全部由说话方式决定。把这个自由度写成潜变量 $z$：
+**符号**： $x$：mel 帧序列或波形（本节按 mel 口径）； $y$：文本序列。方向一反过来，10.2 的两个困难各自变形。其一，长度不匹配从「多对一」变「一对多」：约 10 fps 的文本要撑出 100 fps 的声学帧，每个音素占多少帧（duration/alignment）从「要边缘化掉的冗余」变成「必须显式或隐式决定的生成量」。其二，识别的输出在多数情形下近似唯一（转写错一字即错），合成的输出天然一对多：同一句话可以快慢、升降、喜悲，全部由说话方式决定。把这个自由度写成潜变量 $z$：
 
 $$
-P(x \mid y) = \int P(x \mid y, z)\, p(z \mid y)\, dz \qquad (2)
+P(x \mid y) = \int P(x \mid y, z)\thinspace p(z \mid y)\thinspace dz \qquad (2)
 $$
 
-**符号**：$z$：未观测的说话方式潜变量（时长选择、韵律轮廓、音高、音色的合称）；$p(z \mid y)$：说话方式先验。
+**符号**： $z$：未观测的说话方式潜变量（时长选择、韵律轮廓、音高、音色的合称）； $p(z \mid y)$：说话方式先验。
 
 式 (2) 是全章的形式骨架，三条路线对 $z$ 的安置互不兼容：
 
-1. **级联管线**（§2–§5）：$z$ 拆成一组显式模块——duration model、pitch/energy 预测器、speaker embedding——各自带监督训练，推理时逐模块取值。可控性最好（每个旋钮可人工覆盖），代价是误差沿模块链累积。
-2. **LM 路线**（§6–§7）：$x$ 先离散化成 codec token（10.1 的骨架在此兑现），$z$ 不再显式出现，全部压进条件 softmax $P(c_{t,j} \mid \cdot)$ 的分布形状里；音色等条件以 prompt 前缀注入。
-3. **FM/diffusion 路线**（§8）：$z$ 由采样噪声与 ODE 轨迹吸收（7.5 的框架），对齐这个 $z$ 中最硬的部分则靠 infilling 的输入构造直接消掉。
+1. **级联管线**（§2–§5）： $z$ 拆成一组显式模块——duration model、pitch/energy 预测器、speaker embedding——各自带监督训练，推理时逐模块取值。可控性最好（每个旋钮可人工覆盖），代价是误差沿模块链累积。
+2. **LM 路线**（§6–§7）： $x$ 先离散化成 codec token（10.1 的骨架在此兑现）， $z$ 不再显式出现，全部压进条件 softmax $P(c_{t,j} \mid \cdot)$ 的分布形状里；音色等条件以 prompt 前缀注入。
+3. **FM/diffusion 路线**（§8）： $z$ 由采样噪声与 ODE 轨迹吸收（7.5 的框架），对齐这个 $z$ 中最硬的部分则靠 infilling 的输入构造直接消掉。
 
 三条路线共用同一个出口：无论 mel 还是 codec token，最后都要回波形——vocoder 因此是三条路线共用的部件，也是 §3–§4 先讲它的原因。
 
@@ -51,10 +51,10 @@ $$
 G2P（grapheme-to-phoneme，字素转音素）把正字法文本转成音素序列；duration model 的训练监督来自 forced alignment（强制对齐——用现成对齐工具把音素序列与录音逐帧对齐，常用实现为 Montreal Forced Aligner）——10.2 里 CTC 当作潜变量边缘化掉的「对齐」，在级联 TTS 里被当成可离线生产的监督信号。length regulator 按时长把音素级 hidden 复制展开到帧级：
 
 $$
-\mathrm{LR}\left( (h_1, \ldots, h_U),\, (d_1, \ldots, d_U) \right) = (\underbrace{h_1, \ldots, h_1}_{d_1\ \text{times}},\ \ldots,\ \underbrace{h_U, \ldots, h_U}_{d_U\ \text{times}}), \qquad T = \sum_{u=1}^{U} d_u \qquad (3)
+\mathrm{LR}\left( (h_1, \ldots, h_U),\thinspace (d_1, \ldots, d_U) \right) = (\underbrace{h_1, \ldots, h_1}_{d_1\ \text{times}},\ \ldots,\ \underbrace{h_U, \ldots, h_U}_{d_U\ \text{times}}), \qquad T = \sum_{u=1}^{U} d_u \qquad (3)
 $$
 
-**符号**：$h_u$：第 $u$ 个音素的隐向量（文本编码器输出）；$d_u$：该音素占据的帧数；$\mathrm{LR}$：length regulator，纯复制展开，无参数。
+**符号**： $h_u$：第 $u$ 个音素的隐向量（文本编码器输出）； $d_u$：该音素占据的帧数； $\mathrm{LR}$：length regulator，纯复制展开，无参数。
 
 FastSpeech2（[Ren et al., 2020](../references.md)，arXiv:2006.04558，[B]——微软未释官方代码，机制按论文口径）在这条链上补 variance adaptor：「the variance adaptor adds different variance information such as duration, pitch and energy into the hidden sequence」——音素级、非自回归；pitch 与 energy 从语音中提取、各配一个小预测器，展开后逐帧加进 hidden：
 
@@ -62,7 +62,7 @@ $$
 \tilde{x}_t = \mathrm{LR}(h, d)_t + E_p(\hat{p}_t) + E_e(\hat{e}_t) \qquad (4)
 $$
 
-**符号**：$\hat{p}_t, \hat{e}_t$：预测的帧级 pitch / energy 标量；$E_p, E_e$：各自的嵌入变换；$\tilde{x}_t$：加上韵律信息后的帧级表示，送 acoustic model 出 mel。
+**符号**： $\hat{p}_t, \hat{e}_t$：预测的帧级 pitch / energy 标量； $E_p, E_e$：各自的嵌入变换； $\tilde{x}_t$：加上韵律信息后的帧级表示，送 acoustic model 出 mel。
 
 机制分工：duration 钉节奏骨架（式 (3)），pitch/energy 补韵律色彩（式 (4)）——式 (2) 的 $z$ 在这里被拆成了三个可分离监督的标量场。收益与代价同根：每个模块的输入在训练时是真值、推理时是上游预测——跨模块的 exposure bias；但每个旋钮也因此可人工干预（改 $d_u$ 即改时长），这条性质在 §10 的对照表里是级联路线至今未丢的一格。
 
@@ -78,7 +78,7 @@ $$
 X_p[i, j] = x[i \cdot p + j], \qquad i = 0, \ldots, T/p - 1, \quad j = 0, \ldots, p - 1 \qquad (5)
 $$
 
-**符号**：$T$：波形样本数；$p$：折叠周期；$X_p \in \mathbb{R}^{(T/p) \times p}$；$T$ 不整除 $p$ 时尾部补齐至整行。
+**符号**： $T$：波形样本数； $p$：折叠周期； $X_p \in \mathbb{R}^{(T/p) \times p}$； $T$ 不整除 $p$ 时尾部补齐至整行。
 
 折叠的几何读法：第 $j$ 列 = 每周期内相位 $j$ 处的采样序列（沿周期轴演化），第 $i$ 行 = 第 $i$ 个周期的一次完整采样。准周期信号折完后呈现「竖直条纹」结构——同相位列彼此相似、行间缓变——2D 卷积的一次 kernel 操作同时看到「周期内相位轴（横向）× 周期间演化轴（纵向）」，对周期保真度的感知由此变成局部的。
 
@@ -86,29 +86,29 @@ $$
 
 **MSD（multi-scale discriminator）**：同一波形在多个平均池化降采样尺度上各设一个判别器——粗尺度盯包络与长程结构，细尺度盯波形细节。与 10.1 式 (9) 的 multi-scale STFT 判别器同族：一个在时域池化，一个在时频域变窗，目的一致——单个判别器只有一对时频分辨率（10.1 式 (3) 的不确定性约束），一族判别器才能把两维同时盯住。
 
-**损失**三件。对抗项按 7.1 式 (3) 的 minimax 方向（判别器族 $\{D_d\}$ 最大化、生成器最小化；实现取 least-squares 变体——models.py 实测），此处把另外两个稳定件就地讲清。feature matching loss（Larsen et al. 2016 式）：
+**损失**三件。对抗项按 7.1 式 (3) 的 minimax 方向（判别器族 $\lbrace D_d\rbrace$ 最大化、生成器最小化；实现取 least-squares 变体——models.py 实测），此处把另外两个稳定件就地讲清。feature matching loss（Larsen et al. 2016 式）：
 
 $$
-L_{\mathrm{fm}}(G) = \mathbb{E}\left[ \sum_{d} \sum_{l} \frac{1}{N_{d,l}} \left\| D_d^{(l)}(x) - D_d^{(l)}\left( G(s) \right) \right\|_1 \right] \qquad (6)
+L_{\mathrm{fm}}(G) = \mathbb{E}\left[ \sum_{d} \sum_{l} \frac{1}{N_{d,l}} \left\Vert D_d^{(l)}(x) - D_d^{(l)}\left( G(s) \right) \right\Vert_1 \right] \qquad (6)
 $$
 
-**符号**：$s$：输入 mel；$x$：真实波形；$D_d^{(l)}$：第 $d$ 个判别器第 $l$ 层的中间激活；$N_{d,l}$：该层激活的元素数；期望取遍数据。
+**符号**： $s$：输入 mel； $x$：真实波形； $D_d^{(l)}$：第 $d$ 个判别器第 $l$ 层的中间激活； $N_{d,l}$：该层激活的元素数；期望取遍数据。
 
 机制：纯对抗项只奖励「骗过判别器」——判别器的盲区就是生成器的免费午餐，7.1 §4 的 mode dropping 由此而来。feature matching 把生成器锚到真实数据在判别器特征空间里的逐层统计上：判别器每学一步、锚随之更新，形成一条自我稳定回路——它奖励的不是「骗过」而是「统计匹配」，覆盖度由此进入目标函数。
 
 mel-spectrogram loss：
 
 $$
-L_{\mathrm{mel}}(G) = \left\| \phi(x) - \phi\left( G(s) \right) \right\|_1 \qquad (7)
+L_{\mathrm{mel}}(G) = \left\Vert \phi(x) - \phi\left( G(s) \right) \right\Vert_1 \qquad (7)
 $$
 
-**符号**：$\phi$：10.1 式 (2)(5) 的 STFT → mel 提取链。把感知上最重要的幅度谱直接做成回归项，对抗项得以专注补回归学不到的细节（相位相干的纹理、谐波精细结构）。生成器总目标：
+**符号**： $\phi$：10.1 式 (2)(5) 的 STFT → mel 提取链。把感知上最重要的幅度谱直接做成回归项，对抗项得以专注补回归学不到的细节（相位相干的纹理、谐波精细结构）。生成器总目标：
 
 $$
 L_G = L_{\mathrm{adv}}(G) + \lambda_{\mathrm{fm}} L_{\mathrm{fm}}(G) + \lambda_{\mathrm{mel}} L_{\mathrm{mel}}(G) \qquad (8)
 $$
 
-**符号**：$\lambda_{\mathrm{fm}}, \lambda_{\mathrm{mel}}$：两项辅助损失的权重（实现常数，见 repo）。式 (8) 的结构——一个对抗项 + 一个特征空间匹配项 + 一个感知域回归项——此后成为 vocoder 与 codec decoder（10.1 §4）的共享模板。
+**符号**： $\lambda_{\mathrm{fm}}, \lambda_{\mathrm{mel}}$：两项辅助损失的权重（实现常数，见 repo）。式 (8) 的结构——一个对抗项 + 一个特征空间匹配项 + 一个感知域回归项——此后成为 vocoder 与 codec decoder（10.1 §4）的共享模板。
 
 ## 4. BigVGAN：snake 激活与混叠账
 
@@ -118,47 +118,47 @@ $$
 f_{\alpha}(x) = x + \frac{1}{\alpha} \sin^2(\alpha x) \qquad (9)
 $$
 
-**符号**：$\alpha > 0$：可训练标量（逐通道），控制周期分量的频率。
+**符号**： $\alpha > 0$：可训练标量（逐通道），控制周期分量的频率。
 
-两项分工：$x$ 保留恒等通路——信息与梯度直通，输入不被压弯；$\frac{1}{\alpha}\sin^2(\alpha x)$ 是有界周期扰动（幅值不超过 $1/\alpha$）——激活响应呈「单调主趋势 + 周期起伏」，正是准周期音频信号的形状先验。求导一步：
+两项分工： $x$ 保留恒等通路——信息与梯度直通，输入不被压弯； $\frac{1}{\alpha}\sin^2(\alpha x)$ 是有界周期扰动（幅值不超过 $1/\alpha$）——激活响应呈「单调主趋势 + 周期起伏」，正是准周期音频信号的形状先验。求导一步：
 
 $$
-f'_{\alpha}(x) = 1 + \frac{1}{\alpha} \cdot 2 \sin(\alpha x) \cos(\alpha x) \cdot \alpha = 1 + \sin(2 \alpha x) \;\in\; [0, 2] \qquad (10)
+f'_{\alpha}(x) = 1 + \frac{1}{\alpha} \cdot 2 \sin(\alpha x) \cos(\alpha x) \cdot \alpha = 1 + \sin(2 \alpha x) \hspace{5mu}\in\hspace{5mu} [0, 2] \qquad (10)
 $$
 
 三条读法：(i) 导数处处非负——无 ReLU 式死区，且 $f_\alpha$ 单调、不把输入折叠（折叠会让不同输入挤到同一输出，丢信息）；(ii) 导数本身以频率 $2\alpha$ 振荡——梯度场携带周期结构，网络学周期函数时不必从零拼出正弦；(iii) $\alpha$ 逐通道可学，不同通道可以分工到不同频率档——这给了上采样栈一条「逐层搭谐波」的组织方式。
 
-周期先验的另一面是混叠。非线性作用在离散信号上会产生谐波：$\sin^2$ 作用在正弦上由 $\sin^2\theta = (1 - \cos 2\theta)/2$ 直接倍频。采样率 $f_s$ 下，任何高于 $f_s/2$ 的分量折叠回 $[0, f_s/2]$（10.1 式 (1) Nyquist 的直接推论）：24 kHz 系统中一个 15 kHz 的生成谐波混叠到 $24 - 15 = 9$ kHz——落在可听带内的虚假分量。上采样与非线性交替的栈把这个效应逐级放大。BigVGAN 的对策是给 snake 配 low-pass filter 做抗混叠，把谐波能量在折叠发生前截掉。消融口径（论文 Table 4/7/8）：去掉滤波器后，MUSDB18 分布外 SMOS 从 4.20 掉到 4.15（差约 0.05，Wilcoxon p<0.01 统计显著），LibriTTS 上 PESQ 3.574 → 3.472、MCD 0.418 → 0.462——是小数点级的稳定掉点而非量级效应；掉点在分布外数据上统计显著，与「universal」泛化档直接相关：混叠分量是录音条件相关的，截掉它等于删掉一类跨域分布偏移。
+周期先验的另一面是混叠。非线性作用在离散信号上会产生谐波： $\sin^2$ 作用在正弦上由 $\sin^2\theta = (1 - \cos 2\theta)/2$ 直接倍频。采样率 $f_s$ 下，任何高于 $f_s/2$ 的分量折叠回 $[0, f_s/2]$（10.1 式 (1) Nyquist 的直接推论）：24 kHz 系统中一个 15 kHz 的生成谐波混叠到 $24 - 15 = 9$ kHz——落在可听带内的虚假分量。上采样与非线性交替的栈把这个效应逐级放大。BigVGAN 的对策是给 snake 配 low-pass filter 做抗混叠，把谐波能量在折叠发生前截掉。消融口径（论文 Table 4/7/8）：去掉滤波器后，MUSDB18 分布外 SMOS 从 4.20 掉到 4.15（差约 0.05，Wilcoxon p<0.01 统计显著），LibriTTS 上 PESQ 3.574 → 3.472、MCD 0.418 → 0.462——是小数点级的稳定掉点而非量级效应；掉点在分布外数据上统计显著，与「universal」泛化档直接相关：混叠分量是录音条件相关的，截掉它等于删掉一类跨域分布偏移。
 
 ## 5. VITS：把整条级联并成一个 ELBO
 
 §2 管线每个模块各自训练、推理串联消费——误差逐级累积是结构性的，解法是把对齐、声学、vocoder 并进同一个生成目标。VITS（[Kim et al., 2021](../references.md)，arXiv:2106.06103，[A]；repo jaywalnut310/vits，models.py 文件级实测）是这条路的代表：「variational inference augmented with normalizing flows and an adversarial training process」，外加 Monotonic Alignment Search（MAS）对齐估计与 stochastic duration predictor。潜变量设定：帧级 latent $z$（后验编码器吃线性谱给出）、文本条件 $c$（音素编码）、对齐 $A$（潜变量）。骨架是条件 VAE（ELBO 推导 recap 6.3 式 (3)）：
 
 $$
-\log p_{\theta}(x \mid c) \;\ge\; \mathbb{E}_{q_{\phi}(z \mid x)}\left[ \log p_{\theta}(x \mid z) \right] - \mathrm{KL}\left( q_{\phi}(z \mid x)\, \|\, p_{\theta}(z \mid c, A) \right) \qquad (11)
+\log p_{\theta}(x \mid c) \hspace{5mu}\ge\hspace{5mu} \mathbb{E}_{q_{\phi}(z \mid x)}\left[ \log p_{\theta}(x \mid z) \right] - \mathrm{KL}\left( q_{\phi}(z \mid x)\thinspace \Vert\thinspace p_{\theta}(z \mid c, A) \right) \qquad (11)
 $$
 
-**符号**：$q_{\phi}(z \mid x)$：后验编码器（训练时可见声学）；$p_{\theta}(x \mid z)$：decoder——HiFi-GAN 式生成器，$z \to$ 波形；$p_{\theta}(z \mid c, A)$：文本条件下的先验。
+**符号**： $q_{\phi}(z \mid x)$：后验编码器（训练时可见声学）； $p_{\theta}(x \mid z)$：decoder——HiFi-GAN 式生成器， $z \to$ 波形； $p_{\theta}(z \mid c, A)$：文本条件下的先验。
 
 先验若只是逐帧独立高斯，式 (11) 的 KL 项会把后验也压向逐帧独立高斯——韵律的帧间连续性无处安放。VITS 的处理是在条件先验上叠 normalizing flow（change of variables，recap 7.1 式 (4)）：
 
 $$
-\log p_{\theta}(z \mid c, A) = \log \mathcal{N}\left( f^{-1}(z);\, \mu_{\theta}(c, A),\, \sigma_{\theta}(c, A)^2 \right) + \log \left| \det \frac{\partial f^{-1}(z)}{\partial z} \right| \qquad (12)
+\log p_{\theta}(z \mid c, A) = \log \mathcal{N}\left( f^{-1}(z);\thinspace \mu_{\theta}(c, A),\thinspace \sigma_{\theta}(c, A)^2 \right) + \log \left| \det \frac{\partial f^{-1}(z)}{\partial z} \right| \qquad (12)
 $$
 
-**符号**：$f$：可逆变换栈（affine coupling 族——Jacobian 三角、log-det 便宜，7.1 §5 的架构约束在此兑现）；$\mu_{\theta}, \sigma_{\theta}$：先验编码器在文本与对齐 $A$ 下给出的逐帧高斯参数。
+**符号**： $f$：可逆变换栈（affine coupling 族——Jacobian 三角、log-det 便宜，7.1 §5 的架构约束在此兑现）； $\mu_{\theta}, \sigma_{\theta}$：先验编码器在文本与对齐 $A$ 下给出的逐帧高斯参数。
 
-机制：flow 把简单高斯弯成有能力逼近后验族的分布——6.3 §2.3 的口径里 ELBO 的 gap 是后验近似误差，先验族越灵活、同样的 $q$ 能被承接得越紧。方向性细节：训练沿 KL 梯度估值要用 $f^{-1}$（把后验样本 $z$ 映回简单密度下评估），推理采样要用 $f$（$\varepsilon \sim \mathcal{N}(\mu, \sigma^2)$，$z = f(\varepsilon)$）——两个方向都要便宜，这正是 coupling 层设计的动机。
+机制：flow 把简单高斯弯成有能力逼近后验族的分布——6.3 §2.3 的口径里 ELBO 的 gap 是后验近似误差，先验族越灵活、同样的 $q$ 能被承接得越紧。方向性细节：训练沿 KL 梯度估值要用 $f^{-1}$（把后验样本 $z$ 映回简单密度下评估），推理采样要用 $f$（ $\varepsilon \sim \mathcal{N}(\mu, \sigma^2)$， $z = f(\varepsilon)$）——两个方向都要便宜，这正是 coupling 层设计的动机。
 
 **MAS**：对齐 $A$ 是潜变量，VITS 不走 10.2 式 (6) 的边缘化（对全部对齐求和），而是取硬最优——在单调对齐集合上搜使后验样本在先验下似然最大的那条：
 
 $$
-A^{*} = \operatorname{arg\,max}_{A \in \mathcal{A}_{\mathrm{mono}}} \sum_{t=1}^{T} \log \mathcal{N}\left( z_t;\, \mu_{a(t)},\, \sigma_{a(t)}^2 \right) \qquad (13)
+A^{\ast } = \operatorname{arg\thinspace max}_{A \in \mathcal{A}_{\mathrm{mono}}} \sum_{t=1}^{T} \log \mathcal{N}\left( z_t;\thinspace \mu_{a(t)},\thinspace \sigma_{a(t)}^2 \right) \qquad (13)
 $$
 
-**符号**：$\mathcal{A}_{\mathrm{mono}}$：单调对齐集合——每帧恰好指派一个音素、音素下标随帧不减，等价于给每个音素分配正整数时长 $d_u \ge 1$ 且 $\sum_u d_u = T$；$a(t)$：帧 $t$ 被指派的音素；$z_t$：后验采样的第 $t$ 帧 latent。
+**符号**： $\mathcal{A}_{\mathrm{mono}}$：单调对齐集合——每帧恰好指派一个音素、音素下标随帧不减，等价于给每个音素分配正整数时长 $d_u \ge 1$ 且 $\sum_u d_u = T$； $a(t)$：帧 $t$ 被指派的音素； $z_t$：后验采样的第 $t$ 帧 latent。
 
-求解结构：单调约束给出与 CTC 同族的格点（10.2 §2.3 的扩展序列在这里换成「音素段」），把 10.2 式 (6) 的「对全部路径求和」换成「对全部对齐取 max」即 Viterbi 式 DP，$O(TU)$ 精确求解——每步训练迭代先跑一次 MAS 得 $A^{*}$，再按式 (11) 的 ELBO 更新。与 CTC 的对照读法值得停一拍：同一个「对齐未知」问题，识别侧求和（软，保留全部对齐的不确定性），合成侧取 max（硬，只要一条最可能的）——硬指派恰好给出式 (3) 所需的显式 $d_u$，它也是 stochastic duration predictor 的训练监督来源。duration predictor 本身用 flow 建时长分布（条件于音素编码），推理时采样 $d_u$——同一文本的韵律多样性由这个采样给出，而不是由确定性的时长回归钉死。
+求解结构：单调约束给出与 CTC 同族的格点（10.2 §2.3 的扩展序列在这里换成「音素段」），把 10.2 式 (6) 的「对全部路径求和」换成「对全部对齐取 max」即 Viterbi 式 DP， $O(TU)$ 精确求解——每步训练迭代先跑一次 MAS 得 $`A^{*}`$，再按式 (11) 的 ELBO 更新。与 CTC 的对照读法值得停一拍：同一个「对齐未知」问题，识别侧求和（软，保留全部对齐的不确定性），合成侧取 max（硬，只要一条最可能的）——硬指派恰好给出式 (3) 所需的显式 $d_u$，它也是 stochastic duration predictor 的训练监督来源。duration predictor 本身用 flow 建时长分布（条件于音素编码），推理时采样 $d_u$——同一文本的韵律多样性由这个采样给出，而不是由确定性的时长回归钉死。
 
 训练目标五项并列：
 
@@ -166,34 +166,34 @@ $$
 L_{\mathrm{VITS}} = L_{\mathrm{recon}} + L_{\mathrm{kl}} + L_{\mathrm{dur}} + L_{\mathrm{adv}}(G) + \lambda_{\mathrm{fm}} L_{\mathrm{fm}}(G) \qquad (14)
 $$
 
-**符号**：$L_{\mathrm{recon}}$：式 (7) 的 mel L1（$G(z)$ 与 $x$ 之间）；$L_{\mathrm{kl}}$：式 (11) 第二项（含式 (12) 的 flow 修正）；$L_{\mathrm{dur}}$：时长预测损失；后两项是 §3 式 (6)(8) 的对抗工程原样搬进端到端框架（decoder 即 HiFi-GAN 式生成器）。
+**符号**： $L_{\mathrm{recon}}$：式 (7) 的 mel L1（ $G(z)$ 与 $x$ 之间）； $L_{\mathrm{kl}}$：式 (11) 第二项（含式 (12) 的 flow 修正）； $L_{\mathrm{dur}}$：时长预测损失；后两项是 §3 式 (6)(8) 的对抗工程原样搬进端到端框架（decoder 即 HiFi-GAN 式生成器）。
 
 统一目标的读法：§2 的模块边界在 VITS 里全部变成同一计算图里的不同损失项，梯度从波形判别器一路回流到文本编码器。代价对称地清楚：中间表示不再可单独替换（想换 vocoder 得整体重训），可控性也从「逐旋钮覆盖」退化为「对潜变量与时长采样」——§10 的对照表里，这两格正好与级联路线互补。
 
 ## 6. LM 路线：VALL-E 的两阶段分解
 
-10.1 §6.3 的离散 token 进 LM 分析在此兑现其生成侧一半：codec token 把语音变成离散序列后，TTS 与文本条件生成同构——对 LM 而言，acoustic token 等价于又一种待建模的离散语言。设定：10.1 §4 骨架的 RVQ codec，$n_q = 8$ 个量化器（论文公式中 $j \in [2, 8]$ 的口径），码矩阵 $C \in \{0, \ldots, K-1\}^{T \times 8}$；文本侧转为音素序列 $y$；另有一段 acoustic prompt $\tilde{C}$（参考录音的 codec 码）。
+10.1 §6.3 的离散 token 进 LM 分析在此兑现其生成侧一半：codec token 把语音变成离散序列后，TTS 与文本条件生成同构——对 LM 而言，acoustic token 等价于又一种待建模的离散语言。设定：10.1 §4 骨架的 RVQ codec， $n_q = 8$ 个量化器（论文公式中 $j \in [2, 8]$ 的口径），码矩阵 $C \in \lbrace0, \ldots, K-1\rbrace^{T \times 8}$；文本侧转为音素序列 $y$；另有一段 acoustic prompt $\tilde{C}$（参考录音的 codec 码）。
 
 VALL-E（[Wang et al., 2023](../references.md)，arXiv:2301.02111，[B]——微软未释官方代码与权重，公式引论文原文）把联合分布按量化器层做链式分解，再在每层内选择时间结构：
 
 $$
-P(C \mid y, \tilde{C}) = P\left( c_{:,1} \mid y,\, \tilde{C}_{:,1} \right) \cdot \prod_{j=2}^{8} P\left( c_{:,j} \mid c_{:,<j},\, y,\, \tilde{C} \right) \qquad (15)
+P(C \mid y, \tilde{C}) = P\left( c_{:,1} \mid y,\thinspace \tilde{C}_{:,1} \right) \cdot \prod_{j=2}^{8} P\left( c_{:,j} \mid c_{:,<j},\thinspace y,\thinspace \tilde{C} \right) \qquad (15)
 $$
 
-**符号**：$c_{:,j} = (c_{1,j}, \ldots, c_{T,j})$：第 $j$ 层的整条时间序列；$c_{:,<j}$：第 $1$ 至 $j-1$ 层的全部码；$\tilde{C}_{:,1}$：prompt 的第一层码；$\tilde{C}$：prompt 的全部层。
+**符号**： $c_{:,j} = (c_{1,j}, \ldots, c_{T,j})$：第 $j$ 层的整条时间序列； $c_{:,<j}$：第 $1$ 至 $j-1$ 层的全部码； $\tilde{C}_{:,1}$：prompt 的第一层码； $\tilde{C}$：prompt 的全部层。
 
 第一层用 AR（原文：「For the discrete tokens from the first quantizer $c_{:,1}$, we train an autoregressive (AR) decoder-only language model……conditioned on the phoneme sequence and the acoustic prompt $\tilde{C}_{:,1}$」）：
 
 $$
-P\left( c_{:,1} \mid y,\, \tilde{C}_{:,1} \right) = \prod_{t=1}^{T} P\left( c_{t,1} \mid c_{<t,1},\, y,\, \tilde{C}_{:,1} \right) \qquad (16)
+P\left( c_{:,1} \mid y,\thinspace \tilde{C}_{:,1} \right) = \prod_{t=1}^{T} P\left( c_{t,1} \mid c_{<t,1},\thinspace y,\thinspace \tilde{C}_{:,1} \right) \qquad (16)
 $$
 
-**符号**：$c_{<t,1}$：第一层前 $t-1$ 帧的码；条件中的 prompt 只含第一层——高层级 prompt 信息留给第二阶段。
+**符号**： $c_{<t,1}$：第一层前 $t-1$ 帧的码；条件中的 prompt 只含第一层——高层级 prompt 信息留给第二阶段。
 
 第 2 至 8 层用 NAR（原文：「we train a non-autoregressive (NAR) language model」建模 $c_{:,j \in [2,8]}$）：
 
 $$
-P\left( c_{:,j} \mid c_{:,<j},\, y,\, \tilde{C} \right) = \prod_{t=1}^{T} P\left( c_{t,j} \mid c_{:,<j},\, y,\, \tilde{C} \right), \qquad j = 2, \ldots, 8 \qquad (17)
+P\left( c_{:,j} \mid c_{:,<j},\thinspace y,\thinspace \tilde{C} \right) = \prod_{t=1}^{T} P\left( c_{t,j} \mid c_{:,<j},\thinspace y,\thinspace \tilde{C} \right), \qquad j = 2, \ldots, 8 \qquad (17)
 $$
 
 **符号**：右端的乘积沿时间并行——层内各帧联合预测、互不依赖；帧 $t$ 第 $j$ 层的码只依赖「前 $j-1$ 层的全部帧」，不依赖「第 $j$ 层的前 $t-1$ 帧」。层间仍串行：第 $j$ 层全部采样完才进第 $j+1$ 层。
@@ -211,7 +211,7 @@ NAR LM：j = 2..8 逐层推进，层内 T 帧并行 ──► c_{:,2}, …, c_{:
 codec decoder ──► 波形 x̂[n]
 ```
 
-为什么这样切，三笔账。(i) RVQ 的第一级承载最粗结构（6.3 §5 残差递推：$e_1$ 最接近 $z$ 本身，后续各级只补残差细节）——内容与韵律的全局连贯主要在第 1 层，自回归的全局一致性花在刀刃上。(ii) 第 2–8 层是逐级精修：给定全部低层码后，高层码的帧间依赖弱，并行化的建模误差代价小。(iii) 步数账：把 $8T$ 个码全部摊平自回归是 $8T$ 步严格串行；两阶段是 $T$ 步 AR 加 7 趟层内并行前向。按 10.1 §4.2 的 8 码本档帧率（75 fps）估：每秒音频的串行步数从约 600 降到 75 步加 7 趟——延迟结构完全不同。
+为什么这样切，三笔账。(i) RVQ 的第一级承载最粗结构（6.3 §5 残差递推： $e_1$ 最接近 $z$ 本身，后续各级只补残差细节）——内容与韵律的全局连贯主要在第 1 层，自回归的全局一致性花在刀刃上。(ii) 第 2–8 层是逐级精修：给定全部低层码后，高层码的帧间依赖弱，并行化的建模误差代价小。(iii) 步数账：把 $8T$ 个码全部摊平自回归是 $8T$ 步严格串行；两阶段是 $T$ 步 AR 加 7 趟层内并行前向。按 10.1 §4.2 的 8 码本档帧率（75 fps）估：每秒音频的串行步数从约 600 降到 75 步加 7 趟——延迟结构完全不同。
 
 **3 秒 prompt 的 in-context cloning**（原文：「only a 3-second enrolled recording of an unseen speaker as an acoustic prompt」）：机制是前缀条件化——与 10.2 式 (21) 的 Whisper 前缀同一原理、方向相反（那里前缀指定任务，这里前缀指定音色）。训练样本里 prompt 与目标是同一说话人同一录音的片段，LM 学到的是「延续 prompt 的音色与声学环境」；推理时把前缀换成 3 秒未见说话人的录音，条件分布的音色轴随前缀移动。无 speaker embedding、无微调——LM 路线对级联路线 d-vector 模块的结构性替代就在这一步：音色控制从「一个外挂模块的输出」变成「序列条件本身的属性」。
 
@@ -237,15 +237,15 @@ VALL-E 的 token 是声学重建导向的（10.1 §6.2 对照表：纯声学码�
 
 token-to-speech 段是 conditional flow matching（recap 7.5 式 (9)）：以 semantic token 序列（加说话人条件）为条件、在 mel 空间回归条件速度场，再经 §3 的 HiFi-GAN 部件回波形。结构注记：这条链是「LM 路线」与「级联路线」的混血——文本→token 用 LM（拿 in-context 与语言先验的好处），token→mel→波形回到连续域级联（拿 FM 与 vocoder 的音质好处）；codec 的 RVQ 层级结构（VALL-E 的 8 层账）被整个绕开——semantic token 单流逐帧，没有式 (17) 的层间分解问题。
 
-**CosyVoice 2**（[Du et al., 2024](../references.md)，arXiv:2412.10117，[A]）四个改动各值一读。(i) **chunk-aware causal FM**：「enabling both streaming and non-streaming synthesis within a single model」——FM decoder 按 chunk 因果化（第 $k$ 块 mel 只可见第 $\le k$ 块的 token 条件与已生成 mel），同一权重整句输入即非流式、逐块输入即流式——流式与非流式从两套系统并成一套（mask 语义与 10.2 §7 的 chunk attention 同族）。把这个可见性约束按 2.4 的加性 mask 口径写出（$M_{t,s} = 0$ 为可见、$-\infty$ 为屏蔽，加在 attention logit 上；同 10.2 式 (22)）：
+**CosyVoice 2**（[Du et al., 2024](../references.md)，arXiv:2412.10117，[A]）四个改动各值一读。(i) **chunk-aware causal FM**：「enabling both streaming and non-streaming synthesis within a single model」——FM decoder 按 chunk 因果化（第 $k$ 块 mel 只可见第 $\le k$ 块的 token 条件与已生成 mel），同一权重整句输入即非流式、逐块输入即流式——流式与非流式从两套系统并成一套（mask 语义与 10.2 §7 的 chunk attention 同族）。把这个可见性约束按 2.4 的加性 mask 口径写出（ $M_{t,s} = 0$ 为可见、 $-\infty$ 为屏蔽，加在 attention logit 上；同 10.2 式 (22)）：
 
 $$
-M_{t,s} = \begin{cases} 0, & s \le \left\lceil t / M \right\rceil \cdot M + (\beta - 1) \cdot M \\ -\infty, & \text{otherwise} \end{cases}, \qquad \beta \in \{1, 2\} \qquad (18)
+M_{t,s} = \begin{cases} 0, & s \le \left\lceil t / M \right\rceil \cdot M + (\beta - 1) \cdot M \\ -\infty, & \text{otherwise} \end{cases}, \qquad \beta \in \lbrace1, 2\rbrace \qquad (18)
 $$
 
-**符号**：$t, s$：mel 帧下标（query / key；token 流 25 Hz 经 ×2 上采样对齐到 50 Hz mel 帧轴，条件与生成共用同一帧轴）；$M$：chunk 大小（帧数）；$\beta$：可见性档位——$\beta = 1$ 即 Chunk-M（帧 $t$ 可见至本块末尾 $\lceil t / M \rceil \cdot M$，即第 $k$ 块只见第 $\le k$ 块），$\beta = 2$ 即 Chunk-2M（再多放行一整块）；两个边界档不在参数化内：$M = 1$ 退化出 full-causal（$s \le t$），$M_{t,s} \equiv 0$ 即 non-causal（离线档）。
+**符号**： $t, s$：mel 帧下标（query / key；token 流 25 Hz 经 ×2 上采样对齐到 50 Hz mel 帧轴，条件与生成共用同一帧轴）； $M$：chunk 大小（帧数）； $\beta$：可见性档位—— $\beta = 1$ 即 Chunk-M（帧 $t$ 可见至本块末尾 $\lceil t / M \rceil \cdot M$，即第 $k$ 块只见第 $\le k$ 块）， $\beta = 2$ 即 Chunk-2M（再多放行一整块）；两个边界档不在参数化内： $M = 1$ 退化出 full-causal（ $s \le t$）， $M_{t,s} \equiv 0$ 即 non-causal（离线档）。
 
-四档 mask 是单模型双流式的全部机关：训练时每个样本从四档中均匀采样一档（原文：「we randomly sample a mask from the above four masks under the uniform distribution」），推理时按延迟预算选档。两个配套机制。其一，多步 ODE 求积被当作「UNet 重复 10 次的展开深网」（原文口径：NFE = 10），各求积步共享同一 mask——因果性由网络结构保证，求积器本身无需流式改造。其二，可见上下文多的档是上下文少的档的天然教师（原文称 implicit self-distillation）——流式档白得离线档的监督信号。另有两笔帧率账：token 上采样前先过一道 look-ahead 卷积（右侧 padding $P$、kernel $P + 1$ 的 1-D 卷积），给后续全因果模块预供未来信息；首包延迟随块长线性（原文式 (11)：$L_{TTS} = M_{\mathrm{tok}} \cdot (d_{lm} + d_{fm} + d_{voc})$，$M_{\mathrm{tok}}$ 为首包 speech token 数，$d_{lm}, d_{fm}, d_{voc}$ 为 LM / FM / vocoder 的逐 token 耗时）——块长是延迟与质量权衡上的唯一旋钮。(ii) tokenizer 的 VQ 换 **FSQ**（finite scalar quantization）：「Replacing vector quantization (VQ) in the speech tokenizer with finite scalar quantization (FSQ), improving codebook utilization」——lookup-free 量化族（6.3 §6 的 LFQ 近亲）：每维标量各自取有限档、码本为各维档数之积，无学习码本即无利用率塌缩。(iii) **去掉 text encoder 与 speaker embedding**，直用预训练文本 LLM 主干（Qwen2.5-0.5B）——文本理解整个外包给语言模型先验；speaker 信息随之改由序列条件携带（机制读法：与 §6 的 in-context prompt 逻辑合流）。(iv) token rate 25 Hz（原文：「Our speech tokenizer works at a token rate of 25 Hz, i.e., 25 speech tokens per second」）——LM 侧序列长度是 75 fps 档的三分之一（单码本流的 token/s = fps 本身，10.1 §6.1 对照表的 fps 列），式 (16) 的 AR 段每秒 25 步。
+四档 mask 是单模型双流式的全部机关：训练时每个样本从四档中均匀采样一档（原文：「we randomly sample a mask from the above four masks under the uniform distribution」），推理时按延迟预算选档。两个配套机制。其一，多步 ODE 求积被当作「UNet 重复 10 次的展开深网」（原文口径：NFE = 10），各求积步共享同一 mask——因果性由网络结构保证，求积器本身无需流式改造。其二，可见上下文多的档是上下文少的档的天然教师（原文称 implicit self-distillation）——流式档白得离线档的监督信号。另有两笔帧率账：token 上采样前先过一道 look-ahead 卷积（右侧 padding $P$、kernel $P + 1$ 的 1-D 卷积），给后续全因果模块预供未来信息；首包延迟随块长线性（原文式 (11)： $L_{TTS} = M_{\mathrm{tok}} \cdot (d_{lm} + d_{fm} + d_{voc})$， $M_{\mathrm{tok}}$ 为首包 speech token 数， $d_{lm}, d_{fm}, d_{voc}$ 为 LM / FM / vocoder 的逐 token 耗时）——块长是延迟与质量权衡上的唯一旋钮。(ii) tokenizer 的 VQ 换 **FSQ**（finite scalar quantization）：「Replacing vector quantization (VQ) in the speech tokenizer with finite scalar quantization (FSQ), improving codebook utilization」——lookup-free 量化族（6.3 §6 的 LFQ 近亲）：每维标量各自取有限档、码本为各维档数之积，无学习码本即无利用率塌缩。(iii) **去掉 text encoder 与 speaker embedding**，直用预训练文本 LLM 主干（Qwen2.5-0.5B）——文本理解整个外包给语言模型先验；speaker 信息随之改由序列条件携带（机制读法：与 §6 的 in-context prompt 逻辑合流）。(iv) token rate 25 Hz（原文：「Our speech tokenizer works at a token rate of 25 Hz, i.e., 25 speech tokens per second」）——LM 侧序列长度是 75 fps 档的三分之一（单码本流的 token/s = fps 本身，10.1 §6.1 对照表的 fps 列），式 (16) 的 AR 段每秒 25 步。
 
 **CosyVoice 3**（[Du et al., 2025](../references.md)，arXiv:2505.17589，[A]）：FSQ 模块改插 **MinMo** voice encoder（CV2 为 SenseVoice-Large ASR encoder——两代差异原文直述），主线转向 scale-up + post-training，定位 in-the-wild 语音生成。
 
@@ -260,28 +260,28 @@ $$
 **Filler 对齐**（全路线的关键构造）：文本逐字符用 filler token 补齐到与语音等长（原文：「the text input is simply padded with filler tokens to the same length as input speech」）：
 
 $$
-\tilde{y} \in \left( \mathcal{V}_{\mathrm{char}} \cup \{\text{filler}\} \right)^{T}, \qquad \tilde{y}_t = \begin{cases} y_u, & t \in S_u \\ \text{filler}, & \text{otherwise} \end{cases} \qquad (19)
+\tilde{y} \in \left( \mathcal{V}_{\mathrm{char}} \cup \lbrace\text{filler}\rbrace \right)^{T}, \qquad \tilde{y}_t = \begin{cases} y_u, & t \in S_u \\ \text{filler}, & \text{otherwise} \end{cases} \qquad (19)
 $$
 
-**符号**：$T$：mel 帧数；$S_u$：第 $u$ 个字符实际占据的帧段（训练时即该字符的真实跨度，数据侧构造、无需模型）——帧 $t$ 落在字符 $u$ 的跨度内则该位取字符 $y_u$，全部跨度之外的帧位取 filler。
+**符号**： $T$：mel 帧数； $S_u$：第 $u$ 个字符实际占据的帧段（训练时即该字符的真实跨度，数据侧构造、无需模型）——帧 $t$ 落在字符 $u$ 的跨度内则该位取字符 $y_u$，全部跨度之外的帧位取 filler。
 
 机制读法：§1 式 (2) 的 $z$ 中最硬的一块——每个音素占多少帧——被这一构造直接消解：对齐不再是潜变量，而是输入张量的位置对应。停在这里回看全章：CTC 的边缘化、VITS 的 MAS、FastSpeech 的 duration model 是同一个问题的三种回答，filler 补齐是第四种——把答案写进输入。代价同步转移到推理侧：目标长度 $T$ 从「模型要学」变成「调用方要给」，zero-shot 用法里按参考音频语速与文本长度比估计（机制推论）。
 
 **CFM 目标**（recap 7.5 式 (9) 与 §6 rectified 路径）：取线性插值路径与闭式目标速度
 
 $$
-x_t = (1 - t)\, x_0 + t\, \varepsilon, \qquad u_t(x_t \mid x_0) = \varepsilon - x_0 \qquad (20)
+x_t = (1 - t)\thinspace x_0 + t\thinspace \varepsilon, \qquad u_t(x_t \mid x_0) = \varepsilon - x_0 \qquad (20)
 $$
 
-**符号**：$x_0$：数据端 mel（沿用 7.5 约定：$t = 0$ 数据端、$t = 1$ 噪声端）；$\varepsilon \sim \mathcal{N}(0, I)$；$x_t$：$t$ 时刻的路径点；$u_t$：条件速度场——直线路径下是与 $x_t$ 无关的常向量 $\varepsilon - x_0$。
+**符号**： $x_0$：数据端 mel（沿用 7.5 约定： $t = 0$ 数据端、 $t = 1$ 噪声端）； $\varepsilon \sim \mathcal{N}(0, I)$； $x_t$： $t$ 时刻的路径点； $u_t$：条件速度场——直线路径下是与 $x_t$ 无关的常向量 $\varepsilon - x_0$。
 
 infilling 版 CFM 损失：
 
 $$
-L_{\mathrm{F5}}(\theta) = \mathbb{E}_{t,\, x_0,\, \varepsilon,\, m}\left[ \left\| \left( v_{\theta}\left( x_t^{(m)},\, t,\, c \right) - (\varepsilon - x_0) \right) \odot m \right\|^2 \right] \qquad (21)
+L_{\mathrm{F5}}(\theta) = \mathbb{E}_{t,\thinspace x_0,\thinspace \varepsilon,\thinspace m}\left[ \left\Vert \left( v_{\theta}\left( x_t^{(m)},\thinspace t,\thinspace c \right) - (\varepsilon - x_0) \right) \odot m \right\Vert^2 \right] \qquad (21)
 $$
 
-**符号**：$m \in \{0,1\}^{T}$：挖空段指示（1 = 待生成），损失只在挖空段计；$x_t^{(m)}$：模型输入——挖空段取路径点 $x_t$、上下文段保留干净 $x_0$（infilling 的标准构造：未挖部分作为条件一并输入）；$c$：条件 = 式 (19) 的补齐文本（经 ConvNeXt V2 精炼——F5 相对 E2 的第一处增量）连同参考段信息；$v_\theta$：速度网络，DiT 主干（7.6 的骨干选择：序列条件生成 + 全并行前向，与逐帧 mask 结构天然相容）。
+**符号**： $m \in \lbrace0,1\rbrace^{T}$：挖空段指示（1 = 待生成），损失只在挖空段计； $x_t^{(m)}$：模型输入——挖空段取路径点 $x_t$、上下文段保留干净 $x_0$（infilling 的标准构造：未挖部分作为条件一并输入）； $c$：条件 = 式 (19) 的补齐文本（经 ConvNeXt V2 精炼——F5 相对 E2 的第一处增量）连同参考段信息； $v_\theta$：速度网络，DiT 主干（7.6 的骨干选择：序列条件生成 + 全并行前向，与逐帧 mask 结构天然相容）。
 
 ```
 mel 帧轴  t = 1..T
@@ -294,7 +294,7 @@ mel 帧轴  t = 1..T
 
 训练与推理的任务同构：训练 = 随机挖一段学回填；zero-shot 推理 = 把目标整句挖掉，条件给「参考音频 + 参考文本 + 目标文本」——音色从参考段经双向上下文条件流入。与 VALL-E 的对照：一个靠 AR 前缀延续（式 (16)），一个靠掩码上下文场（式 (21)）——「3 秒克隆」的两种机制实现。全 NAR 的延迟结构：生成一句 mel 的串行步数 = ODE 求积步数，与句长无关——式 (16) 的 $T$ 步 AR 税在这里整个不存在。
 
-**Sway Sampling**（推理时策略；原文：「inference-time Sway Sampling strategy……can be easily applied to existing flow matching based models without retraining」）：ODE 求积的均匀步点 $t_i = i/N$ 换成 warped 步点 $\tau_i = g(t_i)$，其中 $g: [0,1] \to [0,1]$ 单调、$g(0) = 0$、$g(1) = 1$。机制账：第 $i$ 步的有效步长 $\Delta \tau_i \approx g'(\xi_i)/N$——$g'$ 小处步点密、局部截断误差小；$g'$ 大处步点稀。sway 形曲线把密度预算向某一端倾斜（端点固定保证积分区间不变），倾斜方向由一个 sway 系数控制。与 7.5 §8 训练侧 timestep shift 是同一思想搬到推理调度上：不改权重、只改求积节点，所以任何 FM 模型免重训即插——这正是原文强调的迁移性。方向性读法：数据端（$t \to 0$）附近轨迹决定细节纹理，噪声端（$t \to 1$）附近决定全局结构；往哪端倾斜是质量-步数权衡上的可调旋钮，最优方向随数据与骨干而变，属推理超参而非训练配方。
+**Sway Sampling**（推理时策略；原文：「inference-time Sway Sampling strategy……can be easily applied to existing flow matching based models without retraining」）：ODE 求积的均匀步点 $t_i = i/N$ 换成 warped 步点 $\tau_i = g(t_i)$，其中 $g: [0,1] \to [0,1]$ 单调、 $g(0) = 0$、 $g(1) = 1$。机制账：第 $i$ 步的有效步长 $\Delta \tau_i \approx g'(\xi_i)/N$—— $g'$ 小处步点密、局部截断误差小； $g'$ 大处步点稀。sway 形曲线把密度预算向某一端倾斜（端点固定保证积分区间不变），倾斜方向由一个 sway 系数控制。与 7.5 §8 训练侧 timestep shift 是同一思想搬到推理调度上：不改权重、只改求积节点，所以任何 FM 模型免重训即插——这正是原文强调的迁移性。方向性读法：数据端（ $t \to 0$）附近轨迹决定细节纹理，噪声端（ $t \to 1$）附近决定全局结构；往哪端倾斜是质量-步数权衡上的可调旋钮，最优方向随数据与骨干而变，属推理超参而非训练配方。
 
 收束一行三条路线的任务观：infilling 把 TTS、编辑、去噪统一成同一个条件生成——mask 位置即任务指定符。与 10.2 §6.2 Whisper 的前缀 token 对照：一个用前缀指定任务，一个用 mask 几何指定任务，都是「单一模型、多任务」的便宜实现。
 
@@ -304,14 +304,14 @@ mel 帧轴  t = 1..T
 
 $$
 \begin{aligned}
-& h = E(x), \qquad h_t = G(h), \qquad z_i = \mathrm{FVQ}_{i}(h), \;\; i \in \{p, c, d\} \\
-& \hat{x} = D\left( \mathrm{CLN}\left( z_p + z_c + z_d;\; h_t \right) \right)
+& h = E(x), \qquad h_t = G(h), \qquad z_i = \mathrm{FVQ}_{i}(h), \hspace{5mu}\hspace{5mu} i \in \lbrace p, c, d\rbrace \\
+& \hat{x} = D\left( \mathrm{CLN}\left( z_p + z_c + z_d;\hspace{5mu} h_t \right) \right)
 \end{aligned} \qquad (22)
 $$
 
-**符号**：$x$：输入波形（16 kHz）；$E$：speech encoder（卷积块，下采样率 200 → 80 fps 的帧级 latent $h$）；$G$：timbre extractor（Transformer encoder），$h_t$ 为整句级全局音色向量；$\mathrm{FVQ}_i$：prosody（$p$）/ content（$c$）/ acoustic detail（$d$）三个子流各自的因子化量化器——量化前先把表征投影到 8 维瓶颈空间再查码本、量化后投回原维（information bottleneck：压缩每个码的携带量，挤掉他流信息），量化器数 $N_{q_p} = 1$、$N_{q_c} = 2$、$N_{q_d} = 3$，码本大小均 1024；$\mathrm{CLN}(\cdot; h_t)$：conditional layer normalization——三个逐帧子流先求和，再以 $h_t$ 为条件注入音色（原文：「We first add the representation of prosody, content, and acoustic details together and then fuse the timbre information by conditional layer normalization」）；$D$：speech decoder（镜像 encoder，参数量更大）。
+**符号**： $x$：输入波形（16 kHz）； $E$：speech encoder（卷积块，下采样率 200 → 80 fps 的帧级 latent $h$）； $G$：timbre extractor（Transformer encoder）， $h_t$ 为整句级全局音色向量； $\mathrm{FVQ}_i$：prosody（ $p$）/ content（ $c$）/ acoustic detail（ $d$）三个子流各自的因子化量化器——量化前先把表征投影到 8 维瓶颈空间再查码本、量化后投回原维（information bottleneck：压缩每个码的携带量，挤掉他流信息），量化器数 $N_{q_p} = 1$、 $N_{q_c} = 2$、 $N_{q_d} = 3$，码本大小均 1024； $\mathrm{CLN}(\cdot; h_t)$：conditional layer normalization——三个逐帧子流先求和，再以 $h_t$ 为条件注入音色（原文：「We first add the representation of prosody, content, and acoustic details together and then fuse the timbre information by conditional layer normalization」）； $D$：speech decoder（镜像 encoder，参数量更大）。
 
-子流「各自纯净」不是分解自动给的，原文的解耦工程有三件。(i) **逐流监督**：$z_p$ 回归逐帧归一化 F0（z-score）；$z_c$ 逐帧音素分类（标签由对齐工具产出）；$h_t$ 说话人分类。(ii) **GRL 交叉清洗**（gradient reversal layer + 对抗分类器）：prosody 流上 phoneme-GRL 洗内容、content 流上 F0-GRL 洗韵律、detail 流上两者皆施、$z_p + z_c + z_d$ 之和上 speaker-GRL 洗音色——每个子流被显式惩罚「夹带他流信息」。(iii) **detail dropout**：训练时以概率 $p$ 随机置零 $z_d$——detail 流无监督、最容易偷渡内容与韵律，随机丢弃强迫解码器只靠 $z_p + z_c + h_t$ 也能（低保真）重建，$z_d$ 的角色被压回「细节补充」。总损失为 codec 常套件（multi-scale mel 重建、MPD + multi-band multi-scale STFT 判别器对抗、feature matching、codebook / commitment）与上述监督、GRL 各项的加权和。生成侧与分解镜像：factorized diffusion 对 duration / prosody / content / detail 各配一个 diffusion model 顺序生成，timbre 以 prompt 的 $h_t$ 作条件注入——克隆 = 换 timbre 条件、保 content 流；可控性走到极端形态——内容、韵律、音色、声学细节各有独立旋钮；代价是四条生成链的复合复杂度。
+子流「各自纯净」不是分解自动给的，原文的解耦工程有三件。(i) **逐流监督**： $z_p$ 回归逐帧归一化 F0（z-score）； $z_c$ 逐帧音素分类（标签由对齐工具产出）； $h_t$ 说话人分类。(ii) **GRL 交叉清洗**（gradient reversal layer + 对抗分类器）：prosody 流上 phoneme-GRL 洗内容、content 流上 F0-GRL 洗韵律、detail 流上两者皆施、 $z_p + z_c + z_d$ 之和上 speaker-GRL 洗音色——每个子流被显式惩罚「夹带他流信息」。(iii) **detail dropout**：训练时以概率 $p$ 随机置零 $z_d$——detail 流无监督、最容易偷渡内容与韵律，随机丢弃强迫解码器只靠 $z_p + z_c + h_t$ 也能（低保真）重建， $z_d$ 的角色被压回「细节补充」。总损失为 codec 常套件（multi-scale mel 重建、MPD + multi-band multi-scale STFT 判别器对抗、feature matching、codebook / commitment）与上述监督、GRL 各项的加权和。生成侧与分解镜像：factorized diffusion 对 duration / prosody / content / detail 各配一个 diffusion model 顺序生成，timbre 以 prompt 的 $h_t$ 作条件注入——克隆 = 换 timbre 条件、保 content 流；可控性走到极端形态——内容、韵律、音色、声学细节各有独立旋钮；代价是四条生成链的复合复杂度。
 
 **MaskGCT**（[Wang et al., 2024](../references.md)，arXiv:2409.00750，[A]——官方实现在 open-mmlab/Amphion）：声学 codec token 上的 mask-predict NAR（7.7 §7 的解码范式搬进语音：全部位点并行出价、按置信度逐轮兑现），两级结构：文本 → 语义 token → 声学 token。与 VALL-E 的对照直接：同样建 codec token，把「AR 第一层 + NAR 其余层」换成 mask-predict 全并行——式 (16) 的 $T$ 步串行税再降一档；代价是伪似然族的老问题（7.7 §7：迭代伪似然乘积不等于联合似然）。
 
@@ -333,7 +333,7 @@ $$
 | 串行步数（每秒音频，教学账） | 各模块全并行；vocoder 帧级可流式 | AR $T$ 步 + 7 趟层间（75 fps 档 → 75+7；CV2 25 Hz → 25 步） | ODE $N$ 步 × 全句并行 |
 | 流式 | vocoder 天然帧级流式 | chunk-aware causal FM（式 (18)，CV2 单模型双流式） | 整句 ODE，流式需切块改造 |
 | 可控性 | 逐旋钮可人工覆盖（duration/pitch/energy） | prompt 工程 + 采样器补丁（VALL-E 2） | mask 几何 + 参考段；NS3 子流旋钮（式 (22)） |
-| 典型失败模式 | 误差沿模块链累积、拼接感 | 重复坍缩/漏字（repetition aware sampling 的对象） | 长度外生错配（$T$ 给错全盘偏） |
+| 典型失败模式 | 误差沿模块链累积、拼接感 | 重复坍缩/漏字（repetition aware sampling 的对象） | 长度外生错配（ $T$ 给错全盘偏） |
 | 本章证据形态 | HiFi-GAN/VITS [A]，FastSpeech2 [B] | VALL-E 系 [B]，CosyVoice 系 [A] | VoiceBox/E2/NS3 [B]，F5-TTS [A] |
 
 读法两笔。其一，「音色克隆」列是同一需求的三种机制答案——模块嵌入、上下文条件、掩码条件——共同点是都不微调权重；这一格也是三条路线互相借件最多的地方（CosyVoice 2 把 speaker embedding 拆掉改走 prompt，正是 LM 列方案向 FM 解码器侧的渗透）。其二，「对齐」行是本章主线：显式监督（级联）→ 模型内隐式学（LM）→ 写进输入构造（infilling）——对齐这个潜变量的处理方向是逐层外包给数据与构造。音质数字的横向对比刻意缺席：各家的 MOS / 偏好评估口径互不兼容，且多家无官方代码可复现（[B] 行），本书只引各家摘要级主张。
@@ -342,12 +342,12 @@ $$
 
 | 对象 | 公式 / 结论 | 位置 |
 | --- | --- | --- |
-| TTS 形式化 | $P(x \mid y)$，$T \gg U$；一对多 → 潜变量 $z$ 吸收说话方式 | 式 (1)(2) |
-| 级联管线 | length regulator 式 (3)（$T = \sum d_u$）；variance adaptor 式 (4)（duration/pitch/energy） | §2 |
-| HiFi-GAN MPD | 式 (5)：1D 按质数周期 $p \in \{2,3,5,7,11\}$ 折成 2D，周期性变竖直条纹 | §3 |
+| TTS 形式化 | $P(x \mid y)$， $T \gg U$；一对多 → 潜变量 $z$ 吸收说话方式 | 式 (1)(2) |
+| 级联管线 | length regulator 式 (3)（ $T = \sum d_u$）；variance adaptor 式 (4)（duration/pitch/energy） | §2 |
+| HiFi-GAN MPD | 式 (5)：1D 按质数周期 $p \in \lbrace2,3,5,7,11\rbrace$ 折成 2D，周期性变竖直条纹 | §3 |
 | feature matching | 式 (6)：判别器中间激活的 L1 匹配——对抗训练的自我稳定回路 | §3 |
 | HiFi-GAN 总目标 | 式 (8)：对抗 + FM + mel 回归三件 | §3 |
-| BigVGAN snake | 式 (9)：$x + \sin^2(\alpha x)/\alpha$；式 (10)：$f' = 1 + \sin(2\alpha x) \in [0,2]$；配低通抗混叠（消融：去滤波器 OOD SMOS 4.20→4.15，统计显著） | §4 |
+| BigVGAN snake | 式 (9)： $x + \sin^2(\alpha x)/\alpha$；式 (10)： $f' = 1 + \sin(2\alpha x) \in [0,2]$；配低通抗混叠（消融：去滤波器 OOD SMOS 4.20→4.15，统计显著） | §4 |
 | VITS | 式 (11) 条件 ELBO；式 (12) flow 增强先验（训练用 $f^{-1}$、采样用 $f$）；式 (13) MAS 硬对齐（Viterbi 式 DP）；式 (14) 五项总目标 | §5 |
 | VALL-E | 式 (15) 按层链式；式 (16) AR 第一层；式 (17) NAR 第 2–8 层层内并行；3s prompt = 前缀条件化 | §6 |
 | VALL-E 2 [B] | repetition aware sampling（重复坍缩补丁）+ grouped code modeling（步长按组放大） | §6 |
@@ -358,11 +358,11 @@ $$
 
 ## 练习
 
-1.（推导）VALL-E 两阶段的依赖结构。(a) 把 $8T$ 个码按层主序摊平（先第 1 层全部 $T$ 帧、再第 2 层……），写出纯 AR 分解（每个码条件于摊平序下的全部前驱），给出其严格串行步数；(b) 证明式 (15)–(17) 的联合分布与 (a) 的摊平 AR 相比，恰好只丢掉了层内跨帧依赖 $\{P(c_{t,j} \mid c_{<t,j}, \cdot)\}_{j \ge 2}$，其余条件集相同（逐层核对链式展开的因子）；(c) 帧率 75 fps、$n_q = 8$、5 秒音频：摊平 AR 与两阶段的串行步数各是多少（KV cache 账按 2.4 口径，NAR 趟内视为一次并行前向），并指出两阶段账里被忽略的一项工程开销。
+1.（推导）VALL-E 两阶段的依赖结构。(a) 把 $8T$ 个码按层主序摊平（先第 1 层全部 $T$ 帧、再第 2 层……），写出纯 AR 分解（每个码条件于摊平序下的全部前驱），给出其严格串行步数；(b) 证明式 (15)–(17) 的联合分布与 (a) 的摊平 AR 相比，恰好只丢掉了层内跨帧依赖 $\lbrace P(c_{t,j} \mid c_{<t,j}, \cdot)\rbrace_{j \ge 2}$，其余条件集相同（逐层核对链式展开的因子）；(c) 帧率 75 fps、 $n_q = 8$、5 秒音频：摊平 AR 与两阶段的串行步数各是多少（KV cache 账按 2.4 口径，NAR 趟内视为一次并行前向），并指出两阶段账里被忽略的一项工程开销。
 
-2.（推导）snake 激活。(a) 由式 (9) 推出式 (10) 并给出 $f'_\alpha$ 的值域；(b) 用 $\sin^2\theta = (1 - \cos 2\theta)/2$ 说明 $\sin^2$ 作用于 $\cos(\omega n)$ 产生倍频分量，进而给出 24 kHz 采样下 15 kHz 谐波的混叠频率（折叠公式：$f \mapsto |f - k f_s|$ 取落入 $[0, f_s/2]$ 者）；(c) $\alpha \to \infty$ 时扰动幅值 $1/\alpha \to 0$ 而振荡频率 $\to \infty$——说明此时 snake 退化成什么函数，并论证训练为何不会把 $\alpha$ 推向无穷（提示：高频周期分量的混叠与 §4 低通的对抗关系）。
+2.（推导）snake 激活。(a) 由式 (9) 推出式 (10) 并给出 $f'_\alpha$ 的值域；(b) 用 $\sin^2\theta = (1 - \cos 2\theta)/2$ 说明 $\sin^2$ 作用于 $\cos(\omega n)$ 产生倍频分量，进而给出 24 kHz 采样下 15 kHz 谐波的混叠频率（折叠公式： $f \mapsto |f - k f_s|$ 取落入 $[0, f_s/2]$ 者）；(c) $\alpha \to \infty$ 时扰动幅值 $1/\alpha \to 0$ 而振荡频率 $\to \infty$——说明此时 snake 退化成什么函数，并论证训练为何不会把 $\alpha$ 推向无穷（提示：高频周期分量的混叠与 §4 低通的对抗关系）。
 
-3.（计算）MPD 折叠账。取 $T = 24000$（1 秒 @ 24 kHz）：(a) 按式 (5) 对 $p \in \{2, 3, 5, 7, 11\}$ 分别给出 $X_p$ 的 shape 与尾部需补齐的样本数；(b) 某浊音基频 120 Hz，其周期合多少样本？该周期结构能被哪些 $p$ 的折叠「整除对齐」地捕获、哪些不能（用整除关系论证）？(c) 若把质数周期换成合数周期 $\{2, 4, 8\}$，论证它比 $\{2, 3, 5\}$ 少覆盖哪一族周期结构（举出一个具体基频例子）。
+3.（计算）MPD 折叠账。取 $T = 24000$（1 秒 @ 24 kHz）：(a) 按式 (5) 对 $p \in \lbrace2, 3, 5, 7, 11\rbrace$ 分别给出 $X_p$ 的 shape 与尾部需补齐的样本数；(b) 某浊音基频 120 Hz，其周期合多少样本？该周期结构能被哪些 $p$ 的折叠「整除对齐」地捕获、哪些不能（用整除关系论证）？(c) 若把质数周期换成合数周期 $\lbrace2, 4, 8\rbrace$，论证它比 $\lbrace2, 3, 5\rbrace$ 少覆盖哪一族周期结构（举出一个具体基频例子）。
 
 4.（分析）三路线选型。给定三个产品需求——(i) 有声书批量合成（固定播音员、超长文本、要求逐句时长可预估）；(ii) 实时语音助手的零样本音色定制（用户录 3 秒即用）；(iii) 播客后期编辑（改几个字不重录整句）——从 §10 对照表的维度逐项论证各应选哪条路线（含具体系统举例），并指出每种选择放弃了哪一格。
 

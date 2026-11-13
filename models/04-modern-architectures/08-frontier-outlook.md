@@ -9,26 +9,26 @@ LLaDA 把掩码扩散（masked diffusion）推到 8B 参数、从头训练、并
 **Forward：逐 token 独立腐蚀。** 词表外加一个吸收态（absorbing state）[M]；调度 $\alpha_t$ 从 $\alpha_0 = 1$ 单调降到 $\alpha_1 = 0$。每个位置独立地以概率 $1 - \alpha_t$ 被替换为 [M]：
 
 $$
-q\left(x_t^{i} \mid x_0^{i}\right) = \mathrm{Cat}\big(\alpha_t\, x_0^{i} + (1-\alpha_t)\, e_M\big) \qquad (1)
+q\left(x_t^{i} \mid x_0^{i}\right) = \mathrm{Cat}\big(\alpha_t\thinspace x_0^{i} + (1-\alpha_t)\thinspace e_M\big) \qquad (1)
 $$
 
-**符号**：$x_0^{i}$：第 $i$ 个位置的干净 token（one-hot）；$e_M$：[M] 的 one-hot；$\mathrm{Cat}$：one-hot 凸组合即分类分布。吸收态的含义：一旦变 [M] 便永远停留，$t = 1$ 时全序列抹除。全序列联合分布为逐位置乘积。
+**符号**： $x_0^{i}$：第 $i$ 个位置的干净 token（one-hot）； $e_M$：[M] 的 one-hot； $\mathrm{Cat}$：one-hot 凸组合即分类分布。吸收态的含义：一旦变 [M] 便永远停留， $t = 1$ 时全序列抹除。全序列联合分布为逐位置乘积。
 
 **Reverse：参数化与 carry-over。** 条件于干净 token 的后验，对 masked 位置是两次调度的凸组合；未掩码位置原样停留（carry-over）：
 
 $$
-q\left(x_s^{i} \mid x_t^{i} = M,\ x_0^{i}\right) = \mathrm{Cat}\Big(\frac{\alpha_s - \alpha_t}{1-\alpha_t}\, x_0^{i} + \frac{1-\alpha_s}{1-\alpha_t}\, e_M\Big), \qquad s < t \qquad (2)
+q\left(x_s^{i} \mid x_t^{i} = M,\ x_0^{i}\right) = \mathrm{Cat}\Big(\frac{\alpha_s - \alpha_t}{1-\alpha_t}\thinspace x_0^{i} + \frac{1-\alpha_s}{1-\alpha_t}\thinspace e_M\Big), \qquad s < t \qquad (2)
 $$
 
-**符号**：首项系数为「揭开」概率，第二项为「保持掩码」概率；$s = 0$ 时揭开概率为 1，$s \to t$ 时退化为保持掩码。reverse 的参数化是一台双向 Transformer $f_\theta(x_t)$：对全部 [M] 位置联合预测干净 token 分布 $\tilde{p}_\theta(x_0^{i} \mid x_t)$，代入式 (2) 替换未知的 $x_0^{i}$。注意与 3.1 的分工：这里用双向表征做**生成**，靠的是迭代细化而非因果分解。
+**符号**：首项系数为「揭开」概率，第二项为「保持掩码」概率； $s = 0$ 时揭开概率为 1， $s \to t$ 时退化为保持掩码。reverse 的参数化是一台双向 Transformer $f_\theta(x_t)$：对全部 [M] 位置联合预测干净 token 分布 $\tilde{p}_\theta(x_0^{i} \mid x_t)$，代入式 (2) 替换未知的 $x_0^{i}$。注意与 3.1 的分工：这里用双向表征做**生成**，靠的是迭代细化而非因果分解。
 
 **ELBO → 逐步 CE。** 离散扩散的 ELBO 逐步写出后，每一步的贡献恰好落在该步揭开位置的 CE 上，权重由调度给出：线性调度 $\alpha_t = 1 - t$ 下整串变分塌缩为
 
 $$
-\mathcal{L}(\theta) = \mathbb{E}_{t \sim U(0,1)}\; \frac{1}{t} \sum_{i:\ x_t^{i} = M} \mathrm{CE}\big(x_0^{i},\ \tilde{p}_\theta(\cdot \mid x_t)\big) \qquad (3)
+\mathcal{L}(\theta) = \mathbb{E}_{t \sim U(0,1)}\hspace{5mu} \frac{1}{t} \sum_{i:\ x_t^{i} = M} \mathrm{CE}\big(x_0^{i},\ \tilde{p}_\theta(\cdot \mid x_t)\big) \qquad (3)
 $$
 
-**符号**：$t$：掩码率（线性调度下 $1 - \alpha_t = t$）；求和只覆盖被掩位置；$1/t$ 为调度权重（推导为练习 1）。训练循环就三行：均匀采样掩码率 $t$、按 $t$ 独立掩码、只对被掩位置算 CE 并除以 $t$。与 3.1 的 MLM 对照：BERT 把掩码率固定在 15%，式 (3) 把掩码率本身变成被积变量——diffusion LLM 因此与 encoder 家族共享大部分训练基础设施。SEDD（[Lou et al., 2023](../references.md)，arXiv:2310.16834，[A]）走更一般的连续时间马尔可夫链参数化：网络直接学具体分数（concrete score）$s_\theta(x)_y \approx q_t(y)/q_t(x)$（扰动后边际的比值），用分数熵（score entropy，Bregman 散度族的 proper scoring rule，极小点唯一落在真实比值）训练，ELBO 由逐步比值的积分给出；吸收态只是其 rate matrix 的一个特例。
+**符号**： $t$：掩码率（线性调度下 $1 - \alpha_t = t$）；求和只覆盖被掩位置； $1/t$ 为调度权重（推导为练习 1）。训练循环就三行：均匀采样掩码率 $t$、按 $t$ 独立掩码、只对被掩位置算 CE 并除以 $t$。与 3.1 的 MLM 对照：BERT 把掩码率固定在 15%，式 (3) 把掩码率本身变成被积变量——diffusion LLM 因此与 encoder 家族共享大部分训练基础设施。SEDD（[Lou et al., 2023](../references.md)，arXiv:2310.16834，[A]）走更一般的连续时间马尔可夫链参数化：网络直接学具体分数（concrete score） $s_\theta(x)_y \approx q_t(y)/q_t(x)$（扰动后边际的比值），用分数熵（score entropy，Bregman 散度族的 proper scoring rule，极小点唯一落在真实比值）训练，ELBO 由逐步比值的积分给出；吸收态只是其 rate matrix 的一个特例。
 
 ```
 前向（式 (1)），t: 0 → 1，逐位置独立腐蚀：
@@ -46,10 +46,10 @@ t=1.0   [M] [M] [M] [M] [M] [M] [M] [M] [M]
 | 项 | AR（1.1 / 2.4） | masked diffusion |
 | --- | --- | --- |
 | 似然 | $p(x) = \prod_i p(x_i \mid x_{<i})$，NLL 精确可算 | 式 (3) 是 ELBO 上界，perplexity 只能报 bound |
-| decode | $T$ 步串行前向 + KV cache 逐步复用（2.4 账） | $N$ 步（$N \le T$ 可调）全序列双向前向，**无 KV cache**：步与步之间全部隐状态被双向耦合改写，上一步的 K/V 对下一步无效，每步成本 ≈ 一次全长 prefill |
-| 并行度 | 每前向产 1 token（4.5 的 MTP / speculative 放宽到不足 2） | 每前向可提交任意多位置；提交子集越小越接近精确联合，$N = T$ 时退化为逐位置采样 |
+| decode | $T$ 步串行前向 + KV cache 逐步复用（2.4 账） | $N$ 步（ $N \le T$ 可调）全序列双向前向，**无 KV cache**：步与步之间全部隐状态被双向耦合改写，上一步的 K/V 对下一步无效，每步成本 ≈ 一次全长 prefill |
+| 并行度 | 每前向产 1 token（4.5 的 MTP / speculative 放宽到不足 2） | 每前向可提交任意多位置；提交子集越小越接近精确联合， $N = T$ 时退化为逐位置采样 |
 
-质量差距的证据现状：LLaDA 论文报告 8B 量级与 LLaMA-3-8B 级 AR 基线在标准基准上互有胜负、整体接近，并在 reversal 类任务上给出明显优势（论文 claim）；SEDD 在 GPT-2 量级对照中报告吸收态变体的 zero-shot perplexity 优于同规模 GPT-2（论文 claim）。边界同样明确：10B+ 量级、与前沿 AR 同数据预算的扩散对照尚无公开证据；$N$ 步全序列前向、无 cache 复用的 serving 账（练习 2 给出 attention 项的 $2N$ 倍账）未在工业负载下验证。**成熟度：研究原型 → 早期工业验证（LLaDA 系）**。
+质量差距的证据现状：LLaDA 论文报告 8B 量级与 LLaMA-3-8B 级 AR 基线在标准基准上互有胜负、整体接近，并在 reversal 类任务上给出明显优势（论文 claim）；SEDD 在 GPT-2 量级对照中报告吸收态变体的 zero-shot perplexity 优于同规模 GPT-2（论文 claim）。边界同样明确：10B+ 量级、与前沿 AR 同数据预算的扩散对照尚无公开证据； $N$ 步全序列前向、无 cache 复用的 serving 账（练习 2 给出 attention 项的 $2N$ 倍账）未在工业负载下验证。**成熟度：研究原型 → 早期工业验证（LLaDA 系）**。
 
 ## 2. 深度稀疏：MoD 与 early-exit
 
@@ -59,27 +59,27 @@ $$
 x_i^{l+1} = \begin{cases} x_i^{l} + f^{l}\big(\tilde{x}^{l}\big)_i, & i \in \mathrm{TopK}\big(r^{l}, k\big) \\ x_i^{l}, & \text{otherwise} \end{cases} \qquad (4)
 $$
 
-**符号**：$f^{l}$：第 $l$ 个 block（attention + FFN）；$k$：静态容量（论文用序列长的固定分数，如 1/8）；$\tilde{x}^{l}$：选中 token 的子序列。容量写死 ⇒ 负载均衡由构造保证，无 aux loss——与 4.5 的 expert choice 同族（选择方在 block 侧而非 token 侧）。论文报告 iso-FLOPs 训练曲线下移，部分配置下同质量每前向 FLOPs 省至一半量级（论文 claim）。代价两笔：router 的 top-$k$ 依赖整条序列，AR 推理需要辅助预测头来近似；选中 token 的 attention 只在选中集合内闭合，逐 token 的深度不再均匀。**成熟度：研究原型**（无官方代码）。early-exit 是同族更激进的版本：判定器不问「过不过这一层」而问「是否就此读出」，可视为式 (4) 的容量随 token 自适应的极限形态；两者共同的工程难点是逐 token 可变深度与 batch 规整执行的冲突——序列内每个位置的层数不同，kernel 与流水线的处理归 inference 与 cluster 维度。
+**符号**： $f^{l}$：第 $l$ 个 block（attention + FFN）； $k$：静态容量（论文用序列长的固定分数，如 1/8）； $\tilde{x}^{l}$：选中 token 的子序列。容量写死 ⇒ 负载均衡由构造保证，无 aux loss——与 4.5 的 expert choice 同族（选择方在 block 侧而非 token 侧）。论文报告 iso-FLOPs 训练曲线下移，部分配置下同质量每前向 FLOPs 省至一半量级（论文 claim）。代价两笔：router 的 top-$k$ 依赖整条序列，AR 推理需要辅助预测头来近似；选中 token 的 attention 只在选中集合内闭合，逐 token 的深度不再均匀。**成熟度：研究原型**（无官方代码）。early-exit 是同族更激进的版本：判定器不问「过不过这一层」而问「是否就此读出」，可视为式 (4) 的容量随 token 自适应的极限形态；两者共同的工程难点是逐 token 可变深度与 batch 规整执行的冲突——序列内每个位置的层数不同，kernel 与流水线的处理归 inference 与 cluster 维度。
 
 ## 3. Differential Attention：两张 softmax 图相减
 
 differential attention（[Ye et al., 2024](../references.md)，arXiv:2410.05258，[A]；实现代码在 microsoft/unilm 的 Diff-Transformer 目录）瞄准的是 4.6 熵稀释与 4.2 attention sink 的共同病灶：softmax 归一化强迫注意力质量总和恒为 1，无关上下文上必然沉积共模质量。处方是把每个 head 的 Q、K 对半切分，各算一张 softmax 图再相减：
 
 $$
-\mathrm{DiffAttn}(X) = \Big(\mathrm{softmax}\big(\tfrac{Q_1 K_1^{\top}}{\sqrt{d_h}}\big) - \lambda\, \mathrm{softmax}\big(\tfrac{Q_2 K_2^{\top}}{\sqrt{d_h}}\big)\Big)\, V \qquad (5)
+\mathrm{DiffAttn}(X) = \Big(\mathrm{softmax}\big(\tfrac{Q_1 K_1^{\top}}{\sqrt{d_h}}\big) - \lambda\thinspace \mathrm{softmax}\big(\tfrac{Q_2 K_2^{\top}}{\sqrt{d_h}}\big)\Big)\thinspace V \qquad (5)
 $$
 
-**符号**：$Q_1, K_1$ 与 $Q_2, K_2$：逐头对半切分（各 $d_h / 2$ 维，两张半维图合计开销与一张全维图持平，等 FLOPs 等参数）；$\lambda$：逐头可学标量（论文用指数差参数化与分层初始化）；$V$：两半共享。机制的读法：第一张图学「信号 + 噪声」、第二张图专学共模噪声，相减消噪——与差分放大器的共模抑制同构。论文在 $10^{9}$ 参数量级对照报告 iso-算力下 LM loss 更低、长上下文检索与 ICL 稳定性改善（论文 claim）。与 4.2 / 4.6 的关系是结构级的：sink 与熵稀释在那里被诊断、在这里被造进了算子。**成熟度：研究原型**。
+**符号**： $Q_1, K_1$ 与 $Q_2, K_2$：逐头对半切分（各 $d_h / 2$ 维，两张半维图合计开销与一张全维图持平，等 FLOPs 等参数）； $\lambda$：逐头可学标量（论文用指数差参数化与分层初始化）； $V$：两半共享。机制的读法：第一张图学「信号 + 噪声」、第二张图专学共模噪声，相减消噪——与差分放大器的共模抑制同构。论文在 $10^{9}$ 参数量级对照报告 iso-算力下 LM loss 更低、长上下文检索与 ICL 稳定性改善（论文 claim）。与 4.2 / 4.6 的关系是结构级的：sink 与熵稀释在那里被诊断、在这里被造进了算子。**成熟度：研究原型**。
 
 ## 4. 状态即模型：TTT 与 looped-depth recurrence
 
 TTT（测试时训练，test-time training；[Sun et al., 2024](../references.md)，arXiv:2407.04620，[B]）把 RNN 的隐状态直接换成一个小模型的权重，递推本身就是梯度下降：
 
 $$
-W_i = W_{i-1} - \eta\, \nabla_W\, \mathcal{L}\big(W_{i-1};\ x_i\big), \qquad z_i = W_i x_i \qquad (6)
+W_i = W_{i-1} - \eta\thinspace \nabla_W\thinspace \mathcal{L}\big(W_{i-1};\ x_i\big), \qquad z_i = W_i x_i \qquad (6)
 $$
 
-**符号**：$W_i$：第 $i$ 步的状态（一个小模型的全部权重）；$\eta$：内环学习率；$\mathcal{L}$：自监督重构损失（如 $\lVert W x_i - x_i \rVert^{2}$）；$z_i$：读出。TTT-Linear 的 $W$ 是矩阵，与 4.3 的 DeltaNet「对当前联想做一步在线 GD」严格同族；TTT-MLP 把状态换成两层 MLP，状态容量不再受 4.3 矩阵状态 rank 界的约束（该上界针对线性读出陈述）。训练侧用 mini-batch 内循环恢复并行度，复杂度与 linear attention 同阶；论文对照止于 1.3B 参数量级。**成熟度：研究原型**。
+**符号**： $W_i$：第 $i$ 步的状态（一个小模型的全部权重）； $\eta$：内环学习率； $\mathcal{L}$：自监督重构损失（如 $\lVert W x_i - x_i \rVert^{2}$）； $z_i$：读出。TTT-Linear 的 $W$ 是矩阵，与 4.3 的 DeltaNet「对当前联想做一步在线 GD」严格同族；TTT-MLP 把状态换成两层 MLP，状态容量不再受 4.3 矩阵状态 rank 界的约束（该上界针对线性读出陈述）。训练侧用 mini-batch 内循环恢复并行度，复杂度与 linear attention 同阶；论文对照止于 1.3B 参数量级。**成熟度：研究原型**。
 
 looped-depth recurrence 是相邻坐标上的另一个旋钮：同一 block 的权重沿深度循环调用 $r$ 次，参数不变、有效深度乘 $r$。它与 MoD 对偶——一个沿 token 维稀疏深度、一个沿深度维共享参数——也与 §5 的推理链同构：都是用串行步数换模型规模。本条无锚点论文，仅作设计空间坐标登记。**成熟度：研究原型**。
 
@@ -110,9 +110,9 @@ looped-depth recurrence 是相邻坐标上的另一个旋钮：同一 block 的�
 
 ## 练习
 
-1.（推导）从式 (1)(2) 出发，对线性调度 $\alpha_t = 1 - t$ 推导式 (3)：(a) 写出逐步 ELBO 中 $t \to s$ 一步的贡献，说明权重 $-\alpha_t' / (1 - \alpha_t)$ 的来源；(b) 说明未掩码位置为什么不贡献 loss（carry-over 项恒为零）；(c) 指出 $1/t$ 权重在 $t \to 0$ 时发散，为什么实践中无害（提示：$t$ 小时被掩位置数的期望也小）。
-2.（计算）decode 的 attention FLOPs 对账。设 $L$ 层、head 总维 $d$、生成长度 $T$、diffusion 步数 $N$。(a) 证明 AR decode 全程的 scores + AV 合计约 $2LT^{2}d$（第 $t$ 步 $4td$，逐层）；(b) 证明 masked diffusion 每步（全序列双向、无 cache 复用）为 $4LT^{2}d$、全程 $4NLT^{2}d$，比值为 $2N$；(c) 取 $T = 8192$、$N = 64$ 算出倍数 128×，并定性说明这笔多付的 FLOPs 在什么 batch 与延迟预算下可能被并行提交抵消。
-3.（代码）教学实现 masked diffusion 训练步（教学用，非优化实现）：给定 batch $x_0 \in \{1,\ldots,V\}^{B \times T}$ 与模型 $f_\theta$，(a) 采样 $t \sim U(\epsilon, 1)$ 并按式 (1) 逐位置独立掩码；(b) 前向得 logits $[B, T, V+1]$，按式 (3) 计算加权 CE（只在被掩位置、除 $t$）；(c) 数值断言：被掩位置数的 batch 期望为 $tT$，且掩码索引集合与 loss mask 一致。
+1.（推导）从式 (1)(2) 出发，对线性调度 $\alpha_t = 1 - t$ 推导式 (3)：(a) 写出逐步 ELBO 中 $t \to s$ 一步的贡献，说明权重 $-\alpha_t' / (1 - \alpha_t)$ 的来源；(b) 说明未掩码位置为什么不贡献 loss（carry-over 项恒为零）；(c) 指出 $1/t$ 权重在 $t \to 0$ 时发散，为什么实践中无害（提示： $t$ 小时被掩位置数的期望也小）。
+2.（计算）decode 的 attention FLOPs 对账。设 $L$ 层、head 总维 $d$、生成长度 $T$、diffusion 步数 $N$。(a) 证明 AR decode 全程的 scores + AV 合计约 $2LT^{2}d$（第 $t$ 步 $4td$，逐层）；(b) 证明 masked diffusion 每步（全序列双向、无 cache 复用）为 $4LT^{2}d$、全程 $4NLT^{2}d$，比值为 $2N$；(c) 取 $T = 8192$、 $N = 64$ 算出倍数 128×，并定性说明这笔多付的 FLOPs 在什么 batch 与延迟预算下可能被并行提交抵消。
+3.（代码）教学实现 masked diffusion 训练步（教学用，非优化实现）：给定 batch $x_0 \in \lbrace1,\ldots,V\rbrace^{B \times T}$ 与模型 $f_\theta$，(a) 采样 $t \sim U(\epsilon, 1)$ 并按式 (1) 逐位置独立掩码；(b) 前向得 logits $[B, T, V+1]$，按式 (3) 计算加权 CE（只在被掩位置、除 $t$）；(c) 数值断言：被掩位置数的 batch 期望为 $tT$，且掩码索引集合与 loss mask 一致。
 
 ## 参考
 

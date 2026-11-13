@@ -1,19 +1,19 @@
 # 3.1 Objective 与 Mask 的统一形式化（A Unified Formalization of Objectives and Masks）
 
-> 本章把 1.1 留下的 $(x', M, \ell)$ 接口补全为完整的 objective 设计空间：objective = 腐蚀方案 × attention mask × loss mask，五种目标（CLM / MLM / prefix-LM 与 GLM blank infilling / T5 span corruption / UL2）逐个落成公式与 mask 实例，「能否自回归生成」收进一条可判定条件，perplexity 跨 objective 的比较论证为无意义；三个官方 masking 实现对照走读 | 前置：1.1（$(x', M, \ell)$ 三元组、CE 与 PPL）、2.4（mask 加性形式、可生成判定式） | 锚点：google-research/bert（`create_pretraining_data.py`）[A]、THUDM/GLM [A]、T5 官方 repo google-research/text-to-text-transfer-transformer [A]、ModernBERT [A]；UL2（无官方开源实现，公式按论文拆）[B]
+> 本章把 1.1 留下的 $(x', M, \ell)$ 接口补全为完整的 objective 设计空间：objective = 腐蚀方案 × attention mask × loss mask，五种目标（CLM / MLM / prefix-LM 与 GLM blank infilling / T5 span corruption / UL2）逐个落成公式与 mask 实例，「能否自回归生成」收进一条可判定条件，perplexity 跨 objective 的比较论证为无意义；三个官方 masking 实现对照走读 | 前置：1.1（ $(x', M, \ell)$ 三元组、CE 与 PPL）、2.4（mask 加性形式、可生成判定式） | 锚点：google-research/bert（`create_pretraining_data.py`）[A]、THUDM/GLM [A]、T5 官方 repo google-research/text-to-text-transfer-transformer [A]、ModernBERT [A]；UL2（无官方开源实现，公式按论文拆）[B]
 
 ## 1. 统一框架：腐蚀 × mask × loss mask
 
 1.1 式 (8) 把训练目标写成 $L(\theta) = - \sum_t \ell_t \log q_\theta(x_t | x'; M)$ ，但把随机性的来源留在了记号之外： $x'$ 从哪来、 $\ell$ 由谁定。补上这一环，objective 的设计空间就完整参数化了——一个 objective 由三个对象完全确定：
 
 - **腐蚀方案（corruption scheme）** $C$ ：随机映射 $x' = C(x; \omega)$ ， $\omega$ 为全部随机决策（选中哪些位置、替换成什么、如何重排拼接）；
-- **attention mask** $M(\omega) \in \{0, -\infty\}^{T \times T}$ ：可见性（2.4 §1 的加性语义），允许依赖同一次抽样；
-- **loss mask** $\ell(\omega) \in \{0, 1\}^{T}$ ：哪些位置计入损失，由 $C$ 的抽样结果决定。
+- **attention mask** $M(\omega) \in \lbrace0, -\infty\rbrace^{T \times T}$ ：可见性（2.4 §1 的加性语义），允许依赖同一次抽样；
+- **loss mask** $\ell(\omega) \in \lbrace0, 1\rbrace^{T}$ ：哪些位置计入损失，由 $C$ 的抽样结果决定。
 
 训练目标是对数据与腐蚀随机性的双期望：
 
 $$
-L(\theta) = \mathbb{E}_{x \sim p_{\mathrm{data}},\; \omega \sim C}\left[ - \sum_{t} \ell_t(\omega) \log q_\theta\big(x_t \mid x'(\omega);\, M(\omega)\big) \right] \qquad (1)
+L(\theta) = \mathbb{E}_{x \sim p_{\mathrm{data}},\hspace{5mu} \omega \sim C}\left[ - \sum_{t} \ell_t(\omega) \log q_\theta\big(x_t \mid x'(\omega);\thinspace M(\omega)\big) \right] \qquad (1)
 $$
 
 **符号**： $x \sim p_{\mathrm{data}}$ ：原始语料序列； $\omega$ ：腐蚀方案的内部随机性； $x'(\omega)$ ：本次抽样的实际输入； $\ell_t(\omega)$ ：loss mask，1 = 该位置计入损失； $M(\omega)$ ：attention mask；求和遍历输入序列位置。
@@ -61,7 +61,7 @@ GPT 家族（[Radford et al., 2019](../references.md)，[W]）的全部性质已
 
 ### 3.1 定义
 
-BERT 的 masked LM（[Devlin et al., 2018](../references.md)，arXiv:1810.04805，[A]）：逐序列、逐位置以概率 $r$ = 0.15 独立选中，得选中集 $S$ （ $\mathbb{E}|S| = 0.15\,T$ ）；选中位置经三支腐蚀通道，未选中位原样进入 $x'$ ：
+BERT 的 masked LM（[Devlin et al., 2018](../references.md)，arXiv:1810.04805，[A]）：逐序列、逐位置以概率 $r$ = 0.15 独立选中，得选中集 $S$ （ $\mathbb{E}|S| = 0.15\thinspace T$ ）；选中位置经三支腐蚀通道，未选中位原样进入 $x'$ ：
 
 $$
 x'_t = \begin{cases} \text{[MASK]}, & \text{w.p. } 0.8 \\ u, \quad u \sim \mathrm{Unif}(V), & \text{w.p. } 0.1 \\ x_t, & \text{w.p. } 0.1 \end{cases} \qquad t \in S \qquad (3)
@@ -80,7 +80,7 @@ $$
 式 (3) 的三支通道把期望损失拆成三个不同估计问题的混合：
 
 $$
-\mathbb{E}\, L_{\mathrm{MLM}} = 0.8\, \bar{L}_{\mathrm{mask}} + 0.1\, \bar{L}_{\mathrm{rand}} + 0.1\, \bar{L}_{\mathrm{keep}} \qquad (5)
+\mathbb{E}\thinspace L_{\mathrm{MLM}} = 0.8\thinspace \bar{L}_{\mathrm{mask}} + 0.1\thinspace \bar{L}_{\mathrm{rand}} + 0.1\thinspace \bar{L}_{\mathrm{keep}} \qquad (5)
 $$
 
 **符号**： $\bar{L}_b$ ：分支 $b$ 下选中位置的期望 NLL（对数据与分支内随机性取期望）。
@@ -91,17 +91,17 @@ $$
 - **rand 支**： $u$ 与 $x_t$ 独立，同样只能靠上下文，地板同为 $H(x_t \mid \mathrm{ctx})$ ；
 - **keep 支**： $x'_t = x_t$ 即答案本身，地板 0。
 
-混合地板 = $0.9\, H(x_t \mid \mathrm{ctx})$ ——这是**分支可知口径的下界**： [MASK] 支的分支身份可从输入确知，而 keep / rand 两支从显示 token 上不可区分（§3.3 的后验分析），真实地板略高于 $0.9\, H$ ；作为下界它已足够支撑后面的比较论证。结论：一个已达最优的模型，其 MLM 损失读数天然比「纯 mask」目标低约 10%。这个偏移与模型质量无关，是比较任何 MLM 系损失数字之前要先剥掉的常数（§8 回收）。
+混合地板 = $0.9\thinspace H(x_t \mid \mathrm{ctx})$ ——这是**分支可知口径的下界**： [MASK] 支的分支身份可从输入确知，而 keep / rand 两支从显示 token 上不可区分（§3.3 的后验分析），真实地板略高于 $0.9\thinspace H$ ；作为下界它已足够支撑后面的比较论证。结论：一个已达最优的模型，其 MLM 损失读数天然比「纯 mask」目标低约 10%。这个偏移与模型质量无关，是比较任何 MLM 系损失数字之前要先剥掉的常数（§8 回收）。
 
 ### 3.3 80/10/10 的分布 mismatch：定量形式
 
-为什么不是 100% [MASK]，论文给出的理由是 [MASK] 在下游 fine-tuning 中从不出现（[Devlin et al., 2018](../references.md)，[A]）。写成数：预训练输入流中 [MASK] 的占位率是 $r \times 0.8 = 12\%$ ，下游是 0——输入分布漂移。80/10/10 用两支「真实 token」通道把查询接口铺回真实 token 上，代价同样可以精确算出。在选中且显示真实 token $v$ 的位置（占全部位置的 $r \times 0.2 = 3\%$ ），最优预测给 $v$ 本身放置的概率质量为
+为什么不是 100% [MASK]，论文给出的理由是 [MASK] 在下游 fine-tuning 中从不出现（[Devlin et al., 2018](../references.md)，[A]）。写成数：预训练输入流中 [MASK] 的占位率是 $`r \times 0.8 = 12\%`$ ，下游是 0——输入分布漂移。80/10/10 用两支「真实 token」通道把查询接口铺回真实 token 上，代价同样可以精确算出。在选中且显示真实 token $v$ 的位置（占全部位置的 $`r \times 0.2 = 3\%`$ ），最优预测给 $v$ 本身放置的概率质量为
 
 $$
-P(y = v \mid x'_t = v,\; t \in S) = \frac{0.1\, p(v) \cdot 1 + 0.1\, V^{-1} p(v)}{0.1\, p(v) + 0.1\, V^{-1}} = \frac{p(v)\, (1 + V^{-1})}{p(v) + V^{-1}} \qquad (6)
+P(y = v \mid x'_t = v,\hspace{5mu} t \in S) = \frac{0.1\thinspace p(v) \cdot 1 + 0.1\thinspace V^{-1} p(v)}{0.1\thinspace p(v) + 0.1\thinspace V^{-1}} = \frac{p(v)\thinspace (1 + V^{-1})}{p(v) + V^{-1}} \qquad (6)
 $$
 
-**推导**：产生「显示 $v$ 」的分支有两条——keep 支要求原 token 就是 $v$ （联合概率 $0.1\, p(v)$ ，此时 $y = v$ 必中）；rand 支以 $1/V$ 采中 $v$ （联合 $0.1 / V$ ，此时目标服从数据分布， $y = v$ 的概率为 $p(v)$ ）。分子是两条支路上 $y = v$ 的联合概率之和，分母是显示 $v$ 的总概率； $p(v)$ 为上下文边际化后的 token 边际频率。
+**推导**：产生「显示 $v$ 」的分支有两条——keep 支要求原 token 就是 $v$ （联合概率 $0.1\thinspace p(v)$ ，此时 $y = v$ 必中）；rand 支以 $1/V$ 采中 $v$ （联合 $0.1 / V$ ，此时目标服从数据分布， $y = v$ 的概率为 $p(v)$ ）。分子是两条支路上 $y = v$ 的联合概率之和，分母是显示 $v$ 的总概率； $p(v)$ 为上下文边际化后的 token 边际频率。
 
 代入 BERT 的 WordPiece 词表 $V$ = 30522（[Google, BERT 官方 repo](../references.md)，[A]）， $V^{-1} \approx 3.3 \times 10^{-5}$ ：频率为均匀水平 10 倍的 token 上 copy 质量已达 $10/11 \approx 0.91$ ，高频 token 趋于 1——模型在真实 token 位置学到的条件分布以「照抄」为主导；频率低于 $1/V$ 的极端长尾上 rand 支后验反超，模型把显示 token 当噪声、退回上下文条件分布。也就是说，keep / rand 两支把 3% 位置的监督信号污染成 copy 任务与「对显示 token 保持不信任」——这是消除 [MASK] 输入漂移的交换物，不是免费的。
 
@@ -152,7 +152,7 @@ def create_masked_lm_predictions(tokens, masked_lm_prob=0.15,
 前缀长 $p$ 时 $M$ 是块矩阵：前缀区 $p \times p$ 全 0、后缀区下三角、跨区只有「后缀看前缀」（矩阵实例见 1.1 §7）。损失：
 
 $$
-L_{\mathrm{prefix}} = - \frac{1}{T - p} \sum_{t = p+1}^{T} \log q_\theta(x_t \mid x_{\le p},\, x_{p+1 : t-1}) \qquad (7)
+L_{\mathrm{prefix}} = - \frac{1}{T - p} \sum_{t = p+1}^{T} \log q_\theta(x_t \mid x_{\le p},\thinspace x_{p+1 : t-1}) \qquad (7)
 $$
 
 **符号**： $p$ ：前缀长度；损失只落后缀。
@@ -161,29 +161,29 @@ $$
 
 ### 4.2 GLM 的腐蚀方案与目标函数
 
-GLM（[Du et al., 2021](../references.md)，arXiv:2103.10360，[A]）的空白填充（blank infilling）：对原序列反复采 span——长度采自 Poisson 分布（原文取 $\lambda$ = 3）、起点均匀——直到覆盖 15% 的 token，得 span 集 $\{s_1, \ldots, s_m\}$ 。每条 span 在输入中塌缩成单个 [MASK] token，得腐蚀序列 $x^{c}$ （长 $T - \sum_i |s_i| + m$ ）。模型输入 = $x^{c}$ （Part A）后接乱序拼接的 span（Part B：每条 span 前置一个起始符 [s]，排列 $\pi$ 在 $\{1, \ldots, m\}$ 上均匀采样）。目标函数：
+GLM（[Du et al., 2021](../references.md)，arXiv:2103.10360，[A]）的空白填充（blank infilling）：对原序列反复采 span——长度采自 Poisson 分布（原文取 $\lambda$ = 3）、起点均匀——直到覆盖 15% 的 token，得 span 集 $\lbrace s_1, \ldots, s_m\rbrace$ 。每条 span 在输入中塌缩成单个 [MASK] token，得腐蚀序列 $x^{c}$ （长 $T - \sum_i |s_i| + m$ ）。模型输入 = $x^{c}$ （Part A）后接乱序拼接的 span（Part B：每条 span 前置一个起始符 [s]，排列 $\pi$ 在 $\lbrace1, \ldots, m\rbrace$ 上均匀采样）。目标函数：
 
 $$
-L_{\mathrm{GLM}} = - \mathbb{E}_{\pi}\left[ \sum_{i=1}^{m} \sum_{j=1}^{|s_{\pi(i)}|} \log q_\theta\big(s_{\pi(i),\, j} \mid x^{c},\, s_{\pi(<i)},\, s_{\pi(i),\, <j}\big) \right] \qquad (8)
+L_{\mathrm{GLM}} = - \mathbb{E}_{\pi}\left[ \sum_{i=1}^{m} \sum_{j=1}^{|s_{\pi(i)}|} \log q_\theta\big(s_{\pi(i),\thinspace j} \mid x^{c},\thinspace s_{\pi(<i)},\thinspace s_{\pi(i),\thinspace <j}\big) \right] \qquad (8)
 $$
 
-**符号**： $s_{i,\, j}$ ：第 $i$ 条 span 的第 $j$ 个 token； $s_{\pi(<i)}$ ：排列 $\pi$ 下先于它的全部 span； $s_{\pi(i),\, <j}$ ：本 span 内前 $j - 1$ 个 token。式 (8) 按论文原文为未归一形式（双重求和、不除 token 数）；本章式 (2)(4)(7) 的 $1/\cdot$ 因子是本书加的逐 token 归一约定，式 (1)(8) 保留原文形式——归一只改梯度尺度，不改最优解。
+**符号**： $s_{i,\thinspace j}$ ：第 $i$ 条 span 的第 $j$ 个 token； $s_{\pi(<i)}$ ：排列 $\pi$ 下先于它的全部 span； $s_{\pi(i),\thinspace <j}$ ：本 span 内前 $j - 1$ 个 token。式 (8) 按论文原文为未归一形式（双重求和、不除 token 数）；本章式 (2)(4)(7) 的 $1/\cdot$ 因子是本书加的逐 token 归一约定，式 (1)(8) 保留原文形式——归一只改梯度尺度，不改最优解。
 
 结构读法（对应 $M(\omega)$ 的分块）：Part A 内部双向（A-A 块全 0）；Part B 的每个位置能看见全部 Part A、排列序上先于本 span 的其他 span、以及本 span 内自己的左侧（span 内因果），未来 span 不可见； $\ell$ 只落 Part B。对 $\pi$ 取期望使「先填哪个空」不构成偏置；mask 随每次抽样变化，是 $M(\omega)$ 依赖 $\omega$ 的实例。原文在同一机制上还定义了更长跨度的变体（整句级 span；文档级单 span，长度取原文的 50%–100%），把填空连续推向长文生成（同篇，[A]）；该文档级长 blank 变体在 GLM-130B 中记为 [gMASK] token（[Zeng et al., 2022](../references.md)，arXiv:2210.02414，[A]）。
 
 ### 4.3 2D 位置编码：两维寻址的必要性
 
-blank infilling 对位置系统提出了 CLM / MLM 都没有的需求：预测 $s_{i,\, j}$ 时模型既要知道「在填哪个空」，又要知道「空内第几个」。GLM 的答案：每个 token 带两个位置 id $(p^{(1)}_t,\, p^{(2)}_t)$ ：
+blank infilling 对位置系统提出了 CLM / MLM 都没有的需求：预测 $s_{i,\thinspace j}$ 时模型既要知道「在填哪个空」，又要知道「空内第几个」。GLM 的答案：每个 token 带两个位置 id $(p^{(1)}_t,\thinspace p^{(2)}_t)$ ：
 
 $$
-p^{(1)}_t = \begin{cases} \mathrm{idx}(t), & t \in A \\ k_i, & t \in s_i \cup \{[s]_i\} \end{cases} \qquad (9)
+p^{(1)}_t = \begin{cases} \mathrm{idx}(t), & t \in A \\ k_i, & t \in s_i \cup \lbrace[s]_i\rbrace \end{cases} \qquad (9)
 $$
 
 $$
-p^{(2)}_t = \begin{cases} 0, & t \in A \cup \{[s]\} \\ j, & t = s_{i,\, j} \end{cases} \qquad (10)
+p^{(2)}_t = \begin{cases} 0, & t \in A \cup \lbrace[s]\rbrace \\ j, & t = s_{i,\thinspace j} \end{cases} \qquad (10)
 $$
 
-**符号**： $A$ ：Part A 的位置集； $\mathrm{idx}(t)$ ：Part A 内的下标； $k_i$ ：span $s_i$ 塌缩出的 [MASK] 在 $x^{c}$ 中的位置； $s_{i,\, j}$ ：第 $i$ 条 span 的第 $j$ 个 token（式 (8) 的记号）； $[s]_i$ ：第 $i$ 条 span 的起始符。读法：Part A 的成员以自身在 $x^{c}$ 中的下标为 $p^{(1)}$ 、 $p^{(2)}$ 取 0；Part B 的成员一律以所填空白的地址为 $p^{(1)}$ 、以空内偏移为 $p^{(2)}$ （起始符偏移 0）。
+**符号**： $A$ ：Part A 的位置集； $\mathrm{idx}(t)$ ：Part A 内的下标； $k_i$ ：span $s_i$ 塌缩出的 [MASK] 在 $x^{c}$ 中的位置； $s_{i,\thinspace j}$ ：第 $i$ 条 span 的第 $j$ 个 token（式 (8) 的记号）； $[s]_i$ ：第 $i$ 条 span 的起始符。读法：Part A 的成员以自身在 $x^{c}$ 中的下标为 $p^{(1)}$ 、 $p^{(2)}$ 取 0；Part B 的成员一律以所填空白的地址为 $p^{(1)}$ 、以空内偏移为 $p^{(2)}$ （起始符偏移 0）。
 
 注入为 stream 加性（2.5 §1 的注入点分类）：两张可学绝对位置表（2.5 §2.3 的形态），与 token embedding 三者相加：
 
@@ -193,7 +193,7 @@ $$
 
 **符号**： $E$ ：token embedding 表； $P^{(1)}, P^{(2)}$ ：两张 learned absolute 位置表； $L_{\max}$ ：span 内最大偏移； $d$ ：stream 宽度。
 
-逐维看必要性：缺 $p^{(2)}$ ，同一 span 的所有 token 共享一个地址，空内顺序无从表达，退化为无序填空；缺 $p^{(1)}$ ，模型知道「第 $j$ 个」却不知道在填哪个空，多条空白的内容无法与各自的地址对齐。Part A 的 $p^{(2)}$ = 0 还兼任类型位（「我是上下文，不是填充」）。生成时因此自然落定：在 [MASK] 位置（ $p^{(1)}$ = $k_i$ ）起逐 token 生成，第 $j$ 个 token 带 $(k_i,\, j)$ ，直到该 span 的结束符。一个完整实例（0-indexed）：
+逐维看必要性：缺 $p^{(2)}$ ，同一 span 的所有 token 共享一个地址，空内顺序无从表达，退化为无序填空；缺 $p^{(1)}$ ，模型知道「第 $j$ 个」却不知道在填哪个空，多条空白的内容无法与各自的地址对齐。Part A 的 $p^{(2)}$ = 0 还兼任类型位（「我是上下文，不是填充」）。生成时因此自然落定：在 [MASK] 位置（ $p^{(1)}$ = $k_i$ ）起逐 token 生成，第 $j$ 个 token 带 $(k_i,\thinspace j)$ ，直到该 span 的结束符。一个完整实例（0-indexed）：
 
 ```
 原序列 :  x1  x2  x3  x4  x5  x6        spans: [x2 x3]（起点 1）、[x5]（起点 4）
@@ -256,7 +256,7 @@ dec target:  <X>  cat  sat  <Y>  and  <Z>             ← <Z> = 收尾 sentinel
 ```
 
 $$
-L_{\mathrm{T5}} = - \frac{1}{|y|} \sum_{j=1}^{|y|} \log q_\theta(y_j \mid y_{<j},\, x') \qquad (12)
+L_{\mathrm{T5}} = - \frac{1}{|y|} \sum_{j=1}^{|y|} \log q_\theta(y_j \mid y_{<j},\thinspace x') \qquad (12)
 $$
 
 **符号**： $x'$ ：sentinel 替换后的 encoder 输入（ $M_{\mathrm{enc}} \equiv 0$ ）； $y$ ：target 序列，decoder 对其因果、并 cross-attend encoder 输出（enc-dec 结构本身在 3.2 展开）。sentinel 使 target 成为「哪个空 → 填什么」的自界定记录；与 GLM 的单序列拼接（§4）是同一数学对象的两种布局。
@@ -266,7 +266,7 @@ $$
 官方实现（T5 repo google-research/text-to-text-transfer-transformer 的 `t5/data/preprocessors.py`，函数 `span_corruption`，默认 `noise_density=0.15`、`mean_noise_span_length=3.0`；论文 [Raffel et al., 2019](../references.md)，[A]）先把两个计数定死：
 
 $$
-m = \mathrm{clip}(\mathrm{round}(r\, T),\, 1,\, T - 1), \qquad n_s = \max\big(1,\, \mathrm{round}(m / \mu)\big) \qquad (13)
+m = \mathrm{clip}(\mathrm{round}(r\thinspace T),\thinspace 1,\thinspace T - 1), \qquad n_s = \max\big(1,\thinspace \mathrm{round}(m / \mu)\big) \qquad (13)
 $$
 
 **符号**： $m$ ：腐蚀 token 总数； $n_s$ ：span 条数； $r$ = 0.15：破坏率； $\mu$ = 3：目标 span 均长。
@@ -274,7 +274,7 @@ $$
 然后把 $m$ 个腐蚀 token 与 $T - m$ 个保留 token 各自均匀随机切分成 $n_s$ 段（uniform random composition：把 $n$ 个 token 切成 $n_s$ 段，即在 $n - 1$ 个可切点中均匀无放回选 $n_s - 1$ 个），交替拼接。span 长度因此不是逐位独立抽签，而是定总量的随机分割。单条 span 长度 $\ell$ 的边缘分布： $m$ 切成 $n_s$ 段的均匀切分共 $\binom{m - 1}{n_s - 1}$ 种， $\ell = k$ 占
 
 $$
-P(\ell = k) = \frac{\binom{m - k - 1}{n_s - 2}}{\binom{m - 1}{n_s - 1}}, \qquad \mathbb{E}\, \ell = \frac{m}{n_s} \approx \mu \qquad (14)
+P(\ell = k) = \frac{\binom{m - k - 1}{n_s - 2}}{\binom{m - 1}{n_s - 1}}, \qquad \mathbb{E}\thinspace \ell = \frac{m}{n_s} \approx \mu \qquad (14)
 $$
 
 （均值由 $n_s$ 段的对称性直接读出。）大 $m$ 极限看相邻项之比： $P(\ell = k) / P(\ell = k - 1) = (m - k - n_s + 2) / (m - k) \to 1 - n_s / m = 1 - 1 / \mu$ ——即 $\ell$ 渐近几何分布 Geometric( $1 / \mu$ )，「平均 span 长 3」的实际分布形态就是它。
@@ -321,27 +321,27 @@ def span_corruption(tokens, noise_density=0.15, mean_noise_span_length=3.0, rng=
 UL2（[Tay et al., 2022](../references.md)，arXiv:2205.05131，[B]——无官方开源实现，本节公式按论文拆，勿以社区复现为准）把 §1 的设计空间做成可采样的混合分布：每个去噪器（denoiser） $k$ 由参数 $(\mu_k, r_k, n_k)$ （span 均长、破坏率、span 数）与顺序模式定义，训练目标是对 denoiser 的加权和：
 
 $$
-L_{\mathrm{UL2}} = \sum_{k} w_k\; \mathbb{E}_{x,\, \omega \sim C_k}\left[ - \sum_{j} \log q_\theta(y_j \mid y_{<j},\, x';\, m_k) \right] \qquad (15)
+L_{\mathrm{UL2}} = \sum_{k} w_k\hspace{5mu} \mathbb{E}_{x,\thinspace \omega \sim C_k}\left[ - \sum_{j} \log q_\theta(y_j \mid y_{<j},\thinspace x';\thinspace m_k) \right] \qquad (15)
 $$
 
 **符号**： $C_k$ ：第 $k$ 个 denoiser 的腐蚀分布； $m_k$ ：模式切换符（mode-switch token）； $w_k$ ：混合权重。
 
-三个模式族： **R-denoiser**（regular）= T5 式短 span（ $\mu \approx 3$ 、 $r \approx 15\%$ ）； **X-denoiser**（extreme）= 长 span 或高破坏率，span 均长抬到数十 token、破坏率抬到约 50% 的量级，逼模型做长程再生； **S-denoiser**（sequential）= 不按 span 而按切点，保留前缀、target 为后缀全文——即 prefix-LM / CLM 型目标。机制关键是 mode-switch token（ [R] / [S] / [X] ）拼在输入之前：「当前是哪个 denoiser」被写成上下文的一部分，同一组参数在不同模式下被显式条件化，而不是隐式承担任务间干扰。UL2-20B 的预训练用了 7 个 denoiser 的混合（同篇）。对 §1 框架的意义：CLM 型与 MLM 型目标可以共居一个模型，代价只是输入侧多一个模式位。
+三个模式族： **R-denoiser**（regular）= T5 式短 span（ $\mu \approx 3$ 、 $`r \approx 15\%`$ ）； **X-denoiser**（extreme）= 长 span 或高破坏率，span 均长抬到数十 token、破坏率抬到约 50% 的量级，逼模型做长程再生； **S-denoiser**（sequential）= 不按 span 而按切点，保留前缀、target 为后缀全文——即 prefix-LM / CLM 型目标。机制关键是 mode-switch token（ [R] / [S] / [X] ）拼在输入之前：「当前是哪个 denoiser」被写成上下文的一部分，同一组参数在不同模式下被显式条件化，而不是隐式承担任务间干扰。UL2-20B 的预训练用了 7 个 denoiser 的混合（同篇）。对 §1 框架的意义：CLM 型与 MLM 型目标可以共居一个模型，代价只是输入侧多一个模式位。
 
 ## 7. objective ↔ 能力：可生成性的数学判定与总表
 
-「能否自回归生成」不是架构印象，是一条可判定条件。设 objective 训出的条件分布族为 $\{q_t(\cdot \mid c_t)\}$ （ $c_t$ 为被问位置的条件集），它支持自回归生成当且仅当存在生成顺序 $\pi$ ，使第 $\tau$ 步的条件集满足
+「能否自回归生成」不是架构印象，是一条可判定条件。设 objective 训出的条件分布族为 $\lbrace q_t(\cdot \mid c_t)\rbrace$ （ $c_t$ 为被问位置的条件集），它支持自回归生成当且仅当存在生成顺序 $\pi$ ，使第 $\tau$ 步的条件集满足
 
 $$
-c_{\pi(\tau)} \subseteq G_{\tau} \cup I, \qquad G_{\tau} = \{\pi(1), \ldots, \pi(\tau - 1)\} \qquad (16)
+c_{\pi(\tau)} \subseteq G_{\tau} \cup I, \qquad G_{\tau} = \lbrace\pi(1), \ldots, \pi(\tau - 1)\rbrace \qquad (16)
 $$
 
-**符号**： $G_\tau$ ：已生成位置集合； $I$ ：生成前完整已知的输入。这是 2.4 式 (4)（ $V(i) \subseteq \{1, \ldots, i\}$ ）在 objective 层面的重述。
+**符号**： $G_\tau$ ：已生成位置集合； $I$ ：生成前完整已知的输入。这是 2.4 式 (4)（ $V(i) \subseteq \lbrace1, \ldots, i\rbrace$ ）在 objective 层面的重述。
 
 逐族判定：
 
 - **CLM**： $c_t = x_{<t} = G_t$ ，式 (16) 取等。
-- **MLM**： $c_t = x'$ 为整条腐蚀序列，含未来位置的真值（腐蚀只动 15% 的位置——其中 12% 替换为 [MASK]，其余位置真值全露），任何只含过去的 $G_\tau$ 都不满足式 (16)。逐位留一重掩的迭代采样也绕不过：第 $\tau$ 步实际计算的是 $q(x_\tau \mid x_{<\tau},\, \text{[MASK]}_{> \tau})$ ，与训练条件（固定 12% [MASK] 率、其余为真值）不是同一条件分布，且 [MASK] 率随迭代进度持续漂移。更根本地，伪似然（pseudo-likelihood）式连乘 $\prod_t q(x_t \mid x_{\setminus t})$ 不满足链式法则对条件集的嵌套要求（1.1 式 (3)：第 $t$ 个因子只能以前 $t - 1$ 个已生成为条件），它不是任何联合分布的分解——MLM 产出的是一组相容性无保证的局部条件，不是一个可采样的联合。「encoder 形态为何不能直接生成」的完整证明在 3.2。
+- **MLM**： $c_t = x'$ 为整条腐蚀序列，含未来位置的真值（腐蚀只动 15% 的位置——其中 12% 替换为 [MASK]，其余位置真值全露），任何只含过去的 $G_\tau$ 都不满足式 (16)。逐位留一重掩的迭代采样也绕不过：第 $\tau$ 步实际计算的是 $q(x_\tau \mid x_{<\tau},\thinspace \text{[MASK]}_{> \tau})$ ，与训练条件（固定 12% [MASK] 率、其余为真值）不是同一条件分布，且 [MASK] 率随迭代进度持续漂移。更根本地，伪似然（pseudo-likelihood）式连乘 $\prod_t q(x_t \mid x_{\setminus t})$ 不满足链式法则对条件集的嵌套要求（1.1 式 (3)：第 $t$ 个因子只能以前 $t - 1$ 个已生成为条件），它不是任何联合分布的分解——MLM 产出的是一组相容性无保证的局部条件，不是一个可采样的联合。「encoder 形态为何不能直接生成」的完整证明在 3.2。
 - **prefix-LM**： $I$ = 前缀，续写区满足式 (16)。
 - **GLM**： $I$ = Part A（ $x^{c}$ 生成前已知），span 逐条生成、span 内因果，条件集 = $x^{c} \cup$ 已生成 span $\cup$ 本 span 前缀，满足式 (16)。
 - **T5 / UL2**： $I$ = encoder 输入，decoder 因果，满足式 (16)。
@@ -363,12 +363,12 @@ $$
 
 MLM 系论文不报 perplexity、CLM 的 PPL 也搬不到 MLM 上——这不是报告惯例，是三个独立的数学障碍。1.1 §6 已处理跨词表与跨 tokenizer 两个陷阱，本节加第三个。
 
-**障碍一：支撑集不同。** CLM 的 per-token CE 平均在全 $T$ 个位置；MLM 只在 $|S| \approx 0.15\,T$ 个选中位；T5 在 target 的 $m + n_s + 1$ 个位置（ $T$ = 512 例：104）。三个平均对三个不同的位置集、三类不同的被问方式取值——CLM 问每一个位置（含高频功能词位），MLM 把全部监督压在腐蚀器选中的 15% 上。
+**障碍一：支撑集不同。** CLM 的 per-token CE 平均在全 $T$ 个位置；MLM 只在 $|S| \approx 0.15\thinspace T$ 个选中位；T5 在 target 的 $m + n_s + 1$ 个位置（ $T$ = 512 例：104）。三个平均对三个不同的位置集、三类不同的被问方式取值——CLM 问每一个位置（含高频功能词位），MLM 把全部监督压在腐蚀器选中的 15% 上。
 
 **障碍二：条件不同 ⇒ 地板不同。** 对 mask / rand 支（ $x'$ 不含 $x_t$ 自身的信息），涉及三个条件熵，其间两条不等式是定理：
 
 $$
-H(x_t \mid x_{\setminus t}) \;\le\; H(x_t \mid x_{<t}), \qquad H(x_t \mid x_{\setminus t}) \;\le\; H(x_t \mid x') \;\le\; H(x_t) \qquad (17)
+H(x_t \mid x_{\setminus t}) \hspace{5mu}\le\hspace{5mu} H(x_t \mid x_{<t}), \qquad H(x_t \mid x_{\setminus t}) \hspace{5mu}\le\hspace{5mu} H(x_t \mid x') \hspace{5mu}\le\hspace{5mu} H(x_t) \qquad (17)
 $$
 
 **符号**： $H(\cdot \mid \cdot)$ ：条件熵； $x_{\setminus t}$ ：除位置 $t$ 之外的完整真值序列； $x'$ ：腐蚀后输入； $g$ ：腐蚀映射（含其内部随机性 $\omega$ ）。
@@ -402,7 +402,7 @@ $$
 
 ## 练习
 
-1.（推导）完成式 (6) 的推导，并证明两条极限行为： $p(v) \gg V^{-1}$ 时 copy 质量 → 1， $p(v) \ll V^{-1}$ 时 → $p(v)$ 。代入 $V$ = 30522，对 $p(v) \in \{10^{-2}, 10^{-4}, 10^{-6}\}$ 各算一个后验值。再证式 (5) 的混合地板 = $0.9\, H(x_t \mid \mathrm{ctx})$ 。
+1.（推导）完成式 (6) 的推导，并证明两条极限行为： $p(v) \gg V^{-1}$ 时 copy 质量 → 1， $p(v) \ll V^{-1}$ 时 → $p(v)$ 。代入 $V$ = 30522，对 $p(v) \in \lbrace10^{-2}, 10^{-4}, 10^{-6}\rbrace$ 各算一个后验值。再证式 (5) 的混合地板 = $0.9\thinspace H(x_t \mid \mathrm{ctx})$ 。
 2.（计算） $T$ = 2048、 $r$ = 0.15、 $\mu$ = 3 的 T5 账： $m$ 、 $n_s$ 、enc 输入长、target 长各是多少；用几何近似算 $P(\ell = 1)$ 与 $P(\ell \ge 10)$ ；把 target 的 loss 位置数与 CLM 同序列对照，给出监督密度之比。
 3.（推导）取 $x$ = [x1 … x6]、spans = {[x2 x3], [x5]}、 $\pi$ = 恒等，写出 GLM 的完整输入序列、每个位置的 $(p^{(1)}, p^{(2)})$ 与 $\ell$ ，并写出 $M$ 的分块结构（哪些块全 0、哪些块下三角、哪些块全 $-\infty$ ）。再令 span 为单条后缀 [x5 x6]，验证式 (8) 逐符号退化为式 (7)。
 4.（代码）实现 §3.5 与 §5.3 的两个教学函数，在 $10^{6}$ token 的玩具语料上验证：(a) BERT 输出中 [MASK] 占比 → 12%、被选中位占比 → 15%、keep 位占比 → 1.5%；(b) T5 的经验 span 均长 → 3，经验长度分布与 Geometric(1/3) 的直方图对照。

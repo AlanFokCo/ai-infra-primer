@@ -1,10 +1,10 @@
 # 2.8 组装完整 Decoder Block（Assembling the Full Decoder Block）
 
-> 本章把 2.1–2.7 拆开的组件装回整机：现代标准配方的完整 block 公式（全下标，GQA + RoPE + SwiGLU）、Llama-3.1-8B config.json 逐字段 ↔ 公式映射表、约 150 行 minimal decoder-only PyTorch、transformers `modeling_llama.py` 官方实现走读、单层单 token FLOPs 全算与参数量精确到个位的对账、并行块（parallel block，PaLM / GPT-J / Falcon）的公式与梯度/吞吐含义、四条常见误解 | 前置：2.1–2.7 全部（公式编号沿用各章），1.1（$q_\theta(\cdot | x_{<t})$），1.2（$2N$ 口径与 $N$ 的两种口径约定）| 锚点：Llama-3.1-8B config [A]（主）、OLMo-2-7B config [A]（对照）、nanoGPT（教学参照）；Vaswani et al. [A]、Grattafiori et al. [A]、Team OLMo et al. [A]
+> 本章把 2.1–2.7 拆开的组件装回整机：现代标准配方的完整 block 公式（全下标，GQA + RoPE + SwiGLU）、Llama-3.1-8B config.json 逐字段 ↔ 公式映射表、约 150 行 minimal decoder-only PyTorch、transformers `modeling_llama.py` 官方实现走读、单层单 token FLOPs 全算与参数量精确到个位的对账、并行块（parallel block，PaLM / GPT-J / Falcon）的公式与梯度/吞吐含义、四条常见误解 | 前置：2.1–2.7 全部（公式编号沿用各章），1.1（ $q_\theta(\cdot | x_{<t})$），1.2（ $2N$ 口径与 $N$ 的两种口径约定）| 锚点：Llama-3.1-8B config [A]（主）、OLMo-2-7B config [A]（对照）、nanoGPT（教学参照）；Vaswani et al. [A]、Grattafiori et al. [A]、Team OLMo et al. [A]
 
 ## 1. 整机公式：全下标的标准配方
 
-2.1 式 (1) 用 $\mathrm{Attn}_{\ell}$ 与 $\mathrm{FFN}_{\ell}$ 两个黑箱搭起了 residual stream 递推；本节把黑箱打开，按 Llama-3.1-8B 的标准配方（RMSNorm + Pre-LN + GQA + RoPE + SwiGLU，全无 bias）写出单个 block 的完整形式。取层号 $\ell \in \{1, \ldots, L\}$，输入 $x^{(\ell-1)} \in \mathbb{R}^{B \times T \times d}$：
+2.1 式 (1) 用 $\mathrm{Attn}_{\ell}$ 与 $\mathrm{FFN}_{\ell}$ 两个黑箱搭起了 residual stream 递推；本节把黑箱打开，按 Llama-3.1-8B 的标准配方（RMSNorm + Pre-LN + GQA + RoPE + SwiGLU，全无 bias）写出单个 block 的完整形式。取层号 $\ell \in \lbrace1, \ldots, L\rbrace$，输入 $x^{(\ell-1)} \in \mathbb{R}^{B \times T \times d}$：
 
 $$
 \begin{aligned}
@@ -15,7 +15,7 @@ x^{(\ell)} &= \tilde{x}^{(\ell)} + \mathrm{FFN}^{(\ell)}\left( w^{(\ell)} \right
 \end{aligned} \qquad (1)
 $$
 
-**符号**：$x^{(\ell)}$：第 $\ell$ 层输出的 residual stream；$\tilde{x}^{(\ell)}$：attention 子层之后的中间 stream；$u^{(\ell)}, w^{(\ell)}$：两次 RMSNorm（2.7 式 (5)，各有可学增益 $\gamma_1^{(\ell)}, \gamma_2^{(\ell)} \in \mathbb{R}^{d}$，无 $\beta$）的输出。两个子层的统一形态即「读出归一化后的 stream、把结果加回 stream」。
+**符号**： $x^{(\ell)}$：第 $\ell$ 层输出的 residual stream； $\tilde{x}^{(\ell)}$：attention 子层之后的中间 stream； $u^{(\ell)}, w^{(\ell)}$：两次 RMSNorm（2.7 式 (5)，各有可学增益 $\gamma_1^{(\ell)}, \gamma_2^{(\ell)} \in \mathbb{R}^{d}$，无 $\beta$）的输出。两个子层的统一形态即「读出归一化后的 stream、把结果加回 stream」。
 
 attention 子层内部（GQA + RoPE + causal mask，逐位置逐 head 全下标）：
 
@@ -23,14 +23,14 @@ $$
 \begin{aligned}
 q_{t,h} &= R_t \left( u_t^{(\ell)} W_h^{Q} \right), \qquad h = 1, \ldots, H_q \\
 k_{s,g} &= R_s \left( u_s^{(\ell)} W_g^{K} \right), \qquad v_{s,g} = u_s^{(\ell)} W_g^{V}, \qquad g = 1, \ldots, H_{kv} \\
-\alpha_{t,s,h} &= \frac{\exp\left( \langle q_{t,h},\, k_{s,\, g(h)} \rangle / \sqrt{D} \right)}{\sum_{j=1}^{t} \exp\left( \langle q_{t,h},\, k_{j,\, g(h)} \rangle / \sqrt{D} \right)}, \qquad o_{t,h} = \sum_{s=1}^{t} \alpha_{t,s,h} \, v_{s,\, g(h)} \\
+\alpha_{t,s,h} &= \frac{\exp\left( \langle q_{t,h},\thinspace k_{s,\thinspace g(h)} \rangle / \sqrt{D} \right)}{\sum_{j=1}^{t} \exp\left( \langle q_{t,h},\thinspace k_{j,\thinspace g(h)} \rangle / \sqrt{D} \right)}, \qquad o_{t,h} = \sum_{s=1}^{t} \alpha_{t,s,h} \thinspace v_{s,\thinspace g(h)} \\
 \mathrm{Attn}^{(\ell)}(u)_t &= \mathrm{concat}\left( o_{t,1}, \ldots, o_{t,H_q} \right) W^{O}
 \end{aligned} \qquad (2)
 $$
 
-**符号**：$u_t^{(\ell)} \in \mathbb{R}^{d}$：层 $\ell$ 位置 $t$ 的归一化后 stream（行向量约定，同 2.3）；$W_h^{Q} \in \mathbb{R}^{d \times D}$：第 $h$ 个 Q head 的投影（实现中全部 $W_h^{Q}$ 拼成一块 $d \times H_q D$ 的 `q_proj`，按列切片即得，见 §4）；$W_g^{K}, W_g^{V} \in \mathbb{R}^{d \times D}$：第 $g$ 个 KV head 的投影；$W^{O} \in \mathbb{R}^{H_q D \times d}$：输出投影；$D$：head 维；$g(h) = \operatorname{div}\left( h - 1,\ H_q / H_{kv} \right) + 1$：Q head 到 KV head 的分组映射（$\operatorname{div}$ 为整除；Llama-3.1-8B 下每 4 个连续 Q head 共享一对 K/V）；$R_t$：2.5 式 (12) 的块对角旋转矩阵，频率 schedule $\theta_j = base^{-2j/D}$（2.5 式 (16)），只作用于 q、k 不作用于 v（2.5 §4.3）；求和上限 $t$ 即 causal mask 的可见集形式（2.4 式 (2)(3)）；$1/\sqrt{D}$ 即 2.3 式 (4) 的缩放。
+**符号**： $u_t^{(\ell)} \in \mathbb{R}^{d}$：层 $\ell$ 位置 $t$ 的归一化后 stream（行向量约定，同 2.3）； $W_h^{Q} \in \mathbb{R}^{d \times D}$：第 $h$ 个 Q head 的投影（实现中全部 $W_h^{Q}$ 拼成一块 $d \times H_q D$ 的 `q_proj`，按列切片即得，见 §4）； $W_g^{K}, W_g^{V} \in \mathbb{R}^{d \times D}$：第 $g$ 个 KV head 的投影； $W^{O} \in \mathbb{R}^{H_q D \times d}$：输出投影； $D$：head 维； $g(h) = \operatorname{div}\left( h - 1,\ H_q / H_{kv} \right) + 1$：Q head 到 KV head 的分组映射（ $\operatorname{div}$ 为整除；Llama-3.1-8B 下每 4 个连续 Q head 共享一对 K/V）； $R_t$：2.5 式 (12) 的块对角旋转矩阵，频率 schedule $\theta_j = base^{-2j/D}$（2.5 式 (16)），只作用于 q、k 不作用于 v（2.5 §4.3）；求和上限 $t$ 即 causal mask 的可见集形式（2.4 式 (2)(3)）； $1/\sqrt{D}$ 即 2.3 式 (4) 的缩放。
 
-读式 (2) 按三个顺序要点。其一，**先投影后旋转**：RoPE 作用于投影后的 head 向量（$R_t (u_t W_h^{Q})$），不作用于 stream——位置信息全程不进入 $x^{(\ell)}$ 本身，这是 2.5 §1「attention 内注入」的公式形态，也是 2.1 §2「$x^{(0)}$ 只含内容向量」在整机公式里的落实。其二，**分组映射只出现在 k/v 侧**：$g(h)$ 让 8 个 KV 头服务 32 个 Q 头，但 score 的数量与输出头数仍按 $H_q$ 计——GQA 削减的是 K/V 投影宽度与 cache（2.4 §5 的 4 倍账），不削减打分与加权和的计算（1.2 §6 已按此口径记账）。其三，**求和上限 $t$ 就是 mask**：式 (2) 的逐位置写法与 2.4 式 (7) 是同一对象的两种记法；矩阵形态（2.3 式 (4) + 2.4 式 (1) 的加性 $M$）是它按行堆叠的样子，两种形态在 §3 / §4 的代码里各出现一次。
+读式 (2) 按三个顺序要点。其一，**先投影后旋转**：RoPE 作用于投影后的 head 向量（ $R_t (u_t W_h^{Q})$），不作用于 stream——位置信息全程不进入 $x^{(\ell)}$ 本身，这是 2.5 §1「attention 内注入」的公式形态，也是 2.1 §2「 $x^{(0)}$ 只含内容向量」在整机公式里的落实。其二，**分组映射只出现在 k/v 侧**： $g(h)$ 让 8 个 KV 头服务 32 个 Q 头，但 score 的数量与输出头数仍按 $H_q$ 计——GQA 削减的是 K/V 投影宽度与 cache（2.4 §5 的 4 倍账），不削减打分与加权和的计算（1.2 §6 已按此口径记账）。其三，**求和上限 $t$ 就是 mask**：式 (2) 的逐位置写法与 2.4 式 (7) 是同一对象的两种记法；矩阵形态（2.3 式 (4) + 2.4 式 (1) 的加性 $M$）是它按行堆叠的样子，两种形态在 §3 / §4 的代码里各出现一次。
 
 FFN 子层（SwiGLU 三矩阵，2.6 式 (6)）：
 
@@ -38,17 +38,17 @@ $$
 \mathrm{FFN}^{(\ell)}(w)_t = \left( \mathrm{Swish}_1\left( w_t W^{gate} \right) \odot \left( w_t W^{up} \right) \right) W^{down} \qquad (3)
 $$
 
-**符号**：$W^{gate}, W^{up} \in \mathbb{R}^{d \times d_{\mathrm{ff}}}$：门路与值路投影；$W^{down} \in \mathbb{R}^{d_{\mathrm{ff}} \times d}$；$\mathrm{Swish}_1(u) = u \, \sigma(u)$（SiLU，2.6 式 (4)）；$\odot$：逐元素乘。
+**符号**： $W^{gate}, W^{up} \in \mathbb{R}^{d \times d_{\mathrm{ff}}}$：门路与值路投影； $W^{down} \in \mathbb{R}^{d_{\mathrm{ff}} \times d}$； $\mathrm{Swish}_1(u) = u \thinspace \sigma(u)$（SiLU，2.6 式 (4)）； $\odot$：逐元素乘。
 
 整机栈在 $L$ 个 block 首尾各加一件：
 
 $$
-x^{(0)}_t = E_{x_t}, \qquad z_t = W_U \, \mathrm{RMSNorm}_f\left( x^{(L)}_t \right), \qquad q_\theta\left( \cdot \mid x_{<t} \right) = \mathrm{softmax}\left( z_{t-1} \right) \qquad (4)
+x^{(0)}_t = E_{x_t}, \qquad z_t = W_U \thinspace \mathrm{RMSNorm}_f\left( x^{(L)}_t \right), \qquad q_\theta\left( \cdot \mid x_{<t} \right) = \mathrm{softmax}\left( z_{t-1} \right) \qquad (4)
 $$
 
-**符号**：$E \in \mathbb{R}^{V \times d}$：输入 embedding（查表，2.2 式 (7)）；$\mathrm{RMSNorm}_f$：final norm（其必要性 = Pre-LN stream 范数随 $\sqrt{L}$ 增长，2.7 式 (12)）；$W_U \in \mathbb{R}^{V \times d}$：输出头，tie_word_embeddings = false 时与 $E$ 独立（2.2 §9）；$z_t \in \mathbb{R}^{V}$：位置 $t$ 的 logits；$q_\theta(\cdot | x_{<t})$：1.1 式 (2) 的逐位置条件分布。
+**符号**： $E \in \mathbb{R}^{V \times d}$：输入 embedding（查表，2.2 式 (7)）； $\mathrm{RMSNorm}_f$：final norm（其必要性 = Pre-LN stream 范数随 $\sqrt{L}$ 增长，2.7 式 (12)）； $W_U \in \mathbb{R}^{V \times d}$：输出头，tie_word_embeddings = false 时与 $E$ 独立（2.2 §9）； $z_t \in \mathbb{R}^{V}$：位置 $t$ 的 logits； $q_\theta(\cdot | x_{<t})$：1.1 式 (2) 的逐位置条件分布。
 
-式 (4) 的两端各管一件事：$E$ 把整数下标变成 $d$ 维向量（gather，不进 FLOPs 账，1.2 §3 口径）；$\mathrm{RMSNorm}_f$ 把随 $\sqrt{L}$ 变粗的 stream 压回 $O(\sqrt{d})$ 再交给输出头；$W_U$ 做一次 $d \to V$ 的 matmul（每 token $2Vd$ FLOPs，不可忽略，§5）；softmax 把 logits 变成分布，采样属 1.1 §8。整机公式在两个工作模式下是同一套：训练 / prefill 时 $T > 1$ 并行打分全部位置（teacher forcing，1.1 §4）；decode 时 $T = 1$、式 (2) 的求和上限由 KV cache 的当前长度扮演（2.4 §4.4）——式 (1)–(4) 一行不改，改的只有输入形状与 $k_{s,g}$、$v_{s,g}$ 的来源（现算 vs 缓存）。
+式 (4) 的两端各管一件事： $E$ 把整数下标变成 $d$ 维向量（gather，不进 FLOPs 账，1.2 §3 口径）； $\mathrm{RMSNorm}_f$ 把随 $\sqrt{L}$ 变粗的 stream 压回 $O(\sqrt{d})$ 再交给输出头； $W_U$ 做一次 $d \to V$ 的 matmul（每 token $2Vd$ FLOPs，不可忽略，§5）；softmax 把 logits 变成分布，采样属 1.1 §8。整机公式在两个工作模式下是同一套：训练 / prefill 时 $T > 1$ 并行打分全部位置（teacher forcing，1.1 §4）；decode 时 $T = 1$、式 (2) 的求和上限由 KV cache 的当前长度扮演（2.4 §4.4）——式 (1)–(4) 一行不改，改的只有输入形状与 $k_{s,g}$、 $v_{s,g}$ 的来源（现算 vs 缓存）。
 
 接线图（一个 block；shape 为 Llama-3.1-8B 数值）：
 
@@ -79,9 +79,9 @@ x⁽ᴸ⁾ [B, T, d]
 logits z [B, T, V]  ──softmax──►  q_θ(· | x_{<t})
 ```
 
-参数只住在五处：$E$、每层的 attention 四矩阵、每层的 FFN 三矩阵、norm 增益、$W_U$——§6 的对账就是把这五处逐个加出来。
+参数只住在五处： $E$、每层的 attention 四矩阵、每层的 FFN 三矩阵、norm 增益、 $W_U$——§6 的对账就是把这五处逐个加出来。
 
-**变体注记（对照锚点，归属严格按 2.7 §9）**。OLMo-2-7B 不是 Pre-LN：norm 在子层输出侧（reordered），$x \leftarrow x + \mathrm{RMSNorm}(f(x))$（[Team OLMo et al., 2025](../references.md)，arXiv:2501.00656，[A]）；其 attention 另在 q/k 投影后各过一次 RMSNorm（QK-norm 全维变体，`modeling_olmo2.py` 的 `q_norm` / `k_norm`，[HuggingFace, modeling_olmo2.py](../references.md)，[A]）。logit 稳定器各家不同：Llama-3.1 无（仅 $1/\sqrt{D}$ 缩放）；Gemma 2 用 soft-capping（attn 50.0 / final 30.0，无 QK-norm）；Gemma 3 以 QK-norm 取代 soft-capping，且每个子层前后各一次 RMSNorm。这些替换都只动式 (1)(2) 的局部，动不了整机骨架。
+**变体注记（对照锚点，归属严格按 2.7 §9）**。OLMo-2-7B 不是 Pre-LN：norm 在子层输出侧（reordered）， $x \leftarrow x + \mathrm{RMSNorm}(f(x))$（[Team OLMo et al., 2025](../references.md)，arXiv:2501.00656，[A]）；其 attention 另在 q/k 投影后各过一次 RMSNorm（QK-norm 全维变体，`modeling_olmo2.py` 的 `q_norm` / `k_norm`，[HuggingFace, modeling_olmo2.py](../references.md)，[A]）。logit 稳定器各家不同：Llama-3.1 无（仅 $1/\sqrt{D}$ 缩放）；Gemma 2 用 soft-capping（attn 50.0 / final 30.0，无 QK-norm）；Gemma 3 以 QK-norm 取代 soft-capping，且每个子层前后各一次 RMSNorm。这些替换都只动式 (1)(2) 的局部，动不了整机骨架。
 
 ## 2. config.json ↔ 公式映射表（逐字段）
 
@@ -89,15 +89,15 @@ Llama-3.1-8B 的 config.json 逐字段映射到式 (1)–(4) 的符号（数值�
 
 | config 字段 | 值 | 符号 / 角色 | 进入公式 |
 | --- | --- | --- | --- |
-| vocab_size | 128256 | $V$：$E$ 与 $W_U$ 的行数、logits 维 | 式 (4)；2.2 §7 三方账 |
+| vocab_size | 128256 | $V$： $E$ 与 $W_U$ 的行数、logits 维 | 式 (4)；2.2 §7 三方账 |
 | hidden_size | 4096 | $d$：stream 宽度 | 式 (1)–(4) 全部 |
 | num_hidden_layers | 32 | $L$：block 重复次数 | 式 (1) |
 | num_attention_heads | 32 | $H_q$：Q head 数 | 式 (2)；scores 与 FLOPs 按它计（1.2 式 (6)） |
 | num_key_value_heads | 8 | $H_{kv}$：KV head 数，进分组映射 $g(h)$ | 式 (2)；KV cache（2.4 式 (9)） |
-| （导出）head_dim | 128（$= d / H_q$） | $D$：$1/\sqrt{D}$ 的缩放、RoPE 的 $D/2$ 个频率通道 | 式 (2) |
+| （导出）head_dim | 128（ $= d / H_q$） | $D$： $1/\sqrt{D}$ 的缩放、RoPE 的 $D/2$ 个频率通道 | 式 (2) |
 | intermediate_size | 14336 | $d_{\mathrm{ff}} = 3.5d$ | 式 (3)；2.6 §3.3 |
 | hidden_act | silu | $\mathrm{Swish}_1$ | 式 (3) 门函数 |
-| rope_theta | 500000 | $base$：$\theta_j = base^{-2j/D}$ | 式 (2) 的 $R_t$；2.5 式 (16) |
+| rope_theta | 500000 | $base$： $\theta_j = base^{-2j/D}$ | 式 (2) 的 $R_t$；2.5 式 (16) |
 | max_position_embeddings | 131072 | $T_{\max}$：位置 id 定义域、cache 上限 | 2.4 §5；2.5 §4.5 |
 | rms_norm_eps | 见注 | $\epsilon$：RMSNorm 分母的稳定项 | 2.7 式 (5) |
 | attention_bias | false | 式 (2) 四投影无 bias 项 | 式 (2)；2.3 §2 |
@@ -108,9 +108,9 @@ Llama-3.1-8B 的 config.json 逐字段映射到式 (1)–(4) 的符号（数值�
 
 注：rms_norm_eps 的 Llama-3.1-8B 字段值本书未独立核实（HF gated repo，W1 research pass 口径）；已核实的对照值是 Qwen3-8B 与 OLMo-2-7B 的 $10^{-6}$（各 config 条目，[A]）。
 
-读表三条规矩。其一，**导出字段与显式字段分开**：head_dim 在该 config 中不出现、按 $d / H_q$ 导出；新版 modeling 代码允许它被显式覆盖（§8 误解一）。其二，**缺省字段按默认理解**：attention_dropout 等训练侧字段不进推理公式。其三，**每个结构字段都能在公式里点名位置**——反过来，读一个陌生模型的 config 时，把每个字段在这张表里对号入座，五个整数（$L, d, H_q, H_{kv}, d_{\mathrm{ff}}$）加 $V$ 就钉死了参数量与 FLOPs 账（§5、§6），剩下的是 norm 摆放与 logit 稳定器两个不进 config 标准字段的配方差异（§1 末表）。这张字典表是 5.6「30 分钟拆解新模型」checklist 的字段级底稿。
+读表三条规矩。其一，**导出字段与显式字段分开**：head_dim 在该 config 中不出现、按 $d / H_q$ 导出；新版 modeling 代码允许它被显式覆盖（§8 误解一）。其二，**缺省字段按默认理解**：attention_dropout 等训练侧字段不进推理公式。其三，**每个结构字段都能在公式里点名位置**——反过来，读一个陌生模型的 config 时，把每个字段在这张表里对号入座，五个整数（ $L, d, H_q, H_{kv}, d_{\mathrm{ff}}$）加 $V$ 就钉死了参数量与 FLOPs 账（§5、§6），剩下的是 norm 摆放与 logit 稳定器两个不进 config 标准字段的配方差异（§1 末表）。这张字典表是 5.6「30 分钟拆解新模型」checklist 的字段级底稿。
 
-把同一张表套到对照锚点上走一遍，验证它的可迁移性。OLMo-2-7B（[OLMo-2-7B config](../references.md)，[A]）：$L = 32$、$d = 4096$、$H_q = H_{kv} = 32$、$d_{\mathrm{ff}} = 11008$、$V = 100352$、rope_theta = 500000、rms_norm_eps = $10^{-6}$、attention_bias = false、tie = false。式 (2) 里唯一的结构变化是 $g(h)$ 退化为恒等映射（$H_q / H_{kv} = 1$，每头各配一对 K/V，MHA 标准形）；式 (3) 不变，只是 $d_{\mathrm{ff}}$ 收窄到 $2.69d$。这一步 mapping 能直接读出的是参数与 FLOPs 账的变化（§6 练习口径）；读不出的是两件事——norm 摆在子层输出侧（reordered）与 q/k 投影后的两次 RMSNorm——它们不写进 config 的任何标准字段，只能去 `modeling_olmo2.py`（[A]）里看 `Olmo2DecoderLayer.forward` 的接线顺序与 `Olmo2Attention` 的 `q_norm` / `k_norm`。这就是本表的能力边界，也是它的用法：config 管「形状与账」，modeling 代码管「接线与归一化位置」，两边各读一遍才算读完一个模型。
+把同一张表套到对照锚点上走一遍，验证它的可迁移性。OLMo-2-7B（[OLMo-2-7B config](../references.md)，[A]）： $L = 32$、 $d = 4096$、 $H_q = H_{kv} = 32$、 $d_{\mathrm{ff}} = 11008$、 $V = 100352$、rope_theta = 500000、rms_norm_eps = $10^{-6}$、attention_bias = false、tie = false。式 (2) 里唯一的结构变化是 $g(h)$ 退化为恒等映射（ $H_q / H_{kv} = 1$，每头各配一对 K/V，MHA 标准形）；式 (3) 不变，只是 $d_{\mathrm{ff}}$ 收窄到 $2.69d$。这一步 mapping 能直接读出的是参数与 FLOPs 账的变化（§6 练习口径）；读不出的是两件事——norm 摆在子层输出侧（reordered）与 q/k 投影后的两次 RMSNorm——它们不写进 config 的任何标准字段，只能去 `modeling_olmo2.py`（[A]）里看 `Olmo2DecoderLayer.forward` 的接线顺序与 `Olmo2Attention` 的 `q_norm` / `k_norm`。这就是本表的能力边界，也是它的用法：config 管「形状与账」，modeling 代码管「接线与归一化位置」，两边各读一遍才算读完一个模型。
 
 ## 3. minimal 实现：约 150 行整合 P2 全组件
 
@@ -255,13 +255,13 @@ assert n == expect
 
 | 组件 | nanoGPT / GPT-2 | §3 / Llama-3.1 配方 |
 | --- | --- | --- |
-| norm 类型 | LayerNorm（$\gamma$、$\beta$ 双参数，eps $10^{-5}$） | RMSNorm（仅 $\gamma$，eps $10^{-6}$ 量级） |
+| norm 类型 | LayerNorm（ $\gamma$、 $\beta$ 双参数，eps $10^{-5}$） | RMSNorm（仅 $\gamma$，eps $10^{-6}$ 量级） |
 | norm 摆放 | Pre-LN + final LN | Pre-LN + final RMSNorm（OLMo-2 为 reordered 变体） |
 | 位置编码 | learned absolute 查表（1024 行，加进 stream） | RoPE（attention 内旋转，stream 无位置向量） |
 | 投影 bias | True（attention 与 FFN 全带） | False |
-| tying | tied（$W_U = E$，124M 对账见 2.2 §9） | untied（独立 $W_U$，$+Vd$） |
-| FFN | 两矩阵 GELU，$d_{\mathrm{ff}} = 4d$（GPT-2 的 HF config 为 gelu_new = tanh 近似；nanoGPT 的 `nn.GELU()` 默认是精确 GELU） | 三矩阵 SwiGLU，$d_{\mathrm{ff}} = 3.5d$ |
-| attention | MHA（$H_{kv} = H_q$） | GQA（$H_{kv} = H_q / 4$） |
+| tying | tied（ $W_U = E$，124M 对账见 2.2 §9） | untied（独立 $W_U$， $+Vd$） |
+| FFN | 两矩阵 GELU， $d_{\mathrm{ff}} = 4d$（GPT-2 的 HF config 为 gelu_new = tanh 近似；nanoGPT 的 `nn.GELU()` 默认是精确 GELU） | 三矩阵 SwiGLU， $d_{\mathrm{ff}} = 3.5d$ |
+| attention | MHA（ $H_{kv} = H_q$） | GQA（ $H_{kv} = H_q / 4$） |
 
 读这张表的方式：左列到右列的每一行都对应 P2 某一章的一次推导（LayerNorm→RMSNorm 是 2.7 §3，learned abs→RoPE 是 2.5，bias 与 tying 是 §8 误解二三，GELU→SwiGLU 是 2.6，MHA→GQA 是 4.1 的预告）。骨架七年未动，动的是组件——这就是「现代标准配方」的精确含义：式 (1) 的接线 + 右列的组件选择。
 
@@ -342,7 +342,7 @@ hidden_states = self.mlp(hidden_states)
 hidden_states = residual + hidden_states
 ```
 
-**`LlamaModel` / `LlamaForCausalLM`**（式 (4)）：`embed_tokens` 查表后依次过 `self.layers`，`self.norm` 收尾，`lm_head` 出 logits；`tie_word_embeddings` 为 true 时 `lm_head.weight` 与 `embed_tokens.weight` 共享同一参数（Llama-3.1-8B 为 false）。`LlamaForCausalLM.forward` 的训练分支把 logits 与 labels 交给 loss 工具做移位对齐——$z_{t-1}$ 对 $x_t$ 的逐位置错位监督（1.1 §4 的 teacher forcing 口径），这一步在 block 结构之外，式 (4) 末行的条件分布写法就是它的数学形态。位置编码的组装位置值得单独点名：模型级持有一个 `LlamaRotaryEmbedding`，每次 forward 以 `position_embeddings = self.rotary_emb(hidden_states, position_ids)` 现算一次 cos/sin、传给全部层共享（RoPE 只依赖位置与频率，与层无关）；其内部只有 `inv_freq` 是预存 buffer，cos/sin 由 `inv_freq` 与 `position_ids` 逐前向外积现算（fp32 下 `freqs = inv_freq @ position_ids`，再 `cat([freqs, freqs])` 后取 cos/sin）——与 2.5 §4.8 口径一致，不是「初始化时预建 $[T_{\max}, D]$ 大表」的旧式实现。decode 时 `position_ids` 携带全局绝对位置，与 2.5 §4.3 的接缝注记（q 必须按全局位置旋转）咬合。
+**`LlamaModel` / `LlamaForCausalLM`**（式 (4)）：`embed_tokens` 查表后依次过 `self.layers`，`self.norm` 收尾，`lm_head` 出 logits；`tie_word_embeddings` 为 true 时 `lm_head.weight` 与 `embed_tokens.weight` 共享同一参数（Llama-3.1-8B 为 false）。`LlamaForCausalLM.forward` 的训练分支把 logits 与 labels 交给 loss 工具做移位对齐—— $z_{t-1}$ 对 $x_t$ 的逐位置错位监督（1.1 §4 的 teacher forcing 口径），这一步在 block 结构之外，式 (4) 末行的条件分布写法就是它的数学形态。位置编码的组装位置值得单独点名：模型级持有一个 `LlamaRotaryEmbedding`，每次 forward 以 `position_embeddings = self.rotary_emb(hidden_states, position_ids)` 现算一次 cos/sin、传给全部层共享（RoPE 只依赖位置与频率，与层无关）；其内部只有 `inv_freq` 是预存 buffer，cos/sin 由 `inv_freq` 与 `position_ids` 逐前向外积现算（fp32 下 `freqs = inv_freq @ position_ids`，再 `cat([freqs, freqs])` 后取 cos/sin）——与 2.5 §4.8 口径一致，不是「初始化时预建 $[T_{\max}, D]$ 大表」的旧式实现。decode 时 `position_ids` 携带全局绝对位置，与 2.5 §4.3 的接缝注记（q 必须按全局位置旋转）咬合。
 
 mask 的组装同样在模型级完成一次：`LlamaModel.forward` 依据 attention 实现类型生成一份加性 causal mask（下三角外为 $-\infty$，2.4 式 (3) 的加性形态），与 cos/sin 一起作为参数传给每层——每个 block 收到的「位置与可见性」输入因此完全相同，层间差异全部来自各自的权重矩阵。对照教学版：§3 把 mask 的构造放在了每个 attention 内部（逐层重复造同一张上三角），这是教学上的就近原则，不是语义差异。
 
@@ -368,49 +368,49 @@ mask 的组装同样在模型级完成一次：`LlamaModel.forward` 依据 atten
 | --- | --- | --- | --- | --- |
 | 1 | QKV 投影 | $2d\left( H_q + 2H_{kv} \right) D$ | $2 \times 4096 \times 48 \times 128$ | 50.3 M |
 | 2 | RoPE（q、k） | $3D \left( H_q + H_{kv} \right)$（每 2 维块 4 乘 2 加） | $3 \times 128 \times 40$ | 0.015 M |
-| 3 | score + 加权和 | $2Td$（$QK^{\top}$ 与 $PV$ 各 $Td$） | $2 \times 4096 \times 4096$ | 33.6 M |
+| 3 | score + 加权和 | $2Td$（ $QK^{\top}$ 与 $PV$ 各 $Td$） | $2 \times 4096 \times 4096$ | 33.6 M |
 | 4 | softmax（exp + 归一化） | $\sim 2 H_q T$（逐元素） | $2 \times 32 \times 4096$ | 0.26 M |
 | 5 | out 投影 | $2d^{2}$ | $2 \times 4096^{2}$ | 33.6 M |
 | 6 | RMSNorm × 2 | $\sim 4d$ 每个（平方、归约、rsqrt、乘 $\gamma$） | $8 \times 4096$ | 0.03 M |
 | 7 | 残差加 × 2 | $2d$ | $2 \times 4096$ | 0.008 M |
-| 8 | FFN 三矩阵 | $6 d \, d_{\mathrm{ff}}$ | $6 \times 4096 \times 14336$ | 352.3 M |
+| 8 | FFN 三矩阵 | $6 d \thinspace d_{\mathrm{ff}}$ | $6 \times 4096 \times 14336$ | 352.3 M |
 | 9 | SiLU + ⊙ | $\sim 5 d_{\mathrm{ff}}$ | $5 \times 14336$ | 0.07 M |
 
 matmul 行（1、5、8）合计：
 
 $$
-\mathrm{FLOPs}_{\mathrm{layer}} = \underbrace{2d\left( H_q + 2H_{kv} \right) D + 2d^{2} + 6 d\, d_{\mathrm{ff}}}_{\text{matmul} \;\to\; 2N} + \underbrace{2Td}_{\text{attention}} + O\left( d + d_{\mathrm{ff}} + H_q T \right) \qquad (5)
+\mathrm{FLOPs}_{\mathrm{layer}} = \underbrace{2d\left( H_q + 2H_{kv} \right) D + 2d^{2} + 6 d\thinspace d_{\mathrm{ff}}}_{\text{matmul} \hspace{5mu}\to\hspace{5mu} 2N} + \underbrace{2Td}_{\text{attention}} + O\left( d + d_{\mathrm{ff}} + H_q T \right) \qquad (5)
 $$
 
-**符号**：第一大括号是 1.2 式 (2) 的层内成分（每参数一次 FMA 的逐行展开）；$2Td$ 是 1.2 式 (6) 的 per-token 形态；$O(\cdot)$ 余项 = 第 2、4、6、7、9 行。
+**符号**：第一大括号是 1.2 式 (2) 的层内成分（每参数一次 FMA 的逐行展开）； $2Td$ 是 1.2 式 (6) 的 per-token 形态； $O(\cdot)$ 余项 = 第 2、4、6、7、9 行。
 
-数值闭环：matmul 行合计 $4.362 \times 10^{8}$，乘 $L = 32$ 得 $1.396 \times 10^{10} = 2N$（层参数口径 $N = 6.98 \times 10^{9}$，1.2 §9）——式 (5) 与「每参数一次 FMA」互相验证。低阶行合计约 $3.9 \times 10^{5}$，占 matmul 行的 0.09%，比值约千倍、与 $d = 4096$ 同量级——1.2 §3「elementwise 相对 $2N$ 低约一个 $d$ 因子」的忽略口径在这里被量化而非断言。整机 per-token 前向：层部分 $1.396 \times 10^{10}$ + 输出头 $2Vd = 1.05 \times 10^{9}$ ≈ $1.50 \times 10^{10}$ FLOPs；$T = 4096$ 时 attention 本体再加 $1.07 \times 10^{9}$（占 6.7%）。
+数值闭环：matmul 行合计 $4.362 \times 10^{8}$，乘 $L = 32$ 得 $1.396 \times 10^{10} = 2N$（层参数口径 $N = 6.98 \times 10^{9}$，1.2 §9）——式 (5) 与「每参数一次 FMA」互相验证。低阶行合计约 $3.9 \times 10^{5}$，占 matmul 行的 0.09%，比值约千倍、与 $d = 4096$ 同量级——1.2 §3「elementwise 相对 $2N$ 低约一个 $d$ 因子」的忽略口径在这里被量化而非断言。整机 per-token 前向：层部分 $1.396 \times 10^{10}$ + 输出头 $2Vd = 1.05 \times 10^{9}$ ≈ $1.50 \times 10^{10}$ FLOPs； $T = 4096$ 时 attention 本体再加 $1.07 \times 10^{9}$（占 6.7%）。
 
-decode 口径注记：上表是训练 / prefill 的并行前向（$T$ 个位置一次打完，第 3 行按 causal 平均 $T/2$ 计）。逐 token 生成时（2.4 §3 的 decode 阶段），第 1、5、8 行的 per-token 数值逐项不变（投影与 FFN 本就是逐位置的），第 3 行变成 $4td$（当前 query 对 $t$ 个缓存 K/V 的打分与加权和，2.4 §4.4），mask 行整行消失（cache 的定义域即可见集）——同一张表的两个读法，对应 2.4 式 (8) 的两项。
+decode 口径注记：上表是训练 / prefill 的并行前向（ $T$ 个位置一次打完，第 3 行按 causal 平均 $T/2$ 计）。逐 token 生成时（2.4 §3 的 decode 阶段），第 1、5、8 行的 per-token 数值逐项不变（投影与 FFN 本就是逐位置的），第 3 行变成 $4td$（当前 query 对 $t$ 个缓存 K/V 的打分与加权和，2.4 §4.4），mask 行整行消失（cache 的定义域即可见集）——同一张表的两个读法，对应 2.4 式 (8) 的两项。
 
-九行里只有第 3、4 两行随 $T$ 变，这正是式 (5) 把 $2Td$ 单列的原因。$T$ 方向的走向可以直接推：令 attention 行等于同层 matmul 行，$2Td = 2d\left( H_q + 2H_{kv} \right) D + 2d^{2} + 6 d\, d_{\mathrm{ff}}$，解出 $T = \left( H_q + 2H_{kv} \right) D + d + 3 d_{\mathrm{ff}} = 6144 + 4096 + 43008 \approx 5.3 \times 10^{4}$——与 1.2 §6 的交叉点 $T^{*} = N / (Ld) \approx 5.3 \times 10^{4}$ 是同一方程的两种写法（彼处按全机层参数口径，此处按单层逐行口径，数值相合）。$T = 131072$（满窗）时第 3 行涨到 $1.07 \times 10^{9}$，超过 matmul 三行之和的两倍——1.2 §6 三档表（6.7% / 36% / 70%）的行级来源就是这张表。读这张表的方式与 1.2 §7 相同：公式列是推导（每个系数来自式 (2)(3) 的哪个运算），代入列的每个整数都能在 §2 的映射表里指回一个 config 字段——换任何模型的 config 照此重算，这就是「config 决定一切账」的操作含义。
+九行里只有第 3、4 两行随 $T$ 变，这正是式 (5) 把 $2Td$ 单列的原因。 $T$ 方向的走向可以直接推：令 attention 行等于同层 matmul 行， $2Td = 2d\left( H_q + 2H_{kv} \right) D + 2d^{2} + 6 d\thinspace d_{\mathrm{ff}}$，解出 $T = \left( H_q + 2H_{kv} \right) D + d + 3 d_{\mathrm{ff}} = 6144 + 4096 + 43008 \approx 5.3 \times 10^{4}$——与 1.2 §6 的交叉点 $`T^{*} = N / (Ld) \approx 5.3 \times 10^{4}`$ 是同一方程的两种写法（彼处按全机层参数口径，此处按单层逐行口径，数值相合）。 $T = 131072$（满窗）时第 3 行涨到 $1.07 \times 10^{9}$，超过 matmul 三行之和的两倍——1.2 §6 三档表（6.7% / 36% / 70%）的行级来源就是这张表。读这张表的方式与 1.2 §7 相同：公式列是推导（每个系数来自式 (2)(3) 的哪个运算），代入列的每个整数都能在 §2 的映射表里指回一个 config 字段——换任何模型的 config 照此重算，这就是「config 决定一切账」的操作含义。
 
 ## 6. 参数量精确对账：从 $12Ld^{2}$ 到个位数
 
 把 §2 的字段逐个搬进参数账（每一项的来源运算标在括号里）：
 
 $$
-N_{\mathrm{total}} = \underbrace{Vd}_{E} + L \left( \underbrace{d^{2}}_{W^Q} + \underbrace{2 d H_{kv} D}_{W^K, W^V} + \underbrace{d^{2}}_{W^O} + \underbrace{3 d\, d_{\mathrm{ff}}}_{\text{FFN}} + \underbrace{2d}_{\gamma_1, \gamma_2} \right) + \underbrace{d}_{\gamma_f} + \underbrace{Vd}_{W_U} \qquad (6)
+N_{\mathrm{total}} = \underbrace{Vd}_{E} + L \left( \underbrace{d^{2}}_{W^Q} + \underbrace{2 d H_{kv} D}_{W^K, W^V} + \underbrace{d^{2}}_{W^O} + \underbrace{3 d\thinspace d_{\mathrm{ff}}}_{\text{FFN}} + \underbrace{2d}_{\gamma_1, \gamma_2} \right) + \underbrace{d}_{\gamma_f} + \underbrace{Vd}_{W_U} \qquad (6)
 $$
 
-**符号**：$\gamma_1, \gamma_2, \gamma_f$：每层两个 RMSNorm 增益与 final norm 增益（各 $d$ 个参数——norm 不是无参算子，只是低阶）；其余各项同式 (2)(3)(4)。
+**符号**： $\gamma_1, \gamma_2, \gamma_f$：每层两个 RMSNorm 增益与 final norm 增益（各 $d$ 个参数——norm 不是无参算子，只是低阶）；其余各项同式 (2)(3)(4)。
 
-代入 Llama-3.1-8B（$V = 128256$、$d = 4096$、$L = 32$、$H_{kv} = 8$、$D = 128$、$d_{\mathrm{ff}} = 14336$）逐项加：embedding $525336576$；每层 attention $41943040$（$= 2.5d^{2}$，GQA 痕迹）、FFN $176160768$、norm $8192$，层计 $218112000$，乘 32 得 $6979584000$；final norm $4096$；输出头 $525336576$。合计：
+代入 Llama-3.1-8B（ $V = 128256$、 $d = 4096$、 $L = 32$、 $H_{kv} = 8$、 $D = 128$、 $d_{\mathrm{ff}} = 14336$）逐项加：embedding $525336576$；每层 attention $41943040$（ $= 2.5d^{2}$，GQA 痕迹）、FFN $176160768$、norm $8192$，层计 $218112000$，乘 32 得 $6979584000$；final norm $4096$；输出头 $525336576$。合计：
 
 $$
 N_{\mathrm{total}} = 525336576 + 6979584000 + 4096 + 525336576 = 8030261248 \qquad (7)
 $$
 
-「8B」名实相符（$8.03 \times 10^{9}$）。三层读法。其一，**norm 项确实低阶但不是零**：$(2L+1)d = 266240$ 个参数，占 0.0033%——2.1 §4「$O(Ld)$ 低阶项忽略」的速算口径与精确账的差就住在这里；对账到个位时不能省。其二，**与 2.1 的 $12Ld^{2}$ 速算对账**：速算给层参数 $6.44 \times 10^{9}$，精确值 $6.98 \times 10^{9}$，偏差 $+8.4\%$ 的分解签名（GQA $-1.5d^{2}$、宽 FFN $+2.5d^{2}$）已在 2.1 §4 登记；本章把 embedding、输出头、norm 全部入账后，速算与精确值的分工是「量级与签名」对「个位」。其三，**对账练习的操作版**：拿到任何 [A] 级模型，式 (6) 左端用 config 字段算、右端用 `sum(p.numel())` 量（或官方公布的参数量），两边对不上时——漏 tied/untied 的 $Vd$、漏 GQA 的 $H_{kv}$、漏 norm 增益、把 head_dim 当 $d/H_q$ 硬算——四种错法正好对应 §8 的四条误解。
+「8B」名实相符（ $8.03 \times 10^{9}$）。三层读法。其一，**norm 项确实低阶但不是零**： $(2L+1)d = 266240$ 个参数，占 0.0033%——2.1 §4「 $O(Ld)$ 低阶项忽略」的速算口径与精确账的差就住在这里；对账到个位时不能省。其二，**与 2.1 的 $12Ld^{2}$ 速算对账**：速算给层参数 $6.44 \times 10^{9}$，精确值 $6.98 \times 10^{9}$，偏差 $`+8.4\%`$ 的分解签名（GQA $-1.5d^{2}$、宽 FFN $+2.5d^{2}$）已在 2.1 §4 登记；本章把 embedding、输出头、norm 全部入账后，速算与精确值的分工是「量级与签名」对「个位」。其三，**对账练习的操作版**：拿到任何 [A] 级模型，式 (6) 左端用 config 字段算、右端用 `sum(p.numel())` 量（或官方公布的参数量），两边对不上时——漏 tied/untied 的 $Vd$、漏 GQA 的 $H_{kv}$、漏 norm 增益、把 head_dim 当 $d/H_q$ 硬算——四种错法正好对应 §8 的四条误解。
 
 两档精度各有用武之地。速算档（2.1 式 (3) 的 $12Ld^{2}$ + $2Vd$）用于扫读：看到一个新模型先算它，量级与偏差签名（GQA、宽 FFN）三十秒内可读。精算档（式 (6)）用于落账：Part 5 逐家对账、复现实现的参数断言（§3 冒烟测试）、MoE 激活参数换算（4.5 的前置）都要个位级闭环——对不上的每一百万参数都对应一个具体的结构字段，不许用「约」字糊弄过去。
 
-对照锚点再算一遍，把「接线差异进不进参数账」这个问题做实。OLMo-2-7B（$L = 32$、$d = 4096$、$H_{kv} = 32$ MHA、$d_{\mathrm{ff}} = 11008$、$V = 100352$、untied）：每层 attention $4d^{2} = 67108864$、FFN $3 d\, d_{\mathrm{ff}} = 135266304$，矩阵层计 $202375168$，乘 32 得 $6476005376$；embedding 加输出头 $2Vd = 822083584$。norm 侧多一笔：reordered 接线下每层仍是两个子层 norm（作用于子层输出，参数量不变），但 attention 内部多了 `q_norm` / `k_norm` 两个全投影维 RMSNorm（2.7 §7 的全维变体，各 $d = 4096$ 个增益），即每层 4 个 norm、$4d = 16384$ 个参数，全机 norm 参数 $32 \times 16384 + 4096 = 528384$——是 Llama-3.1-8B 同项（266240）的两倍。合计 $6476005376 + 822083584 + 528384 = 7298617344 \approx 7.30 \times 10^{9}$，与 2.1 §4 表的总量级一致。结构差异（reordered、QK-norm）不改变式 (2)(3) 的矩阵形状，只改变 norm 增益的个数与接线位置——这就是为什么 config 逐字段表（§2）能定参数账、却定不了全部结构，两边各读一遍的分工在参数账上同样成立。
+对照锚点再算一遍，把「接线差异进不进参数账」这个问题做实。OLMo-2-7B（ $L = 32$、 $d = 4096$、 $H_{kv} = 32$ MHA、 $d_{\mathrm{ff}} = 11008$、 $V = 100352$、untied）：每层 attention $4d^{2} = 67108864$、FFN $3 d\thinspace d_{\mathrm{ff}} = 135266304$，矩阵层计 $202375168$，乘 32 得 $6476005376$；embedding 加输出头 $2Vd = 822083584$。norm 侧多一笔：reordered 接线下每层仍是两个子层 norm（作用于子层输出，参数量不变），但 attention 内部多了 `q_norm` / `k_norm` 两个全投影维 RMSNorm（2.7 §7 的全维变体，各 $d = 4096$ 个增益），即每层 4 个 norm、 $4d = 16384$ 个参数，全机 norm 参数 $32 \times 16384 + 4096 = 528384$——是 Llama-3.1-8B 同项（266240）的两倍。合计 $6476005376 + 822083584 + 528384 = 7298617344 \approx 7.30 \times 10^{9}$，与 2.1 §4 表的总量级一致。结构差异（reordered、QK-norm）不改变式 (2)(3) 的矩阵形状，只改变 norm 增益的个数与接线位置——这就是为什么 config 逐字段表（§2）能定参数账、却定不了全部结构，两边各读一遍的分工在参数账上同样成立。
 
 ## 7. 结构变体：并行块（parallel attention/FFN block）
 
@@ -420,28 +420,28 @@ $$
 x^{(\ell)} = x^{(\ell-1)} + \mathrm{Attn}^{(\ell)}\left( \mathrm{Norm}^{(\ell)}\left( x^{(\ell-1)} \right) \right) + \mathrm{FFN}^{(\ell)}\left( \mathrm{Norm}^{(\ell)}\left( x^{(\ell-1)} \right) \right) \qquad (8)
 $$
 
-**符号**：$\mathrm{Norm}^{(\ell)}$：单个归一化（该族用 LayerNorm；换成 RMSNorm 不改变本节论证）；两个分支读同一份 $\mathrm{Norm}^{(\ell)}(x^{(\ell-1)})$。
+**符号**： $\mathrm{Norm}^{(\ell)}$：单个归一化（该族用 LayerNorm；换成 RMSNorm 不改变本节论证）；两个分支读同一份 $\mathrm{Norm}^{(\ell)}(x^{(\ell-1)})$。
 
 与串行形（式 (1)）逐项对照：
 
 | 维度 | 串行块（式 (1)） | 并行块（式 (8)） |
 | --- | --- | --- |
-| norm 次数 / block | 2（$\gamma_1, \gamma_2$） | 1 |
+| norm 次数 / block | 2（ $\gamma_1, \gamma_2$） | 1 |
 | 分支依赖 | FFN 输入含 attention 当层输出 | 两分支独立，同读 $x^{(\ell-1)}$ |
-| block 内复合深度 | 每 block 两级复合（全机 $2L$ 级子层复合） | 每 block 一级并列（$L$ 级复合） |
-| 参数量 / FLOPs | $2.5d^{2} + 3 d\, d_{\mathrm{ff}}$ / 层（GQA 口径） | 逐项相同（唯一差：每层 norm 增益 $2d \to d$，见上行） |
+| block 内复合深度 | 每 block 两级复合（全机 $2L$ 级子层复合） | 每 block 一级并列（ $L$ 级复合） |
+| 参数量 / FLOPs | $2.5d^{2} + 3 d\thinspace d_{\mathrm{ff}}$ / 层（GQA 口径） | 逐项相同（唯一差：每层 norm 增益 $2d \to d$，见上行） |
 | GEMM 形态 | 两批输入不同，天然先后 | QKV 与 gate/up 读同一输入，可拼成一个大 GEMM；out 与 down 同理（输出相加） |
 | 张量并行通信 | 每层两次行并行 all-reduce | 两分支输出求和后合并为一次 |
 
-梯度含义可以精确点名，不靠传闻。把式 (8) 按 2.1 §2 展开：$x^{(L)} = x^{(0)} + \sum_{\ell} a_{\ell} + \sum_{\ell} f_{\ell}$——与串行 Pre-LN 的展开式逐项同形（差别只在 $f_{\ell}$ 的输入是 $x^{(\ell-1)}$ 还是 $\tilde{x}^{(\ell)}$），于是 2.7 式 (8) 的恒等项逐字保留：上游梯度经恒等通道原样直达每一层，并行块没有引入任何打断可加结构的东西（norm 仍在分支输入侧，不在加法之后）。变的是分支梯度的通路数，可以写出来对照。串行形里第 $\ell$ 层 FFN 分支对 $x^{(\ell-1)}$ 的 Jacobian 是复合的：
+梯度含义可以精确点名，不靠传闻。把式 (8) 按 2.1 §2 展开： $x^{(L)} = x^{(0)} + \sum_{\ell} a_{\ell} + \sum_{\ell} f_{\ell}$——与串行 Pre-LN 的展开式逐项同形（差别只在 $f_{\ell}$ 的输入是 $x^{(\ell-1)}$ 还是 $\tilde{x}^{(\ell)}$），于是 2.7 式 (8) 的恒等项逐字保留：上游梯度经恒等通道原样直达每一层，并行块没有引入任何打断可加结构的东西（norm 仍在分支输入侧，不在加法之后）。变的是分支梯度的通路数，可以写出来对照。串行形里第 $\ell$ 层 FFN 分支对 $x^{(\ell-1)}$ 的 Jacobian 是复合的：
 
 $$
-\text{(serial)} \quad \frac{\partial f_{\ell}}{\partial x^{(\ell-1)}} = \frac{\partial f_{\ell}}{\partial \tilde{x}^{(\ell)}} \left( I + \frac{\partial a_{\ell}}{\partial x^{(\ell-1)}} \right) \;; \qquad \text{(parallel)} \quad \frac{\partial f_{\ell}}{\partial x^{(\ell-1)}} = \frac{\partial f_{\ell}}{\partial \mathrm{Norm}(x^{(\ell-1)})} \, J_{\mathrm{Norm}} \qquad (9)
+\text{(serial)} \quad \frac{\partial f_{\ell}}{\partial x^{(\ell-1)}} = \frac{\partial f_{\ell}}{\partial \tilde{x}^{(\ell)}} \left( I + \frac{\partial a_{\ell}}{\partial x^{(\ell-1)}} \right) \hspace{5mu}; \qquad \text{(parallel)} \quad \frac{\partial f_{\ell}}{\partial x^{(\ell-1)}} = \frac{\partial f_{\ell}}{\partial \mathrm{Norm}(x^{(\ell-1)})} \thinspace J_{\mathrm{Norm}} \qquad (9)
 $$
 
-**符号**：$a_{\ell} = \mathrm{Attn}^{(\ell)}(\mathrm{Norm}(x^{(\ell-1)}))$；$J_{\mathrm{Norm}}$：归一化的 Jacobian（2.7 式 (10) 一族）。串行形的第一式里 $\partial a_{\ell} / \partial x^{(\ell-1)}$ 就是那条「经 attention 输出的间接路径」：FFN 的梯度要过 attention 的 Jacobian 回流到层输入。并行形的第二式没有这一项——反向图上每层少一条跨分支边，两条分支的梯度各自只经自己的子层 Jacobian 与同一个 $J_{\mathrm{Norm}}$ 到达 $x^{(\ell-1)}$。表示侧的对称事实：串行的 FFN 加工的是「刚混完上下文」的 stream，并行的 FFN 只能读「本层 attention 动手之前」的快照；跨 block 的接力仍在（下一层的 norm 读到加和后的 stream），所以并行形损失的是层内接力，不是层间接力。
+**符号**： $a_{\ell} = \mathrm{Attn}^{(\ell)}(\mathrm{Norm}(x^{(\ell-1)}))$； $J_{\mathrm{Norm}}$：归一化的 Jacobian（2.7 式 (10) 一族）。串行形的第一式里 $\partial a_{\ell} / \partial x^{(\ell-1)}$ 就是那条「经 attention 输出的间接路径」：FFN 的梯度要过 attention 的 Jacobian 回流到层输入。并行形的第二式没有这一项——反向图上每层少一条跨分支边，两条分支的梯度各自只经自己的子层 Jacobian 与同一个 $J_{\mathrm{Norm}}$ 到达 $x^{(\ell-1)}$。表示侧的对称事实：串行的 FFN 加工的是「刚混完上下文」的 stream，并行的 FFN 只能读「本层 attention 动手之前」的快照；跨 block 的接力仍在（下一层的 norm 读到加和后的 stream），所以并行形损失的是层内接力，不是层间接力。
 
-吞吐含义全部来自「两分支读同一输入」。代入 Llama-3.1-8B 的形状走一遍：串行形里 attention 侧读 $\mathrm{Norm}_1$ 输出的是一个 $d \times 6144$ 的 QKV GEMM，FFN 侧读 $\mathrm{Norm}_2$ 输出的是一个 $d \times 28672$ 的 gate/up GEMM——两次发射、两个输入张量、中间隔着 attention 的全部计算；并行形里两者读同一份归一化输出，可以列拼成一个 $4096 \times 34816$ 的 GEMM 一次发射，输出侧的 out（$4096 \times 4096$）与 down（$14336 \times 4096$）同样可以行拼、结果相加。GEMM 变大变少，tensor core 利用率上升、kernel 发射与调度气泡减少；张量并行下每层两次行并行 all-reduce 合并为一次（两分支输出先求和再通信）；norm 归约每层两次变一次。式 (5) 的账一项不动——省的是墙钟时间里的非计算成分，不是 FLOPs。这与 2.4 §4.4 的 cache 账同构：两处都是「省墙钟 ≠ 省账」。
+吞吐含义全部来自「两分支读同一输入」。代入 Llama-3.1-8B 的形状走一遍：串行形里 attention 侧读 $\mathrm{Norm}_1$ 输出的是一个 $d \times 6144$ 的 QKV GEMM，FFN 侧读 $\mathrm{Norm}_2$ 输出的是一个 $d \times 28672$ 的 gate/up GEMM——两次发射、两个输入张量、中间隔着 attention 的全部计算；并行形里两者读同一份归一化输出，可以列拼成一个 $4096 \times 34816$ 的 GEMM 一次发射，输出侧的 out（ $4096 \times 4096$）与 down（ $14336 \times 4096$）同样可以行拼、结果相加。GEMM 变大变少，tensor core 利用率上升、kernel 发射与调度气泡减少；张量并行下每层两次行并行 all-reduce 合并为一次（两分支输出先求和再通信）；norm 归约每层两次变一次。式 (5) 的账一项不动——省的是墙钟时间里的非计算成分，不是 FLOPs。这与 2.4 §4.4 的 cache 账同构：两处都是「省墙钟 ≠ 省账」。
 
 推理侧同构：decode 每步是 $B \times 1$ 的小 GEMM，权重读取主导（2.4 §6 的算术强度分析），融合不减少权重字节数，但减少每步的 kernel 发射次数与调度间隙——在小 GEMM  regime 里这些非计算成分的占比更大，并行块的墙钟收益在 decode 端只会更明显。
 
@@ -449,10 +449,10 @@ $$
 
 ## 8. 常见误解清单
 
-1. **head_dim = hidden_size / num_attention_heads 是巧合不是定义**。Llama-3.1-8B 的 $128 = 4096 / 32$ 恰好整除成立；Qwen3-8B 的 config 则把 head_dim = 128 写成了显式字段（[Qwen3-8B config](../references.md)，[A]）——同一数值，一种是导出、一种是声明；DeepSeek-V3 的 qk head 维 $= 128$（nope）$+ 64$（rope）$= 192 \neq$ hidden/heads（[DeepSeek-V3 config](../references.md)，[A]；2.3 §5、2.5 §4.7 已用）是显式字段脱离整除关系的实例。代码侧的根据：`LlamaAttention.__init__` 先查显式 `head_dim` 字段、缺省才整除导出（§4）。读陌生 config 时先查有没有显式 head_dim，再决定能不能整除；参数账（$W_h^{Q}$ 的形状）与 RoPE 通道数（$D/2$）都跟在 head_dim 后面，硬整除会连环错。
+1. **head_dim = hidden_size / num_attention_heads 是巧合不是定义**。Llama-3.1-8B 的 $128 = 4096 / 32$ 恰好整除成立；Qwen3-8B 的 config 则把 head_dim = 128 写成了显式字段（[Qwen3-8B config](../references.md)，[A]）——同一数值，一种是导出、一种是声明；DeepSeek-V3 的 qk head 维 $= 128$（nope） $+ 64$（rope） $= 192 \neq$ hidden/heads（[DeepSeek-V3 config](../references.md)，[A]；2.3 §5、2.5 §4.7 已用）是显式字段脱离整除关系的实例。代码侧的根据：`LlamaAttention.__init__` 先查显式 `head_dim` 字段、缺省才整除导出（§4）。读陌生 config 时先查有没有显式 head_dim，再决定能不能整除；参数账（ $W_h^{Q}$ 的形状）与 RoPE 通道数（ $D/2$）都跟在 head_dim 后面，硬整除会连环错。
 2. **bias 的有无是配方分野，不是默认值问题**。attention_bias 字段三家全为 false（Llama-3.1-8B、Qwen3-8B、OLMo-2-7B，各 config 条目，[A]）；FFN 侧 Llama-3.1-8B 另有显式 mlp_bias = false，Qwen3 / OLMo-2 的 config 无此字段、其 FFN 无 bias 以 modeling 代码为准（OLMo 2 侧见 `modeling_olmo2.py` 的 `Olmo2MLP`，三个投影硬编码 bias=False，[HuggingFace, modeling_olmo2.py](../references.md)，[A]）——这正呼应 §2 的分工：config 管形状与账，接线与缺省在代码里。GPT-2 与 nanoGPT 老配方全为 true（[Radford et al., 2019](../references.md)，[W]；[Karpathy, nanoGPT](../references.md)，教学参照）。bias 参数只占 $O(Ld)$ 低阶（2.1 §4 口径），去掉它不是「bias 被证明有害」，是现代配方的收敛点；照抄 nanoGPT 的 bias=True 去复现 Llama 类模型是错配。另外两件事不要混：投影的 bias 与 norm 的 $\beta$——LayerNorm 有 $\beta$（2.7 式 (1)），RMSNorm 没有（2.7 式 (5)），「这个模型无 bias」断言的是前者。
 3. **tied vs untied 差的是一整个 $Vd$**。tie_word_embeddings = false 时输出头是独立的第二份词表矩阵：Llama-3.1-8B 为 $0.53 \times 10^{9}$、占总参数 6.5%；GPT-2 为 tied（[W]，2.2 §9 的 124M 对账）。对账时漏掉这个字段就凭空「丢」5 亿参数（§6 的四种错法之一）；梯度耦合的取舍（同一份 $E$ 两路梯度）在 2.2 §9，此处只登记口径：判定只看 config 一个布尔字段。
-4. **block 之外的参数与 FLOPs 不要漏**。「整机 = $L$ 个 block」的口径会漏掉三样：final RMSNorm（$d$ 个参数 + 每 token 一次归约，2.7 §5.2 给出它必须存在的理由）、输入 embedding（$Vd$ 参数、0 FLOPs——查表不是 matmul，1.2 §3）、输出头（$Vd$ 参数 + $2Vd$ FLOPs，Llama-3.1-8B 上占前向约 7%，1.2 §3 式 (2) 符号表）。§5、§6 的闭环之所以精确到个位，靠的就是这三样都入账。
+4. **block 之外的参数与 FLOPs 不要漏**。「整机 = $L$ 个 block」的口径会漏掉三样：final RMSNorm（ $d$ 个参数 + 每 token 一次归约，2.7 §5.2 给出它必须存在的理由）、输入 embedding（ $Vd$ 参数、0 FLOPs——查表不是 matmul，1.2 §3）、输出头（ $Vd$ 参数 + $2Vd$ FLOPs，Llama-3.1-8B 上占前向约 7%，1.2 §3 式 (2) 符号表）。§5、§6 的闭环之所以精确到个位，靠的就是这三样都入账。
 
 四条误解共享同一个检出流程：先读 config（§2 的表），再读 modeling 代码的 `__init__`（投影宽度、bias、norm 个数都在那里），最后 `sum(p.numel())` 与式 (6) 对账收尾。任何一步与预期不符，回头查这四条——它们的覆盖面就是实践里参数账对不上的主要原因。
 
@@ -461,18 +461,18 @@ $$
 | 概念 | 公式 / 数值 | 要点 |
 | --- | --- | --- |
 | 整机公式 | 式 (1)–(4)：Pre-LN 两子层 + GQA/RoPE/SwiGLU 全下标 | 接口是「归一化读、加法写」；组件可替换、骨架不动 |
-| config ↔ 公式 | §2 逐字段表 | 五个整数（$L, d, H_q, H_{kv}, d_{\mathrm{ff}}$）+ $V$ 钉死全部账；5.6 checklist 底稿 |
+| config ↔ 公式 | §2 逐字段表 | 五个整数（ $L, d, H_q, H_{kv}, d_{\mathrm{ff}}$）+ $V$ 钉死全部账；5.6 checklist 底稿 |
 | minimal 实现 | §3 约 150 行 | 教学用，非优化实现；参数断言 = 式 (6) 可执行形式 |
 | 官方走读 | modeling_llama.py：`LlamaRMSNorm` / `LlamaAttention` / `LlamaMLP` / `LlamaDecoderLayer` | cos/sin 逐前向由 inv_freq × position_ids 现算、各层共享；fp32 归约；算子派发 |
-| FLOPs 全算 | 式 (5)；matmul 行 $4.36 \times 10^{8}$/层/ token | 低阶项占 0.09%（$\sim d$ 因子）；整机 $2N + 2Vd \approx 1.50 \times 10^{10}$ |
-| 参数对账 | 式 (6)(7)：$8030261248$ | norm 增益 $(2L+1)d = 266240$ 入账才到个位；速算与精算分工 |
-| 并行块 | 式 (8)：$x \leftarrow x + \mathrm{Attn}(\mathrm{Norm}(x)) + \mathrm{FFN}(\mathrm{Norm}(x))$ | 恒等通路保留（2.7 式 (8) 逐字成立）；省 GEMM 发射与 all-reduce，不省 FLOPs |
+| FLOPs 全算 | 式 (5)；matmul 行 $4.36 \times 10^{8}$/层/ token | 低阶项占 0.09%（ $\sim d$ 因子）；整机 $2N + 2Vd \approx 1.50 \times 10^{10}$ |
+| 参数对账 | 式 (6)(7)： $8030261248$ | norm 增益 $(2L+1)d = 266240$ 入账才到个位；速算与精算分工 |
+| 并行块 | 式 (8)： $x \leftarrow x + \mathrm{Attn}(\mathrm{Norm}(x)) + \mathrm{FFN}(\mathrm{Norm}(x))$ | 恒等通路保留（2.7 式 (8) 逐字成立）；省 GEMM 发射与 all-reduce，不省 FLOPs |
 | 误解四条 | head_dim 非整除（DeepSeek-V3 192）/ bias 分野 / tied 的 $Vd$ / block 之外三项 | §8 |
 
 ## 练习
 
 1.（计算）MHA 反事实对账：把 Llama-3.1-8B 的 num_key_value_heads 改为 32（其余字段不动），用式 (6) 重算 $N_{\mathrm{total}}$；「8B」名称是否还成立？再把 intermediate_size 改回等参数规则的最小 256 倍数（2.6 §3.2），两个改动叠加后总参数是多少？（提示：attention 项回到 $4d^{2}$，FFN 回到 $3d \times 11008$。）
-2.（计算）用 Qwen3-8B config（$L = 36$、$d = 4096$、$H_q = 32$、$H_{kv} = 8$、$D = 128$、$d_{\mathrm{ff}} = 12288$、$V = 151936$、untied，[Qwen3-8B config](../references.md)，[A]）重做 §5 的全表与 §6 的对账：单层 matmul FLOPs、整机 per-token 前向（含输出头）、$N_{\mathrm{total}}$ 精确值；验证层参数 $= 11.5 d^{2} \times 36$ 与 $2N$ 闭环。
+2.（计算）用 Qwen3-8B config（ $L = 36$、 $d = 4096$、 $H_q = 32$、 $H_{kv} = 8$、 $D = 128$、 $d_{\mathrm{ff}} = 12288$、 $V = 151936$、untied，[Qwen3-8B config](../references.md)，[A]）重做 §5 的全表与 §6 的对账：单层 matmul FLOPs、整机 per-token 前向（含输出头）、 $N_{\mathrm{total}}$ 精确值；验证层参数 $= 11.5 d^{2} \times 36$ 与 $2N$ 闭环。
 3.（代码）在 §3 教学版上：(a) 把 `DecoderBlock` 改成式 (8) 的并行形，断言参数量不变、同输入下输出改变；(b) 参考 2.4 §4.4 给 `GQAAttention` 加 cache，验证「带 mask 的并行前向第 $t$ 位 logits」与「逐 token decode 第 $t$ 步 logits」allclose（fp32、容差 $10^{-5}$）——2.4 §7 命题的整机版；(c) 用 §3 的断言方法对 Qwen3-8B 的 config（练习 2）核对 `sum(p.numel())`。
 4.（推导）并行块的梯度：写出式 (8) 的残差展开式，并证明 2.7 式 (8) 的恒等项对它逐字成立（指明 norm 位置是前提）；再写出串行形（式 (1)）中 $f_{\ell}$ 对 $x^{(\ell-1)}$ 的完整 Jacobian 路径（含经 attention 输出的间接项），说明并行形恰好删掉这一项——「block 内复合深度 $2L \to L$」的精确含义。
 
