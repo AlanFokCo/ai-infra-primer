@@ -105,7 +105,7 @@
 | glm-130b | GLM-130B: An Open Bilingual Pre-trained Model | Zeng et al. | arXiv:2210.02414 | [A] | 2026-11-11 | 3.1, 5.4 |
 | modernbert | Smarter, Better, Faster, Longer: A Modern Bidirectional Encoder for Fast, Memory Efficient, and Long Context Finetuning and Inference | Warner et al. | arXiv:2412.13663 | [A] | 2026-11-11 | 3.1, 3.2 |
 | modernbert-config | ModernBERT-base / ModernBERT-large config.json（HF）+ 官方 repo | Answer.AI | https://huggingface.co/answerdotai/ModernBERT-base/blob/main/config.json ; https://github.com/answerdotai/ModernBERT | [A] | 2026-11-11 | 3.2 |
-| whisper | Robust Speech Recognition via Large-Scale Weak Supervision | Radford et al. | arXiv:2212.04356 ; https://github.com/openai/whisper | [A] | 2026-11-11 | 3.2 |
+| whisper | Robust Speech Recognition via Large-Scale Weak Supervision（680k hrs、16kHz/80ch log-mel/25ms 窗 10ms hop、30s 段、special tokens 任务控制出处） | Radford et al. | arXiv:2212.04356 ; https://github.com/openai/whisper | [A] | 2026-11-11 | 3.2, 10.1, 10.2 |
 | von-oswald | Transformers Learn In-Context by Gradient Descent | von Oswald et al. | arXiv:2212.07677 | [B] | 2026-11-11 | 3.3 |
 | akyurek | What Learning Algorithm Is In-Context Learning? Investigations with Linear Models | Akyürek et al. | arXiv:2211.15661 | [B] | 2026-11-11 | 3.3 |
 | dai-icl | Why Can GPT Learn In-Context? Language Models Implicitly Perform Gradient Descent as Meta-Optimizers | Dai et al. | arXiv:2212.10559 | [B] | 2026-11-11 | 3.3 |
@@ -382,7 +382,6 @@
 | w2v-bert | W2v-BERT: Combining Contrastive Learning and Masked Language Modeling for Self-Supervised Speech Pre-Training（对比+MLM 两段式出处；Google 未释官方实现） | Chung et al. | arXiv:2108.06209 | [B] | 2026-11-13 | 10.1 |
 | wavtokenizer | WavTokenizer: an Efficient Acoustic Discrete Codec Tokenizer for Audio Language Modeling（单码本 K=4096、40/75fps@24kHz 出处） | Ji et al. | arXiv:2408.16532 | [A] | 2026-11-13 | 10.1 |
 | xcodec2 | Llasa: Scaling Train-Time and Inference-Time Compute for Llama-based Speech Synthesis（**X-codec2 出处论文——标题即 Llasa，勿写 XCodec2**；语义-声学融合统一单码本、16kHz/stride 320=50fps、K=65536=0.8kbps） | Ye et al. | arXiv:2502.04128 ; https://huggingface.co/HKUSTAudio/Llasa-3B | [A] | 2026-11-13 | 10.1 |
-| whisper | Robust Speech Recognition via Large-Scale Weak Supervision（680k hrs、16kHz/80ch log-mel/25ms 窗 10ms hop、30s 段、special tokens 任务控制出处） | Radford et al. | arXiv:2212.04356 | [A] | 2026-11-13 | 10.2, 10.4 |
 | ctc | Connectionist Temporal Classification: Labelling Unsegmented Sequence Data with Recurrent Neural Networks（**ICML 2006, pp. 369–376，无 arXiv**——边缘化求和、blank、forward-backward 原始出处） | Graves et al. | https://doi.org/10.1145/1143844.1143891 | [B] | 2026-11-13 | 10.2 |
 | rnn-t | Sequence Transduction with Recurrent Neural Networks（RNN-T：(t,u) 2D lattice、forward 变量 α(t,u)、transcription+prediction+joint 三件套出处；2012 无官方代码） | Graves | arXiv:1211.3711 | [B] | 2026-11-13 | 10.2 |
 | sensevoice | FunAudioLLM: Voice Understanding and Generation Foundation Models for Natural Interaction Between Humans and LLMs（SenseVoice：非自回归端到端多语 ASR+情感+事件，5×/15× faster than Whisper-small/large 出处；兼 CosyVoice 出处报告） | An et al. | arXiv:2407.04051 | [A] | 2026-11-13 | 10.2 |
@@ -396,7 +395,7 @@
 | f5-tts | F5-TTS: A Fairytaler that Fakes Fluent and Faithful Speech with Flow Matching（text-guided speech-infilling+CFM、filler tokens 对齐免 duration model、Sway Sampling、DiT 出处） | Chen et al. | arXiv:2410.06885 | [A] | 2026-11-13 | 10.3 |
 | e2-tts | E2 TTS: Embarrassingly Easy Fully Non-Autoregressive Zero-Shot TTS（字符+filler tokens、FM mel 生成+audio infilling 出处——F5 直接前驱；**微软未开源**） | Eskimez et al. | arXiv:2406.18009 | [B] | 2026-11-13 | 10.3 |
 | voicebox | Voicebox: Text-Guided Multilingual Universal Speech Generation at Scale（text-guided speech infilling + FM/OT path 出处；**Meta 未开源**） | Le et al. | arXiv:2306.15687 | [B] | 2026-11-13 | 10.3 |
-| naturalspeech3 | NaturalSpeech 3: Zero-Shot Speech Synthesis with Factorized Codec and Diffusion Models（FACodec FVQ 分解 content/prosody/timbre/detail 出处；**微软未开源**） | Ju et al. | arXiv:2403.03100 | [B] | 2026-11-13 | 10.3 |
+| naturalspeech3 | NaturalSpeech 3: Zero-Shot Speech Synthesis with Factorized Codec and Diffusion Models（FACodec FVQ 分解 content/prosody/timbre/detail 出处；**微软未开源**） | Ju et al. | arXiv:2403.03100 | [B] | 2026-11-13 | 10.1, 10.3 |
 | maskgct | MaskGCT: Zero-Shot Text-to-Speech with Masked Generative Codec Transformer（codec token 上 mask-predict NAR 出处；官方实现在 Amphion） | Wang et al. | arXiv:2409.00750 | [A] | 2026-11-13 | 10.3 |
 | hifi-gan | HiFi-GAN: Generative Adversarial Networks for Efficient and High Fidelity Speech Synthesis（MPD 质数周期 [2,3,5,7,11] 2D reshape、MSD、feature matching loss 出处） | Kong et al. | arXiv:2010.05646 | [A] | 2026-11-13 | 10.3 |
 | bigvgan | BigVGAN: A Universal Neural Vocoder with Large-Scale Training（snake 激活 x+sin²(αx)/α+低通抗混叠出处） | Lee et al. | arXiv:2206.04658 ; https://github.com/NVIDIA/BigVGAN | [A] | 2026-11-13 | 10.3 |
@@ -692,3 +691,41 @@
 | Plücker coordinates / ray embedding | 保留英文（Plücker 射线/坐标） | 9.4 |
 | noise augmentation | 保留英文（noise augmentation，条件帧加噪） | 9.4 |
 | zero-conv | 保留英文（zero-conv，零初始化 1×1 卷积） | 9.4 |
+| short-time Fourier transform (STFT) | 短时傅里叶变换（STFT） | 10.1 |
+| mel filterbank | 保留英文（mel filterbank，mel 刻度三角滤波器组） | 10.1 |
+| log-mel | 保留英文（log-mel，对数幅度 mel 谱） | 10.1 |
+| neural codec | 保留英文（neural codec，神经音频 codec） | 10.1 |
+| semantic / acoustic token | 保留英文（semantic / acoustic token，语义 / 声学 token） | 10.1 |
+| vocoder | 保留英文（vocoder，声码器） | 10.1 |
+| token rate | 保留英文（token rate = fps × 每秒并发码本数，与 fps 区分） | 10.1 |
+| split-RVQ | 保留英文（split-RVQ，语义 VQ 与声学 RVQ 并联） | 10.1 |
+| automatic speech recognition (ASR) | 语音识别（ASR） | 10.2 |
+| connectionist temporal classification (CTC) | 连接时序分类（CTC） | 10.2 |
+| alignment（ASR 语境） | 对齐（alignment） | 10.2 |
+| blank | 保留英文（blank，CTC/RNN-T 空位符） | 10.2 |
+| collapse map | 坍缩映射（collapse map） | 10.2 |
+| extended label sequence | 扩展标签序列（extended label sequence） | 10.2 |
+| forward / backward variable | 前向变量 / 后向变量（forward / backward variable） | 10.2 |
+| occupancy posterior | 占有后验（occupancy posterior） | 10.2 |
+| lattice（RNN-T 语境） | 二维格点（lattice） | 10.2 |
+| RNN-T | 保留英文（RNN-T，RNN-Transducer） | 10.2 |
+| AED (attention-based encoder-decoder) | 保留英文（AED） | 10.2 |
+| non-autoregressive | 非自回归（non-autoregressive） | 10.2 |
+| text-to-speech (TTS) | 语音合成（TTS） | 10.3 |
+| grapheme-to-phoneme (G2P) | 字素转音素（G2P） | 10.3 |
+| forced alignment | 强制对齐（forced alignment） | 10.3 |
+| variance adaptor | 保留英文（variance adaptor，duration/pitch/energy 预测器组） | 10.3 |
+| MPD / MSD | 保留英文（MPD 多周期 / MSD 多尺度判别器） | 10.3 |
+| snake activation | 保留英文（snake 激活） | 10.3 |
+| Monotonic Alignment Search (MAS) | 保留英文（MAS，单调对齐搜索） | 10.3 |
+| FSQ (finite scalar quantization) | 保留英文（FSQ，有限标量量化） | 10.3 |
+| in-context cloning | 保留英文（in-context cloning，prompt 前缀音色克隆） | 10.3 |
+| Sway Sampling | 保留英文（Sway Sampling，推理时步点 warping） | 10.3 |
+| stream（多流对话语境） | 流（stream） | 10.4 |
+| full-duplex | 全双工（full-duplex） | 10.4 |
+| multi-stream | 保留英文（multi-stream，多流联合建模） | 10.4 |
+| RQ-Transformer | 保留英文（RQ-Transformer，时间/深度两级 Transformer） | 10.4 |
+| Inner Monologue | 保留英文（Inner Monologue，时间对齐文本前缀） | 10.4 |
+| Thinker-Talker | 保留英文（Thinker-Talker，理解/生成双流） | 10.4 |
+| TMRoPE | 保留英文（TMRoPE，Time-aligned M-RoPE） | 10.4 |
+| backchannel | 保留英文（backchannel，边听边应的反馈信号） | 10.4 |

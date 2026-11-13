@@ -159,9 +159,9 @@ latent z（12.5 fps）
 
 语义支路的训练信号是对 WavLM 表征的蒸馏——余弦距离口径：
 
-$$L_{\text{distill}} = \sum_t \left(1 - \cos\left(e_{\text{sem}, t},\, g(u_t)\right)\right) \qquad (12)$$
+$$L_{\text{distill}} = \sum_t \left(1 - \cos\left(g(e_{\text{sem}, t}),\, u_t\right)\right) \qquad (12)$$
 
-**符号**：$u_t$：WavLM 在第 $t$ 帧的 embedding（50 Hz 输出经 stride 4 average pooling 对齐到 12.5 Hz，non-causal pooling 是原文强调的细节）；$g$：可学变换；$e_{\text{sem}, t}$：语义量化器输出。拆开的原因是目标冲突（原文：蒸馏显著提升第一量化器的音素可分性，但「it also affects audio quality negatively」）——把蒸馏压进同一条 RVQ 链的第 1 级，语义目标会拖着整条链牺牲音质；split 之后蒸馏只作用在 $e_{\text{sem}}$ 一路，声学 RVQ 专心补重建。这正是 §3.3 的 content/speaker 分离视角在 codec 内部的重演。
+**符号**：$u_t$：WavLM 在第 $t$ 帧的 embedding（50 Hz 输出经 stride 4 average pooling 对齐到 12.5 Hz，non-causal pooling 是原文强调的细节）；$g$：可学线性投影（原文口径：作用于量化器输出侧、投到 1024 d——「a linear projection with an output dimension of 1024 to the output of the first RVQ level」）；$e_{\text{sem}, t}$：语义量化器输出。拆开的原因是目标冲突（原文：蒸馏显著提升第一量化器的音素可分性，但「it also affects audio quality negatively」）——把蒸馏压进同一条 RVQ 链的第 1 级，语义目标会拖着整条链牺牲音质；split 之后蒸馏只作用在 $e_{\text{sem}}$ 一路，声学 RVQ 专心补重建。这正是 §3.3 的 content/speaker 分离视角在 codec 内部的重演。
 
 bitrate 账（原文实例）：$n_q = 8$（1 语义 + 7 声学）、$K = 2048$（11 bit）、12.5 Hz：
 
@@ -171,7 +171,7 @@ token rate $= 8 \times 12.5 = 100$ tok/s——LM 侧成本是 §4 档的六分�
 
 ### 5.2 WavTokenizer：单码本极压缩
 
-WavTokenizer（[Ji et al., 2024](../references.md)，arXiv:2408.16532，[A]）把结构简化到底：24 kHz 音频每秒只要单个量化器的 75（极端档 40）个 token。单码本 $K = 4096$（论文码本表中该行利用率 100%；另有 8192 / 16384 两档）。按式 (7) 现推：$\log_2 4096 = 12$ bit，$1 \times 12 \times 75 = 900$ bps，40 fps 档 $480$ bps。单码本顺手消掉了 RVQ 的层级结构——LM 侧不必处理「一帧多码」的层间依赖，这个依赖在生成侧的代价 10.4 会细算。
+WavTokenizer（[Ji et al., 2024](../references.md)，arXiv:2408.16532，[A]）把结构简化到底：24 kHz 音频每秒只要单个量化器的 75（极端档 40）个 token。单码本 $K = 4096$（论文码本表中该行利用率 100%；另有 1024（亦 100% 利用率）/ 8192 / 16384 三档）。按式 (7) 现推：$\log_2 4096 = 12$ bit，$1 \times 12 \times 75 = 900$ bps，40 fps 档 $480$ bps。单码本顺手消掉了 RVQ 的层级结构——LM 侧不必处理「一帧多码」的层间依赖，这个依赖在生成侧的代价 10.4 会细算。
 
 ### 5.3 X-codec2：语义-声学统一单码本
 

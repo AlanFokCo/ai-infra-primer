@@ -87,7 +87,7 @@ Moshi（[Défossez et al., 2024](../references.md)，arXiv:2410.00037，[A]；�
 
 $$P\big( \mathbf{x}_{1:S} \big) = \prod_{s=1}^{S}\ \underbrace{\prod_{k=1}^{K} P\big( a^{u}_{s,k} \mid \mathbf{x}_{<s},\, a^{u}_{s,<k} \big)}_{\text{user stream (observed)}}\ \cdot\ \underbrace{P\big( w_s \mid \mathbf{x}_{<s} \big)\ \prod_{k=1}^{K} P\big( a^{m}_{s,k} \mid \mathbf{x}_{<s},\, w_s,\, a^{m}_{s,<k} \big)}_{\text{model stream: text prefix, then audio}} \qquad (4)$$
 
-**符号**：$\mathbf{x}_{<s}$：$s$ 帧之前全部流的历史；各因子的具体形式化由 §4.3 的两级分解给出。式 (4) 的帧内结构 = 链式法则 + 同帧跨流独立（物理同时性，非近似妥协）：模型帧 $s$ 的响应最早反映用户帧 $\le s-1$ 的内容，这个一帧反应滞后正是 §6.2 预算表「2 帧 = 160 ms」的结构来源；流间 delay（§4.5）整体平移各流栅格后，有限的同物理时刻跨流可见性会被恢复——式 (4) 是零 delay 基准形态。
+**符号**：$\mathbf{x}_{<s}$：$s$ 帧之前全部流的历史；各因子的具体形式化由 §4.3 的两级分解给出。式 (4) 的帧内结构 = 链式法则 + 同帧跨流独立（物理同时性，非近似妥协）：模型帧 $s$ 的响应最早反映用户帧 $\le s-1$ 的内容，这个一帧反应滞后正是 §6.2 预算表「2 帧 = 160 ms」的结构来源；流间 delay（§4.5）整体平移各流栅格后，有限的同物理时刻跨流可见性会被恢复——式 (4) 是零 delay 基准形态。口径注记：原文 Eq (6) 的深度序把用户流排在模型流之后（训练口径，配 delay $\tau$）；式 (4) 取部署相关的条件链重排——模型流不读同帧用户流的结论在两口径下相同。
 
 三个读法。其一，**对话 = 一个联合分布**：turn-taking、抢话、backchannel（边听边「嗯」）、重叠发言全部是这个分布里的事件模式，不是外加的控制逻辑——与半双工的形式对照在 §6.1 展开。其二，**部署时用户流因子整块退掉**：$a^{u}$ 由 Mimi encoder 供给，需要的只是条件部分 $P( w_s, a^{m}_{s,1:K} \mid \cdot)$；训练时保留用户流因子（双流同建，原文「jointly into two autoregressive token streams」）是表征塑形的免费监督，且让预训练可以退化为单流音频 LM（§4.5）。其三，**帧内序 $w$ 在 $a^m$ 前不是随意选择**——它就是 Inner Monologue 的条件链（§4.4）。
 

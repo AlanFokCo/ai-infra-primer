@@ -212,10 +212,10 @@ graph LR
 
 | 章节 | 文件 | 状态 |
 | --- | --- | --- |
-| 10.1 音频表征：特征与 Neural Codec | [01-audio-representations.md](10-audio-speech/01-audio-representations.md) | 未开始 |
-| 10.2 语音识别 | [02-asr.md](10-audio-speech/02-asr.md) | 未开始 |
-| 10.3 语音合成 | [03-tts.md](10-audio-speech/03-tts.md) | 未开始 |
-| 10.4 Speech LLM 与全双工 | [04-speech-llm-and-duplex.md](10-audio-speech/04-speech-llm-and-duplex.md) | 未开始 |
+| 10.1 音频表征：特征与 Neural Codec | [01-audio-representations.md](10-audio-speech/01-audio-representations.md) | 已关闭 |
+| 10.2 语音识别 | [02-asr.md](10-audio-speech/02-asr.md) | 已关闭 |
+| 10.3 语音合成 | [03-tts.md](10-audio-speech/03-tts.md) | 已关闭 |
+| 10.4 Speech LLM 与全双工 | [04-speech-llm-and-duplex.md](10-audio-speech/04-speech-llm-and-duplex.md) | 已关闭 |
 
 ## 审查记录
 
@@ -229,3 +229,4 @@ graph LR
 | W4 | 2026-11-12 | P7 共 7 章 | 逐章批量审查 × 3 批 + 波末独立对抗审查 1 轮（含 S1/S2 修复轮复审 × 2） | 2（全部关闭：common-diffusion 作者张冠李戴、iDDPM 动机方向写反） | 2（全部关闭：SANA 归一化分母误述、LDM f 消融边界矛盾） | 8（波末 sweep 全部清零） | 无 | 初轮暂不放行 → S1/S2 修复并复审后 7 章全放行（强制重推导 3 项 pass：7.2 DDPM 全链 / 7.4 CFG + DDIM=PF-ODE / 7.5 conditional FM + rectified flow 映射；完整档案见 [w4-review-report.md](../docs/reviews/w4-review-report.md)） |
 | W5 | 2026-11-13 | P8 共 5 章 | 逐章批量审查 × 3 批 + 波末独立对抗审查 1 轮 | 0 | 2（全部关闭：LLaVA-1.5 ablation 表归因、OneVision 课程阶段数） | 9（波末 sweep 全部清零） | 无 | 有条件放行 → S2 修复后 5 章全放行（强制重推导 3 项 pass：8.2 M-RoPE 三元组分解 / 8.5 Transfusion 完整 loss + mask / 8.3 loss masking；完整档案见 [w5-review-report.md](../docs/reviews/w5-review-report.md)） |
 | W6 | 2026-11-13 | P9 共 4 章 | 逐章批量审查 × 2 批 + 波末独立对抗审查 1 轮（含 S1 修复复审） | 1（全部关闭：9.4 noise augmentation 张冠李戴 Wan→SVD） | 3（全部关闭：9.1 CogVideoX E 档 R 账、9.3 CausVid 训练输入构造、9.4 mask 语义） | 5（波末 sweep 全部清零） | 无 | 暂不放行 → S1/S2 修复后 4 章全放行（强制重推导 3 项 pass：9.2 时空 attention FLOPs / 9.3 Diffusion Forcing 目标 / 9.3 CausVid 非对称蒸馏；完整档案见 [w6-review-report.md](../docs/reviews/w6-review-report.md)） |
+| W7 | 2026-11-13 | P10 共 4 章 | 逐章批量审查 × 2 批 + 波末独立对抗审查 1 轮（含 S1 修复复审） | 1（全部关闭：10.3 BigVGAN 抗混叠 19× 虚构数值） | 2（全部关闭：10.4 Moshi Depth 参数账口径 ×2） | 5（波末 sweep 全部清零） | 无 | 暂不放行 → S1/S2 修复后 4 章全放行（强制重推导 2 项 pass：10.2 CTC 边缘化 + forward-backward / 10.4 Moshi RQ-Transformer 两级 + multi-stream 联合分布；完整档案见 [w7-review-report.md](../docs/reviews/w7-review-report.md)） |

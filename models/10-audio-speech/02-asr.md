@@ -226,6 +226,8 @@ $$
 
 **符号**：$k \in \mathcal{V} \cup \{\varnothing\}$；$(t, u)$：帧 $t$、已输出 $u$ 个标签的格点；$W^{f}, W^{g}, W^{o}$：joint 的投影与输出矩阵。
 
+口径注记：式 (17) 取现代标准形（tanh 联合，ESPnet 默认）；2012 原文的联合是逐类直接相加 $\exp(f_t^k + g_u^k)$ 归一，无隐层。
+
 对照式 (2)：发射概率现在依赖 $(t, u)$ 两个坐标——$u$ 携带标签历史。RNN-T 原文对自身定位的表述是「extends CTC by defining a distribution over output sequences of all lengths, and by jointly modelling both input-output and output-output dependencies」——两个扩展点分别对应 §4.2 的格点结构（每帧可发多标签，故输出长度不受 $T$ 限制）与 prediction network（输出-输出依赖）。
 
 ### 4.2 二维 lattice 与前向递推
