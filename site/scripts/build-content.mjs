@@ -1,6 +1,6 @@
 // 内容管线：models/**/*.md → src/generated/（chapters + manifest.json + references.json）
 // 源文件只读，一个字符不改；所有 web 适配在此处完成。
-import { readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, copyFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { transformMath, countBacktickMath } from './lib/math-transform.mjs';
@@ -128,6 +128,35 @@ function main() {
   manifest.stats = { chapters: chapterCount, parts: PARTS.length, totalCjk, formulas: totalFormulas };
 
   writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 2));
+
+  // KaTeX CSS 补丁版：注入 font-display: swap（原 css 未声明，公式字体 FOIT 会阻塞首屏 LCP），
+  // 字体只收 woff2（现代浏览器全覆盖），重写到同目录 fonts/ 供 Vite 打包
+  {
+    const katexDir = path.join(SITE, 'node_modules/katex/dist');
+    let css = readFileSync(path.join(katexDir, 'katex.min.css'), 'utf8');
+    css = css.replace(/@font-face\{/g, '@font-face{font-display:swap;');
+    // 去掉 woff/ttf 回退引用（精确匹配 format 串，不越界；KaTeX minified 无尾分号）
+    css = css.replace(
+      /,url\([^)]+\.woff\)\s*format\(["']woff["']\),url\([^)]+\.ttf\)\s*format\(["']truetype["']\)/g,
+      ''
+    );
+    // 结构自检：@font-face 数与 } 配平必须与注入量一致
+    const faces = (css.match(/@font-face\{/g) || []).length;
+    const woff2Srcs = (css.match(/\.woff2\)/g) || []).length;
+    const braceOpen = (css.match(/\{/g) || []).length;
+    const braceClose = (css.match(/\}/g) || []).length;
+    if (faces !== woff2Srcs || faces < 20 || braceOpen !== braceClose) {
+      throw new Error(
+        `katex css 补丁异常：@font-face ${faces} / woff2 src ${woff2Srcs} / braces ${braceOpen}≠${braceClose}`
+      );
+    }
+    const fontsOut = path.join(OUT, 'fonts');
+    mkdirSync(fontsOut, { recursive: true });
+    for (const f of readdirSync(path.join(katexDir, 'fonts'))) {
+      if (f.endsWith('.woff2')) copyFileSync(path.join(katexDir, 'fonts', f), path.join(fontsOut, f));
+    }
+    writeFileSync(path.join(OUT, 'katex.min.css'), css);
+  }
 
   // references.md
   const refSource = readFileSync(path.join(MODELS, 'references.md'), 'utf8');

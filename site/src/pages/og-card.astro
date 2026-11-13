@@ -5,7 +5,7 @@ import manifest from '../generated/manifest.json';
 import '@fontsource/noto-serif-sc/900.css';
 import '@fontsource/noto-sans-sc/400.css';
 import '@fontsource/ibm-plex-mono/400.css';
-import 'katex/dist/katex.min.css';
+import '../generated/katex.min.css';
 const stats = manifest.stats;
 const formula = katex.renderToString(
   '\\mathrm{Attention}(Q,K,V) = \\mathrm{softmax}\\left(\\frac{QK^{\\top}}{\\sqrt{d_k}}\\right) V',
