@@ -1,3 +1,2 @@
-# Agent workflow artifacts (superpowers pipeline): plans/specs/ledgers stay local
-.superpowers/
-docs/superpowers/
+__pycache__/
+*.pyc
