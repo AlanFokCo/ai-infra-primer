@@ -9,6 +9,8 @@
   matrix 行内公式不允许含 \\begin{...} 矩阵环境（用 display）
   pipe   表格行（| 开头）内公式不允许含裸 |（写 \\|）
   range  $A$–$B$ / $A$-$B$ 区间写法（第二段开口紧贴 dash 不解析，应合并为 $A\\text{–}B$）
+  lt     公式内不允许 < 紧跟 ASCII 字母（math-renderer 组件二次 HTML 解析会把 <t...
+         吞作标签，报 Extra open brace or missing close brace）；写 \\lt
 代码围栏与多行 display 块内部不检查。
 退出码：0 通过，1 有违规。
 """
@@ -96,6 +98,8 @@ def check_line(line, fname, lineno, problems):
             problems.append((fname, lineno, 'space', text[:50]))
         if '\\begin{' in inner:
             problems.append((fname, lineno, 'matrix', text[:50]))
+        if re.search(r'<(?=[A-Za-z])', inner):
+            problems.append((fname, lineno, 'lt', text[:50]))
         if in_table and re.search(r'(?<!\\)\|', inner):
             problems.append((fname, lineno, 'pipe', text[:50]))
         prev = ''
@@ -123,7 +127,9 @@ def check_file(path):
     problems = []
     in_fence = False
     in_display = False
-    for lineno, line in enumerate(open(path, encoding='utf-8').read().split('\n'), 1):
+    with open(path, encoding='utf-8') as fh:
+        content = fh.read()
+    for lineno, line in enumerate(content.split('\n'), 1):
         if line.strip().startswith('```'):
             in_fence = not in_fence
             continue
@@ -133,6 +139,8 @@ def check_file(path):
             in_display = not in_display
             continue
         if in_display:
+            if re.search(r'<(?=[A-Za-z])', line):
+                problems.append((path, lineno, 'lt', line.strip()[:50]))
             continue
         check_line(line, path, lineno, problems)
     return problems

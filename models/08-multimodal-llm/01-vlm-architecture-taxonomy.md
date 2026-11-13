@@ -7,10 +7,10 @@
 VLM（vision-language model，视觉语言模型）在本书的理解方向上是一个条件语言模型：给定图像与文本 prompt，自回归地建模回答文本 $y = (y_1, \ldots, y_T)$：
 
 $$
-p(y \mid x_{\text{img}}, \text{prompt}) = \prod_{t=1}^{T} p\left( y_t \mid y_{<t},\hspace{5mu} x_{\text{img}},\hspace{5mu} \text{prompt} \right) \qquad (1)
+p(y \mid x_{\text{img}}, \text{prompt}) = \prod_{t=1}^{T} p\left( y_t \mid y_{\lt t},\hspace{5mu} x_{\text{img}},\hspace{5mu} \text{prompt} \right) \qquad (1)
 $$
 
-**符号**： $x_{\text{img}} \in \mathbb{R}^{H \times W \times 3}$：输入图像； $y_{<t}$：已生成的前缀；条件里的 prompt 指图像之外的文本指令部分。多图与视频是同一形式的直接推广：把 $x_{\text{img}}$ 换成图像集合或帧序列即可，条件侧的结构差异全部由 §3 的接入机制吸收。式 (1) 与 1.1 的纯文本 LM 只差一个条件对象——全部架构问题因此收敛成三个具体选择：图像以**什么形态**（连续特征还是离散 token）、**在哪个位置**（输入序列、attention 内部、还是 connector 里先压一遍）、**以多少 token** 进入这个条件。本章回答前两个（§3），第三个是 §4 与 8.2 的主线。生成方向（text → image）把条件与输出对调，涉及另一组建模选择，归 8.5；本章只管理解方向。训练侧一个贯穿全 Part 的事实先记一笔：式 (1) 的 loss 只在回答 token 上计，prompt 与图像部分的损失被 mask 掉——公式与代码走读归 8.3。
+**符号**： $x_{\text{img}} \in \mathbb{R}^{H \times W \times 3}$：输入图像； $y_{\lt t}$：已生成的前缀；条件里的 prompt 指图像之外的文本指令部分。多图与视频是同一形式的直接推广：把 $x_{\text{img}}$ 换成图像集合或帧序列即可，条件侧的结构差异全部由 §3 的接入机制吸收。式 (1) 与 1.1 的纯文本 LM 只差一个条件对象——全部架构问题因此收敛成三个具体选择：图像以**什么形态**（连续特征还是离散 token）、**在哪个位置**（输入序列、attention 内部、还是 connector 里先压一遍）、**以多少 token** 进入这个条件。本章回答前两个（§3），第三个是 §4 与 8.2 的主线。生成方向（text → image）把条件与输出对调，涉及另一组建模选择，归 8.5；本章只管理解方向。训练侧一个贯穿全 Part 的事实先记一笔：式 (1) 的 loss 只在回答 token 上计，prompt 与图像部分的损失被 mask 掉——公式与代码走读归 8.3。
 
 形态轴在理解方向几乎没有争议：主流全部走连续特征。离散化路线（图像经 VQ tokenizer 变成离散 id、查表进 embedding，6.3 的 VQ-VAE 族）在生成方向是自然选择（8.5），对理解方向却白付一笔量化损失——VQ 的码本瓶颈为重建保真而设，理解任务要的是语义可分性，不是像素可重建性；连续特征直通高层语义、不经过码本。本章的三个接入点因此都建立在连续 $z_{\text{img}}$ 之上。
 

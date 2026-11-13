@@ -108,7 +108,7 @@ $$
 **ITG（image-grounded text generation）**。mask 换生成档（queries 互见、不见文本；文本见全部 queries、文本内部 causal），文本侧按 LM 目标生成 caption：
 
 $$
-L_{ITG} = -\sum_{m=1}^{T} \log p\negthinspace\left( u_m \mid u_{<m},\hspace{5mu} Q \right) \qquad (7)
+L_{ITG} = -\sum_{m=1}^{T} \log p\negthinspace\left( u_m \mid u_{\lt m},\hspace{5mu} Q \right) \qquad (7)
 $$
 
 **符号**： $u_m$：caption 第 $m$ 个 token；条件 $Q$ 经共享 self-attn 的可见性进入（文本每个位置都能 attend 全部 queries）。ITG 是三个目标里唯一强迫瓶颈「把图说全」的：caption 的每个词都要从 32 个 query 里读出来，query 表征必须承载可生成级别的细节。三目标联合优化（stage 1 同批计算）。

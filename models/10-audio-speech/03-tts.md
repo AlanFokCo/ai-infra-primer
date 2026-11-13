@@ -177,23 +177,23 @@ $$
 VALL-E（[Wang et al., 2023](../references.md)，arXiv:2301.02111，[B]——微软未释官方代码与权重，公式引论文原文）把联合分布按量化器层做链式分解，再在每层内选择时间结构：
 
 $$
-P(C \mid y, \tilde{C}) = P\left( c_{:,1} \mid y,\thinspace \tilde{C}_{:,1} \right) \cdot \prod_{j=2}^{8} P\left( c_{:,j} \mid c_{:,<j},\thinspace y,\thinspace \tilde{C} \right) \qquad (15)
+P(C \mid y, \tilde{C}) = P\left( c_{:,1} \mid y,\thinspace \tilde{C}_{:,1} \right) \cdot \prod_{j=2}^{8} P\left( c_{:,j} \mid c_{:,\lt j},\thinspace y,\thinspace \tilde{C} \right) \qquad (15)
 $$
 
-**符号**： $c_{:,j} = (c_{1,j}, \ldots, c_{T,j})$：第 $j$ 层的整条时间序列； $c_{:,<j}$：第 $1$ 至 $j-1$ 层的全部码； $`\tilde{C}_{:,1}`$：prompt 的第一层码； $\tilde{C}$：prompt 的全部层。
+**符号**： $c_{:,j} = (c_{1,j}, \ldots, c_{T,j})$：第 $j$ 层的整条时间序列； $c_{:,\lt j}$：第 $1$ 至 $j-1$ 层的全部码； $`\tilde{C}_{:,1}`$：prompt 的第一层码； $\tilde{C}$：prompt 的全部层。
 
 第一层用 AR（原文：「For the discrete tokens from the first quantizer $c_{:,1}$, we train an autoregressive (AR) decoder-only language model……conditioned on the phoneme sequence and the acoustic prompt $`\tilde{C}_{:,1}`$」）：
 
 $$
-P\left( c_{:,1} \mid y,\thinspace \tilde{C}_{:,1} \right) = \prod_{t=1}^{T} P\left( c_{t,1} \mid c_{<t,1},\thinspace y,\thinspace \tilde{C}_{:,1} \right) \qquad (16)
+P\left( c_{:,1} \mid y,\thinspace \tilde{C}_{:,1} \right) = \prod_{t=1}^{T} P\left( c_{t,1} \mid c_{\lt t,1},\thinspace y,\thinspace \tilde{C}_{:,1} \right) \qquad (16)
 $$
 
-**符号**： $c_{<t,1}$：第一层前 $t-1$ 帧的码；条件中的 prompt 只含第一层——高层级 prompt 信息留给第二阶段。
+**符号**： $c_{\lt t,1}$：第一层前 $t-1$ 帧的码；条件中的 prompt 只含第一层——高层级 prompt 信息留给第二阶段。
 
 第 2 至 8 层用 NAR（原文：「we train a non-autoregressive (NAR) language model」建模 $c_{:,j \in [2,8]}$）：
 
 $$
-P\left( c_{:,j} \mid c_{:,<j},\thinspace y,\thinspace \tilde{C} \right) = \prod_{t=1}^{T} P\left( c_{t,j} \mid c_{:,<j},\thinspace y,\thinspace \tilde{C} \right), \qquad j = 2, \ldots, 8 \qquad (17)
+P\left( c_{:,j} \mid c_{:,\lt j},\thinspace y,\thinspace \tilde{C} \right) = \prod_{t=1}^{T} P\left( c_{t,j} \mid c_{:,\lt j},\thinspace y,\thinspace \tilde{C} \right), \qquad j = 2, \ldots, 8 \qquad (17)
 $$
 
 **符号**：右端的乘积沿时间并行——层内各帧联合预测、互不依赖；帧 $t$ 第 $j$ 层的码只依赖「前 $j-1$ 层的全部帧」，不依赖「第 $j$ 层的前 $t-1$ 帧」。层间仍串行：第 $j$ 层全部采样完才进第 $j+1$ 层。
@@ -358,7 +358,7 @@ $$
 
 ## 练习
 
-1.（推导）VALL-E 两阶段的依赖结构。(a) 把 $8T$ 个码按层主序摊平（先第 1 层全部 $T$ 帧、再第 2 层……），写出纯 AR 分解（每个码条件于摊平序下的全部前驱），给出其严格串行步数；(b) 证明式 (15)–(17) 的联合分布与 (a) 的摊平 AR 相比，恰好只丢掉了层内跨帧依赖 $\lbrace P(c_{t,j} \mid c_{<t,j}, \cdot)\rbrace_{j \ge 2}$，其余条件集相同（逐层核对链式展开的因子）；(c) 帧率 75 fps、 $n_q = 8$、5 秒音频：摊平 AR 与两阶段的串行步数各是多少（KV cache 账按 2.4 口径，NAR 趟内视为一次并行前向），并指出两阶段账里被忽略的一项工程开销。
+1.（推导）VALL-E 两阶段的依赖结构。(a) 把 $8T$ 个码按层主序摊平（先第 1 层全部 $T$ 帧、再第 2 层……），写出纯 AR 分解（每个码条件于摊平序下的全部前驱），给出其严格串行步数；(b) 证明式 (15)–(17) 的联合分布与 (a) 的摊平 AR 相比，恰好只丢掉了层内跨帧依赖 $\lbrace P(c_{t,j} \mid c_{\lt t,j}, \cdot)\rbrace_{j \ge 2}$，其余条件集相同（逐层核对链式展开的因子）；(c) 帧率 75 fps、 $n_q = 8$、5 秒音频：摊平 AR 与两阶段的串行步数各是多少（KV cache 账按 2.4 口径，NAR 趟内视为一次并行前向），并指出两阶段账里被忽略的一项工程开销。
 
 2.（推导）snake 激活。(a) 由式 (9) 推出式 (10) 并给出 $`f'_\alpha`$ 的值域；(b) 用 $\sin^2\theta = (1 - \cos 2\theta)/2$ 说明 $\sin^2$ 作用于 $\cos(\omega n)$ 产生倍频分量，进而给出 24 kHz 采样下 15 kHz 谐波的混叠频率（折叠公式： $f \mapsto |f - k f_s|$ 取落入 $[0, f_s/2]$ 者）；(c) $\alpha \to \infty$ 时扰动幅值 $1/\alpha \to 0$ 而振荡频率 $\to \infty$——说明此时 snake 退化成什么函数，并论证训练为何不会把 $\alpha$ 推向无穷（提示：高频周期分量的混叠与 §4 低通的对抗关系）。
 

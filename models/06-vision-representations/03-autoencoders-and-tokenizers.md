@@ -128,7 +128,7 @@ $$
 
 式 (8) 的 KL 项单独取最优的解是 $q_{\phi}(z \mid x) = p(z)$ 对所有 $x$ 成立——后验塌成先验， $z$ 不带 $x$ 的任何信息。这个解在 recon 项不抵抗时就是全局最优，称为 posterior collapse（后验坍缩）。
 
-机制拆解：collapse 发生的条件是 decoder 强到 recon 项对 $z$ 不敏感。极端情形是自回归 decoder—— $p_{\theta}(x_t \mid x_{<t}, z)$ 里 $x_{<t}$ 已经足以预测 $x_t$， $z$ 被旁路， $\mathbb{E}[\log p_{\theta}(x \mid z)]$ 在 $z$ 被忽略时照样取到高值，于是 KL 项把 $q_{\phi}$ 一路拉向先验，KL → 0，latent 通道报废。训练中的可观测信号：KL 项单调降到 0 附近；从 $\mathcal{N}(0, I)$ 采样 $z$ 生成的结果与 encoder 编码真实图像得到的 $z$ 不可区分——后验已经不带信息。
+机制拆解：collapse 发生的条件是 decoder 强到 recon 项对 $z$ 不敏感。极端情形是自回归 decoder—— $p_{\theta}(x_t \mid x_{\lt t}, z)$ 里 $x_{\lt t}$ 已经足以预测 $x_t$， $z$ 被旁路， $\mathbb{E}[\log p_{\theta}(x \mid z)]$ 在 $z$ 被忽略时照样取到高值，于是 KL 项把 $q_{\phi}$ 一路拉向先验，KL → 0，latent 通道报废。训练中的可观测信号：KL 项单调降到 0 附近；从 $\mathcal{N}(0, I)$ 采样 $z$ 生成的结果与 encoder 编码真实图像得到的 $z$ 不可区分——后验已经不带信息。
 
 缓解手段全部从「打破 recon 与 KL 的失衡」出发：(a) $\beta$ 退火：训练前期 $\beta = 0$（纯 AE），让 latent 先变得有用，再线性升到目标值；(b) free bits：给每维 KL 一个免罚额度 $\lambda$，把式 (7) 换成 $`\sum_{i} \max(\lambda,\ \mathrm{KL}_i)`$——低于额度的维度不产生梯度，强制每维至少保留 $\lambda$ nats 的信息通道；(c) 限制 decoder 的条件容量（砍掉自回归通路）。对图像 conv decoder（非自回归），collapse 压力天然较小；§7 会看到的实践口径是把 $\beta$ 压到远小于 1，让式 (8) 行为上接近确定性 AE，概率语义只剩一层薄正则。
 

@@ -1,6 +1,6 @@
 # 2.8 组装完整 Decoder Block（Assembling the Full Decoder Block）
 
-> 本章把 2.1–2.7 拆开的组件装回整机：现代标准配方的完整 block 公式（全下标，GQA + RoPE + SwiGLU）、Llama-3.1-8B config.json 逐字段 ↔ 公式映射表、约 150 行 minimal decoder-only PyTorch、transformers `modeling_llama.py` 官方实现走读、单层单 token FLOPs 全算与参数量精确到个位的对账、并行块（parallel block，PaLM / GPT-J / Falcon）的公式与梯度/吞吐含义、四条常见误解 | 前置：2.1–2.7 全部（公式编号沿用各章），1.1（ $q_\theta(\cdot | x_{<t})$），1.2（ $2N$ 口径与 $N$ 的两种口径约定）| 锚点：Llama-3.1-8B config [A]（主）、OLMo-2-7B config [A]（对照）、nanoGPT（教学参照）；Vaswani et al. [A]、Grattafiori et al. [A]、Team OLMo et al. [A]
+> 本章把 2.1–2.7 拆开的组件装回整机：现代标准配方的完整 block 公式（全下标，GQA + RoPE + SwiGLU）、Llama-3.1-8B config.json 逐字段 ↔ 公式映射表、约 150 行 minimal decoder-only PyTorch、transformers `modeling_llama.py` 官方实现走读、单层单 token FLOPs 全算与参数量精确到个位的对账、并行块（parallel block，PaLM / GPT-J / Falcon）的公式与梯度/吞吐含义、四条常见误解 | 前置：2.1–2.7 全部（公式编号沿用各章），1.1（ $q_\theta(\cdot | x_{\lt t})$），1.2（ $2N$ 口径与 $N$ 的两种口径约定）| 锚点：Llama-3.1-8B config [A]（主）、OLMo-2-7B config [A]（对照）、nanoGPT（教学参照）；Vaswani et al. [A]、Grattafiori et al. [A]、Team OLMo et al. [A]
 
 ## 1. 整机公式：全下标的标准配方
 
@@ -43,10 +43,10 @@ $$
 整机栈在 $L$ 个 block 首尾各加一件：
 
 $$
-x^{(0)}_t = E_{x_t}, \qquad z_t = W_U \thinspace \mathrm{RMSNorm}_f\left( x^{(L)}_t \right), \qquad q_\theta\left( \cdot \mid x_{<t} \right) = \mathrm{softmax}\left( z_{t-1} \right) \qquad (4)
+x^{(0)}_t = E_{x_t}, \qquad z_t = W_U \thinspace \mathrm{RMSNorm}_f\left( x^{(L)}_t \right), \qquad q_\theta\left( \cdot \mid x_{\lt t} \right) = \mathrm{softmax}\left( z_{t-1} \right) \qquad (4)
 $$
 
-**符号**： $E \in \mathbb{R}^{V \times d}$：输入 embedding（查表，2.2 式 (7)）； $`\mathrm{RMSNorm}_f`$：final norm（其必要性 = Pre-LN stream 范数随 $\sqrt{L}$ 增长，2.7 式 (12)）； $W_U \in \mathbb{R}^{V \times d}$：输出头，tie_word_embeddings = false 时与 $E$ 独立（2.2 §9）； $z_t \in \mathbb{R}^{V}$：位置 $t$ 的 logits； $q_\theta(\cdot | x_{<t})$：1.1 式 (2) 的逐位置条件分布。
+**符号**： $E \in \mathbb{R}^{V \times d}$：输入 embedding（查表，2.2 式 (7)）； $`\mathrm{RMSNorm}_f`$：final norm（其必要性 = Pre-LN stream 范数随 $\sqrt{L}$ 增长，2.7 式 (12)）； $W_U \in \mathbb{R}^{V \times d}$：输出头，tie_word_embeddings = false 时与 $E$ 独立（2.2 §9）； $z_t \in \mathbb{R}^{V}$：位置 $t$ 的 logits； $q_\theta(\cdot | x_{\lt t})$：1.1 式 (2) 的逐位置条件分布。
 
 式 (4) 的两端各管一件事： $E$ 把整数下标变成 $d$ 维向量（gather，不进 FLOPs 账，1.2 §3 口径）； $`\mathrm{RMSNorm}_f`$ 把随 $\sqrt{L}$ 变粗的 stream 压回 $O(\sqrt{d})$ 再交给输出头； $W_U$ 做一次 $d \to V$ 的 matmul（每 token $2Vd$ FLOPs，不可忽略，§5）；softmax 把 logits 变成分布，采样属 1.1 §8。整机公式在两个工作模式下是同一套：训练 / prefill 时 $T > 1$ 并行打分全部位置（teacher forcing，1.1 §4）；decode 时 $T = 1$、式 (2) 的求和上限由 KV cache 的当前长度扮演（2.4 §4.4）——式 (1)–(4) 一行不改，改的只有输入形状与 $k_{s,g}$、 $v_{s,g}$ 的来源（现算 vs 缓存）。
 

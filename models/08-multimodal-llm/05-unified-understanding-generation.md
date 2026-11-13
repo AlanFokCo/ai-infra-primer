@@ -39,7 +39,7 @@ $$
 第二步是把视觉 id 与文本 token 放进同一个词表——词表取不相交并 $V = V_{\text{text}} \cup V_{\text{img}}$，拼接后的序列 $u = (u_1, \ldots, u_S)$ 上只有一个 AR 分解：
 
 $$
-p_\theta(u) = \prod_{s=1}^{S} p_\theta\left( u_s \mid u_{<s} \right), \qquad u_s \in V, \qquad L = -\sum_{s} \log p_\theta\left( u_s \mid u_{<s} \right) \qquad (3)
+p_\theta(u) = \prod_{s=1}^{S} p_\theta\left( u_s \mid u_{\lt s} \right), \qquad u_s \in V, \qquad L = -\sum_{s} \log p_\theta\left( u_s \mid u_{\lt s} \right) \qquad (3)
 $$
 
 **符号**： $p_\theta$：单个 transformer（Emu3 为 8B，论文口径）+ 单个 softmax 头，输出维 $|V_{\text{text}}| + K$。loss 没有模态标记——每个位置的监督都是同一个 next-token CE，「图像 = 语言」的准确含义即此：**对主干而言，一个视觉 code 与一个 BPE token 在嵌入表、softmax、CE 三处地位完全相等**。模态的差别被全部压进 tokenizer（图像如何变成 id）与数据（序列里图文如何排），主干结构零特化。
@@ -163,7 +163,7 @@ $$
 Show-o（[Xie et al., 2024](../references.md)，arXiv:2408.12528，[A]；走读锚点 [showlab/Show-o](../references.md)）保留离散 token 形态，但给图像段换生成目标——文本照旧 AR（论文称 NTP，next-token prediction），图像 token 走离散扩散（论文称 MTP，mask token prediction）。图像段的腐蚀过程是吸收-均匀混合（Absorbing-Uniform）离散扩散（论文 Eq 4-5）：每步转移矩阵 $Q_t = Q_t^{a} Q_t^{u}$，吸收分量以概率 $\alpha_t$ 把 token 换成 [MASK]，均匀分量以概率 $\beta_t$ 把非 [MASK] token 均匀扩散到词表的其余 code（逐 code 概率 $\nu_t = \beta_t / (K+1)$， $K$ 为视觉码本大小）——4.8 式 (1)-(3) 的纯吸收态是 $\beta_t = 0$ 的特例。记号防混：此处的 $\alpha_t$ 是**掩码概率**，与 4.8 式 (1) 的保留率 $\alpha_t$（ $\alpha_0 = 1$ 为干净端）语义相反，各按所在论文的原文口径。总目标（论文 Eq 9-11）：
 
 $$
-L = L_{\text{MTP}} + \alpha\thinspace L_{\text{NTP}}, \qquad L_{\text{NTP}} = -\sum_{i} \log p_\theta\left( v_i \mid v_{<i},\thinspace u \right) \qquad (10)
+L = L_{\text{MTP}} + \alpha\thinspace L_{\text{NTP}}, \qquad L_{\text{NTP}} = -\sum_{i} \log p_\theta\left( v_i \mid v_{\lt i},\thinspace u \right) \qquad (10)
 $$
 
 $$
@@ -210,7 +210,7 @@ $$
 总目标是逐位置分配的异质组合：
 
 $$
-L = L_{LM} + \lambda\thinspace L_{DDPM}, \qquad L_{LM} = -\sum_{s \in \mathcal{T}} \log p_\theta\left( u_s \mid u_{<s} \right), \qquad L_{DDPM} = \mathbb{E}_{t,\thinspace \varepsilon}\hspace{5mu} \sum_{j=1}^{n} \left\Vert \varepsilon^{(j)} - \hat{\varepsilon}_\theta\left( u,\thinspace t \right)_j \right\Vert^{2} \qquad (14)
+L = L_{LM} + \lambda\thinspace L_{DDPM}, \qquad L_{LM} = -\sum_{s \in \mathcal{T}} \log p_\theta\left( u_s \mid u_{\lt s} \right), \qquad L_{DDPM} = \mathbb{E}_{t,\thinspace \varepsilon}\hspace{5mu} \sum_{j=1}^{n} \left\Vert \varepsilon^{(j)} - \hat{\varepsilon}_\theta\left( u,\thinspace t \right)_j \right\Vert^{2} \qquad (14)
 $$
 
 **符号**： $\mathcal{T}$：文本 token 位置（含以 BOI 为目标的预测位）；EOI 由协议追加、非 CE 目标； $p_\theta$：softmax 头输出； $`\hat{\varepsilon}_\theta(u, t)_j`$：主干在 patch 位置 $j$ 的终层隐状态过线性噪声头，回归目标是式 (13) 注入的噪声（ $\varepsilon$-参数化，7.2 默认口径）； $\lambda$：两 loss 的配平标量。

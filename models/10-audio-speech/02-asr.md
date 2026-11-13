@@ -16,7 +16,7 @@ $$
 
 1. **CTC**：把对齐显式建模为路径 $\pi$，对全部合法路径精确求和（边缘化），用动态规划（dynamic programming，DP）在 $O(TU)$ 内完成求和（§2）。
 2. **RNN-T**：同样显式边缘化，但把「已输出哪些标签」作为状态放进发射概率，解除 CTC 的帧间条件独立（§4）。
-3. **AED**（attention-based encoder-decoder）：不显式建模对齐，让 cross-attention 学出软对齐，输出端用自回归分解 $P(y \mid x) = \prod_u P(y_u \mid y_{<u}, x)$——3.2 §7 的 enc-dec 条件生成原样套用（§6）。
+3. **AED**（attention-based encoder-decoder）：不显式建模对齐，让 cross-attention 学出软对齐，输出端用自回归分解 $P(y \mid x) = \prod_u P(y_u \mid y_{\lt u}, x)$——3.2 §7 的 enc-dec 条件生成原样套用（§6）。
 
 还有一笔所有路线都逃不掉的账： $T / U \approx 10$ 的速率差意味着九成声学帧「没有对应标签」——它们要么被显式吸收（CTC/RNN-T 的 blank 帧），要么被 attention 软聚合（AED），要么在前端被下采样（LLM-based ASR 的 projector，§9）。对照 3.2 §7 的读法：ASR 把「输入固定、输出变化」推到极致——输入连续、输出离散、长度对齐事先未知——enc-dec 仍是标准答案之一，但 CTC/RNN-T 给出了不堆 decoder 栈的另外两种解，且这两种解天然流式（§7）。
 
@@ -208,7 +208,7 @@ $$
 
 **符号**： $L_{\mathrm{CTC}} = -\log P_{\mathrm{CTC}}(y \mid x)$（式 (6)）； $L_{\mathrm{att}}$：AED 分支的 teacher-forcing NLL（3.2 §7）； $\lambda \in [0, 1]$：混合权重， $\lambda = 1$ 退化为纯 CTC、 $\lambda = 0$ 为纯 attention，具体取值逐 recipe 调（[espnet-repo](../references.md)，[A]）。
 
-两个分支的互补是机制级的：CTC 项在 encoder 输出上直接监督单调对齐，给 attention 分支提供 AED 自身没有的对齐先验——纯 AED 的 cross-attention 无单调约束，长输入或噪声下会出现跳读、复读、漏读（对齐漂移），hybrid 用 CTC 把 encoder 表征钉在单调坐标系里；attention 项则把 CTC 缺失的输出依赖补回来——decoder 看得见 $y_{<u}$，语言先验由此进入梯度。解码侧同样有联合形式：按 $\lambda \log P_{\mathrm{CTC}} + (1 - \lambda) \log P_{\mathrm{att}}$ 给候选假设打分（ESPnet joint decoding）。流式场景里 CTC 分支还兼职触发与端点检测的角色（§7 展开）。
+两个分支的互补是机制级的：CTC 项在 encoder 输出上直接监督单调对齐，给 attention 分支提供 AED 自身没有的对齐先验——纯 AED 的 cross-attention 无单调约束，长输入或噪声下会出现跳读、复读、漏读（对齐漂移），hybrid 用 CTC 把 encoder 表征钉在单调坐标系里；attention 项则把 CTC 缺失的输出依赖补回来——decoder 看得见 $y_{\lt u}$，语言先验由此进入梯度。解码侧同样有联合形式：按 $\lambda \log P_{\mathrm{CTC}} + (1 - \lambda) \log P_{\mathrm{att}}$ 给候选假设打分（ESPnet joint decoding）。流式场景里 CTC 分支还兼职触发与端点检测的角色（§7 展开）。
 
 ## 4. RNN-T：把输出依赖放进对齐本身
 
@@ -270,7 +270,7 @@ $$
 
 两家并排放，差异逐条落实：
 
-1. **输出依赖**：CTC 的 $P_t$ 不依赖标签历史（式 (3)）；RNN-T 的 $P(k \mid t, u)$ 经 $g_u$ 依赖全部 $y_{<u+1}$。边缘化仍然是精确 DP——依赖被格点状态 $(t, u)$ 马尔可夫化，不需要枚举路径。
+1. **输出依赖**：CTC 的 $P_t$ 不依赖标签历史（式 (3)）；RNN-T 的 $P(k \mid t, u)$ 经 $g_u$ 依赖全部 $y_{\lt u+1}$。边缘化仍然是精确 DP——依赖被格点状态 $(t, u)$ 马尔可夫化，不需要枚举路径。
 2. **长度约束**：标签迁移不消费帧，一帧可发任意多标签——RNN-T 对任意长度的输出序列都有定义（原文「output sequences of all lengths」），CTC 的 $T \ge U + r$ 约束消失。
 3. **对齐语义**：CTC 路径有合并与 blank 边界规则（§2.2–2.3）；RNN-T 路径是右移/上移的任意交错，无合并语义，对齐与路径一一对应、更直白。
 4. **成本账**：CTC 每帧一次 softmax，共 $O(T)$ 次 $|\mathcal{V}|+1$ 维；RNN-T 每个格点一次 joint softmax，共 $O(TU)$ 次，logit 张量本身是 $[T, U, |\mathcal{V}|+1]$—— $W^{f} f_t$ 与 $W^{g} g_u$ 虽可分别预计算，逐格点的加和与非线性省不掉； $T, U$ 数千、词表数千时，这块张量的显存是 transducer 训练的著名税。
@@ -312,7 +312,7 @@ large-v3 档的 HF config 实测： $d_{\mathrm{model}} = 1280$、decoder 32 层
 Whisper 的多任务训练格式用一组 special tokens「充当任务指定符或分类目标」（原文语）。机制是 decoder 前缀条件化：
 
 $$
-P(y \mid x, c) = \prod_{u} P\left( y_u \mid y_{<u},\ c,\ H^{\mathrm{enc}}(x) \right) \qquad (21)
+P(y \mid x, c) = \prod_{u} P\left( y_u \mid y_{\lt u},\ c,\ H^{\mathrm{enc}}(x) \right) \qquad (21)
 $$
 
 **符号**： $c$：前缀 token 序列——start-of-transcript、语言 token、任务 token（转写/翻译）、时间戳开关等； $H^{\mathrm{enc}}(x)$：encoder 输出，cross-attention 的 K/V 来源（3.2 §7 式 (12)(13)，K/V 一次计算全程复用）。
@@ -346,7 +346,7 @@ $$
 LLM-based ASR 的组件链——audio encoder → projector → LLM——与 8.1 的 vision encoder → connector → LLM 逐槽同构（8.1 式 (2)）：encoder 出帧级特征 $f(x) \in \mathbb{R}^{T' \times d_a}$，projector 做宽度转换 $d_a \to d_{\mathrm{llm}}$ 并通常附带速率转换（ $k$ 帧拼接为一个软 token），产出 $v \in \mathbb{R}^{M \times d_{\mathrm{llm}}}$（ $M \le T'$）拼进 LLM 输入嵌入序列，识别变成条件文本生成：
 
 $$
-P(y \mid x) = \prod_{u=1}^{U} P\left( y_u \mid y_{<u},\ v_{1:M} \right) \qquad (23)
+P(y \mid x) = \prod_{u=1}^{U} P\left( y_u \mid y_{\lt u},\ v_{1:M} \right) \qquad (23)
 $$
 
 **符号**： $v_{1:M}$：audio token 段，占据 LLM 输入序列的一段连续位置，与文本 prompt 混排。

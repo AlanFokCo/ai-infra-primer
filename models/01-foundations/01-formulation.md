@@ -18,7 +18,7 @@ Qwen3-8B 的 config.json 写着 vocab_size = 151936（[Qwen3-8B config](../refer
 
 **符号**： $T_{\max}$ ：模型的上下文窗口（context window），即单次可处理的最大序列长度。
 
-两个边界 token 需要显式登记，后面的公式要用：GPT-2 用同一个 id 50256（`<|endoftext|>`）充当序列开始与结束符；Qwen3-8B 的 bos_token_id = 151643（`<|endoftext|>`）、eos_token_id = 151645（`<|im_end|>`）。全书统一约定 $x_0$ = bos token：它是人为添加的第 0 个 token，作用是给「第一个 token 的分布」一个条件对象。 $x_0$ 只在 $t$ = 1 的边界条件里出现，不计入序列本身—— $x_{<t}$ 的定义（式 (3)）从 $x_1$ 起算。
+两个边界 token 需要显式登记，后面的公式要用：GPT-2 用同一个 id 50256（`<|endoftext|>`）充当序列开始与结束符；Qwen3-8B 的 bos_token_id = 151643（`<|endoftext|>`）、eos_token_id = 151645（`<|im_end|>`）。全书统一约定 $x_0$ = bos token：它是人为添加的第 0 个 token，作用是给「第一个 token 的分布」一个条件对象。 $x_0$ 只在 $t$ = 1 的边界条件里出现，不计入序列本身—— $x_{\lt t}$ 的定义（式 (3)）从 $x_1$ 起算。
 
 **样本空间** $X$ 是所有长度 $T$ 满足 $1 \le T \le T_{\max}$ 的 token 序列的并集： $X$ 的每个元素是某个 $V^{T}$ 里的序列。一个语言模型就是 $X$ 上的一个概率分布 $P$ 。
 
@@ -41,10 +41,10 @@ $$
 式 (1) 的信息量全在值域上：无论前面见过什么上下文，模型的输出永远是「下一个 token 取词表中每个值的概率」。工程实现分两步：主干网络把上下文压成一个向量，输出头（output head，也叫 unembedding）把它映射成分布：
 
 $$
-h = \mathrm{backbone}_\theta(x_{<t}) \in \mathbb{R}^{d}, \qquad z = W h + b \in \mathbb{R}^{V}, \qquad q_\theta(\cdot | x_{<t}) = \mathrm{softmax}(z), \qquad q_i = \frac{\exp(z_i)}{\sum_{j=1}^{V} \exp(z_j)} \qquad (2)
+h = \mathrm{backbone}_\theta(x_{\lt t}) \in \mathbb{R}^{d}, \qquad z = W h + b \in \mathbb{R}^{V}, \qquad q_\theta(\cdot | x_{\lt t}) = \mathrm{softmax}(z), \qquad q_i = \frac{\exp(z_i)}{\sum_{j=1}^{V} \exp(z_j)} \qquad (2)
 $$
 
-**符号**： $h$ ：上下文末尾位置的隐状态（hidden state），批量后 shape 为 $[B, T, d]$ ； $d$ ：隐藏维（config 的 hidden_size）； $z$ ：logits，未归一化的打分，shape $[B, T, V]$ ； $W \in \mathbb{R}^{V \times d}$ 、 $b \in \mathbb{R}^{V}$ ：输出头权重与偏置； $q_\theta(\cdot | x_{<t})$ ：给定上下文时下一 token 的条件分布。
+**符号**： $h$ ：上下文末尾位置的隐状态（hidden state），批量后 shape 为 $[B, T, d]$ ； $d$ ：隐藏维（config 的 hidden_size）； $z$ ：logits，未归一化的打分，shape $[B, T, V]$ ； $W \in \mathbb{R}^{V \times d}$ 、 $b \in \mathbb{R}^{V}$ ：输出头权重与偏置； $q_\theta(\cdot | x_{\lt t})$ ：给定上下文时下一 token 的条件分布。
 
 锚点数值：Llama-3.1-8B 与 Qwen3-8B 都是 $d$ = 4096，且 tie_word_embeddings = false，即 $W$ 与输入 embedding 矩阵是相互独立的两份参数（[Llama-3.1-8B config](../references.md)、[Qwen3-8B config](../references.md)，均 [A]）。单算输出头：Llama-3.1-8B 的 $W$ 有 $128256 \times 4096 = 525336576$ 个参数（约 5.3 亿），Qwen3-8B 为 $151936 \times 4096 = 622329856$（约 6.2 亿）——输出头自己就是一个 0.5B 量级的矩阵，这就是第 9 节 rank 瓶颈的舞台。weight tying 的取舍见 2.2。
 
@@ -86,24 +86,24 @@ $$
 P(x_1, x_2, x_3) = P(x_3 | x_1, x_2) \cdot P(x_1, x_2) = P(x_3 | x_1, x_2) \cdot P(x_2 | x_1) \cdot P(x_1)
 $$
 
-对一般 $T$ 用归纳法。**归纳基**： $T$ = 1 时序列为单 token， $P(x_1)$ 写成条件形式 $P(x_1 | x_0)$ ——这是 bos 约定唯一进入公式的地方（ $x_{<1}$ 本身为空序列）。**归纳假设**：对长度 $k$ 成立，即 $P(x_{1:k}) = \prod_{t=1}^{k} P(x_t | x_{<t})$ 。**归纳步骤**：对长度 $k+1$ ，
+对一般 $T$ 用归纳法。**归纳基**： $T$ = 1 时序列为单 token， $P(x_1)$ 写成条件形式 $P(x_1 | x_0)$ ——这是 bos 约定唯一进入公式的地方（ $x_{<1}$ 本身为空序列）。**归纳假设**：对长度 $k$ 成立，即 $P(x_{1:k}) = \prod_{t=1}^{k} P(x_t | x_{\lt t})$ 。**归纳步骤**：对长度 $k+1$ ，
 
 $$
-P(x_{1:k+1}) = P(x_{k+1} | x_{1:k}) \cdot P(x_{1:k}) = P(x_{k+1} | x_{1:k}) \cdot \prod_{t=1}^{k} P(x_t | x_{<t}) = \prod_{t=1}^{k+1} P(x_t | x_{<t})
+P(x_{1:k+1}) = P(x_{k+1} | x_{1:k}) \cdot P(x_{1:k}) = P(x_{k+1} | x_{1:k}) \cdot \prod_{t=1}^{k} P(x_t | x_{\lt t}) = \prod_{t=1}^{k+1} P(x_t | x_{\lt t})
 $$
 
 **注**：上面几行中间推导无新符号—— $A, B$ 沿用定义式注记， $k$ 为归纳变量（序列长度）， $x_{1:k}$ 表示前 $k$ 个 token 的联合。第一步是条件概率定义式（取 $A = \lbrace x_{k+1}\rbrace$ 、 $B = \lbrace x_{1:k}\rbrace$ ），第二步代入归纳假设，第三步把因子并入连乘。归纳成立，得**自回归分解（autoregressive factorization）**。严格性注记：定义式 $P(A, B) = P(A | B) P(B)$ 在 $P(B) = 0$ 时条件概率无定义；对语言数据这不是问题——实际语料里每个出现的前缀都有正概率，而模型侧由 softmax 的严格正性（第 2 节）保证 $q_\theta$ 处处有定义，归纳链条每一步都合法：
 
 $$
-P(x_{1:T}) = \prod_{t=1}^{T} P(x_t | x_{<t}), \qquad x_{<t} = (x_1, ..., x_{t-1}) \qquad (3)
+P(x_{1:T}) = \prod_{t=1}^{T} P(x_t | x_{\lt t}), \qquad x_{\lt t} = (x_1, ..., x_{t-1}) \qquad (3)
 $$
 
-**符号**： $x_{1:T}$ ：完整序列； $x_{<t}$ ：位置 $t$ 之前的全部 token，即 $(x_1, ..., x_{t-1})$ ，共 $t-1$ 个元素，与式 (1) 的定义域 $V^{t-1}$ 一致。注意 $x_{<t}$ 不含 $x_0$ ：位置 $t$ 的完整条件是 $(x_0, x_{<t})$ ，因 $x_0$ 恒为 bos，本书统一简记为 $q_\theta(\cdot | x_{<t})$ 。
+**符号**： $x_{1:T}$ ：完整序列； $x_{\lt t}$ ：位置 $t$ 之前的全部 token，即 $(x_1, ..., x_{t-1})$ ，共 $t-1$ 个元素，与式 (1) 的定义域 $V^{t-1}$ 一致。注意 $x_{\lt t}$ 不含 $x_0$ ：位置 $t$ 的完整条件是 $(x_0, x_{\lt t})$ ，因 $x_0$ 恒为 bos，本书统一简记为 $q_\theta(\cdot | x_{\lt t})$ 。
 
 三个性质决定它为什么是所有 LLM 的工作方式：
 
 1. **精确，无近似**。式 (3) 是恒等式，任何联合分布都满足，不是模型假设。
-2. **顺序任意**。链式法则对位置的任意排列 $\pi$ 都成立（练习 1 证明）。选从左到右的因果序只有一个原因：生成时未来位置尚不存在，只有因果序的每个因子 $P(x_t | x_{<t})$ 在采样时刻是可用的。
+2. **顺序任意**。链式法则对位置的任意排列 $\pi$ 都成立（练习 1 证明）。选从左到右的因果序只有一个原因：生成时未来位置尚不存在，只有因果序的每个因子 $P(x_t | x_{\lt t})$ 在采样时刻是可用的。
 3. **把存不下的表变成共享函数**。 $V^{T}$ 个表项被换成 $T$ 个条件分布，而每个条件分布都由同一个 $f_\theta$ 供给（式 (1)(2)）——指数爆炸被参数共享压掉。
 
 ## 4. 训练目标：NLL 与 cross-entropy 的同一性
@@ -111,10 +111,10 @@ $$
 训练数据 $D$ 是来自未知真实分布 $p_{\mathrm{data}}$ 的样本。极大似然估计（MLE）等价于最小化负对数似然（negative log-likelihood, NLL）。把式 (3) 代入并除以 token 数，得到 per-token 训练目标：
 
 $$
-\mathrm{NLL}(\theta) = - \frac{1}{T} \sum_{t=1}^{T} \log q_\theta(x_t | x_{<t}) \qquad (4)
+\mathrm{NLL}(\theta) = - \frac{1}{T} \sum_{t=1}^{T} \log q_\theta(x_t | x_{\lt t}) \qquad (4)
 $$
 
-**符号**： $\mathrm{NLL}(\theta)$ ：平均每 token 负对数似然； $q_\theta(x_t | x_{<t})$ ：模型在真实前缀下给真实下一 token 的概率；对数默认取 e 为底（单位 nats），以 2 为底时单位 bits，换算见第 5 节。
+**符号**： $\mathrm{NLL}(\theta)$ ：平均每 token 负对数似然； $q_\theta(x_t | x_{\lt t})$ ：模型在真实前缀下给真实下一 token 的概率；对数默认取 e 为底（单位 nats），以 2 为底时单位 bits，换算见第 5 节。
 
 交叉熵（cross-entropy）定义为
 
@@ -127,12 +127,12 @@ $$
 NLL 与 CE 是同一个东西，一步展开即可见：训练目标里 $p$ 是真实 token $x_t$ 的 one-hot 分布 $\delta_{x_t}$ （在 $v = x_t$ 处为 1，其余为 0），代入式 (5)：
 
 $$
-\mathrm{CE}(\delta_{x_t}, q_\theta) = - \sum_{v=1}^{V} \delta_{x_t}(v) \log q_\theta(v | x_{<t}) = - \log q_\theta(x_t | x_{<t})
+\mathrm{CE}(\delta_{x_t}, q_\theta) = - \sum_{v=1}^{V} \delta_{x_t}(v) \log q_\theta(v | x_{\lt t}) = - \log q_\theta(x_t | x_{\lt t})
 $$
 
 求和里只有 $v = x_t$ 一项非零。对 $t$ 取平均即式 (4)。所以「训 NLL」「训 cross-entropy」「训 MLE」在 LM 语境下是同一句话。另外记一个反向传播的入口事实：softmax 与 CE 复合后，式 (4) 对 logits $z_i$ 的偏导数有闭式 $q_i - \delta_{x_t}(i)$ ，即「预测概率减真值」，逐位置的分类误差信号直接落在 logits 上。
 
-计算层面靠 **教师强制（teacher forcing）**：训练时喂给模型的条件 $x_{<t}$ 一律是数据里的真实 token，不是模型自己采样的结果。这样 $T$ 个位置的条件分布可以在一次前向里并行算出，loss 再求平均：
+计算层面靠 **教师强制（teacher forcing）**：训练时喂给模型的条件 $x_{\lt t}$ 一律是数据里的真实 token，不是模型自己采样的结果。这样 $T$ 个位置的条件分布可以在一次前向里并行算出，loss 再求平均：
 
 ```
 位置 t     :   1      2      3      4      5
@@ -204,7 +204,7 @@ $$
 **陷阱二：跨 tokenizer 不可比，即使 $V$ 相同。** 同一字符串经不同 tokenizer 得到的 token 数不同，per-token CE 是对不同数量的项取平均。构造算例（数字为演示而设）：字符串 $s$ ，tokenizer A 切成 10 个 token，tokenizer B 切成 20 个；两个模型对 $s$ 的总 NLL 都是 20 nats。则 A 的 per-token CE = 2.0、PPL = $\exp(2.0)$ ，约 7.39；B 的 per-token CE = 1.0、PPL = $\exp(1.0)$ ，约 2.72。两个模型对字符串的建模完全一样好，per-token PPL 却差 2.7 倍——B 只是摊到了更多 token 上。正确做法是换总量纲：bits per byte（总 NLL 折 bits 后除以原文字节数），tokenizer 从中消掉：
 
 $$
-\text{bits per byte} = \frac{1}{n_{\mathrm{byte}}} \sum_{t=1}^{T} \frac{- \log q_\theta(x_t | x_{<t})}{\ln 2}
+\text{bits per byte} = \frac{1}{n_{\mathrm{byte}}} \sum_{t=1}^{T} \frac{- \log q_\theta(x_t | x_{\lt t})}{\ln 2}
 $$
 
 **符号**： $n_{\mathrm{byte}}$ ：原文的字节数；分子是该序列的总 NLL（nats），除以 $\ln 2$ 折成 bits。这个量只依赖字符串与模型，与 tokenizer 无关，是跨模型比较的可用口径。
@@ -221,7 +221,7 @@ $$
 
 **符号**： $s_{ij}$ ：未加 mask 的 attention 打分（2.3 定义）； $\alpha_{ij}$ ：mask 后的 attention 权重， $M_{ij} = -\infty$ 时 $\exp$ 项为 0，位置 $j$ 对 $i$ 不可见； $\ell_t$ ：loss mask，1 表示该位置计损失； $x'$ ：经 mask 方案处理后的输入序列； $q_\theta(x_t | x'; M)$ ：在输入 $x'$ 与可见性 $M$ 下，位置 $t$ 处真实 token $x_t$ 的条件概率。
 
-式 (8) 的条件是整条输入 $x'$ 而不是前缀 $x_{<t}$ ：可见性语义由 $M$ 承担，腐蚀语义由 $x'$ 承担。CLM 时 $x' = x$ 且 $M$ 取下三角，位置 $t$ 恰好只能看到 $x_{<t}$ ，式 (8) 退化为本章前半的 $q_\theta(x_t | x_{<t})$ ；MLM 与 prefix-LM 的双向可见性也收进同一记号。三种 objective 只是 $(x', M, \ell)$ 的三个取值：
+式 (8) 的条件是整条输入 $x'$ 而不是前缀 $x_{\lt t}$ ：可见性语义由 $M$ 承担，腐蚀语义由 $x'$ 承担。CLM 时 $x' = x$ 且 $M$ 取下三角，位置 $t$ 恰好只能看到 $x_{\lt t}$ ，式 (8) 退化为本章前半的 $q_\theta(x_t | x_{\lt t})$ ；MLM 与 prefix-LM 的双向可见性也收进同一记号。三种 objective 只是 $(x', M, \ell)$ 的三个取值：
 
 - **CLM**（causal LM，GPT 家族）： $x' = x$ ， $M_{ij} = 0$ 当 $j \le i$ ，否则 $-\infty$ （下三角可见）， $\ell_t = 1$ 对所有 $t$ 。即本章式 (3)(4)。
 - **MLM**（masked LM，BERT 家族）： $x'$ 为腐蚀序列——一个子集的位置被替换为特殊 mask token； $M$ 全 0（双向全可见）， $\ell_t = 1$ 仅落在被替换的位置上。
@@ -239,7 +239,7 @@ $$
 
 ## 8. 采样生成：temperature 与 top-p
 
-训练好的 $f_\theta$ 生成文本就是把式 (3) 反过来用：从 $x_0$ = bos 出发，逐位置从 $q_\theta(\cdot | x_{<t})$ 中采样 $x_t$ ，拼回上下文继续，直到采出 eos 或达到 $T_{\max}$ 。由链式法则，这样得到的序列恰好是模型分布的精确样本，即祖先采样（ancestral sampling）。两个最常用的分布整形手段：
+训练好的 $f_\theta$ 生成文本就是把式 (3) 反过来用：从 $x_0$ = bos 出发，逐位置从 $q_\theta(\cdot | x_{\lt t})$ 中采样 $x_t$ ，拼回上下文继续，直到采出 eos 或达到 $T_{\max}$ 。由链式法则，这样得到的序列恰好是模型分布的精确样本，即祖先采样（ancestral sampling）。两个最常用的分布整形手段：
 
 **温度（temperature）**：对 logits 做缩放再 softmax，
 
@@ -285,7 +285,7 @@ $$
 | --- | --- | --- |
 | 样本空间 | $X$ = 全体长度 $\le T_{\max}$ 的 token 序列 | $V$ = 词表大小（50257 / 128256 / 151936） |
 | 模型 | $f_\theta: V^{t-1} \to \Delta^{V-1}$ | 输出恒为下一 token 的分布，式 (1)(2) |
-| AR 分解 | $P(x_{1:T}) = \prod_t P(x_t \vert x_{<t})$ | 链式法则恒等式；顺序任意，因果序为生成服务，式 (3) |
+| AR 分解 | $P(x_{1:T}) = \prod_t P(x_t \vert x_{\lt t})$ | 链式法则恒等式；顺序任意，因果序为生成服务，式 (3) |
 | 训练目标 | $\mathrm{NLL}$ = 逐位置 CE 的平均 | NLL = CE = MLE，式 (4)(5) |
 | 信息论分解 | $\mathrm{CE} = H(p) + \mathrm{KL}(p \Vert q_\theta)$ | 地板是数据熵；超出的 bits 即浪费码长，式 (6) |
 | perplexity | $\mathrm{PPL} = \exp(\mathrm{CE})$ | uniform 基线 = $V$ ；跨词表、跨 tokenizer 不可比，式 (7) |

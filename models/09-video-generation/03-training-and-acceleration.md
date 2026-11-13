@@ -94,7 +94,7 @@ $$L_{ODE}(\psi) = \mathbb{E}_{x_1 \sim \mathcal{N}(0, I),\hspace{5mu} j \in \lbr
 
 **符号**： $`x^{teacher}_{s}`$：教师从 $x_1 \sim \mathcal{N}(0, I)$ 出发的 ODE 解轨迹在噪声水平 $s$ 处的取值； $\lbrace s_j\rbrace_{j=1..K}$：学生的 $K = 4$ 个锚点时间（采样网格，方向 $s : 1 \to 0$）； $G_\psi(x, s)$：学生从 $(x, s)$ 一步映射到数据端的预测（ $K$ = 4 步采样由该一步映射经重噪迭代复合而成——few-step 学生的标准用法，7.4 §5 谱系）； $`x^{teacher}_{0}`$：该轨迹的教师终态。这一构造与 DMD 初代的配对回归同族（7.4 §5.5），DMD2 删除、CausVid 恢复为独立预训阶段。机制读法（本书分析）：DMD 主阶段的 real score 由教师在「噪声化的学生输出」上评估——学生输出若离数据流形太远，加噪后的输入落在教师的训练分布之外、score 信号失真；ODE 预训先把学生钉到教师解流形附近，主阶段的监督才良性。
 
-**阶段二：非对称 DMD 主目标**（论文 Algorithm 1「Asymmetric Distillation with DMD」）。训练输入的构造先钉死（这是后面式 (6) 的 $x$ 的出处）：逐 chunk 采样——**全体** chunk 各自采噪声时间步 $t^{j} \sim \mathrm{Uniform}(\mathcal{T})$（含 0）并各自加噪，历史 chunk 同为带噪的 ground truth；学生以此带噪历史为条件、把当前（ground-truth）chunk 的加噪输入**一步**映到数据端 $`\hat x_0^{(i)} = G_\psi\left( x^{(i)}_{t^{i}},\thinspace t^{i};\thinspace x_{t^{<i}}^{(<i)} \right)`$，各 chunk 的预测拼接成整段视频 $x$（论文 Algorithm 1 lines 5-9 口径）。输入侧的这个构造在 chunk 粒度上已是 Diffusion Forcing 方案——论文 §4.2 原文「Each chunk has its own noise time step, following Diffusion Forcing」（Self-Forcing 论文 §2 亦以此定性 CausVid，其对 DF 的刻画为「denoising each frame based on noisy context frames」）；§5 的 DF 框架是同一思想在 token 粒度的推广、并给出变分下界口径。记 $p_\psi$ 为学生输出分布（上述逐 chunk 一步预测拼接的分布）、 $p_{data}$ 为数据分布， $p_{\psi, t}$ / $p_{data, t}$ 为各自加噪到水平 $t$ 的平滑分布（FM 线性路径 $x_t = (1-t)x + t\varepsilon$ 的边际）。目标是在随机采样的噪声水平上最小化 reverse KL：
+**阶段二：非对称 DMD 主目标**（论文 Algorithm 1「Asymmetric Distillation with DMD」）。训练输入的构造先钉死（这是后面式 (6) 的 $x$ 的出处）：逐 chunk 采样——**全体** chunk 各自采噪声时间步 $t^{j} \sim \mathrm{Uniform}(\mathcal{T})$（含 0）并各自加噪，历史 chunk 同为带噪的 ground truth；学生以此带噪历史为条件、把当前（ground-truth）chunk 的加噪输入**一步**映到数据端 $`\hat x_0^{(i)} = G_\psi\left( x^{(i)}_{t^{i}},\thinspace t^{i};\thinspace x_{t^{\lt i}}^{(\lt i)} \right)`$，各 chunk 的预测拼接成整段视频 $x$（论文 Algorithm 1 lines 5-9 口径）。输入侧的这个构造在 chunk 粒度上已是 Diffusion Forcing 方案——论文 §4.2 原文「Each chunk has its own noise time step, following Diffusion Forcing」（Self-Forcing 论文 §2 亦以此定性 CausVid，其对 DF 的刻画为「denoising each frame based on noisy context frames」）；§5 的 DF 框架是同一思想在 token 粒度的推广、并给出变分下界口径。记 $p_\psi$ 为学生输出分布（上述逐 chunk 一步预测拼接的分布）、 $p_{data}$ 为数据分布， $p_{\psi, t}$ / $p_{data, t}$ 为各自加噪到水平 $t$ 的平滑分布（FM 线性路径 $x_t = (1-t)x + t\varepsilon$ 的边际）。目标是在随机采样的噪声水平上最小化 reverse KL：
 
 $$L_{DMD}(\psi) = \mathbb{E}_{t \sim \pi} \left[ \mathrm{KL}\left( p_{\psi, t}\thinspace \Vert\thinspace p_{data, t} \right) \right] \qquad (5)$$
 
@@ -188,7 +188,7 @@ $$L_{DF}(\theta) = \mathbb{E}_{x^{1:n} \sim p_{data}} \hspace{5mu} \mathbb{E}_{t
 
 **角点一（全序列扩散）**：约束 $t_1 = \cdots = t_n = t$ 并联合退火——式 (9) 逐字退化为式 (1) 的 ε 坐标版，即本章 §1 与 9.2 的标准视频扩散目标。方向值得反过来读：标准训练是 DF 训练分布的一个低维截面；只在共享 $t$ 下训练的模型（§3 谱系之前的双向基座）从未见过「历史干净 + 当前有噪」的输入，而 §4 流式推理的输入（cache 里 clean、当前 chunk 在噪）对它恰是未见配置（支撑集口径，测度注记见 §5.3）。DF 补上的第一个洞就是这个配置。限定一笔：CausVid 的因果学生已在 chunk 粒度按 DF 方案采样训练输入（§3.2 的训练构造），该缺口对它不存在——它的残余失配只在 §6 的测度轴。
 
-**角点二（next-token 预测）**：取 $t_{1..i-1} = 0$（历史干净）、只对 $t_i$ 加噪——该配置下模型学的是条件族 $p(x^{(i)} \mid x^{<i})$ 在各噪声水平下的平滑版；采样时逐 token 执行「 $t_i : 1 \to 0$ 内层退火 + 历史钉 0」即自回归逐帧生成。这正是 teacher forcing（2.4 §7：训练见 ground-truth 上下文）的扩散版——摘要原文「training a causal next-token prediction model to generate … without fully diffusing past ones」。把内层退火塌缩成 $t_i = 0$ 处的点估计（直接输出条件均值 $\mathbb{E}[x^{(i)} \mid x^{<i}]$），就退回 LLM 式确定性 next-token 预测。论文标题「Next-token Prediction Meets Full-Sequence Diffusion」的公式含义至此完整：同一组权重、同一个目标，两个采样 schedule；teacher forcing 与全序列扩散被统一为同一配置空间上的两个角点。
+**角点二（next-token 预测）**：取 $t_{1..i-1} = 0$（历史干净）、只对 $t_i$ 加噪——该配置下模型学的是条件族 $p(x^{(i)} \mid x^{\lt i})$ 在各噪声水平下的平滑版；采样时逐 token 执行「 $t_i : 1 \to 0$ 内层退火 + 历史钉 0」即自回归逐帧生成。这正是 teacher forcing（2.4 §7：训练见 ground-truth 上下文）的扩散版——摘要原文「training a causal next-token prediction model to generate … without fully diffusing past ones」。把内层退火塌缩成 $t_i = 0$ 处的点估计（直接输出条件均值 $\mathbb{E}[x^{(i)} \mid x^{\lt i}]$），就退回 LLM 式确定性 next-token 预测。论文标题「Next-token Prediction Meets Full-Sequence Diffusion」的公式含义至此完整：同一组权重、同一个目标，两个采样 schedule；teacher forcing 与全序列扩散被统一为同一配置空间上的两个角点。
 
 ```
 t_1..t_n 的配置空间（每 token 一个噪声水平，0 = 干净，1 = 纯噪声）：
@@ -212,15 +212,15 @@ t_1..t_n 的配置空间（每 token 一个噪声水平，0 = 干净，1 = 纯�
 
 ### 6.1 exposure bias 的形式化：KL 链式分解定位失配
 
-把 chunk 级联合分布写成条件乘积： $p(x^{1:M}) = \prod_{k=1}^{M} p(x^{(k)} \mid x^{<k})$，模型侧 $q_\theta$ 同形。KL 的链式分解（展开对数比、对 $p$ 取全期望、逐项用 tower property 把 $x^{(\ge k)}$ 边缘化）：
+把 chunk 级联合分布写成条件乘积： $p(x^{1:M}) = \prod_{k=1}^{M} p(x^{(k)} \mid x^{\lt k})$，模型侧 $q_\theta$ 同形。KL 的链式分解（展开对数比、对 $p$ 取全期望、逐项用 tower property 把 $x^{(\ge k)}$ 边缘化）：
 
-$$\mathrm{KL}\left( p\left( x^{1:M} \right)\thinspace \Vert\thinspace q_\theta\left( x^{1:M} \right) \right) = \sum_{k=1}^{M} \mathbb{E}_{x^{<k} \sim p} \left[ \mathrm{KL}\left( p\left( \cdot \mid x^{<k} \right)\thinspace \Vert\thinspace q_\theta\left( \cdot \mid x^{<k} \right) \right) \right] \qquad (10)$$
+$$\mathrm{KL}\left( p\left( x^{1:M} \right)\thinspace \Vert\thinspace q_\theta\left( x^{1:M} \right) \right) = \sum_{k=1}^{M} \mathbb{E}_{x^{\lt k} \sim p} \left[ \mathrm{KL}\left( p\left( \cdot \mid x^{\lt k} \right)\thinspace \Vert\thinspace q_\theta\left( \cdot \mid x^{\lt k} \right) \right) \right] \qquad (10)$$
 
-**符号**： $x^{(k)}$：第 $k$ 个 chunk； $x^{<k}$：其前全部 chunk（历史）；右端第 $k$ 项：在**数据分布的历史边际**下评估的第 $k$ 个条件失配。
+**符号**： $x^{(k)}$：第 $k$ 个 chunk； $x^{\lt k}$：其前全部 chunk（历史）；右端第 $k$ 项：在**数据分布的历史边际**下评估的第 $k$ 个条件失配。
 
 式 (10) 把训练-推理失配钉到一个精确位置。teacher forcing 式训练最小化的是右端——历史测度取 $p$（ground-truth 上下文）；推理 rollout 评估的是同一批条件、但历史测度换成了模型自己的 $q_\theta$：
 
-$$L_{deploy}(\theta) = \sum_{k=1}^{M} \mathbb{E}_{x^{<k} \sim q_\theta} \left[ \ell_k\left( x^{<k} \right) \right] \qquad (11)$$
+$$L_{deploy}(\theta) = \sum_{k=1}^{M} \mathbb{E}_{x^{\lt k} \sim q_\theta} \left[ \ell_k\left( x^{\lt k} \right) \right] \qquad (11)$$
 
 **符号**： $\ell_k$：第 $k$ 个条件在自生成历史下的失配泛函（与式 (10) 的逐条件 KL 同形，或其实用替代）。复合机制：chunk $j$ 的任何残差失配使 $q_\theta$ 的历史边际偏离 $p$，该偏移进入全部 $k > j$ 的条件的输入分布——历史测度的错位随 $k$ 累积，而训练目标对这些区域的覆盖为零。Self-Forcing 摘要的指控对象正是这个错位——训练以 ground-truth 为上下文、推理须以自生成输出为条件（摘要原文：「models trained on ground-truth context must generate sequences conditioned on their own imperfect outputs during inference」，[Huang et al., 2025](../references.md)，arXiv:2506.08009，[A]）。注意 §3 的 DMD 阶段不改这个诊断：分布匹配的目标分布确实是学生输出分布，但因果学生的**条件上下文**在训练时仍是 ground truth——失配不在被监督的输出侧，在未被监督的输入侧。长视频上 $M$ 大、复合长，这就是因果学生长跑漂移而双向教师不漂移的原因链中属于训练侧的那一环（架构侧的因果约束分析见 §3.2）。
 
@@ -255,7 +255,7 @@ $$L_{SF}(\theta) = \mathbb{E}_{x^{1:M} \sim q_\theta^{rollout}} \left[ \ell_{DM}
 
 **路线一：keyframe + 插值。** 稀疏关键帧先行，区间后填。公式形态是两级：keyframe 链 $p(K_1) \prod_i p(K_{i+1} \mid K_i, c_i)$（关键帧粒度的高层自回归）+ 区间内填充 $p(x^{(k_i + 1..k_{i+1} - 1)} \mid K_i, K_{i+1}, c)$（首尾帧条件生成——机制归下一章：9.4 的 I2V/kf2v 家族）。账：区间之间可并行（误差不在时间轴上复合），墙钟友好；上限是区间内的运动幅度与内容连续性受关键帧密度约束，长程一致性等于关键帧链的质量。
 
-**路线二：分块 AR。** 即 §4-§6 的全部内容：历史条件 $q_\theta(x^{(k)} \mid x^{<k})$ + KV cache 流式；SkyReels-V2（Diffusion Forcing 框架，§5.3）为当代代表。已知敌人是 exposure bias（§6 修复）；推理上下文 = cache 长度，滑窗截断换有界成本（§4.2 账）。时长在原则上无界（流一直推），实际约束是长程一致性随 rollout 复合的残差。
+**路线二：分块 AR。** 即 §4-§6 的全部内容：历史条件 $q_\theta(x^{(k)} \mid x^{\lt k})$ + KV cache 流式；SkyReels-V2（Diffusion Forcing 框架，§5.3）为当代代表。已知敌人是 exposure bias（§6 修复）；推理上下文 = cache 长度，滑窗截断换有界成本（§4.2 账）。时长在原则上无界（流一直推），实际约束是长程一致性随 rollout 复合的残差。
 
 **路线三：context 扩展。** 把双向窗口直接拉长，账用 9.1/9.2 的口径现推：1 分钟 720p@24fps → $T = 1440$、latent 帧 $361$、 $N = 361 \times 90 \times 160 \approx 5.20 \times 10^{6}$ token， $N^{2} \approx 2.70 \times 10^{13}$；单层二次项 $4 N^{2} d$（ $d = 5120$）≈ 553 PFLOPs，×40 层 ≈ 22.1 EFLOPs **一个去噪步**——已 5.4 倍于 81 帧整段视频全部 50 步的总和（9.2 §2.5 的 4.1 EFLOPs）；×50 步 ≈ 1.1 ZFLOPs 一段一分钟视频，约为 5 秒段的 270 倍。披露侧的规模点：Movie Gen 最大上下文 73K video token（= 16s@16fps，[Polyak et al., 2024](../references.md)，arXiv:2410.13720，[B]——未开源，只引论文口径）。裸 full attention 的 context 扩展在分钟级不可行；要么稀疏化（9.2 §2.4 的 SUV 一系），要么退回路线一/二。三条路线不互斥——按「时长 × 一致性 × 预算」的权衡面取点，当代系统多为组合（SkyReels-V2 = 路线二主干 + 多阶段配方）。
 
@@ -278,7 +278,7 @@ $$L_{SF}(\theta) = \mathbb{E}_{x^{1:M} \sim q_\theta^{rollout}} \left[ \ell_{DM}
 
 ## 练习
 
-1.（推导）Diffusion Forcing 的角点与缺口。从式 (8)(9) 出发：(a) 约束 $t_1 = \cdots = t_n = t$（每序列采一个标量），把式 (9) 化简为式 (1) 的 ε 坐标形态，写出每一步；(b) 取 $t_{<i} = 0$，写出第 $i$ 个 token 的条件学习目标的显式形式，并描述「逐 token 内层退火 + 历史钉 0」的采样算法；(c) 论证：只在共享 $t$ 截面训练的双向基座，面对 §4 双层循环的输入（cache 内 clean 历史 + 当前 chunk 在噪）时缺了哪部分支撑集——注意连续 $\pi$ 下任何具体配置都是零测集，请用支撑集（而非概率质量）的语言陈述缺口；并说明 DF 论文的离散噪声水平口径（含 0）如何使该类配置获得正概率质量。
+1.（推导）Diffusion Forcing 的角点与缺口。从式 (8)(9) 出发：(a) 约束 $t_1 = \cdots = t_n = t$（每序列采一个标量），把式 (9) 化简为式 (1) 的 ε 坐标形态，写出每一步；(b) 取 $t_{\lt i} = 0$，写出第 $i$ 个 token 的条件学习目标的显式形式，并描述「逐 token 内层退火 + 历史钉 0」的采样算法；(c) 论证：只在共享 $t$ 截面训练的双向基座，面对 §4 双层循环的输入（cache 内 clean 历史 + 当前 chunk 在噪）时缺了哪部分支撑集——注意连续 $\pi$ 下任何具体配置都是零测集，请用支撑集（而非概率质量）的语言陈述缺口；并说明 DF 论文的离散噪声水平口径（含 0）如何使该类配置获得正概率质量。
 
 2.（推导）CausVid 的非对称 DMD 梯度。从式 (5) 出发重推式 (6)：写出 reverse KL 的熵-交叉熵分解、测度项 $`\mathbb{E}_{p_\psi}[\partial_\psi \log p_\psi] = 0`$ 的依据、以及 score 差的合并步（对照 7.4 式 (30)-(32)）。然后回答两个架构问题：(a) 冻结教师的双向性出现在梯度的哪个因子里，学生的因果性出现在哪里；(b) 论证不动点 $p_\psi = p_{data}$ 与学生上下文窗口无关，并解释「非对称」因此改变的是逼近路径而非目标。
 

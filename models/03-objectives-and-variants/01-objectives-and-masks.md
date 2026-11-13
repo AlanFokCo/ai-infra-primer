@@ -18,7 +18,7 @@ $$
 
 **符号**： $x \sim p_{\mathrm{data}}$ ：原始语料序列； $\omega$ ：腐蚀方案的内部随机性； $x'(\omega)$ ：本次抽样的实际输入； $\ell_t(\omega)$ ：loss mask，1 = 该位置计入损失； $M(\omega)$ ：attention mask；求和遍历输入序列位置。
 
-encoder-decoder 形态（T5 / UL2）是同一对象的二元组写法：腐蚀序列 $x'$ 进 encoder（ $M_{\mathrm{enc}} \equiv 0$ ），target 序列 $y$ 在 decoder 侧因果生成，损失 $- \sum_j \log q_\theta(y_j | y_{<j}, x')$ ——把它看成「loss mask 落在拼接序列后半段」即与式 (1) 同构；GLM 正是用单序列拼接实现同一件事（§4），两种写法只是 $M$ 的布局差异。
+encoder-decoder 形态（T5 / UL2）是同一对象的二元组写法：腐蚀序列 $x'$ 进 encoder（ $M_{\mathrm{enc}} \equiv 0$ ），target 序列 $y$ 在 decoder 侧因果生成，损失 $- \sum_j \log q_\theta(y_j | y_{\lt j}, x')$ ——把它看成「loss mask 落在拼接序列后半段」即与式 (1) 同构；GLM 正是用单序列拼接实现同一件事（§4），两种写法只是 $M$ 的布局差异。
 
 1.1 §7 已给出 CLM / MLM / prefix-LM 三行取值，本章把行数补到五，并给每行公式、mask 实例与官方实现。同一条 8 token 序列在五种取值下的形态（图内简写 [M] = [MASK]、[s] = span 起始符、<X>/<Y>/<Z> = sentinel；为图示把 span 画得偏大，BERT 与 T5 的实际腐蚀率均为 15%，见 §3 / §5）：
 
@@ -50,10 +50,10 @@ T5     enc x' = the <X> on the mat <Y> slept               M_enc ≡ 0
 CLM 是框架的零点： $C$ 取恒等（ $x' = x$ ）， $M$ 取下三角（2.4 式 (3)）， $\ell$ 全 1，式 (1) 退化为 1.1 式 (4)：
 
 $$
-L_{\mathrm{CLM}} = - \frac{1}{T} \sum_{t=1}^{T} \log q_\theta(x_t \mid x_{<t}) \qquad (2)
+L_{\mathrm{CLM}} = - \frac{1}{T} \sum_{t=1}^{T} \log q_\theta(x_t \mid x_{\lt t}) \qquad (2)
 $$
 
-**符号**： $T$ ：序列长度； $q_\theta(x_t \mid x_{<t})$ ：以真实前缀为条件的下一 token 分布（1.1 式 (1)–(3) 的记号）。
+**符号**： $T$ ：序列长度； $q_\theta(x_t \mid x_{\lt t})$ ：以真实前缀为条件的下一 token 分布（1.1 式 (1)–(3) 的记号）。
 
 GPT 家族（[Radford et al., 2019](../references.md)，[W]）的全部性质已由该取值固定：一条序列一次前向产出 $T$ 个分类问题（1.1 §4 的 teacher forcing），生成语义是精确的祖先采样（1.1 §8）。它在下文的作用是对照列——每个非 CLM 目标都按「改了 $(C, M, \ell)$ 的哪几项、换来什么、付出什么」来定位。
 
@@ -164,10 +164,10 @@ $$
 GLM（[Du et al., 2021](../references.md)，arXiv:2103.10360，[A]）的空白填充（blank infilling）：对原序列反复采 span——长度采自 Poisson 分布（原文取 $\lambda$ = 3）、起点均匀——直到覆盖 15% 的 token，得 span 集 $\lbrace s_1, \ldots, s_m\rbrace$ 。每条 span 在输入中塌缩成单个 [MASK] token，得腐蚀序列 $x^{c}$ （长 $T - \sum_i |s_i| + m$ ）。模型输入 = $x^{c}$ （Part A）后接乱序拼接的 span（Part B：每条 span 前置一个起始符 [s]，排列 $\pi$ 在 $\lbrace1, \ldots, m\rbrace$ 上均匀采样）。目标函数：
 
 $$
-L_{\mathrm{GLM}} = - \mathbb{E}_{\pi}\left[ \sum_{i=1}^{m} \sum_{j=1}^{|s_{\pi(i)}|} \log q_\theta\big(s_{\pi(i),\thinspace j} \mid x^{c},\thinspace s_{\pi(<i)},\thinspace s_{\pi(i),\thinspace <j}\big) \right] \qquad (8)
+L_{\mathrm{GLM}} = - \mathbb{E}_{\pi}\left[ \sum_{i=1}^{m} \sum_{j=1}^{|s_{\pi(i)}|} \log q_\theta\big(s_{\pi(i),\thinspace j} \mid x^{c},\thinspace s_{\pi(\lt i)},\thinspace s_{\pi(i),\thinspace \lt j}\big) \right] \qquad (8)
 $$
 
-**符号**： $s_{i,\thinspace j}$ ：第 $i$ 条 span 的第 $j$ 个 token； $s_{\pi(<i)}$ ：排列 $\pi$ 下先于它的全部 span； $s_{\pi(i),\thinspace <j}$ ：本 span 内前 $j - 1$ 个 token。式 (8) 按论文原文为未归一形式（双重求和、不除 token 数）；本章式 (2)(4)(7) 的 $1/\cdot$ 因子是本书加的逐 token 归一约定，式 (1)(8) 保留原文形式——归一只改梯度尺度，不改最优解。
+**符号**： $s_{i,\thinspace j}$ ：第 $i$ 条 span 的第 $j$ 个 token； $s_{\pi(\lt i)}$ ：排列 $\pi$ 下先于它的全部 span； $s_{\pi(i),\thinspace \lt j}$ ：本 span 内前 $j - 1$ 个 token。式 (8) 按论文原文为未归一形式（双重求和、不除 token 数）；本章式 (2)(4)(7) 的 $1/\cdot$ 因子是本书加的逐 token 归一约定，式 (1)(8) 保留原文形式——归一只改梯度尺度，不改最优解。
 
 结构读法（对应 $M(\omega)$ 的分块）：Part A 内部双向（A-A 块全 0）；Part B 的每个位置能看见全部 Part A、排列序上先于本 span 的其他 span、以及本 span 内自己的左侧（span 内因果），未来 span 不可见； $\ell$ 只落 Part B。对 $\pi$ 取期望使「先填哪个空」不构成偏置；mask 随每次抽样变化，是 $M(\omega)$ 依赖 $\omega$ 的实例。原文在同一机制上还定义了更长跨度的变体（整句级 span；文档级单 span，长度取原文的 50%–100%），把填空连续推向长文生成（同篇，[A]）；该文档级长 blank 变体在 GLM-130B 中记为 [gMASK] token（[Zeng et al., 2022](../references.md)，arXiv:2210.02414，[A]）。
 
@@ -256,7 +256,7 @@ dec target:  <X>  cat  sat  <Y>  and  <Z>             ← <Z> = 收尾 sentinel
 ```
 
 $$
-L_{\mathrm{T5}} = - \frac{1}{|y|} \sum_{j=1}^{|y|} \log q_\theta(y_j \mid y_{<j},\thinspace x') \qquad (12)
+L_{\mathrm{T5}} = - \frac{1}{|y|} \sum_{j=1}^{|y|} \log q_\theta(y_j \mid y_{\lt j},\thinspace x') \qquad (12)
 $$
 
 **符号**： $x'$ ：sentinel 替换后的 encoder 输入（ $M_{\mathrm{enc}} \equiv 0$ ）； $y$ ：target 序列，decoder 对其因果、并 cross-attend encoder 输出（enc-dec 结构本身在 3.2 展开）。sentinel 使 target 成为「哪个空 → 填什么」的自界定记录；与 GLM 的单序列拼接（§4）是同一数学对象的两种布局。
@@ -321,7 +321,7 @@ def span_corruption(tokens, noise_density=0.15, mean_noise_span_length=3.0, rng=
 UL2（[Tay et al., 2022](../references.md)，arXiv:2205.05131，[B]——无官方开源实现，本节公式按论文拆，勿以社区复现为准）把 §1 的设计空间做成可采样的混合分布：每个去噪器（denoiser） $k$ 由参数 $(\mu_k, r_k, n_k)$ （span 均长、破坏率、span 数）与顺序模式定义，训练目标是对 denoiser 的加权和：
 
 $$
-L_{\mathrm{UL2}} = \sum_{k} w_k\hspace{5mu} \mathbb{E}_{x,\thinspace \omega \sim C_k}\left[ - \sum_{j} \log q_\theta(y_j \mid y_{<j},\thinspace x';\thinspace m_k) \right] \qquad (15)
+L_{\mathrm{UL2}} = \sum_{k} w_k\hspace{5mu} \mathbb{E}_{x,\thinspace \omega \sim C_k}\left[ - \sum_{j} \log q_\theta(y_j \mid y_{\lt j},\thinspace x';\thinspace m_k) \right] \qquad (15)
 $$
 
 **符号**： $C_k$ ：第 $k$ 个 denoiser 的腐蚀分布； $m_k$ ：模式切换符（mode-switch token）； $w_k$ ：混合权重。
@@ -340,7 +340,7 @@ $$
 
 逐族判定：
 
-- **CLM**： $c_t = x_{<t} = G_t$ ，式 (16) 取等。
+- **CLM**： $c_t = x_{\lt t} = G_t$ ，式 (16) 取等。
 - **MLM**： $c_t = x'$ 为整条腐蚀序列，含未来位置的真值（腐蚀只动 15% 的位置——其中 12% 替换为 [MASK]，其余位置真值全露），任何只含过去的 $G_\tau$ 都不满足式 (16)。逐位留一重掩的迭代采样也绕不过：第 $\tau$ 步实际计算的是 $`q(x_\tau \mid x_{<\tau},\thinspace \text{[MASK]}_{> \tau})`$ ，与训练条件（固定 12% [MASK] 率、其余为真值）不是同一条件分布，且 [MASK] 率随迭代进度持续漂移。更根本地，伪似然（pseudo-likelihood）式连乘 $\prod_t q(x_t \mid x_{\setminus t})$ 不满足链式法则对条件集的嵌套要求（1.1 式 (3)：第 $t$ 个因子只能以前 $t - 1$ 个已生成为条件），它不是任何联合分布的分解——MLM 产出的是一组相容性无保证的局部条件，不是一个可采样的联合。「encoder 形态为何不能直接生成」的完整证明在 3.2。
 - **prefix-LM**： $I$ = 前缀，续写区满足式 (16)。
 - **GLM**： $I$ = Part A（ $x^{c}$ 生成前已知），span 逐条生成、span 内因果，条件集 = $x^{c} \cup$ 已生成 span $\cup$ 本 span 前缀，满足式 (16)。
@@ -368,12 +368,12 @@ MLM 系论文不报 perplexity、CLM 的 PPL 也搬不到 MLM 上——这不是
 **障碍二：条件不同 ⇒ 地板不同。** 对 mask / rand 支（ $x'$ 不含 $x_t$ 自身的信息），涉及三个条件熵，其间两条不等式是定理：
 
 $$
-H(x_t \mid x_{\setminus t}) \hspace{5mu}\le\hspace{5mu} H(x_t \mid x_{<t}), \qquad H(x_t \mid x_{\setminus t}) \hspace{5mu}\le\hspace{5mu} H(x_t \mid x') \hspace{5mu}\le\hspace{5mu} H(x_t) \qquad (17)
+H(x_t \mid x_{\setminus t}) \hspace{5mu}\le\hspace{5mu} H(x_t \mid x_{\lt t}), \qquad H(x_t \mid x_{\setminus t}) \hspace{5mu}\le\hspace{5mu} H(x_t \mid x') \hspace{5mu}\le\hspace{5mu} H(x_t) \qquad (17)
 $$
 
 **符号**： $H(\cdot \mid \cdot)$ ：条件熵； $x_{\setminus t}$ ：除位置 $t$ 之外的完整真值序列； $x'$ ：腐蚀后输入； $g$ ：腐蚀映射（含其内部随机性 $\omega$ ）。
 
-第一条： $x_{\setminus t}$ 比 $x_{<t}$ 多出未来位置，条件化更多变量不增熵——全量双向地板不高于 CLM 地板。第二条：左半是数据处理不等式的条件形式（ $x' = g(x_{\setminus t}, \omega)$ 是腐蚀函数， $H(x_t \mid g(x_{\setminus t}, \omega)) \ge H(x_t \mid x_{\setminus t})$ ），右半是条件化不增熵。MLM 的地板落在中间区间；腐蚀只动 15% 的位置， $x'$ 保留了包括未来在内的 85% 真值，其地板一般远低于 CLM 的 $H(x_t \mid x_{<t})$ ——两个目标的地板之差是任务难度差，与模型质量无关；keep 支再把 MLM 侧地板压到约 0.9 倍（§3.2 的分支可知下界口径）。两边没有可对齐的零点。
+第一条： $x_{\setminus t}$ 比 $x_{\lt t}$ 多出未来位置，条件化更多变量不增熵——全量双向地板不高于 CLM 地板。第二条：左半是数据处理不等式的条件形式（ $x' = g(x_{\setminus t}, \omega)$ 是腐蚀函数， $H(x_t \mid g(x_{\setminus t}, \omega)) \ge H(x_t \mid x_{\setminus t})$ ），右半是条件化不增熵。MLM 的地板落在中间区间；腐蚀只动 15% 的位置， $x'$ 保留了包括未来在内的 85% 真值，其地板一般远低于 CLM 的 $H(x_t \mid x_{\lt t})$ ——两个目标的地板之差是任务难度差，与模型质量无关；keep 支再把 MLM 侧地板压到约 0.9 倍（§3.2 的分支可知下界口径）。两边没有可对齐的零点。
 
 **障碍三：pseudo-PPL 不是 perplexity。** MLM 评估实践里的「perplexity」通常是伪困惑度（pseudo-perplexity）：逐位置留一重掩、其余位置给真值，
 

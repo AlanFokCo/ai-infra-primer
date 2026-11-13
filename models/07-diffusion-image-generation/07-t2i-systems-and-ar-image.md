@@ -95,10 +95,10 @@ $$
 **(2) 目标函数同式。** 同样的链式分解、同样的精确负对数似然：
 
 $$
-p_\theta(z) = \prod_{i=1}^{N} p_\theta(z_i \mid z_{<i}), \qquad L = -\thinspace\mathbb{E}_{z \sim p_{data}} \sum_{i=1}^{N} \log p_\theta(z_i \mid z_{<i}) \qquad (5)
+p_\theta(z) = \prod_{i=1}^{N} p_\theta(z_i \mid z_{\lt i}), \qquad L = -\thinspace\mathbb{E}_{z \sim p_{data}} \sum_{i=1}^{N} \log p_\theta(z_i \mid z_{\lt i}) \qquad (5)
 $$
 
-**符号**： $N$：token 数（ $256^2$ 档为 256）； $z_{<i}$：raster 前缀。没有 ELBO 下界、没有回归替代目标——7.1 对照表里 AR 行的「精确似然」在图像上原样成立，这是它对 diffusion 的硬优势（diffusion 侧精确似然要走 PF-ODE 的 trace 积分，7.3 §6.3 / 7.5 §2，贵到不实用）。
+**符号**： $N$：token 数（ $256^2$ 档为 256）； $z_{\lt i}$：raster 前缀。没有 ELBO 下界、没有回归替代目标——7.1 对照表里 AR 行的「精确似然」在图像上原样成立，这是它对 diffusion 的硬优势（diffusion 侧精确似然要走 PF-ODE 的 trace 积分，7.3 §6.3 / 7.5 §2，贵到不实用）。
 
 **(3) 架构原样复用。** 2.8 §1 的标准配方整块搬来：Pre-LN RMSNorm + RoPE + SwiGLU 的 decoder-only block，无卷积、无 2D 位置编码、无视觉专属组件。规模档 111M → 3.1B。
 
@@ -113,10 +113,10 @@ $$
 **形式化。** tokenizer 是多尺度 VQ（残差量化结构同 6.3 §5 的 RVQ 家族，共享 codebook，VAR 档词表 $V = 4096$）：图像被编码成 $K$ 个逐级加细的 token map $r_1, \ldots, r_K$， $r_k \in \lbrace1, \ldots, V\rbrace^{h_k \times w_k}$， $256^2$ 档的尺度序列 $(h_k, w_k) \in \lbrace1, 2, 3, 4, 5, 6, 8, 10, 13, 16\rbrace$（ $K = 10$）；重建侧把各尺度 map 查表、上采样对齐后相加（tokenizer 账 recap 6.3，此处不重推）。生成分解按尺度自回归：
 
 $$
-p(r_1, \ldots, r_K) = \prod_{k=1}^{K} p(r_k \mid r_{<k}) \qquad (6)
+p(r_1, \ldots, r_K) = \prod_{k=1}^{K} p(r_k \mid r_{\lt k}) \qquad (6)
 $$
 
-**符号**：条件 $r_{<k} = (r_1, \ldots, r_{k-1})$：所有更粗尺度的**完整** map； $r_k$ 内部全部 $h_k w_k$ 个位点并行预测。注意力 mask 因此是 block 因果形：尺度间因果（第 $k$ 块只看前 $k-1$ 块）、尺度内双向。
+**符号**：条件 $r_{\lt k} = (r_1, \ldots, r_{k-1})$：所有更粗尺度的**完整** map； $r_k$ 内部全部 $h_k w_k$ 个位点并行预测。注意力 mask 因此是 block 因果形：尺度间因果（第 $k$ 块只看前 $k-1$ 块）、尺度内双向。
 
 ```
 r_1    r_2    r_3              r_10

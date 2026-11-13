@@ -45,7 +45,7 @@ t=1.0   [M] [M] [M] [M] [M] [M] [M] [M] [M]
 
 | 项 | AR（1.1 / 2.4） | masked diffusion |
 | --- | --- | --- |
-| 似然 | $p(x) = \prod_i p(x_i \mid x_{<i})$，NLL 精确可算 | 式 (3) 是 ELBO 上界，perplexity 只能报 bound |
+| 似然 | $p(x) = \prod_i p(x_i \mid x_{\lt i})$，NLL 精确可算 | 式 (3) 是 ELBO 上界，perplexity 只能报 bound |
 | decode | $T$ 步串行前向 + KV cache 逐步复用（2.4 账） | $N$ 步（ $N \le T$ 可调）全序列双向前向，**无 KV cache**：步与步之间全部隐状态被双向耦合改写，上一步的 K/V 对下一步无效，每步成本 ≈ 一次全长 prefill |
 | 并行度 | 每前向产 1 token（4.5 的 MTP / speculative 放宽到不足 2） | 每前向可提交任意多位置；提交子集越小越接近精确联合， $N = T$ 时退化为逐位置采样 |
 

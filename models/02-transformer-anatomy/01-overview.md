@@ -1,6 +1,6 @@
 # 2.1 架构总览与设计约束（Architecture Overview and Design Constraints）
 
-> 本章把现代 decoder-only Transformer 定成三件全书复用的东西：residual stream 递推式「 $x$ ← $x + f(\mathrm{LN}(x))$」、一次 forward 的完整 shape 走读（ $[B, T, H, D]$ 记法）、参数量 $12Ld^{2}$ 标尺——然后用 Transformer 原文 Table 1 的三指标（每层计算量 / 串行操作数 / 最大路径长度）回答「为什么是 attention 而不是 recurrence」| 前置：1.1（ $f_\theta$、 $x_{<t}$、 $V$、 $d$），1.2（ $2mnk$ 账、 $C = 6ND$ 的 $N$ 口径） | 锚点：Llama-3.1-8B config [A]、OLMo-2-7B config [A]；Vaswani et al. [A]、Llama 3 herd [A]、OLMo 2 [A]
+> 本章把现代 decoder-only Transformer 定成三件全书复用的东西：residual stream 递推式「 $x$ ← $x + f(\mathrm{LN}(x))$」、一次 forward 的完整 shape 走读（ $[B, T, H, D]$ 记法）、参数量 $12Ld^{2}$ 标尺——然后用 Transformer 原文 Table 1 的三指标（每层计算量 / 串行操作数 / 最大路径长度）回答「为什么是 attention 而不是 recurrence」| 前置：1.1（ $f_\theta$、 $x_{\lt t}$、 $V$、 $d$），1.2（ $2mnk$ 账、 $C = 6ND$ 的 $N$ 口径） | 锚点：Llama-3.1-8B config [A]、OLMo-2-7B config [A]；Vaswani et al. [A]、Llama 3 herd [A]、OLMo 2 [A]
 
 ## 1. 一张 config.json 确定一台机器
 

@@ -22,18 +22,18 @@ DDPM 的默认配置从纯噪声采出一张图要 1000 次网络前向（[Ho et
 
 ## 2. AR：精确似然与顺序采样
 
-AR 家族的训练目标在 1.1 已经钉死：链式法则给出联合分布的精确分解 $p(x_{1:T}) = \prod_t p(x_t \mid x_{<t})$（1.1 式 (3)），训练就是极大似然
+AR 家族的训练目标在 1.1 已经钉死：链式法则给出联合分布的精确分解 $p(x_{1:T}) = \prod_t p(x_t \mid x_{\lt t})$（1.1 式 (3)），训练就是极大似然
 
 $$
-L_{AR}(\theta) = -\sum_{t=1}^{T} \log p_\theta(x_t \mid x_{<t}) \qquad (1)
+L_{AR}(\theta) = -\sum_{t=1}^{T} \log p_\theta(x_t \mid x_{\lt t}) \qquad (1)
 $$
 
-**符号**： $x_{<t} = (x_1, \ldots, x_{t-1})$：位置 $t$ 之前的全部 token； $T$：序列长度。式 (1) 与 1.1 式 (4) 的 per-token NLL 差常数因子 $1/T$——本章取未归一化的整序列求和口径，1.1 取逐位置平均口径；与 cross-entropy 的同一性论证见 1.1 §4，此处只列结论。
+**符号**： $x_{\lt t} = (x_1, \ldots, x_{t-1})$：位置 $t$ 之前的全部 token； $T$：序列长度。式 (1) 与 1.1 式 (4) 的 per-token NLL 差常数因子 $1/T$——本章取未归一化的整序列求和口径，1.1 取逐位置平均口径；与 cross-entropy 的同一性论证见 1.1 §4，此处只列结论。
 
 把式 (1) 放进四坐标：
 
 - **优化什么**：精确似然。 $\log p_\theta(x)$ 逐位相加即得，没有近似项、没有下界缝隙。
-- **怎么采样**：祖先采样（ancestral sampling，1.1 §8）——从 bos 出发逐位置采 $x_t \sim p_\theta(\cdot \mid x_{<t})$， $T$ 步严格串行，第 $t$ 步必须等前 $t-1$ 步落地。一张 $256 \times 256$ 图像经 f16 离散 tokenizer 切成 $16 \times 16 = 256$ 个 token，就是 256 次串行前向；训练侧靠教师强制（teacher forcing）一次前向并行算完全部 $T$ 个位置，训练并行、生成串行的不对称由此而来（1.1 §4）。
+- **怎么采样**：祖先采样（ancestral sampling，1.1 §8）——从 bos 出发逐位置采 $x_t \sim p_\theta(\cdot \mid x_{\lt t})$， $T$ 步严格串行，第 $t$ 步必须等前 $t-1$ 步落地。一张 $256 \times 256$ 图像经 f16 离散 tokenizer 切成 $16 \times 16 = 256$ 个 token，就是 256 次串行前向；训练侧靠教师强制（teacher forcing）一次前向并行算完全部 $T$ 个位置，训练并行、生成串行的不对称由此而来（1.1 §4）。
 - **似然**：精确且便宜，评估一个样本只要一次前向。
 - **mode 行为**：MLE 优化的是 $\mathrm{KL}(p_{data} \Vert p_\theta)$（1.1 式 (6)），数据里出现的每个 mode 都必须分到概率，否则 $\log p_\theta \to -\infty$ 的惩罚无界——行为是全覆盖（mean-seeking）。
 

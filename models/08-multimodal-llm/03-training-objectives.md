@@ -9,10 +9,10 @@
 8.1 式 (1) 把 VLM 形式化为条件 LM；训练它就是最大化训练样本中回答部分的似然。设一条样本拼接后的完整序列为 $x_1, \ldots, x_S$（system + user prompt + 视觉段 + assistant 回答，视觉段占其中 $M$ 个位置），定义掩码：
 
 $$
-m_s = \begin{cases} 1, & s \in \mathrm{response} \\ 0, & \mathrm{otherwise} \end{cases}, \qquad L = -\sum_{s=1}^{S} m_s \log p\negthinspace\left( x_s \mid x_{<s} \right) \qquad (1)
+m_s = \begin{cases} 1, & s \in \mathrm{response} \\ 0, & \mathrm{otherwise} \end{cases}, \qquad L = -\sum_{s=1}^{S} m_s \log p\negthinspace\left( x_s \mid x_{\lt s} \right) \qquad (1)
 $$
 
-**符号**： $S$：拼接后总长度（文本 + 视觉段）；response 指 assistant 回答段； $x_{<s}$ 里已经混着视觉段——input-level 接入下（8.1 式 (3)）它是序列的一部分，条件化不需要任何特殊记号。式 (1) 与纯文本 SFT 的 loss 形式完全一致：VLM 的训练目标没有引入任何新 loss，全部的新东西在「 $m_s$ 怎么取」。
+**符号**： $S$：拼接后总长度（文本 + 视觉段）；response 指 assistant 回答段； $x_{\lt s}$ 里已经混着视觉段——input-level 接入下（8.1 式 (3)）它是序列的一部分，条件化不需要任何特殊记号。式 (1) 与纯文本 SFT 的 loss 形式完全一致：VLM 的训练目标没有引入任何新 loss，全部的新东西在「 $m_s$ 怎么取」。
 
 被 mask 掉的两类位置各有机制理由。**视觉 token**： $v$ 是连续向量行（8.1 式 (2)），不在文本词表上，输出头的 softmax 根本给不出它的标签——没有 ground truth 可计；它们在序列里的角色是条件（建 KV、供后续 attend），不是预测目标。**prompt token**：建模对象是 $p(\text{response} \mid \text{prompt},\thinspace x_{img})$，prompt 是给定的条件；对 prompt 计 loss 等于让模型学「生成用户的问题」——方向与推理时的条件化相反，还把有限的监督容量花在复述输入上。一个特例：stage 1 的 caption 预训练里，回答就是整条输出（图 → caption），response 覆盖 caption 全部 token；多轮对话样本里 response 是各 assistant 轮的并集， $m_s$ 逐段揭开。
 
@@ -116,7 +116,7 @@ $$
 为什么 VLM 会「不看图说话」？把模型的输出分布与同一模型闭眼（不给图）的分布对比，定义逐位置的视觉接地强度：
 
 $$
-G_t = D_{KL}\left( p(\cdot \mid y_{<t},\thinspace x_{img}) \hspace{5mu}\Vert\hspace{5mu} p(\cdot \mid y_{<t}) \right) \qquad (3)
+G_t = D_{KL}\left( p(\cdot \mid y_{\lt t},\thinspace x_{img}) \hspace{5mu}\Vert\hspace{5mu} p(\cdot \mid y_{\lt t}) \right) \qquad (3)
 $$
 
 **符号**：右端是同一模型在视觉条件缺失下的输出分布。 $G_t \approx 0$ 意味着第 $t$ 步的生成与闭眼无异——该位置的词是语言先验选的。压低 $G_t$ 的三个机制性因素（机制假设级表述：各论文的探针与消融方向一致，但「VLM 内部何时何地丢失视觉证据」没有闭合理论，本节不断言超出论文的结论）：

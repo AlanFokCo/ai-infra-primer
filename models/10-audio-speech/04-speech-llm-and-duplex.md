@@ -2,7 +2,7 @@
 
 > 前三章把语音的「读、识、写」拆成了独立部件：codec 把波形变成可进 LM 的 token（10.1），CTC/RNN-T/AED 解决对齐（10.2），LM/FM 两条路线解决合成（10.3）。本章把部件装回一个系统：speech LLM 要同时回答「怎么听进去」（encoder + adapter，同构 8.1）、「怎么说出来」（Thinker-Talker 双流、Moshi 的 multi-stream + RQ-Transformer 两级分解 + Inner Monologue——本章深拆的三个机制），以及「对话延迟从哪来」（帧率 × 级数 × vocoder 的逐项预算账，~200 ms 档与秒级档的分界） | 前置：10.1（Mimi split-RVQ 式 (11)(12)、1.1 kbps 账式 (13)、fps vs token rate 约定）、10.2（LLM-based ASR 式 (23)、流式 chunk attention 式 (22)）、10.3（VALL-E 两阶段、FM decoder、BigVGAN）、8.1（connector 三自由度）、8.2（M-RoPE 三元组式 (14)-(17)）、2.4（KV cache 账式 (9)）、4.5（MTP）、7.5（FM） | 锚点：kyutai-labs/moshi（官方全栈，含 Mimi 与 RQ-Transformer 实现）[A]、QwenLM/Qwen2.5-Omni [A]、QwenLM/Qwen3-Omni [A]、zai-org/GLM-4-Voice（原 THUDM）[A]、MoonshotAI/Kimi-Audio [A]、stepfun-ai/Step-Audio [A]、ictnlp/LLaMA-Omni [A]；Moshi [A]、Qwen2.5-Omni [A]、Qwen3-Omni [A]、GLM-4-Voice [A]、AudioLM [B]、Kimi-Audio [A]、Step-Audio [A]、LLaMA-Omni [A]、Qwen2-Audio [A]、GPT-4o voice [C]
 
-记号（沿用本 Part 约定页并本章专用）：时间步 $s = 1..S$ 固定在 12.5 Hz 帧栅格上（帧长 $\Delta_f = 80$ ms，Mimi 口径）； $K = 8$ 为每帧音频 codebook 数；流（stream）用上标： $`a^{u}_{s,k}`$ = 用户流第 $s$ 帧第 $k$ 个码本、 $`a^{m}_{s,k}`$ = 模型流、 $w_s$ = 模型文本流（Inner Monologue）；一帧的全流 token 组记 $`\mathbf{x}_s`$； $`\mathbf{x}_{<s} = (\mathbf{x}_1, \ldots, \mathbf{x}_{s-1})`$。
+记号（沿用本 Part 约定页并本章专用）：时间步 $s = 1..S$ 固定在 12.5 Hz 帧栅格上（帧长 $\Delta_f = 80$ ms，Mimi 口径）； $K = 8$ 为每帧音频 codebook 数；流（stream）用上标： $`a^{u}_{s,k}`$ = 用户流第 $s$ 帧第 $k$ 个码本、 $`a^{m}_{s,k}`$ = 模型流、 $w_s$ = 模型文本流（Inner Monologue）；一帧的全流 token 组记 $`\mathbf{x}_s`$； $`\mathbf{x}_{\lt s} = (\mathbf{x}_1, \ldots, \mathbf{x}_{s-1})`$。
 
 ## 1. Speech 理解 LLM：encoder + adapter + LLM 的回收
 
@@ -36,7 +36,7 @@ $$t = \left\lfloor \tau / \Delta_0 \right\rfloor \qquad (2)$$
 
 级联 speech 对话的延迟结构是硬串行：speech → ASR → LLM → TTS → waveform，后一级等前一级出齐（或至少出端点）。Thinker-Talker（Qwen2.5-Omni，[Xu et al., 2025a](../references.md)，arXiv:2503.20215，[A]；repo [QwenLM/Qwen2.5-Omni](../references.md)，[A]）把中间两级的串行拆开：**Thinker** 是理解 + 文本生成的 LLM（音频输入经 2 秒块 block-wise attention 的音频编码器流式进入，式 (1)(2) 的对齐与位置系统即为此服务）；**Talker** 是语音生成端，原文定义为「a dual-track autoregressive model that directly utilizes the hidden representations from the Thinker to produce audio tokens」。写成公式：Talker 在第 $s$ 个输出帧的输入是双轨拼接
 
-$$u_s = \big[\thinspace e(w_{\pi(s)}) \thinspace;\hspace{5mu} h^{\text{Thinker}}_{\pi(s)} \thinspace\big], \qquad P\big( z_s \mid z_{<s},\thinspace u_s \big) \qquad (3)$$
+$$u_s = \big[\thinspace e(w_{\pi(s)}) \thinspace;\hspace{5mu} h^{\text{Thinker}}_{\pi(s)} \thinspace\big], \qquad P\big( z_s \mid z_{\lt s},\thinspace u_s \big) \qquad (3)$$
 
 **符号**： $w_i$：Thinker 正在生成的第 $i$ 个文本 token； $`h^{\text{Thinker}}_i`$：其对应的隐层表征； $e(\cdot)$：token embedding； $\pi(s)$：输出帧 $s$ 对齐到的文本位置（chunk 映射）； $z_s$：第 $s$ 帧的 codec code。
 
@@ -85,9 +85,9 @@ Moshi（[Défossez et al., 2024](../references.md)，arXiv:2410.00037，[A]；�
 
 整段对话的联合分布按帧自回归分解。帧内的写法需要先立一条物理约束：**同帧的三条流互为「同时」**——在 80 ms 栅格内，用户帧 $s$ 与模型帧 $s$ 在同一物理时段产生，实时因果下谁也不可能条件于对方的同帧内容。因此帧内取如下分解：用户流因子条件于历史与自身帧内前缀，模型流（文本 → 音频的条件链）只条件于历史：
 
-$$P\big( \mathbf{x}_{1:S} \big) = \prod_{s=1}^{S}\ \underbrace{\prod_{k=1}^{K} P\big( a^{u}_{s,k} \mid \mathbf{x}_{<s},\thinspace a^{u}_{s,<k} \big)}_{\text{user stream (observed)}}\ \cdot\ \underbrace{P\big( w_s \mid \mathbf{x}_{<s} \big)\ \prod_{k=1}^{K} P\big( a^{m}_{s,k} \mid \mathbf{x}_{<s},\thinspace w_s,\thinspace a^{m}_{s,<k} \big)}_{\text{model stream: text prefix, then audio}} \qquad (4)$$
+$$P\big( \mathbf{x}_{1:S} \big) = \prod_{s=1}^{S}\ \underbrace{\prod_{k=1}^{K} P\big( a^{u}_{s,k} \mid \mathbf{x}_{\lt s},\thinspace a^{u}_{s,\lt k} \big)}_{\text{user stream (observed)}}\ \cdot\ \underbrace{P\big( w_s \mid \mathbf{x}_{\lt s} \big)\ \prod_{k=1}^{K} P\big( a^{m}_{s,k} \mid \mathbf{x}_{\lt s},\thinspace w_s,\thinspace a^{m}_{s,\lt k} \big)}_{\text{model stream: text prefix, then audio}} \qquad (4)$$
 
-**符号**： $`\mathbf{x}_{<s}`$： $s$ 帧之前全部流的历史；各因子的具体形式化由 §4.3 的两级分解给出。式 (4) 的帧内结构 = 链式法则 + 同帧跨流独立（物理同时性，非近似妥协）：模型帧 $s$ 的响应最早反映用户帧 $\le s-1$ 的内容，这个一帧反应滞后正是 §6.2 预算表「2 帧 = 160 ms」的结构来源；流间 delay（§4.5）整体平移各流栅格后，有限的同物理时刻跨流可见性会被恢复——式 (4) 是零 delay 基准形态。口径注记：原文 Eq (6) 的深度序把用户流排在模型流之后（训练口径，配 delay $\tau$）；式 (4) 取部署相关的条件链重排——模型流不读同帧用户流的结论在两口径下相同。
+**符号**： $`\mathbf{x}_{\lt s}`$： $s$ 帧之前全部流的历史；各因子的具体形式化由 §4.3 的两级分解给出。式 (4) 的帧内结构 = 链式法则 + 同帧跨流独立（物理同时性，非近似妥协）：模型帧 $s$ 的响应最早反映用户帧 $\le s-1$ 的内容，这个一帧反应滞后正是 §6.2 预算表「2 帧 = 160 ms」的结构来源；流间 delay（§4.5）整体平移各流栅格后，有限的同物理时刻跨流可见性会被恢复——式 (4) 是零 delay 基准形态。口径注记：原文 Eq (6) 的深度序把用户流排在模型流之后（训练口径，配 delay $\tau$）；式 (4) 取部署相关的条件链重排——模型流不读同帧用户流的结论在两口径下相同。
 
 三个读法。其一，**对话 = 一个联合分布**：turn-taking、抢话、backchannel（边听边「嗯」）、重叠发言全部是这个分布里的事件模式，不是外加的控制逻辑——与半双工的形式对照在 §6.1 展开。其二，**部署时用户流因子整块退掉**： $a^{u}$ 由 Mimi encoder 供给，需要的只是条件部分 $`P( w_s, a^{m}_{s,1:K} \mid \cdot)`$；训练时保留用户流因子（双流同建，原文「jointly into two autoregressive token streams」）是表征塑形的免费监督，且让预训练可以退化为单流音频 LM（§4.5）。其三，**帧内序 $w$ 在 $a^m$ 前不是随意选择**——它就是 Inner Monologue 的条件链（§4.4）。
 
@@ -111,9 +111,9 @@ $$g_{s,0} = c_s, \qquad g_{s,j} = f_{\text{depth}}\big( c_s,\thinspace e_{s,0}, 
 
 把式 (5)(6) 代回式 (4)，模型流的条件因子全部换成「经 $c_s$ 瓶装」的形式：
 
-$$P\big( w_s, a^{m}_{s,1:K} \mid \mathbf{x}_{<s} \big) \hspace{5mu}\longrightarrow\hspace{5mu} P\big( w_s \mid c_s \big) \prod_{k=1}^{K} P\big( a^{m}_{s,k} \mid c_s,\thinspace w_s,\thinspace a^{m}_{s,<k} \big) \qquad (7)$$
+$$P\big( w_s, a^{m}_{s,1:K} \mid \mathbf{x}_{\lt s} \big) \hspace{5mu}\longrightarrow\hspace{5mu} P\big( w_s \mid c_s \big) \prod_{k=1}^{K} P\big( a^{m}_{s,k} \mid c_s,\thinspace w_s,\thinspace a^{m}_{s,\lt k} \big) \qquad (7)$$
 
-**推导的两半要点**。帧内一半（式 (6) 右端）就是链式法则对固定深度序的逐字展开，**无近似**；跨帧的一半（ $`\mathbf{x}_{<s} \to c_s`$）才是近似：全部历史对当前帧的影响被强制流过单个向量 $c_s$——这是用「历史压缩成瓶颈向量」换「时间轴上每帧只走一步」的核心交易（练习 1 给信息论口径的表述）。
+**推导的两半要点**。帧内一半（式 (6) 右端）就是链式法则对固定深度序的逐字展开，**无近似**；跨帧的一半（ $`\mathbf{x}_{\lt s} \to c_s`$）才是近似：全部历史对当前帧的影响被强制流过单个向量 $c_s$——这是用「历史压缩成瓶颈向量」换「时间轴上每帧只走一步」的核心交易（练习 1 给信息论口径的表述）。
 
 ```
 RQ-Transformer 一帧的生成流（帧 s；c_s 由 §4.3 式 (5) 在帧 s-1 末备好）
@@ -153,11 +153,11 @@ $$w_s = \begin{cases} y_i, & s = \phi(i) \\ \varnothing, & \text{otherwise} \end
 
 **符号**： $y_i$：文本序列第 $i$ 个 token； $\phi$：词到帧的对齐映射（ $s = \phi(i)$ 即词 $i$ 的对齐帧，其余帧取 pad）； $\varnothing$：pad 符（沿用全书空位记号）。训练目标就是式 (4) 各因子的逐帧交叉熵之和——文本位置与音频位置同为离散词表上的 CE（1.1 的机制原样生效），联合目标无需任何新组件。
 
-机制上文本前缀为什么提升语音质量：没有 $w_s$ 时， $`P(a^{m}_{s,k} \mid c_s, a^{m}_{s,<k})`$ 必须隐式地同时做「内容规划」（这 80 ms 说哪个音）与「声学实现」（这个音的码本怎么取）；文本前缀把内容规划变成条件链上的显式变量——训练时它是观测量（式 (8)），推理时它由文本头先采样、音频步再以其为条件。两笔收益同出一个结构：(i) 音频码本分布的条件熵下降——声学实现只需在「内容已定」的子空间里建模；(ii) 文本头直接继承 Helium 7B 的文本预训练先验（2.1T tokens）——语言质量的瓶颈从「音频 token 分布里自学语言学」换成「文本 LLM 的现成先验」。与 10.3 的对照：VALL-E 用音素序列做条件、CosyVoice 用监督语义 token——Inner Monologue 是同一个「内容先行」思想在全双工设定里的版本，差别只在条件变量换成了模型自己生成的文本流。
+机制上文本前缀为什么提升语音质量：没有 $w_s$ 时， $`P(a^{m}_{s,k} \mid c_s, a^{m}_{s,\lt k})`$ 必须隐式地同时做「内容规划」（这 80 ms 说哪个音）与「声学实现」（这个音的码本怎么取）；文本前缀把内容规划变成条件链上的显式变量——训练时它是观测量（式 (8)），推理时它由文本头先采样、音频步再以其为条件。两笔收益同出一个结构：(i) 音频码本分布的条件熵下降——声学实现只需在「内容已定」的子空间里建模；(ii) 文本头直接继承 Helium 7B 的文本预训练先验（2.1T tokens）——语言质量的瓶颈从「音频 token 分布里自学语言学」换成「文本 LLM 的现成先验」。与 10.3 的对照：VALL-E 用音素序列做条件、CosyVoice 用监督语义 token——Inner Monologue 是同一个「内容先行」思想在全双工设定里的版本，差别只在条件变量换成了模型自己生成的文本流。
 
 ### 4.5 Delay、流式副产品与训练阶段
 
-**层级/流间 delay**（Moshi 论文表 1 的 Acoustic delay / Text delay 超参；延迟交错的并行预测模式转引自 Copet et al. 2023）。机制：流 $j$ 相对实时栅格整体平移整数帧 $d_j$——模型在绝对帧 $s$ 实际预测的是该流的第 $s - d_j$ 帧。两个用途。(i) 并行化：多码本逐层错开 delay 后，同一绝对时刻各层可并行采样（层 $k$ 在帧 $s$ 预测时，层 $<k$ 的「未来」帧已在更早的绝对帧生成）——这是没有 Depth Transformer 时解「一帧多码」的替代方案，与 §4.3 的深度自回归构成同一问题的两种答案。(ii) 读法翻转：文本流相对音频流的 delay 方向决定这个联合模型的「用法」——文本超前（先出文本、音频跟随）即流式 TTS 读法；文本滞后（音频先行、文本跟随产出）即流式 ASR 读法。原文把这两种读法作为 Inner Monologue 的直接副产品演示——同一个联合分布、同一套参数，只是把哪条流当「输入」哪条当「输出」。
+**层级/流间 delay**（Moshi 论文表 1 的 Acoustic delay / Text delay 超参；延迟交错的并行预测模式转引自 Copet et al. 2023）。机制：流 $j$ 相对实时栅格整体平移整数帧 $d_j$——模型在绝对帧 $s$ 实际预测的是该流的第 $s - d_j$ 帧。两个用途。(i) 并行化：多码本逐层错开 delay 后，同一绝对时刻各层可并行采样（层 $k$ 在帧 $s$ 预测时，层 $\lt k$ 的「未来」帧已在更早的绝对帧生成）——这是没有 Depth Transformer 时解「一帧多码」的替代方案，与 §4.3 的深度自回归构成同一问题的两种答案。(ii) 读法翻转：文本流相对音频流的 delay 方向决定这个联合模型的「用法」——文本超前（先出文本、音频跟随）即流式 TTS 读法；文本滞后（音频先行、文本跟随产出）即流式 ASR 读法。原文把这两种读法作为 Inner Monologue 的直接副产品演示——同一个联合分布、同一套参数，只是把哪条流当「输入」哪条当「输出」。
 
 **训练阶段**（原文口径）：Helium 7B（2.1T tokens 文本预训练）为基座，随后四阶段——无监督音频预训练（单流音频 LM）→ simulated multi-stream（单声道素材人工构造双流）→ Fisher 语料全双工微调 → 后续阶段。这条链的结构读法：前两阶段解决「音频 token 上的 LM 能力」与「双流格式」，Fisher 阶段才把「对话动力学」（重叠、backchannel、话轮交接的统计模式）灌进联合分布——§6.1 的「turn 作为分布事件」就是在这里学出来的。
 
@@ -171,7 +171,7 @@ $$w_s = \begin{cases} y_i, & s = \phi(i) \\ \varnothing, & \text{otherwise} \end
 
 AudioLM（[Borsos et al., 2022](../references.md)，arXiv:2209.03143，[B]——Google 未开源，按论文拆）把音频生成分成三级自回归，原文：「first construct coarse **semantic tokens** from a model pre-trained with a self-supervised masked language modeling objective」（w2v-BERT 系，10.1 §3.2），再接 SoundStream 系声学 token 的 coarse → fine 两级：
 
-$$P = \underbrace{\prod_t P\big( s_t \mid s_{<t} \big)}_{\text{semantic}}\ \times\ \underbrace{\prod_t P\big( c_t \mid c_{<t},\thinspace s \big)}_{\text{coarse}}\ \times\ \underbrace{\prod_t P\big( f_t \mid f_{<t},\thinspace c,\thinspace s \big)}_{\text{fine}} \qquad (9)$$
+$$P = \underbrace{\prod_t P\big( s_t \mid s_{\lt t} \big)}_{\text{semantic}}\ \times\ \underbrace{\prod_t P\big( c_t \mid c_{\lt t},\thinspace s \big)}_{\text{coarse}}\ \times\ \underbrace{\prod_t P\big( f_t \mid f_{\lt t},\thinspace c,\thinspace s \big)}_{\text{fine}} \qquad (9)$$
 
 **符号**： $s_t$：semantic token（语义层）； $c_t, f_t$：SoundStream 系 coarse / fine acoustic token（粗声学层 = 前几个码本、细声学层 = 其余码本）。
 
@@ -260,7 +260,7 @@ GPT-4o 的语音交互为闭源系统，官方公开披露极少。按证据等�
 
 ## 练习
 
-1.（推导）Multi-stream 联合分布与瓶颈。从展平序列 $(x_{1,1}, \ldots, x_{S,Q})$ 的链式法则出发：(a) 不重排 token 顺序，把 $\prod_{j} P(x_{s,j} \mid x_{<s,j})$ 按帧分组、再按 §4.2 的帧内固定序展开，在 §4.2 的同帧跨流独立前提下证明式 (4) 由展平链式法则精确推出，并指出该前提在哪一步进入（哪两个因子的条件集各被删去哪一项）；(b) 设 $`\mathcal{H}_s`$ 为「 $`\mathbf{x}_{<s}`$ 中且与 $x_{s,j}$ 相关」的全部变量，说明式 (7) 等价于引入瓶颈 $c_s$ 使 $`\mathcal{H}_s \to c_s \to x_{s,j}`$ 成马尔可夫链，并用互信息给出这个近似的上界表述（提示： $`I(x_{s,j}; \mathcal{H}_s \mid c_s) = 0`$ 当且仅当 $c_s$ 是充分统计量）；(c) 若帧内文本步移到音频步之后（深度序反转），联合分布的哪几个因子改变？这个改动在生成侧的语义后果是什么（结合 §4.4 回答）。
+1.（推导）Multi-stream 联合分布与瓶颈。从展平序列 $(x_{1,1}, \ldots, x_{S,Q})$ 的链式法则出发：(a) 不重排 token 顺序，把 $\prod_{j} P(x_{s,j} \mid x_{\lt s,j})$ 按帧分组、再按 §4.2 的帧内固定序展开，在 §4.2 的同帧跨流独立前提下证明式 (4) 由展平链式法则精确推出，并指出该前提在哪一步进入（哪两个因子的条件集各被删去哪一项）；(b) 设 $`\mathcal{H}_s`$ 为「 $`\mathbf{x}_{\lt s}`$ 中且与 $x_{s,j}$ 相关」的全部变量，说明式 (7) 等价于引入瓶颈 $c_s$ 使 $`\mathcal{H}_s \to c_s \to x_{s,j}`$ 成马尔可夫链，并用互信息给出这个近似的上界表述（提示： $`I(x_{s,j}; \mathcal{H}_s \mid c_s) = 0`$ 当且仅当 $c_s$ 是充分统计量）；(c) 若帧内文本步移到音频步之后（深度序反转），联合分布的哪几个因子改变？这个改动在生成侧的语义后果是什么（结合 §4.4 回答）。
 
 2.（计算）延迟预算账。(a) Moshi 帧率若从 12.5 Hz 翻倍到 25 Hz，只考虑「攒帧 + 单帧生成」两项，理论端到端延迟变为多少？(b) 某级联系统：ASR chunk 320 ms（块首上界口径，10.2 §7）、LLM TTFT 250 ms、TTS 首包 150 ms、网络 50 ms，逐项给出端到端预算并与 Moshi 档对照；指出哪一项无法靠加 GPU 消掉、为什么。(c) Qwen3-Omni 档（12.5 Hz code、单帧即时合成）：只计入「首帧到达 + 首帧生成」的结构下界是多少 ms？与 (a) 的 25 Hz 档比较并解释差异来源。
 
