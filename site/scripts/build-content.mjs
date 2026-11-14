@@ -7,7 +7,7 @@ import { transformMath, countBacktickMath } from './lib/math-transform.mjs';
 import { parseChapter } from './lib/metadata.mjs';
 import { rewriteLinks } from './lib/links.mjs';
 import { parseReferences } from './lib/references.mjs';
-import { renderFigure, isDiagram } from './lib/ascii-figure.mjs';
+import { renderFigure, renderGridFigure, renderAlgo, classifyBlock } from './lib/ascii-figure.mjs';
 import { SIGNATURE_FIGURES } from './lib/figures-signature.mjs';
 
 const SITE = path.dirname(fileURLToPath(import.meta.url)).replace(/\/scripts$/, '');
@@ -181,48 +181,67 @@ function main() {
   );
 }
 
-/** 无语言围栏中的结构图 → <figure> SVG；其余围栏原样保留 */
+/** 无语言围栏 → 结构图/网格图/算法面板；带语言围栏逐字保留 */
 function replaceDiagrams(body, slug) {
   const lines = body.split('\n');
   const out = [];
   let i = 0;
   let figNo = 0;
+  let algoNo = 0;
   while (i < lines.length) {
-    const line = lines[i];
-    const open = line.match(/^```(\w*)\s*$/);
-    if (open && open[1] === '') {
-      // 收齐围栏内容
-      const buf = [];
-      let j = i + 1;
-      while (j < lines.length && !/^```\s*$/.test(lines[j])) {
-        buf.push(lines[j]);
-        j += 1;
-      }
-      if (j < lines.length && isDiagram(buf)) {
-        figNo += 1;
-        const svg = renderFigure(buf);
-        const wide = /viewBox="0 0 (\d+)/.exec(svg);
-        const w = wide ? Number(wide[1]) : 0;
-        const wideAttrs = w > 760 ? ` data-wide style="--fig-w:${w}px"` : '';
-        out.push(
-          '',
-          `<figure class="fig"${wideAttrs} data-fig="${slug}#${figNo - 1}">`,
-          `<span class="fig-tag">FIG ${figNo}</span>`,
-          `<div class="fig-body">`,
-          svg,
-          `</div>`,
-          `</figure>`,
-          ''
-        );
-      } else {
-        // 非结构图：原样保留（深色图版）
-        out.push(line, ...buf, lines[j] ?? '```');
-      }
+    const open = lines[i].match(/^```(\w*)\s*$/);
+    if (!open) {
+      out.push(lines[i]);
+      i += 1;
+      continue;
+    }
+    // 收齐围栏到闭合行
+    const buf = [];
+    let j = i + 1;
+    while (j < lines.length && !/^```\s*$/.test(lines[j])) {
+      buf.push(lines[j]);
+      j += 1;
+    }
+    if (open[1] !== '' || j >= lines.length) {
+      // 带语言围栏或未闭合：逐字保留
+      out.push(lines[i], ...buf, lines[j] ?? '```');
       i = j + 1;
       continue;
     }
-    out.push(line);
-    i += 1;
+    const kind = classifyBlock(buf);
+    if (kind === 'diagram') {
+      figNo += 1;
+      const svg = renderFigure(buf);
+      const wide = /viewBox="0 0 (\d+)/.exec(svg);
+      const w = wide ? Number(wide[1]) : 0;
+      const wideAttrs = w > 760 ? ` data-wide style="--fig-w:${w}px"` : '';
+      out.push(
+        '',
+        `<figure class="fig"${wideAttrs} data-fig="${slug}#${figNo - 1}">`,
+        `<span class="fig-tag">FIG ${figNo}</span>`,
+        `<div class="fig-body">`,
+        svg,
+        `</div>`,
+        `</figure>`,
+        ''
+      );
+    } else if (kind === 'table') {
+      figNo += 1;
+      out.push(
+        '',
+        `<figure class="fig fig-grid" data-fig="${slug}#${figNo - 1}">`,
+        `<span class="fig-tag">FIG ${figNo}</span>`,
+        `<div class="fig-body">`,
+        renderGridFigure(buf),
+        `</div>`,
+        `</figure>`,
+        ''
+      );
+    } else {
+      algoNo += 1;
+      out.push('', renderAlgo(buf), '');
+    }
+    i = j + 1;
   }
   return out.join('\n');
 }
