@@ -88,3 +88,59 @@
 @media (prefers-reduced-motion: reduce) {
   .fig-svg .flow { display: none; }
 }
+
+/* ============ 签名动图 ============ */
+/* 入视口才动：全部签名动画门控在 .fig.in */
+.fig-sig .sig-flow,
+.fig-sig .sig-cell,
+.fig-sig .sig-cell-text,
+.fig-sig .sig-bar,
+.fig-sig .sig-rotor,
+.fig-sig .sig-diag,
+.fig-sig .sig-step { opacity: 0; }
+
+.fig.in .sig-flow { opacity: 0.9; }
+.fig.in .sig-step { opacity: 1; animation: sig-pop 0.5s var(--ease-out) both; animation-delay: calc(var(--i) * 0.65s); }
+.fig.in .sig-cell { opacity: 1; animation: sig-pop 0.4s var(--ease-out) both; animation-delay: calc(var(--i) * 1s); }
+.fig.in .sig-cell-text { opacity: 1; animation: sig-pop 0.4s var(--ease-out) both; animation-delay: calc(var(--i) * 1s + 0.1s); }
+.fig.in .sig-bar {
+  opacity: 1;
+  transform: scaleX(0);
+  transform-box: fill-box;
+  transform-origin: left center;
+  animation: sig-grow 0.7s var(--ease-out) both;
+  animation-delay: calc(0.4s + var(--i) * 0.2s);
+}
+.fig.in .sig-rotor {
+  opacity: 1;
+  transform-box: view-box;
+  animation: sig-spin var(--dur, 6s) linear infinite;
+  animation-delay: 0.4s;
+}
+.fig.in .sig-diag { opacity: 1; animation: sig-pulse 2.6s ease-in-out infinite; animation-delay: calc(var(--i) * 0.5s); }
+
+@keyframes sig-pop {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes sig-grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+@keyframes sig-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes sig-pulse {
+  0%, 100% { stroke-opacity: 1; fill-opacity: 1; }
+  50% { stroke-opacity: 0.45; fill-opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fig-sig .sig-flow, .fig-sig .sig-cell, .fig-sig .sig-cell-text, .fig-sig .sig-bar,
+  .fig-sig .sig-rotor, .fig-sig .sig-diag, .fig-sig .sig-step {
+    opacity: 1;
+    animation: none;
+    transform: none;
+  }
+}

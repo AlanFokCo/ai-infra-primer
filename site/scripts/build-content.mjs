@@ -8,6 +8,7 @@ import { parseChapter } from './lib/metadata.mjs';
 import { rewriteLinks } from './lib/links.mjs';
 import { parseReferences } from './lib/references.mjs';
 import { renderFigure, isDiagram } from './lib/ascii-figure.mjs';
+import { SIGNATURE_FIGURES } from './lib/figures-signature.mjs';
 
 const SITE = path.dirname(fileURLToPath(import.meta.url)).replace(/\/scripts$/, '');
 const REPO = path.resolve(SITE, '..');
@@ -68,6 +69,8 @@ function main() {
 
       // ASCII 结构图 → 矢量动图（SVG + 数据流光点）；伪代码/表格类围栏保持深色图版
       body = replaceDiagrams(body, `${part.dir}/${meta.file}`);
+      // 签名动图：按锚点插入（新增描述图，不动源文件）
+      body = insertSignatureFigures(body, `${part.dir}/${meta.file}`);
 
       // 生成文件：frontmatter + 正文（去掉源 H1 与 metadata 块——两者由章节布局
       // 从 frontmatter 以设计化版面呈现，meta 内的 $...$ 由布局侧 KaTeX 渲染）
@@ -220,6 +223,34 @@ function replaceDiagrams(body, slug) {
     }
     out.push(line);
     i += 1;
+  }
+  return out.join('\n');
+}
+
+/** 签名动图插入：匹配到锚点标题行后紧跟插入 */
+function insertSignatureFigures(body, slug) {
+  const targets = SIGNATURE_FIGURES.filter((f) => f.slug === slug);
+  if (targets.length === 0) return body;
+  const lines = body.split('\n');
+  const out = [];
+  const done = new Set();
+  for (const line of lines) {
+    out.push(line);
+    for (const t of targets) {
+      if (!done.has(t.title) && t.afterHeading.test(line)) {
+        done.add(t.title);
+        out.push(
+          '',
+          `<figure class="fig fig-sig" data-fig="${slug}#sig-${t.title}">`,
+          `<span class="fig-tag">${t.title}</span>`,
+          `<div class="fig-body">`,
+          t.svg(),
+          `</div>`,
+          `</figure>`,
+          ''
+        );
+      }
+    }
   }
   return out.join('\n');
 }
