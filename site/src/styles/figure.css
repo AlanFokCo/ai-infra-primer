@@ -1,0 +1,90 @@
+/* ============================================================
+   figure — ASCII 转生的结构图：纸面板、发丝线、朱砂数据流光点
+   ============================================================ */
+
+.fig {
+  margin: 1.8em 0;
+  border: 1px solid var(--rule);
+  background: var(--paper-raised);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+.fig .fig-tag {
+  position: absolute;
+  top: 0;
+  left: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--ink-faint);
+  padding: var(--space-1) var(--space-3);
+  border-right: 1px solid var(--rule-soft);
+  border-bottom: 1px solid var(--rule-soft);
+  background: var(--paper);
+  z-index: 2;
+}
+.fig .fig-body {
+  overflow-x: auto;
+  scrollbar-width: thin;
+  padding: var(--space-6) 0 var(--space-2); /* 顶部给 FIG 角标让位 */
+}
+.fig-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-width: 0;
+}
+.fig[data-wide] .fig-svg {
+  min-width: var(--fig-w, 720px); /* 超宽图自然尺寸 + 横滚 */
+  width: var(--fig-w, auto);
+}
+
+/* 结构线：发丝墨线 */
+.fig-svg .edge {
+  stroke: #b6b2a6;
+  stroke-width: 1.1;
+  fill: none;
+}
+.fig-svg .edge-strong {
+  stroke: #8b867a;
+  stroke-width: 2.2;
+  fill: none;
+}
+
+/* 箭头：墨三角 */
+.fig-svg .arrow { fill: var(--ink-soft); }
+
+/* 文本：等宽墨色（CJK 自动回落系统字体；textLength 保网格对齐）；
+   halo 让文字压线处可读 */
+.fig-svg text {
+  fill: var(--ink);
+  font-family: var(--font-mono);
+  paint-order: stroke;
+  stroke: var(--paper-raised);
+  stroke-width: 5px;
+  stroke-linejoin: round;
+}
+.fig-svg .t { dominant-baseline: alphabetic; }
+.fig-svg .cjk { font-size: 14px; } /* CJK 独字单元：略大收紧字间 */
+
+/* shape pill：[B, T, 4096] 这类账目标签 */
+.fig-svg .pill rect {
+  fill: var(--paper-sunk);
+  stroke: var(--rule);
+  stroke-width: 1;
+}
+.fig-svg .pill text {
+  fill: var(--ink-soft);
+  font-size: 11px;
+}
+
+/* 数据流光点：朱砂，沿边行进 */
+.fig-svg .flow {
+  fill: var(--seal);
+  opacity: 0.9;
+}
+.fig:not(.in) .flow { opacity: 0; } /* 未入视口时静默（JS 也会 pauseAnimations） */
+
+@media (prefers-reduced-motion: reduce) {
+  .fig-svg .flow { display: none; }
+}

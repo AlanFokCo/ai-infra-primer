@@ -7,6 +7,7 @@ import { transformMath, countBacktickMath } from './lib/math-transform.mjs';
 import { parseChapter } from './lib/metadata.mjs';
 import { rewriteLinks } from './lib/links.mjs';
 import { parseReferences } from './lib/references.mjs';
+import { renderFigure, isDiagram } from './lib/ascii-figure.mjs';
 
 const SITE = path.dirname(fileURLToPath(import.meta.url)).replace(/\/scripts$/, '');
 const REPO = path.resolve(SITE, '..');
@@ -64,6 +65,9 @@ function main() {
       if (body.includes('](../references.md')) {
         throw new Error(`${relPath}: references 相对链接重写残留`);
       }
+
+      // ASCII 结构图 → 矢量动图（SVG + 数据流光点）；伪代码/表格类围栏保持深色图版
+      body = replaceDiagrams(body, `${part.dir}/${meta.file}`);
 
       // 生成文件：frontmatter + 正文（去掉源 H1 与 metadata 块——两者由章节布局
       // 从 frontmatter 以设计化版面呈现，meta 内的 $...$ 由布局侧 KaTeX 渲染）
@@ -172,6 +176,52 @@ function main() {
   console.log(
     `[build-content] ${chapterCount} 章 / ${PARTS.length} Part / ${refCount} 条文献 / ${(totalCjk / 10000).toFixed(1)} 万 CJK 字`
   );
+}
+
+/** 无语言围栏中的结构图 → <figure> SVG；其余围栏原样保留 */
+function replaceDiagrams(body, slug) {
+  const lines = body.split('\n');
+  const out = [];
+  let i = 0;
+  let figNo = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    const open = line.match(/^```(\w*)\s*$/);
+    if (open && open[1] === '') {
+      // 收齐围栏内容
+      const buf = [];
+      let j = i + 1;
+      while (j < lines.length && !/^```\s*$/.test(lines[j])) {
+        buf.push(lines[j]);
+        j += 1;
+      }
+      if (j < lines.length && isDiagram(buf)) {
+        figNo += 1;
+        const svg = renderFigure(buf);
+        const wide = /viewBox="0 0 (\d+)/.exec(svg);
+        const w = wide ? Number(wide[1]) : 0;
+        const wideAttrs = w > 760 ? ` data-wide style="--fig-w:${w}px"` : '';
+        out.push(
+          '',
+          `<figure class="fig"${wideAttrs} data-fig="${slug}#${figNo - 1}">`,
+          `<span class="fig-tag">FIG ${figNo}</span>`,
+          `<div class="fig-body">`,
+          svg,
+          `</div>`,
+          `</figure>`,
+          ''
+        );
+      } else {
+        // 非结构图：原样保留（深色图版）
+        out.push(line, ...buf, lines[j] ?? '```');
+      }
+      i = j + 1;
+      continue;
+    }
+    out.push(line);
+    i += 1;
+  }
+  return out.join('\n');
 }
 
 /** display $$...$$ + 行内 $...$ 计数（跳过代码围栏） */

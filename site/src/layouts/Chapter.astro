@@ -4,6 +4,7 @@ import PartNav from '../components/PartNav.astro';
 import TocRail from '../components/TocRail.astro';
 import { richWithBadges } from '../lib/richtext.mjs';
 import '../styles/chapter.css';
+import '../styles/figure.css';
 
 interface Props {
   part: any;
@@ -111,3 +112,39 @@ const readMinutes = Math.max(4, Math.round(fm.cjkChars / 420));
     </nav>
   </div>
 </Base>
+
+<script is:inline>
+  // 结构图数据流：入视口才启动 SMIL；reduced-motion 移除光点（静态终态）
+  (() => {
+    const figs = document.querySelectorAll('.fig');
+    if (!figs.length) return;
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) {
+      figs.forEach((f) => {
+        f.querySelectorAll('.flow').forEach((c) => c.remove());
+        f.classList.add('in');
+      });
+      return;
+    }
+    const io = new IntersectionObserver(
+      (es) => {
+        es.forEach((e) => {
+          const svg = e.target.querySelector('svg');
+          if (!svg || typeof svg.pauseAnimations !== 'function') return;
+          if (e.isIntersecting) {
+            e.target.classList.add('in');
+            svg.unpauseAnimations();
+          } else {
+            svg.pauseAnimations();
+          }
+        });
+      },
+      { rootMargin: '120px' }
+    );
+    figs.forEach((f) => {
+      const s = f.querySelector('svg');
+      if (s && typeof s.pauseAnimations === 'function') s.pauseAnimations();
+      io.observe(f);
+    });
+  })();
+</script>
