@@ -166,7 +166,10 @@
 .fig-sig .sig-bar,
 .fig-sig .sig-rotor,
 .fig-sig .sig-diag,
-.fig-sig .sig-step { opacity: 0; }
+.fig-sig .sig-step,
+.fig-sig .sig-dashflow { opacity: 0; }
+.fig-sig .sig-dashflow { stroke-opacity: 0; }
+.fig.in .sig-dashflow { opacity: 1; stroke-opacity: 1; }
 
 .fig.in .sig-flow { opacity: 0.9; }
 .fig.in .sig-step { opacity: 1; animation: sig-pop 0.5s var(--ease-out) both; animation-delay: calc(var(--i) * 0.65s); }
@@ -188,6 +191,13 @@
 }
 .fig.in .sig-diag { opacity: 1; animation: sig-pulse 2.6s ease-in-out infinite; animation-delay: calc(var(--i) * 0.5s); }
 
+/* 新增通用机制动画原语：沿路径的虚线流动（数据/梯度/残差通路强调） */
+.fig.in .sig-dashflow {
+  opacity: 1;
+  stroke-dasharray: 5 4;
+  animation: sig-dash 1.1s linear infinite;
+}
+@keyframes sig-dash { to { stroke-dashoffset: -18; } }
 @keyframes sig-pop { from { opacity: 0; } to { opacity: 1; } }
 @keyframes sig-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 @keyframes sig-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
@@ -198,8 +208,9 @@
 
 @media (prefers-reduced-motion: reduce) {
   .fig-sig .sig-flow, .fig-sig .sig-cell, .fig-sig .sig-cell-text, .fig-sig .sig-bar,
-  .fig-sig .sig-rotor, .fig-sig .sig-diag, .fig-sig .sig-step {
+  .fig-sig .sig-rotor, .fig-sig .sig-diag, .fig-sig .sig-step, .fig-sig .sig-dashflow {
     opacity: 1;
+    stroke-opacity: 1;
     animation: none;
     transform: none;
   }

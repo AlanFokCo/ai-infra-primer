@@ -8,7 +8,17 @@ import { parseChapter } from './lib/metadata.mjs';
 import { rewriteLinks } from './lib/links.mjs';
 import { parseReferences } from './lib/references.mjs';
 import { renderFigure, renderGridFigure, renderAlgo, classifyBlock } from './lib/ascii-figure.mjs';
-import { SIGNATURE_FIGURES } from './lib/figures-signature.mjs';
+import { SIGNATURE_FIGURES as CORE_FIVE } from './lib/figures-signature.mjs';
+
+// 汇总签名图：核心五张 + figures/ 目录下全部模块
+const figuresDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'lib/figures');
+const SIG_MODULES = readdirSync(figuresDir).filter((f) => f.endsWith('.mjs'));
+const MODULE_FIGS = [];
+for (const f of SIG_MODULES) {
+  const mod = await import(`./lib/figures/${f}`);
+  if (Array.isArray(mod.FIGURES)) MODULE_FIGS.push(...mod.FIGURES);
+}
+const SIGNATURE_FIGURES = [...CORE_FIVE, ...MODULE_FIGS];
 
 const SITE = path.dirname(fileURLToPath(import.meta.url)).replace(/\/scripts$/, '');
 const REPO = path.resolve(SITE, '..');

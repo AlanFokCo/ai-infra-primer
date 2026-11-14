@@ -8,8 +8,8 @@ const LINE_H = 21;
 const PAD = 22;
 const FONT_SIZE = 13;
 
-const H_CHARS = new Set('─━═');
-const V_CHARS = new Set('│┃║');
+const H_CHARS = new Set('─━═-');
+const V_CHARS = new Set('│┃║|');
 const JUNCTION = new Set('┌┍┏┐┑┓└┕┗┘┙┛├┝┠┣┤┥┫┬┰┳┴┸┻┼╂╋╠╣╔╗╚╝╦╩╬╭╮╯╰');
 const ARROW = new Set('►◄▲▼');
 const STRUCTURAL = new Set([...H_CHARS, ...V_CHARS, ...JUNCTION, ...ARROW]);
@@ -105,9 +105,45 @@ export function renderGridFigure(lines) {
   const cellsOut = [];
   const rowLabels = [];
   const dividers = [];
+  const connectors = []; // {type:'vline'|'tri'|'bracket', ...}
+
+  // 连接行判定：非空 cell 中 ≥60% 是 | v V + -
+  const isConnectorRow = (r) => {
+    let total = 0, hit = 0;
+    for (const [, ch] of maps[r]) {
+      if (ch === ' ' || !ch) continue;
+      total += 1;
+      if (ch === '|' || ch === 'v' || ch === 'V' || ch === '+' || ch === '-') hit += 1;
+    }
+    return total > 0 && hit / total >= 0.6;
+  };
 
   for (let r = 0; r < nRows; r++) {
     const m = maps[r];
+    if (isConnectorRow(r)) {
+      // +---+ 行：dash 容器横杠；| → 竖线；v → 下三角
+      let dashStart = -1;
+      for (let c = 0; c < cols; c++) {
+        const ch = m.get(c);
+        if (ch === '+') {
+          if (dashStart < 0) dashStart = c;
+        } else if (ch === '-') {
+          // 延续
+        } else {
+          if (dashStart >= 0) {
+            connectors.push({ type: 'bracket', x1: cx(dashStart) + 4, x2: cx(c), y: cy(r) + 4 });
+            dashStart = -1;
+          }
+          if (ch === '|') {
+            connectors.push({ type: 'vline', x: cx(c) + 4, y1: cy(r - 1) + 4, y2: cy(r + 1) + 4 });
+          } else if (ch === 'v' || ch === 'V') {
+            connectors.push({ type: 'tri', x: cx(c) + 4, y: cy(r) + 2 });
+          }
+        }
+      }
+      if (dashStart >= 0) connectors.push({ type: 'bracket', x1: cx(dashStart) + 4, x2: cx(cols), y: cy(r) + 4 });
+      continue;
+    }
     let c = 0;
     while (c < cols) {
       const ch = m.get(c);
@@ -161,6 +197,15 @@ export function renderGridFigure(lines) {
     parts.push(
       `<line x1="${d.x}" y1="${PAD - 6}" x2="${d.x}" y2="${H - PAD + 2}" stroke="var(--rule)" stroke-width="1" stroke-dasharray="3 4"/>`
     );
+  }
+  for (const cn of connectors) {
+    if (cn.type === 'vline') {
+      parts.push(`<line class="edge" x1="${cn.x}" y1="${cn.y1}" x2="${cn.x}" y2="${cn.y2}" stroke-dasharray="3 4"/>`);
+    } else if (cn.type === 'tri') {
+      parts.push(`<path class="arrow" d="M${cn.x},${cn.y} l-4.5,-8 h9 z" transform="translate(0,4)"/>`);
+    } else if (cn.type === 'bracket') {
+      parts.push(`<line x1="${cn.x1}" y1="${cn.y}" x2="${cn.x2}" y2="${cn.y}" stroke="var(--ink-faint)" stroke-width="1" stroke-dasharray="4 3"/>`);
+    }
   }
   for (const rl of rowLabels) {
     parts.push(`<text class="t" x="${rl.x}" y="${rl.y + 2}" fill="var(--ink-faint)">${esc(rl.text)}</text>`);
@@ -225,6 +270,7 @@ function roleOf(text) {
 }
 
 const ADD_RE = /^\(\s*[+＋]\s*\)$/; // (+) 残差加和
+const PUNCT_ONLY = /^[\s:：·….\-_—–+＋*＊/／|｜←→↔↕()（）\[\]【】]+$/; // 纯标点/符号运行不入芯片
 
 /**
  * 渲染一个 ASCII 图为 SVG 字符串（v2 组件化）。
@@ -325,7 +371,9 @@ export function renderFigure(lines) {
     if (last < run.text.length) pieces.push({ text: run.text.slice(last), col: cursor, kind: 'text' });
 
     const isChipCandidate =
-      run.cols <= 30 && touched(run.row, run.col, run.col + run.cols);
+      run.cols <= 30 &&
+      !PUNCT_ONLY.test(run.text.trim()) &&
+      touched(run.row, run.col, run.col + run.cols);
     const addCircle = ADD_RE.test(run.text.trim());
 
     if (addCircle) {
@@ -349,20 +397,29 @@ export function renderFigure(lines) {
       continue;
     }
 
-    // 芯片：text 段进芯片；末尾的 shape 段收进芯片作第二行维度注，中间的 shape 段作右侧小注
-    const texts = pieces.filter((p) => p.kind === 'text');
-    const shapes = pieces.filter((p) => p.kind === 'shape');
-    const label = texts.map((p) => p.text).join('').trim();
-    const labelCols = texts.reduce((n, p) => n + displayCols(p.text), 0);
+    // 芯片：末尾 shape 段收进芯片作第二行维度注；其余段按原序拼回标签（行中 shape 是公式的一部分，不拆）
+    const lastPiece = pieces[pieces.length - 1];
+    const tailShape = lastPiece && lastPiece.kind === 'shape' ? lastPiece : null;
+    const labelPieces = tailShape ? pieces.slice(0, -1) : pieces;
+    const label = labelPieces.map((p) => p.text).join('').trim();
+    const labelCols = displayCols(label);
     if (!label) {
       for (const p of pieces) dimNotes.push({ x: cx(p.col), y: cy(run.row) + 4, text: p.text });
       continue;
     }
-    const lastPiece = pieces[pieces.length - 1];
-    const tailShape = lastPiece && lastPiece.kind === 'shape' ? lastPiece : null;
-    const midShapes = shapes.filter((s) => s !== tailShape);
     const shapeCols = tailShape ? displayCols(tailShape.text) : 0;
-    const chipW = Math.max(30, Math.max(labelCols, shapeCols) * CELL_W + 16);
+    // 宽度取网格列宽与自然像素估计的大者（CJK 14px、拉丁 8.2px @13px）
+    const naturalPx = (s) => {
+      let n = 0;
+      for (const ch of s) n += charWidth(ch) === 2 ? 14 : 8.2;
+      return n;
+    };
+    const chipW = Math.max(
+      30,
+      Math.max(labelCols, shapeCols) * CELL_W + 16,
+      naturalPx(label) + 18,
+      tailShape ? naturalPx(tailShape.text) + 18 : 0
+    );
     const chip = {
       x: cx(run.col) - 6,
       y: cy(run.row) + 4 - (tailShape ? 17 : 12),
@@ -375,9 +432,6 @@ export function renderFigure(lines) {
       col: run.col,
       cols: run.cols,
     };
-    for (const s of midShapes) {
-      dimNotes.push({ x: chip.x + chip.w + 6, y: cy(run.row) + 4, text: s.text });
-    }
     chips.push(chip);
   }
 
