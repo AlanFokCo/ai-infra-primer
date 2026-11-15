@@ -29,11 +29,11 @@ export function scene(w, h, body, opts = {}) {
 }
 
 /* ---------- 节点卡：rx14 圆角、标题+副标、角色浅染 ---------- */
-export function node({ id, x, y, w, h = 64, role = 'plain', title, sub, mono = false, titleSize = 14.5 }) {
+export function node({ id, x, y, w, h = 64, role = 'plain', title, sub, mono = false, titleSize = 14.5, subSize }) {
   const cx = x + w / 2;
   const lines = [];
   if (title) lines.push(`<text class="dia-title${mono ? ' dia-mono' : ''}" x="${cx}" y="${sub ? y + h / 2 - 4 : y + h / 2 + 5}" text-anchor="middle" font-size="${titleSize}">${esc(title)}</text>`);
-  if (sub) lines.push(`<text class="dia-sub" x="${cx}" y="${y + h / 2 + 16}" text-anchor="middle">${esc(sub)}</text>`);
+  if (sub) lines.push(`<text class="dia-sub${mono ? ' dia-mono' : ''}" x="${cx}" y="${y + h / 2 + 16}" text-anchor="middle"${subSize ? ` font-size="${subSize}"` : ''}>${esc(sub)}</text>`);
   return {
     id, x, y, w, h,
     right: [x + w, y + h / 2], left: [x, y + h / 2], top: [x + w / 2, y], bottom: [x + w / 2, y + h],

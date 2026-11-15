@@ -476,10 +476,6 @@ export const FIGURES = [
     title: 'BPE 逐轮 merge 与频次账本',
     svg: bpeMerges,
   },
-  {
-    slug: '02-transformer-anatomy/07-norm-and-residual',
-    afterHeading: /^## 5\. Pre-LN vs Post-LN/,
-    title: '梯度通路：恒等高速 vs 逐层重投影',
-    svg: prePostLN,
-  },
+  // 注：2.7「梯度通路」插入图已退役——part02.mjs 的场景图（Post-LN vs Pre-LN 接线对照 +
+  // 初始化梯度剖面）覆盖同一小节且更完整，避免同章双图。
 ];
