@@ -20,6 +20,13 @@ for (const f of SIG_MODULES) {
 }
 const SIGNATURE_FIGURES = [...CORE_FIVE, ...MODULE_FIGS];
 
+// 场景替换注册表：slug#blockIndex → figure
+const sceneByBlock = new Map();
+const sceneKey = (slug, idx) => `${slug}#${idx}`;
+for (const f of SIGNATURE_FIGURES) {
+  if (typeof f.replacesBlock === 'number') sceneByBlock.set(sceneKey(f.slug, f.replacesBlock), f);
+}
+
 const SITE = path.dirname(fileURLToPath(import.meta.url)).replace(/\/scripts$/, '');
 const REPO = path.resolve(SITE, '..');
 const MODELS = path.join(REPO, 'models');
@@ -191,12 +198,13 @@ function main() {
   );
 }
 
-/** 无语言围栏 → 结构图/网格图/算法面板；带语言围栏逐字保留 */
+/** 无语言围栏 → 场景图（有注册场景时）/结构图/网格图/算法面板；带语言围栏逐字保留 */
 function replaceDiagrams(body, slug) {
   const lines = body.split('\n');
   const out = [];
   let i = 0;
   let figNo = 0;
+  let blockIdx = 0;
   let algoNo = 0;
   while (i < lines.length) {
     const open = lines[i].match(/^```(\w*)\s*$/);
@@ -215,6 +223,23 @@ function replaceDiagrams(body, slug) {
     if (open[1] !== '' || j >= lines.length) {
       // 带语言围栏或未闭合：逐字保留
       out.push(lines[i], ...buf, lines[j] ?? '```');
+      i = j + 1;
+      continue;
+    }
+    const myBlock = blockIdx++;
+    const registered = sceneByBlock.get(sceneKey(slug, myBlock));
+    if (registered) {
+      figNo += 1;
+      out.push(
+        '',
+        `<figure class="fig fig-sig" data-fig="${slug}#block-${myBlock}">`,
+        `<span class="fig-tag">${registered.title}</span>`,
+        `<div class="fig-body">`,
+        registered.svg(),
+        `</div>`,
+        `</figure>`,
+        ''
+      );
       i = j + 1;
       continue;
     }
@@ -266,7 +291,7 @@ function insertSignatureFigures(body, slug) {
   for (const line of lines) {
     out.push(line);
     for (const t of targets) {
-      if (!done.has(t.title) && t.afterHeading.test(line)) {
+      if (t.afterHeading && !done.has(t.title) && t.afterHeading.test(line)) {
         done.add(t.title);
         out.push(
           '',

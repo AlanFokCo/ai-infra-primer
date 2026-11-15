@@ -3,6 +3,7 @@ import Base from './Base.astro';
 import PartNav from '../components/PartNav.astro';
 import TocRail from '../components/TocRail.astro';
 import { richWithBadges } from '../lib/richtext.mjs';
+import { PULSE_GRAD_DEFS } from '../../scripts/lib/figure-kit.mjs';
 import '../styles/chapter.css';
 import '../styles/figure.css';
 
@@ -23,6 +24,7 @@ const readMinutes = Math.max(4, Math.round(fm.cjkChars / 420));
 
 <Base title={`${fm.num} ${fm.titleZh}`} description={`${fm.num} ${fm.titleZh}（${fm.titleEn}）— ai-infra-primer models 维度`}>
   <div class="reading-progress" aria-hidden="true"></div>
+  <Fragment set:html={PULSE_GRAD_DEFS} />
 
   <div class="chapter-shell">
     <header class="chapter-head">
