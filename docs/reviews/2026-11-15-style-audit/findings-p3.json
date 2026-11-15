@@ -1,0 +1,58 @@
+[
+  {
+    "file": "models/03-objectives-and-variants/03-decoder-only-and-icl.md",
+    "loc": "§8 节题（line 153）+ 章首 metadata（line 3）+ 总结表（line 179）",
+    "severity": "S1",
+    "quote": "## 8. Pythia 实证：训练相变 …… 总结表：「训练相变 | Pythia 154 checkpoints [A] | few-shot 分数与 induction score 同步起跳」",
+    "issue": "事实/归因歧义（A5）：节题、metadata 与总结行把「few-shot 分数与 induction score 同步起跳」的实证归属记到 Pythia 头上，但正文明确该动力学结果是 Olsson et al.（2022，[B]，其自有模型族）的观测；Pythia（2023，[A]）在正文中只被定位为「重做这类分析的标准仪器」。只读节题或总结表的读者会误以为相变证据出自 Pythia 的 154 个 checkpoints，证据等级标注（[A]）也随之错位。",
+    "fix": "节题改为「训练相变与 Pythia 底座」之类；metadata 改为「以 Olsson 的训练相变观测与 Pythia 公共复现底座收尾」；总结表该行出处列拆为「Olsson et al.（相变观测，[B]）+ Pythia（公共底座，[A]）」。"
+  },
+  {
+    "file": "models/03-objectives-and-variants/03-decoder-only-and-icl.md",
+    "loc": "全章：§1 式 (1) 符号块（line 13）起，§4–§9 与练习 2 多发",
+    "severity": "S2",
+    "quote": "「把 $K$ 个演示样例与 query 经模板 $\\tau$ 序列化」（line 47）与同段符号块「第 $i$ 个 demonstration 的输入-标签对」（line 53）；又如 line 141「拆演示的信息构成。核心操作：把 demonstration 的 label 替换为…」",
+    "issue": "术语漂移（B4）：同一概念在「演示 / 演示样例」与 demonstration 之间全章混用（line 13、25、31、43、45、47、53、70、74、92、100、102、141、149、151、161、185 等），首次出现处未做「中文（English）」配对，其后也未统一，同一段落内双语并写。",
+    "fix": "首次出现（§1 式 (1) 符号块）写「演示（demonstration）」，此后按本书惯例统一用 demonstration（或全用「演示」），逐处替换混写。"
+  },
+  {
+    "file": "models/03-objectives-and-variants/03-decoder-only-and-icl.md",
+    "loc": "§1（line 15）",
+    "severity": "S2",
+    "quote": "自然语料本身含有翻译对照、问答对、原文与摘要等海量隐式任务实例",
+    "issue": "含糊量词无数值（B1）：「海量」无出处口径与数量级；此句转述 GPT-2 报告的论点，前面的四类列举已承载全部信息，量词为装饰。",
+    "fix": "删「海量」（「含有翻译对照、问答对、原文与摘要等隐式任务实例」）；如要给量级则引原文口径注明。"
+  },
+  {
+    "file": "models/03-objectives-and-variants/02-encoder-architectures.md",
+    "loc": "§3 末段（line 75）",
+    "severity": "S2",
+    "quote": "三类接口的共同点值得记住：它们全部是「读出」——没有一个定义了序列上的生成分布。",
+    "issue": "元评论强调语「值得记住」，与 A1 lint 词表「值得注意的是」同族：不携带信息，删去后论点完整保留。",
+    "fix": "改为「三类接口全部是『读出』——没有一个定义了序列上的生成分布」。"
+  },
+  {
+    "file": "models/03-objectives-and-variants/03-decoder-only-and-icl.md",
+    "loc": "§8（line 157）",
+    "severity": "S2",
+    "quote": "两轴对比值得写清：1.3 §7 说明规模轴上报告的涌现大多是 metric artifact；训练轴相变的证据结构更强……",
+    "issue": "同上族：「值得写清」为元评论强调语，不构成信息；两轴对比的实质内容自身成立。",
+    "fix": "删「值得写清」，直写「两轴的判别标准不同：1.3 §7 说明……；训练轴……」。"
+  },
+  {
+    "file": "models/03-objectives-and-variants/02-encoder-architectures.md",
+    "loc": "§6（line 131）",
+    "severity": "S3",
+    "quote": "训练早期负例离谱（ $D$ 轻松学会粗边界）",
+    "issue": "口语词「离谱」（C 类）；技术含义是早期负例远离真实数据分布。",
+    "fix": "改为「训练早期负例远离真实分布（D 轻松学会粗边界）」。"
+  },
+  {
+    "file": "models/03-objectives-and-variants/01-objectives-and-masks.md",
+    "loc": "§8 障碍二（line 376）",
+    "severity": "S3",
+    "quote": "其地板一般远低于 CLM 的 $H(x_t \\mid x_{\\lt t})$",
+    "issue": "含糊量级词（B1 边缘）：「远低于」无数值支撑；该差距本身数据依赖、给不出通用数字，严谨内容已在式 (17)，「远」是可删的程度装饰。",
+    "fix": "删「远」作「一般低于」，或改为不带程度词的表述（如「落在式 (17) 的中间区间内」）。"
+  }
+]

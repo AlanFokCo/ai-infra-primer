@@ -81,7 +81,7 @@ $$
 1. **为什么可行**：位置对称性已经不在了。NoPE 的顾虑本是 attention 对位置盲（2.5 §5；[Kazemnejad et al., 2023](../references.md)，arXiv:2305.19466，[B] 的对照实验），但那条顾虑的前提是「位置编码只能由 attention 层自己注入」。hybrid 里这个前提不成立：stream 在进入每个 full 层之前已被 KDA 层加工过，而 KDA 递推（4.3 式 (16)）对输入顺序非交换—— $S_t$ 由时序连乘 $\prod_s \mathrm{diag}(\alpha_s)(I - \beta_s k_s k_s^{\top})$ 与秩一写入构成，置换输入序列必然改变状态与读出（练习 2 给出严格表述）。位置信息以「学出来的时间尺度」的形式写进 stream 特征，full 层只需按内容检索，顺序由 linear 层兜底。等距 3:1 布局还保证顺序信号的传输距离有界：周期段内任意 full 层与其上游最近的 full 层之间恰隔 3 层 KDA，与最近 KDA 层至多隔 3 层。
 2. **为什么想要**：NoPE 拆掉 4.1 §4.1 的 RoPE×低秩冲突。无旋转则 $R_{n-t}$ 不再卡在 $W^{UK}$ 与 $c$ 之间，朴素低秩吸收畅通——cache 保持 $d_c + d_R$ = 576 元素 / token / 层（4.1 §4.2 口径；NoPE 只关旋转、不动 config 字段），decode 直接对 latent 打分，4.1 §4.3-4.4 的两笔吸收（ $`\tilde{W}_h`$ 与 $`\widehat{W}_h`$）无需 decoupled 通道的配合即全量成立。在这里 RoPE 是花钱买一份 KDA 已经免费提供的位置信号，还顺手堵死吸收——去掉它是双赢，不是妥协。
 
-**论文数字**（摘要口径）：公平对照实验用 1.4T tokens（Kimi Linear / GDN-H / MLA 三模型共享语料与 recipe），最终发布 checkpoint 用 5.7T tokens（对齐 Moonlight 预训练量，对照见论文 Appendix D）——两档勿混。KV cache 最多 −75%（§7 对账：7/27 层保持 cache，斜率剩 25.9%）；1M 上下文 decode 吞吐 up to 6×（摘要）、精确值 6.3×（Fig 1(b) 的 TPOT 对照）。摘要同时声明这是公平对照下首个全面超过 full attention 的线性注意力架构——注意该结论在 3:1 hybrid 形态下达成，不是纯 KDA（§8 再议）。
+**论文数字**（摘要口径）：公平对照实验用 1.4T tokens（Kimi Linear / GDN-H / MLA 三模型共享语料与 recipe），最终发布 checkpoint 用 5.7T tokens（对齐 Moonlight 预训练量，对照见论文 Appendix D）——两档勿混。KV cache 最多 −75%（§7 对账：7/27 层保持 cache，斜率剩 25.9%）；1M 上下文 decode 吞吐 up to 6×（摘要）、精确值 6.3×（Fig 1(b) 的 TPOT 对照）。摘要同时声明这是公平对照下首个全面超过 full attention 的 linear attention 架构——注意该结论在 3:1 hybrid 形态下达成，不是纯 KDA（§8 再议）。
 
 ## 5. Kimi K3：KDA 谱系的下一档
 

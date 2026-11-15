@@ -1,0 +1,106 @@
+[
+  {
+    "file": "models/07-diffusion-image-generation/07-t2i-systems-and-ar-image.md",
+    "loc": "§7 MaskGIT/MUSE（正文行 169；同口径重复于 §9 表行 196 与总结表行 213）",
+    "severity": "S1-事实（疑似）",
+    "quote": "MUSE $512^2$ 出图 1.3 秒、 $256^2$ 出图 0.5 秒（TPUv4）；同表的 Imagen $256^2$ 为 9.1 秒（同硬件）、SD v1.4（LDM 50 步） $512^2$ 为 3.7 秒（A100 口径）",
+    "issue": "疑似分辨率错配：Muse 论文（arXiv:2301.00704）摘要与 Table 3 的标志性对比是 512×512 档 Muse 1.3s vs Imagen 9.1s vs SD v1.4 3.7s——9.1s 对应 Imagen 的 512² 级联，本文记作 256²。若属实，9.1s 与 3.7s 的分辨率标注不一致（同句内 Imagen 标 256²、SD 标 512²），且该错配在 §9 对照表与总结表各重复一次。",
+    "fix": "核对 Muse 论文 Table 3 的分辨率列；若 9.1s 为 512²，将三处「Imagen $256^2$ 为 9.1 秒」改为「Imagen $512^2$ 为 9.1 秒」。"
+  },
+  {
+    "file": "models/07-diffusion-image-generation/01-generative-model-map.md",
+    "loc": "§1（行 14；同口径见行 21「五个家族里只有扩散与 FM」）",
+    "severity": "S2",
+    "quote": "五大家族——自回归（autoregressive, AR）、变分自编码器（variational autoencoder, VAE）、生成对抗网络（generative adversarial network, GAN）、归一化流（normalizing flow）、扩散模型（diffusion model）与 flow matching（FM）——对这两条的回答各不相同",
+    "issue": "枚举计数不一致：「五大家族」后并列六段顿号/「与」连接的名单，扩散模型与 flow matching 的同族关系在首次枚举处未声明，读者要数到 §6 标题或 §7 表的「Diffusion / FM」合并行才能消解歧义。",
+    "fix": "首次枚举即声明同族：「……归一化流（normalizing flow）、扩散模型与 flow matching（diffusion / FM，同族，§6 起按一族处理）」。"
+  },
+  {
+    "file": "models/07-diffusion-image-generation/04-sampling-and-guidance.md",
+    "loc": "§3.1（行 188）",
+    "severity": "S2",
+    "quote": "CIFAR-10 / ImageNet 规模上 **10 次上下 NFE 即可逼近数百步 DDPM ancestral 的样本质量**，同预算下显著优于 1 阶 DDIM 跳步",
+    "issue": "「显著」无数值支撑（rubric B1）。同句已声明 FID 数字不跨表转录，则程度副词应删去而非悬空。",
+    "fix": "删「显著」→「同预算下优于 1 阶 DDIM 跳步」，或按论文原表补 FID 区间。"
+  },
+  {
+    "file": "models/07-diffusion-image-generation/06-latent-diffusion-and-dit.md",
+    "loc": "§1（行 29）",
+    "severity": "S2",
+    "quote": "LDM 论文里像素空间的 LDM-1（ $f = 1$）对照组把这点坐实：同预算下它的 FID 显著差于 f4/f8 档",
+    "issue": "「显著」无数值支撑（rubric B1）；本段其余处（行 31 起）已按 LDM 论文 Figure 6/7 口径展开，此处程度副词悬空。",
+    "fix": "删「显著」或补 LDM 论文 Figure 6 的具体 FID 差值。"
+  },
+  {
+    "file": "models/07-diffusion-image-generation/06-latent-diffusion-and-dit.md",
+    "loc": "§1（行 31）",
+    "severity": "S2",
+    "quote": "像素基线 LDM-1 的训练时间显著长于一切 latent 档，且同预算下 FID 明显更差",
+    "issue": "「显著」「明显」两个程度副词均无数值（rubric B1），训练时间倍数与 FID 差值论文有数可引。",
+    "fix": "删两个副词，或补论文口径的倍数/差值。"
+  },
+  {
+    "file": "models/07-diffusion-image-generation/06-latent-diffusion-and-dit.md",
+    "loc": "§8.1（行 268）",
+    "severity": "S2",
+    "quote": "消融显示该阶段显著加速后续文图收敛",
+    "issue": "「显著」无数值支撑（rubric B1），PixArt-α 消融的加速幅度未给。",
+    "fix": "删「显著」→「消融显示该阶段加速后续文图收敛」，或引论文消融数字。"
+  },
+  {
+    "file": "models/07-diffusion-image-generation/01-generative-model-map.md",
+    "loc": "§1（行 7）",
+    "severity": "S3",
+    "quote": "这个三个数量级的采样账单差距不是工程实现的优劣",
+    "issue": "「这个三个」指示词与数量词叠用，拗口且偏口语（rubric C 可紧可松的措辞）。",
+    "fix": "改「这三个数量级的采样账单差距」。"
+  },
+  {
+    "file": "models/07-diffusion-image-generation/02-ddpm.md",
+    "loc": "§3.3（行 321）",
+    "severity": "S3",
+    "quote": "式 (18) 的更新结构值得多看一眼",
+    "issue": "元评论引导语，与 rubric A1「值得注意的是」同族的弱化版；其后内容实质，引导语本身可删。",
+    "fix": "删引导语，直接陈述：「式 (18) 的更新结构： $\\mu_\\theta$ 是……」。"
+  },
+  {
+    "file": "models/07-diffusion-image-generation/03-score-sde.md",
+    "loc": "§3（行 126）",
+    "severity": "S3",
+    "quote": "定理的两个直接推论值得单独点出",
+    "issue": "元评论引导语，同族弱化版。",
+    "fix": "删引导语，直接列两条推论。"
+  },
+  {
+    "file": "models/07-diffusion-image-generation/03-score-sde.md",
+    "loc": "§3（行 162）",
+    "severity": "S3",
+    "quote": "裸 DSM（对 $t$ 均匀、不另加权）权重 $1/(1-\\bar\\alpha_t)$，死命压小噪声端",
+    "issue": "「死命」为口语词，超出本书「账/走读」等技术隐喻语域（rubric C 偶发口语）。",
+    "fix": "改「权重压向小噪声端」。"
+  },
+  {
+    "file": "models/07-diffusion-image-generation/04-sampling-and-guidance.md",
+    "loc": "§2.3（行 94）",
+    "severity": "S3",
+    "quote": "式 (5) 的结构值得拆一眼",
+    "issue": "元评论引导语，与 7.2 §3.3「值得多看一眼」同款。",
+    "fix": "删引导语，直接给出两项配比的拆解。"
+  },
+  {
+    "file": "models/07-diffusion-image-generation/04-sampling-and-guidance.md",
+    "loc": "§4.4（行 292）",
+    "severity": "S3",
+    "quote": "clip 是逐像素截断，大 $w$ 下大量像素同时贴边，画面被拉向灰平",
+    "issue": "「大量」无数量（rubric B1 词表）；属机制描述而非量化结论，故记 S3。",
+    "fix": "删「大量」：「大 $w$ 下像素同时贴边堆积，画面被拉向灰平」。"
+  },
+  {
+    "file": "models/07-diffusion-image-generation/07-t2i-systems-and-ar-image.md",
+    "loc": "§2（行 39）",
+    "severity": "S3",
+    "quote": "直接中心裁剪会产出大量「构图被切」的样本",
+    "issue": "「大量」无数量（rubric B1 词表）；动机性机制描述，程度较轻，记 S3。",
+    "fix": "删「大量」，或给「相当比例」以上的口径说明。"
+  }
+]

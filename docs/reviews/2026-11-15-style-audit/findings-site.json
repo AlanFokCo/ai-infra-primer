@@ -1,0 +1,50 @@
+[
+  {
+    "file": "README.md",
+    "loc": "L11（五维度导航表 models 行）",
+    "severity": "S1-事实",
+    "quote": "| [models/](models/README.md) | 进行中（W1） | 生成式模型的数学：……（10 Part / 51 章） |",
+    "issue": "状态过期：models/README.md 进度表显示 51 章全部「已关闭」（W1–W7 七波均放行），站点落地页与 models 索引也宣称「51 章已审结」「全部已审结」；根 README 仍写「进行中（W1）」，与唯一进度事实源矛盾，读者会误判 models 维度刚起步。",
+    "fix": "更新为与实际一致的表述，如「已关闭（W1–W7，51 章全部审结）」。"
+  },
+  {
+    "file": "README.md",
+    "loc": "L30（项目状态行）",
+    "severity": "S1-事实",
+    "quote": "`波次 W1` `models 维度写作中` `training / inference / gpu / cluster 占位`",
+    "issue": "同上一条：当前波次已过 W7，models 维度 51 章全部关闭，「波次 W1」「models 维度写作中」均为过期事实。",
+    "fix": "改为「models 维度 51 章已关闭（W1–W7）」之类；兄弟维度的「占位」可保留。"
+  },
+  {
+    "file": "site/scripts/lib/figures-signature.mjs",
+    "loc": "L169（slug 02-transformer-anatomy/05-positional-encoding 的签名图题）",
+    "severity": "S2",
+    "quote": "title: 'RoPE 的二维对偶旋转'",
+    "issue": "术语漂移且有歧义：「对偶」在数学语境专指 dual，而 RoPE 的机制是把向量切成 d/2 个 2 维块逐对旋转，不存在对偶结构。2.5 章正文用「2D 旋转」「切成 d/2 个 2 维块」（§4.2「2D 旋转引理」），站点既有图题（part09）用「64 旋转对」，本图题独自造词。",
+    "fix": "改为「RoPE 的成对 2D 旋转」或「RoPE：d/2 个 2D 旋转对」。"
+  },
+  {
+    "file": "site/src/pages/index.astro",
+    "loc": "L24（dimensions[0].status）",
+    "severity": "S3",
+    "quote": "status: `${stats.chapters} 章已审结`",
+    "issue": "术语漂移：章节状态的规范词是「已关闭」（models/README.md 进度表与状态流转定义、STYLE_GUIDE「关闭状态」、Chapter.astro 章末「对抗审查并关闭」）；「审结」仅站点两处使用，同一状态两套词。",
+    "fix": "统一为「已关闭」，或全站（含 Chapter.astro 章末文案与 models/README.md）统一改用「已审结」。"
+  },
+  {
+    "file": "site/src/pages/models/index.astro",
+    "loc": "L24（ch-ledger 行）",
+    "severity": "S3",
+    "quote": "<span>全部已审结</span>",
+    "issue": "同上一条：与 models/README.md「已关闭」状态词不一致。",
+    "fix": "改为「全部已关闭」（或按全站统一方案处理）。"
+  },
+  {
+    "file": "site/src/pages/index.astro",
+    "loc": "L156（写法 creed 第一条）",
+    "severity": "S3",
+    "quote": "每个公式跟符号表，推导不跳关键步。",
+    "issue": "「跟」作动词（伴随义）是口语用法；同一承诺在 models/index.astro（两处）与 models/README.md 均写作「附符号表」，前后不一致。",
+    "fix": "改为「每个公式附符号表」。"
+  }
+]

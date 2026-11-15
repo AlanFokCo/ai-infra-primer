@@ -72,7 +72,7 @@ CausVid（[Yin et al., 2024](../references.md)，arXiv:2412.07772，[A]；官方
 | GAN 分支 | 无 | 加 | **无**（见下） |
 | 教师-学生架构关系 | 不限定 | 不限定 | **双向教师 → 因果学生**（非对称） |
 
-**GAN 归属澄清**（spec 明令陷阱）：CausVid 方法部分没有 GAN 分量——ar5iv 全文口径，「GAN」字样只出现在 related work 对早期工作的引述中；GAN 分支是 DMD2 的组件，与 CausVid 无关，勿张冠李戴。CausVid 的全部训练信号 = 式 (4) 的 ODE 配对回归（预训）+ 式 (5)(6) 的 DMD 梯度（主阶段）。
+**GAN 归属澄清**（易混淆点，勿张冠李戴）：CausVid 方法部分没有 GAN 分量——ar5iv 全文口径，「GAN」字样只出现在 related work 对早期工作的引述中；GAN 分支是 DMD2 的组件，与 CausVid 无关，勿张冠李戴。CausVid 的全部训练信号 = 式 (4) 的 ODE 配对回归（预训）+ 式 (5)(6) 的 DMD 梯度（主阶段）。
 
 ### 3.2 CausVid 的目标函数：ODE 初始化 + DMD 主阶段
 

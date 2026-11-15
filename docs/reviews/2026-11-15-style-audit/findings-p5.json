@@ -1,0 +1,66 @@
+[
+  {
+    "file": "models/05-case-studies/05-kimi-moonshot.md",
+    "loc": "§2.1 归属纠正段（line 35）",
+    "severity": "S1",
+    "quote": "公开谱系里的旗舰级实例是 Qwen2-57B-A14B（report 未点名源模型；shape 证据指向 Qwen2-7B、排除 Qwen1.5-32B——公式、shape 证据与对称性代价分析见 5.3 §2.3 式 (4)）",
+    "issue": "跨章事实矛盾：5.3 §2.3（03-qwen.md line 63）称「源模型在 report 里有明文：§2.2.3 写道『Qwen2-57B-A14B is upscaled from Qwen2-7B』（ar5iv 全文复核，2026-11-12）」，5.3 总结表亦称「report §2.2.3 明写源为 Qwen2-7B」。两章同引 Qwen2 report（arXiv:2407.10671）同一小节，「明写源模型」与「未点名源模型」必有一错；且本句让读者去 5.3 §2.3 看证据，而 5.3 §2.3 的说法与本句相反，回指自身断裂。",
+    "fix": "回查 Qwen2 report §2.2.3 原文后对齐两章。若 5.3 的直接引语为真，本句改为「公开谱系里的旗舰级实例是 Qwen2-57B-A14B（report §2.2.3 明写源为 Qwen2-7B，shape 证据互证——公式与分析见 5.3 §2.3 式 (4)）」；若引语不成立，则修 5.3 两处。"
+  },
+  {
+    "file": "models/05-case-studies/04-glm.md",
+    "loc": "§1 表注（line 18）",
+    "severity": "S1",
+    "quote": "表注五条。其一，「—」= 本轮 research pass 未实测该字段：……其六，旗舰三行的 norm 列与 partial 标注为 config 实测",
+    "issue": "数目与内容不符：声明「表注五条」，实际列了六条（其一至其六）。",
+    "fix": "「表注五条」改为「表注六条」（或将其中两条合并）。"
+  },
+  {
+    "file": "models/05-case-studies/05-kimi-moonshot.md",
+    "loc": "§2.2 MuonClip 时间维度解读段（line 63）",
+    "severity": "S1",
+    "quote": "控制回路类药物的稳态都不是点，而是围绕目标的带",
+    "issue": "错字致句意不通：「药物」应为「装置」（或「物件/设计」），现文读作「control-loop 类药物」，整句不可解。",
+    "fix": "改为「控制回路类装置的稳态都不是点，而是围绕目标的带」。"
+  },
+  {
+    "file": "models/05-case-studies/01-llama-lineage.md",
+    "loc": "§4.1 参数账段末（line 101）",
+    "severity": "S2",
+    "quote": "词表升级的参数代价是相对小模型 10 倍于旗舰的",
+    "issue": "语序造成歧义：「相对小模型」易被读成「相对小的模型」；本意是「就相对（占比）口径，小模型档的代价是旗舰档的 10 倍」（上文 13.1% 对 1.0%）。需重读两遍才能对齐。",
+    "fix": "改为「词表升级的相对参数代价，小模型档是旗舰档的 10 倍」。"
+  },
+  {
+    "file": "models/05-case-studies/04-glm.md",
+    "loc": "§4 参数复算段末（line 153）",
+    "severity": "S3",
+    "quote": "本节初稿曾以「残差 4.9B、归属未锁定字段」收尾——dense FFN 宽度与 MTP 字段本就在 config 里，初稿的「未锁定」认定是漏读（fix round 1 更正）；残差框架本身保留。",
+    "issue": "编辑史叙述（初稿内容、fix round 轮次、「残差框架本身保留」）进入正文，属过程性残留，技术结论不依赖它。注意 5.6 §4.3 已把同一更正记录当作教材引用（「这条更正记录本身就是教材」），两处存在联动设计。",
+    "fix": "若确认保留此跨章设计则不动；否则删去该句、只留残差归属结论（5.6 §4.3 的转述已自足），或将其压缩为一句证据注记。"
+  },
+  {
+    "file": "models/05-case-studies/01-llama-lineage.md, models/05-case-studies/02-deepseek.md",
+    "loc": "01 §4.2（line 123）「405B 上的 GQA 账顺手一记」；02 §3.6（line 107）「预算比例顺手一记」",
+    "severity": "S3",
+    "quote": "顺手一记",
+    "issue": "口语化插入语两章各现一次，信息量为零，属可紧可松的措辞。",
+    "fix": "删「顺手一记」，数字句直接给出即可。"
+  },
+  {
+    "file": "models/05-case-studies/01-llama-lineage.md",
+    "loc": "§5.2（lines 187, 241）与 §6 表（line 228），对照 06 §1（line 19）",
+    "severity": "S3",
+    "quote": "claimed ctx；effective 存疑（§7 问题 5）",
+    "issue": "术语漂移：同一概念（宣称窗 vs 有效窗）5.1 用英文「claimed context / claimed 口径」，5.6 用中文「声明窗 / 工作窗」，全 Part 未统一。",
+    "fix": "在 5.1 首次出现处给「声明窗（claimed context）」双语定义，之后各章统一用「声明窗 / 有效窗」一对术语。"
+  },
+  {
+    "file": "models/05-case-studies/06-cross-lab-comparison.md",
+    "loc": "§4.2 Attention.forward 段（line 131）",
+    "severity": "S3",
+    "quote": "（q_proj 是 $d \\to H_q d_{\\mathrm{head}}$,Qwen3-Next 的 2048→4096 就是在这里坐实 head_dim 256 的）",
+    "issue": "正文夹缝中混入半角逗号且后无空格（},Qwen3-Next），与全书全角标点体例不一致。",
+    "fix": "半角逗号改为全角，即「$d \\to H_q d_{\\mathrm{head}}$，Qwen3-Next 的…」。"
+  }
+]

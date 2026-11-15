@@ -1,0 +1,66 @@
+[
+  {
+    "file": "models/10-audio-speech/04-speech-llm-and-duplex.md",
+    "loc": "§4.3 RQ-Transformer 段（行 96）",
+    "severity": "S1-事实",
+    "quote": "层次化序列分解思想同族于 MegaByte（Yu et al. 2024）——Moshi 论文转引",
+    "issue": "年份错误。MegaByte（Predicting Million-byte Sequences with Multiscale Transformers）是 Yu et al. 2023（arXiv:2305.07185，2023-05，NeurIPS 2023）；Moshi 论文参考文献亦列为 2023。写成 2024 无论按一手出处还是按转引口径都不成立，references.md 中亦无 MegaByte 条目可为其背书。",
+    "fix": "改为「MegaByte（Yu et al. 2023，arXiv:2305.07185）」，并在 models/references.md 补登记该条目（或注明转引自 Moshi 论文参考文献的 2023 条目）。"
+  },
+  {
+    "file": "models/09-video-generation/04-control-and-editing.md",
+    "loc": "§1.1 mask 4 通道注记（行 40）",
+    "severity": "S2",
+    "quote": "帧级 mask $M \\in \\lbrace0,1\\rbrace^{1 \\times T \\times h \\times w}$ 与目标视频同时间长度，进式 (1) 的拼接前按 Wan-VAE 时间 stride 重排为 $s \\times t \\times h \\times w$（ $s$ = 4）",
+    "issue": "符号 s 在同章出现第三种含义。此处的 s=4 是 Wan-VAE 的时间 stride（即本书记号的 τ=4），而全章沿用的压缩率记号 (τ,s,s) 里 s=8 是空间压缩率，§1 开头（行 9）又刚为 scaling factor 的 s 与空间 s 的撞名立过「同名不同义」声明。三重撞名下读者极易把 s=4 误读成空间压缩率，且此处缺同类声明——术语不一致造成实质歧义。",
+    "fix": "改用 τ 写出（重排为 τ × t × h × w，τ=4），或照行 9 的先例补一句「此 s 为论文记号的时间 stride，即本书的 τ，与 (τ,s,s) 的空间 s 无关」。"
+  },
+  {
+    "file": "models/09-video-generation/03-training-and-acceleration.md",
+    "loc": "§3.1 GAN 归属澄清（行 75）",
+    "severity": "S2",
+    "quote": "**GAN 归属澄清**（spec 明令陷阱）：CausVid 方法部分没有 GAN 分量",
+    "issue": "「spec 明令陷阱」是写作流程的内部元语（指本书撰写 spec 的禁令），泄漏进面向读者的正文——书中读者不知道「spec」为何物，程序性废话且造成阅读断裂。",
+    "fix": "删去括注「（spec 明令陷阱）」，或改为读者可解的提示如「（易混淆点，勿张冠李戴）」。"
+  },
+  {
+    "file": "models/10-audio-speech/02-asr.md",
+    "loc": "§2 开头（行 25 末句）",
+    "severity": "S2",
+    "quote": "本节给出完整推导链：假设（§2.1）→ 路径集合（§2.2）→ 状态行走规则（§2.3）→ 前向/后向递推（§2.4/§2.5）→ 行为分析（§2.6）。",
+    "issue": "「本节给出…」属 rubric A.1「本节将」模板族的程序性节内预告；虽带具体节号锚点（部分缓解），但整句仍是 roadmap 而非内容句，前文「本节给出完整推导链」之前的内容句已自足。",
+    "fix": "删去该末句；或压缩为内容性指引并入前句，如「推导按假设→路径集合→行走规则→递推→行为分析展开（§2.1–§2.6）」。"
+  },
+  {
+    "file": "models/09-video-generation/02-spatiotemporal-dit.md",
+    "loc": "§3（行 124 末 与 行 136 中）",
+    "severity": "S3",
+    "quote": "模型档分 2B/5B（论文正文口径）……（行 136 重复）模型档分 2B/5B（论文正文口径，本节 config 数字均为 5B 档）",
+    "issue": "同一节内同一句子重复出现两次，第二次仅多一个限定从句，属可紧的冗余。",
+    "fix": "删行 124 的末句，保留行 136 带补充信息的完整版。"
+  },
+  {
+    "file": "models/09-video-generation/01-video-vae.md",
+    "loc": "§3 token 账两例（行 107）",
+    "severity": "S3",
+    "quote": "精确压缩比 45.2×（极限 48×，差额同首帧 $+1$）",
+    "issue": "「差额同首帧 +1」措辞不通，「同」疑为「即/源于」之误；同章 §6（行 177）的正确写法是「差额即首帧特判的 +1」。",
+    "fix": "改为「差额即首帧特判的 +1」，与 §6 一致。"
+  },
+  {
+    "file": "models/09-video-generation/01-video-vae.md",
+    "loc": "§1（行 15）、§6 表（行 170）；对照 02-spatiotemporal-dit.md §1/§2.4/§2.5、03 §4.2",
+    "severity": "S3",
+    "quote": "单层 attention 的得分矩阵按 bf16 计约 6 TB（9.1）；full attention score 矩阵有 $N^{2} \\approx 9.1 \\times 10^{10}$ 项（9.2）",
+    "issue": "同一对象（QK^T 得分/score 矩阵）在 Part 9 内「得分矩阵」与「score 矩阵」两种写法并存（9.1 两处用「得分矩阵」，9.2/9.3 全部用「score 矩阵」），术语漂移。",
+    "fix": "统一为「score 矩阵」，在 9.1 首现处写「注意力得分矩阵（score 矩阵）」后一以贯之。"
+  },
+  {
+    "file": "models/10-audio-speech/01-audio-representations.md",
+    "loc": "记号约定（行 5）与 §4.2（行 122）对照 §3.3 起正文",
+    "severity": "S3",
+    "quote": "token rate = fps × 每秒并发的 codebook 数（行 5）……最多 32 个 codebook（行 122）；正文他处均作「码本」（如 §4.1「 $n_q = 8$ 个量化器、各配 $2^{80/8} = 1024$ 码本」）",
+    "issue": "「codebook」与「码本」在同章混用，术语漂移（rubric B.4：首现给「中文（English）」后应统一）。",
+    "fix": "记号约定处写「码本（codebook）」，正文统一用「码本」（行 122 两处 codebook 同改）。"
+  }
+]

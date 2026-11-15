@@ -166,7 +166,7 @@ export function clipMatrix() {
 /* ============ 注册表 ============ */
 export const SIGNATURE_FIGURES = [
   { slug: '02-transformer-anatomy/04-causality-and-kv-cache', afterHeading: /^### 4\.4 有 cache 的 decode/, title: 'KV cache 的写与读', svg: kvCacheFill },
-  { slug: '02-transformer-anatomy/05-positional-encoding', afterHeading: /^### 4\.2 2D 旋转引理/, title: 'RoPE 的二维对偶旋转', svg: ropeRotate },
+  { slug: '02-transformer-anatomy/05-positional-encoding', afterHeading: /^### 4\.2 2D 旋转引理/, title: 'RoPE 的成对 2D 旋转', svg: ropeRotate },
   { slug: '03-objectives-and-variants/01-objectives-and-masks', afterHeading: /^## 1\. 统一框架/, title: 'mask 形状即 objective 形状', svg: maskGrids },
   { slug: '04-modern-architectures/05-moe', afterHeading: /^## 2\. Router 机制谱系/, title: 'top-k 路由与负载', svg: moeRouting },
   { slug: '06-vision-representations/02-clip-and-contrastive', afterHeading: /^### 2\.1 相似度矩阵/, title: 'batch 相似度矩阵：对角即正样本', svg: clipMatrix },

@@ -1,0 +1,42 @@
+[
+  {
+    "file": "models/01-foundations/02-compute-accounting.md",
+    "loc": "§4（反向：两倍前向）",
+    "severity": "S2",
+    "quote": "前向每个参数做 1 次 FMA，反向要为输入侧与权重侧各做 1 次，合计每参数每 token 6 次",
+    "issue": "句内计数单位切换未声明：前三项按 FMA 计（1+1+1=3 次 FMA），合计却按 FLOPs 计（6 = 3 FMA × 2）。本章 §2 刚严格区分 FMA / MAC / FLOPs，此处「1 次 + 1 次 + 1 次 = 6 次」读起来算术不通，需读者自行换算单位",
+    "fix": "改为「合计每参数每 token 3 次 FMA，即 6 FLOPs」，与式 (2)(4) 的 2N / 4N 口径对齐"
+  },
+  {
+    "file": "models/01-foundations/02-compute-accounting.md",
+    "loc": "§9（实例演算，DeepSeek-V3 对账第二步）",
+    "severity": "S2",
+    "quote": "第二步：式 (9) 的 $D$ = 14.8T 是 pre-training 语料，对应的工时也必须取 Table 1 拆分中的 pre-training 部分",
+    "issue": "一逗到底的超长链句：全句逾 120 字，内嵌 40 余字括号补充（全训练 2.788M 的拆分与 12.4 万卡时去向），随后再串「乘 3600 秒得…」「与式 (9) 相除得…」两步运算，一个句子装了口径对齐、单位换算、相除求速率等多个论点",
+    "fix": "拆为三句：工时口径对齐一句（括号内拆分独立成句）；「乘 3600 秒得 9.59×10^9 GPU-秒」一句；「与式 (9) 相除得每卡平均持续 3.43×10^14 FLOPS」一句"
+  },
+  {
+    "file": "models/01-foundations/02-compute-accounting.md",
+    "loc": "§8（内存四账）开头",
+    "severity": "S3",
+    "quote": "显存预算分四笔，互相独立，各有独立的压缩手段。",
+    "issue": "「独立」在短句内重复两次，措辞可收紧",
+    "fix": "改为「显存预算分四笔，各自有独立的压缩手段」或「四笔账互不耦合，压缩手段也各别」"
+  },
+  {
+    "file": "models/01-foundations/03-scaling-laws.md",
+    "loc": "§2（Chinchilla 联合形式，Approach 2 条目）",
+    "severity": "S1",
+    "quote": "（上方 ASCII 图下半张即一个剖面）",
+    "issue": "方位指代错误：该 ASCII 图在源码中位于三条 Approach 之后（下方），「上方」无图可查；读者按指引向上翻找不到所指，属事实性指代错误",
+    "fix": "「上方」改「下方」，或将该 ASCII 图移到三条 Approach 列表之前"
+  },
+  {
+    "file": "models/01-foundations/03-scaling-laws.md",
+    "loc": "§5（inference-aware 的修正）",
+    "severity": "S1",
+    "quote": "在式 (8) 下减小 $N$ 的边际收益是每 token 省 $2Q$ FLOPs 推理费",
+    "issue": "量纲错误：由 TC = 6ND + 2NQ，减小 1 单位 N 的边际推理节省是每 token 2 FLOPs、全生命周期共 2Q FLOPs；「每 token 省 2Q FLOPs」把总量错挂到每 token 上，差 Q 倍",
+    "fix": "改为「减小 N 的边际收益是每 token 省 2 FLOPs、全生命周期共省 2Q FLOPs 推理费」"
+  }
+]

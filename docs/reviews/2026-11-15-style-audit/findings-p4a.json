@@ -1,0 +1,42 @@
+[
+  {
+    "file": "models/04-modern-architectures/01-kv-compression-and-exact-attention.md",
+    "loc": "§5.2（L247；另见 §6 L290）",
+    "severity": "S2",
+    "quote": "4.2 的稀疏 attention 改可见集、4.3 的线性 attention 换掉 softmax 核",
+    "issue": "术语漂移（B4）：4.2 章名与首定义为「稀疏注意力（Sparse Attention）」（02 文 L1、L7），本章两处却作「稀疏 attention」，attention/注意力 中英词形前后不一，属 rubric 举例的 KV cache / 键值缓存同类混写。",
+    "fix": "统一为 4.2 章名口径「稀疏注意力」（或按本书规则在首处定义后统一英文 sparse attention），改 §5.2 与 §6 两处。"
+  },
+  {
+    "file": "models/04-modern-architectures/01-kv-compression-and-exact-attention.md",
+    "loc": "§5.2（L247，另见 §6 L290；02-sparse §5 L189；04-hybrid §4 L84 对照 §6 L98）",
+    "severity": "S2",
+    "quote": "4.3 的线性 attention 换掉 softmax 核",
+    "issue": "术语漂移（B4）：4.3 章名与全章正文统一作「linear attention」，但 4.1 两处与 4.2 §5 作「线性 attention」，4.4 §4 又作「线性注意力架构」——而 4.4 §6 同章内即作「linear attention 变体」，同一概念三种写法并存。",
+    "fix": "以 4.3 章名为准统一为 linear attention：改 4.1 §5.2/§6、4.2 §5、4.4 §4 共 4 处（4.4 §4 的「线性注意力架构」系转述摘要，可改写为「linear attention 架构」并保留归属）。"
+  },
+  {
+    "file": "models/04-modern-architectures/02-sparse-attention.md",
+    "loc": "§4（L132）",
+    "severity": "S2",
+    "quote": "真正要检索的行不会把大量质量倒进 sink",
+    "issue": "含糊量词无数值（B1）：「大量」未给刻度。上下文已给出精确语言（sink 占质量 $\\pi$），此处退回模糊措辞，且与上一句「sink 质量高的行…近似 no-op」合读后，「大量」其实可由 $\\pi$ 直接表达。",
+    "fix": "删「大量」作「不会把质量倒进 sink」，或改为「$\\pi$ 接近 0」以与式 (6) 的记号对齐。"
+  },
+  {
+    "file": "models/04-modern-architectures/02-sparse-attention.md",
+    "loc": "§4（L128）",
+    "severity": "S3",
+    "quote": "$p_1$ 接近 1（sink 吸收了该行大部分质量）时放大因子 $1/(1-p_1)$ 巨大",
+    "issue": "用词精度（A2 关注词「巨大」，此处有公式支撑故不按 S1 计）：$p_1 \\to 1$ 时 $1/(1-p_1)$ 发散，「巨大」是对无界量的弱化表述，数学上不精确。",
+    "fix": "改为「放大因子 $1/(1-p_1)$ 无界增长」（或「发散」）。"
+  },
+  {
+    "file": "models/04-modern-architectures/01-kv-compression-and-exact-attention.md",
+    "loc": "§4.4（L203）；另见本章 L235、02-sparse §6 L236、03-linear §8 L267、04-hybrid §4 L82 与 §7 L120",
+    "severity": "S3",
+    "quote": "顺带一句 MLA 与 §5 的关系",
+    "issue": "口语连接词复现（C 类「偶发口语连接词」）：「顺带/顺手」四章共 6 处（顺带一句/顺带成立/顺手一记/顺带记一笔/顺手堵死/顺带登记），已超出偶发量级，形成固定口头语。",
+    "fix": "逐处删连接词直接陈述（如「MLA 与 §5 的关系：…」），或换书面连接（「另记一笔」→「另有一笔」）。不强制。"
+  }
+]

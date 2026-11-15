@@ -64,7 +64,7 @@ $$
 
 **符号**： $`\mathrm{FLOPs}_{\mathrm{bwd}}`$ ：反向传播每 token 的 FLOPs。
 
-一句话版本：前向每个参数做 1 次 FMA，反向要为输入侧与权重侧各做 1 次，合计每参数每 token 6 次。这个「1 + 2」的结构是通用的：任何 $y = f(x, W)$ 的算子，反向都要给 $x$ 和 $W$ 各算一份梯度；线性层恰好两份都与前向同阶。式 (3) 第二式还埋了一个内存事实：算 $\partial \mathcal{L} / \partial W$ 需要前向的输入 $x_b$ ，所以反向开始前向的激活必须还在显存里——第 8 节账二的来源。
+一句话版本：前向每个参数做 1 次 FMA，反向要为输入侧与权重侧各做 1 次——合计每参数每 token 3 次 FMA，即 6 FLOPs。这个「1 + 2」的结构是通用的：任何 $y = f(x, W)$ 的算子，反向都要给 $x$ 和 $W$ 各算一份梯度；线性层恰好两份都与前向同阶。式 (3) 第二式还埋了一个内存事实：算 $\partial \mathcal{L} / \partial W$ 需要前向的输入 $x_b$ ，所以反向开始前向的激活必须还在显存里——第 8 节账二的来源。
 
 整条反向链上，梯度按与层序相反的顺序流动：输出头的 $\partial \mathcal{L} / \partial W$ 最先算（其输入是最后一层的隐状态），第 1 层的最后算。这决定了激活释放的顺序只能是「从后往前逐层释放」，也是梯度检查点按层边界切分的自然位置。
 
@@ -221,7 +221,7 @@ $$
 
 **符号**： $N_{\mathrm{act}}$ ：MoE 每 token 实际激活的参数量，替代式 (5) 中的 $N$ 。
 
-对账分三步，关键在第二步的口径对齐。第一步，训练每 token $6 N_{\mathrm{act}} = 2.22 \times 10^{11}$ FLOPs（222 G），前向 $7.4 \times 10^{10}$ （74 G）。第二步：式 (9) 的 $D$ = 14.8T 是 pre-training 语料，对应的工时也必须取 Table 1 拆分中的 pre-training 部分 $2.664 \times 10^{6}$ GPU-hours（全训练 2.788M = pre 2664K + context extension 119K + post-training 5K，extension 与 post 的 12.4 万卡时对应另一批 token 与 FLOPs），乘 3600 秒得 $9.59 \times 10^{9}$ GPU-秒，与式 (9) 相除得每卡平均持续 $3.43 \times 10^{14}$ FLOPS。第三步交叉验证：14.8T token 摊到 2.664M GPU-hour 是每卡每小时 $5.6 \times 10^{6}$ token、每秒约 1543 token；用每 token 222 G 反乘回去， $1543 \times 2.22 \times 10^{11} = 3.43 \times 10^{14}$ FLOPS，与第二步一致。若误用全训练 2.788M 小时数去除 pre-training 的 FLOPs，得到 $3.27 \times 10^{14}$ ——只差 5%，但口径已经混了。这个派生量本身模型无关；它对应多高的算力利用率（MFU，model FLOPs utilization）取决于 H800 的峰值口径，属 gpu 与 training 维度（练习 3 请读者自己查峰值并算出 MFU）。此处能下的结论是：14.8T token、37B 激活、2.664M pre-training GPU-hours 三个论文数字与 6ND 框架互相自洽。
+对账分三步，关键在第二步的口径对齐。第一步，训练每 token $6 N_{\mathrm{act}} = 2.22 \times 10^{11}$ FLOPs（222 G），前向 $7.4 \times 10^{10}$ （74 G）。第二步：式 (9) 的 $D$ = 14.8T 是 pre-training 语料，对应的工时必须取 Table 1 拆分中的 pre-training 部分 $2.664 \times 10^{6}$ GPU-hours。（全训练 2.788M = pre 2664K + context extension 119K + post-training 5K；extension 与 post 的 12.4 万卡时对应另一批 token 与 FLOPs。）乘 3600 秒得 $9.59 \times 10^{9}$ GPU-秒。与式 (9) 相除得每卡平均持续 $3.43 \times 10^{14}$ FLOPS。第三步交叉验证：14.8T token 摊到 2.664M GPU-hour 是每卡每小时 $5.6 \times 10^{6}$ token、每秒约 1543 token；用每 token 222 G 反乘回去， $1543 \times 2.22 \times 10^{11} = 3.43 \times 10^{14}$ FLOPS，与第二步一致。若误用全训练 2.788M 小时数去除 pre-training 的 FLOPs，得到 $3.27 \times 10^{14}$ ——只差 5%，但口径已经混了。这个派生量本身模型无关；它对应多高的算力利用率（MFU，model FLOPs utilization）取决于 H800 的峰值口径，属 gpu 与 training 维度（练习 3 请读者自己查峰值并算出 MFU）。此处能下的结论是：14.8T token、37B 激活、2.664M pre-training GPU-hours 三个论文数字与 6ND 框架互相自洽。
 
 两个锚点的四笔账并排：
 

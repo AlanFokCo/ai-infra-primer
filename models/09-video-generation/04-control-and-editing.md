@@ -37,7 +37,7 @@ m    [t × h × w ×  4]  锚点 mask ─────┘         │
 
 拼接后的 $\tilde x_t$ 过常规 patchify + 线性投影（9.2 §1），第一层权重从 $16 \times d$ 换成 $36 \times d$——这是唯一需要新参数的层。账（patch=1 等效口径、 $d$ = 5,120 的 Wan 14B 档）：第一层参数增量 $20 \times 5120 \approx 1.0 \times 10^{5}$，相对 14B 主干约百万分之七；每 token 投影 FLOPs 增量 $2 \times 20 \times 5120$，乘 $N$ = 302,400 约 0.06 TFLOPs，对 9.2 §2.5 单层 2.06 PFLOPs 的总账是十万分之三。I2V 的成本全在数据与训练步数上，不在架构上。
 
-mask 恰占 4 通道的官方解释同在 §5.1.1：帧级 mask $M \in \lbrace0,1\rbrace^{1 \times T \times h \times w}$ 与目标视频同时间长度，进式 (1) 的拼接前按 Wan-VAE 时间 stride 重排为 $s \times t \times h \times w$（ $s$ = 4）——4 个通道即「每个 latent 帧所覆盖的各原始帧位是否 preserved」的逐位指示，首帧 I2V 下只有帧 0 落位为 1。
+mask 恰占 4 通道的官方解释同在 §5.1.1：帧级 mask $M \in \lbrace0,1\rbrace^{1 \times T \times h \times w}$ 与目标视频同时间长度，进式 (1) 的拼接前按 Wan-VAE 时间 stride 重排为 $s \times t \times h \times w$（此 $s$ 是论文记号的时间 stride = 4，与 9.1 的 (τ,s,s) 空间 $s$ 同名不同义）——4 个通道即「每个 latent 帧所覆盖的各原始帧位是否 preserved」的逐位指示，首帧 I2V 下只有帧 0 落位为 1。
 
 工程细节一则，与 §2 的主题互证：Wan 论文 §5.1.1 明示 I2V 新增投影层零初始化（「an additional projection layer is employed, which is initialized with zero values」）——T2V→I2V 的改造在训练起点不扰动基座行为。「起点即原模型」不是 ControlNet 一家的纪律，在工业 I2V 配方里同样是显式实践。
 

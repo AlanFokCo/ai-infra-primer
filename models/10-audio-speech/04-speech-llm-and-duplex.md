@@ -93,7 +93,7 @@ $$P\big( \mathbf{x}_{1:S} \big) = \prod_{s=1}^{S}\ \underbrace{\prod_{k=1}^{K} P
 
 ### 4.3 RQ-Transformer：时间 × 深度的两级分解（本章核心推导）
 
-式 (4) 若朴素实现，要把每帧 $Q$ 个 token 展平成一条长 $Q \cdot S$ 的序列过标准 causal Transformer——长上下文成本与 cache 都乘上 $Q$ 倍（账在下面）。RQ-Transformer（Moshi 论文 §3.4.1；谱系：RQ-Transformer 出自 Lee et al. 2022 的二维 token 网格生成，层次化序列分解思想同族于 MegaByte（Yu et al. 2024）——Moshi 论文转引）把二维网格（时间 $s$ × 深度 $k$）拆成两级模型。原文定义：「breaks down a flattened sequence of length $K \cdot S$ into $S$ timesteps for a large **Temporal Transformer** which produces a context embedding used to condition a smaller **Depth Transformer** over $K$ steps」（引句的 $K$ 为全流子序列总数 = 本章 $Q$ = 17，记号映射见式 (6) 后的计数口径说明）。
+式 (4) 若朴素实现，要把每帧 $Q$ 个 token 展平成一条长 $Q \cdot S$ 的序列过标准 causal Transformer——长上下文成本与 cache 都乘上 $Q$ 倍（账在下面）。RQ-Transformer（Moshi 论文 §3.4.1；谱系：RQ-Transformer 出自 Lee et al. 2022 的二维 token 网格生成，层次化序列分解思想同族于 MegaByte（Yu et al. 2023，arXiv:2305.07185）——Moshi 论文转引）把二维网格（时间 $s$ × 深度 $k$）拆成两级模型。原文定义：「breaks down a flattened sequence of length $K \cdot S$ into $S$ timesteps for a large **Temporal Transformer** which produces a context embedding used to condition a smaller **Depth Transformer** over $K$ steps」（引句的 $K$ 为全流子序列总数 = 本章 $Q$ = 17，记号映射见式 (6) 后的计数口径说明）。
 
 **第一级：Temporal Transformer**（大模型，Helium 7B 文本 LLM 初始化，2.1T tokens 文本预训练）。帧 $s$ 的输入是该帧已齐 token 的 embedding 求和：
 

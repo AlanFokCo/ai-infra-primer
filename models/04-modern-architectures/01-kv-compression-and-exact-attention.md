@@ -244,7 +244,7 @@ $$
 o = \frac{O^{(J)}}{\ell^{(J)}} = \frac{\sum_s e^{x_s - m} v_s}{\sum_s e^{x_s - m}}
 $$
 
-右端即 2.3 式 (10) 同基准（全局 max）的精确 softmax 加权和。**FlashAttention 是精确等价，不是近似**：它与标准 attention 的数学对象逐点相同，差异只有浮点累加次序。这把它的定位与后两章划清：4.2 的稀疏 attention 改可见集、4.3 的线性 attention 换掉 softmax 核，都是改数学换复杂度；FlashAttention 一个数都不改。
+右端即 2.3 式 (10) 同基准（全局 max）的精确 softmax 加权和。**FlashAttention 是精确等价，不是近似**：它与标准 attention 的数学对象逐点相同，差异只有浮点累加次序。这把它的定位与后两章划清：4.2 的稀疏注意力改可见集、4.3 的 linear attention 换掉 softmax 核，都是改数学换复杂度；FlashAttention 一个数都不改。
 
 ### 5.3 tiling：两趟循环
 
@@ -287,7 +287,7 @@ FA2 与 FA3 各一句话：FA2（[Dao, 2023](../references.md)，arXiv:2307.0869
 
 ## 6. 接口与去向
 
-本章交付两类账与两组推导。账：KV cache 的三种形态系数——MHA / GQA 的 $2 H_{kv} d_{\mathrm{head}}$（式 (3)）、MLA 的 $d_c + d_R$ = 576（§4.2 表）——将在 4.6 的长上下文内存对照与 5.2 的 DeepSeek 案例里直接代入；FlashAttention 的 IO 复杂度 $O(T^{2} d^{2} / M)$（式 (17)）是 gpu 维度 kernel 章的入口。推导：RoPE×低秩冲突（§4.1）与 absorption 的对称结构（§4.3–4.4）在 4.4 的 hybrid 模型（Kimi-Linear 的 MLA + NoPE 变体）中复用。方法论上，§2–§4 改「存什么」、§5 改「怎么算」，而 4.2（稀疏 attention：改可见集）与 4.3（线性 attention：改核函数）改「算什么」——Part 4 上半部分的全部省算工作可按这三个动词分类。
+本章交付两类账与两组推导。账：KV cache 的三种形态系数——MHA / GQA 的 $2 H_{kv} d_{\mathrm{head}}$（式 (3)）、MLA 的 $d_c + d_R$ = 576（§4.2 表）——将在 4.6 的长上下文内存对照与 5.2 的 DeepSeek 案例里直接代入；FlashAttention 的 IO 复杂度 $O(T^{2} d^{2} / M)$（式 (17)）是 gpu 维度 kernel 章的入口。推导：RoPE×低秩冲突（§4.1）与 absorption 的对称结构（§4.3–4.4）在 4.4 的 hybrid 模型（Kimi-Linear 的 MLA + NoPE 变体）中复用。方法论上，§2–§4 改「存什么」、§5 改「怎么算」，而 4.2（稀疏注意力：改可见集）与 4.3（linear attention：改核函数）改「算什么」——Part 4 上半部分的全部省算工作可按这三个动词分类。
 
 ## 总结
 

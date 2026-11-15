@@ -29,7 +29,7 @@ $$
 | Qwen3-30B-A3B | 128 | 0 | 8 | 30.5B / 3.3B | ≈ 9.2 | [A]（arXiv:2505.09388） |
 | DeepSeek-V3 | 256 | 1 | 8 | 671B / 37B | ≈ 18.1 | [A]（config + arXiv:2412.19437） |
 
-稀疏度一路走高：Mixtral 的 8 选 2 还是「半个 dense」，V3 的 257 选 9 把 $\rho$ 压到 3.5%。谱系右端的参照是 Qwen3-Next：512 routed + 1 shared、top-10（[W]，config 与 model card 口径，无 arXiv 论文）——$`\rho \approx 2.1\%`$。
+稀疏度一路走高：Mixtral 的 8 选 2 激活占比尚有 1/4，是谱系里离 dense 端最近的点；V3 的 257 选 9 把 $\rho$ 压到 3.5%。谱系右端的参照是 Qwen3-Next：512 routed + 1 shared、top-10（[W]，config 与 model card 口径，无 arXiv 论文）——$`\rho \approx 2.1\%`$。
 
 **Chinchilla-inference 联合优化视角**。1.3 §5 的全生命周期目标 $\mathrm{TC} = 6ND + 2NQ$（1.3 式 (8)）里 $N$ 出现两次：训练一次、推理 $Q$ 次。MoE 把这笔账改写为
 
@@ -63,7 +63,7 @@ $$
 
 两个机制要点。其一，KeepTopK 把 top-k 之外压成精确 $-\infty$，softmax 后精确为 0——硬稀疏由此而来。其二，噪声是 router 的探索项：暂居下风的 expert 偶被抽中，从而获得 token 与梯度；噪声幅度逐 expert 可学，等于把「该不该探索」本身参数化。同论文的 importance 损失（按 expert 的重要度变异系数惩罚不均衡）是下一节主角的雏形。
 
-### 2.2 负载均衡辅助损失： $\alpha N_e \sum_i f_i P_i$ 的完整推导
+### 2.2 负载均衡辅助损失（aux loss）： $\alpha N_e \sum_i f_i P_i$ 的完整推导
 
 定义（Switch 口径，[Fedus et al., 2021](../references.md)，arXiv:2101.03961，[A]；官方代码在 google-research/t5x）：对一个 batch 的 $T$ 个 token，
 
@@ -127,7 +127,7 @@ C_e = \left\lceil \mathrm{CF} \cdot \frac{T_{\mathrm{batch}}}{N_e} \right\rceil 
 $$
 
 **符号**： $\mathrm{CF} \ge 1$：容量因子（论文对照 1.0 / 1.25 / 1.5 / 2.0，常用工作点 1.25）； $T_{\mathrm{batch}}$：一个 batch 的 token 总数。容量是内存对齐的需要：expert 的输入 batch 必须定长才能向量化， $\mathrm{CF}$ 是「为负载波动预留多少缓冲」的工程旋钮。
-- **token 溢出机制**：expert $i$ 满员后，轮到它的 token 被丢弃——该层 FFN 输出取零，token 仅靠 residual stream 穿层，等效于跳过该层。质量影响随 CF 的扫描呈两段：溢出率压在小概率区（CF = 1.25）时影响可忽略；CF 压向 1.0、或 router 不均衡抬高溢出率时，质量显著退化。丢弃不可微，被丢 token 的 router 梯度断供——所以 Switch 把式 (6) 的 top-1 特例与容量机制绑定使用：aux loss 负责把溢出率压下去，容量机制负责兜底。
+- **token 溢出机制**：expert $i$ 满员后，轮到它的 token 被丢弃——该层 FFN 输出取零，token 仅靠 residual stream 穿层，等效于跳过该层。质量影响随 CF 的扫描呈两段：溢出率压在小概率区（CF = 1.25）时影响可忽略；CF 压向 1.0、或 router 不均衡抬高溢出率时，质量退化。丢弃不可微，被丢 token 的 router 梯度断供——所以 Switch 把式 (6) 的 top-1 特例与容量机制绑定使用：aux loss 负责把溢出率压下去，容量机制负责兜底。
 
 ### 2.4 z-loss：只压数值、不管均衡
 

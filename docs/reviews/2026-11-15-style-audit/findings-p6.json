@@ -1,0 +1,114 @@
+[
+  {
+    "file": "models/06-vision-representations/03-autoencoders-and-tokenizers.md",
+    "loc": "§3.2（L167）",
+    "severity": "S1",
+    "quote": "反向传播到 z_q 为止——decoder 与重建项有梯度，encoder 与 codebook 之外的参数一分梯度都收不到。",
+    "issue": "A5 逻辑错误：句内自相矛盾且与事实相反。argmin 断链时收不到梯度的恰恰是 encoder 与 codebook（STE 要解决的就是这个）；decoder 属于「encoder 与 codebook 之外的参数」，前半句刚说过它有梯度。按字面读，唯一有梯度的参数组被说成没有梯度。",
+    "fix": "删「之外的参数」：「decoder 与重建项有梯度，encoder 与 codebook 一分梯度都收不到。」"
+  },
+  {
+    "file": "models/06-vision-representations/02-clip-and-contrastive.md",
+    "loc": "§2.2（L70）",
+    "severity": "S1",
+    "quote": "这正是表征塌缩（全部向量挤到一起，式 (6) 梯度趋零也能压低 loss）必须通过 uniformity 项（§4/§6）从结构上防住的原因",
+    "issue": "A5 事实/逻辑错误，两处。其一，式 (6) 是 logit 梯度 p_ij − δ_ij，塌缩时 p_ij = 1/B，对角处为 1/B − 1 ≠ 0，并不趋零；趋零的是式 (8) 的 embedding 梯度（全部 t_j 相等使求和抵消）。其二，塌缩时每行 CE = log B，正是 §2.2 自己立的随机基线，loss 压不低——括号内「也能压低 loss」与本节「乱猜时行 CE = log B」直接冲突。",
+    "fix": "改为「（全部向量挤到一起：式 (8) 的 embedding 梯度相互抵消趋零，loss 停在 log B 的随机基线——§2.2）」。"
+  },
+  {
+    "file": "models/06-vision-representations/03-autoencoders-and-tokenizers.md",
+    "loc": "§7.3（L344）",
+    "severity": "S1",
+    "quote": "f64 AE 从 256² 直接泛化到 1024² 时 rFID 从 0.50 掉到 7.40",
+    "issue": "A5 逻辑错误：方向词与数值矛盾。rFID 越低越好，0.50 → 7.40 是数值上升、质量变差，不能用「掉到」；同句后半「f8 AE 反而从 0.51 改善到 0.19」方向正确，更显前半句之误。",
+    "fix": "「掉到」改为「恶化到」或「涨到」。"
+  },
+  {
+    "file": "models/06-vision-representations/03-autoencoders-and-tokenizers.md",
+    "loc": "§7.3（L346）",
+    "severity": "S1",
+    "quote": "对照 §1 的像素账，序列长度再省一到两个量级",
+    "issue": "A5 事实错误（量级口径与基准不符）。§1 的像素账是 512² = 262144（像素序列，另给出 786432 标量）；262144/256 ≈ 10^3.0、262144/64 ≈ 10^3.6，即三个量级以上。「一到两个量级」只在基准为 §1 的 p=8 patch 序列时成立（4096 → 256/64 = 1.2–1.8 个量级），但句中写的基准是「像素账」。",
+    "fix": "二选一：把基准改对——「相对 p=8 的 patch 序列再省一到两个量级」；或把量级改对——「对照 §1 的像素账省三个量级以上」。"
+  },
+  {
+    "file": "models/06-vision-representations/03-autoencoders-and-tokenizers.md",
+    "loc": "§3.3（L202）",
+    "severity": "S1",
+    "quote": "codebook loss 其实不必走梯度。",
+    "issue": "A3 硬禁语气松散词「其实」。",
+    "fix": "删「其实」。"
+  },
+  {
+    "file": "models/06-vision-representations/01-vit.md",
+    "loc": "§7（L197）",
+    "severity": "S2",
+    "quote": "约定记号（全书 P6 统一）：图像塔输出 v_i、文本塔输出 t_j",
+    "issue": "B4 术语漂移：全章与 6.2 统一用「视觉塔」（本节上一句即「视觉塔的应用大头」，6.2 §1「视觉塔 f」），此处冒出一个「图像塔」，且所在句自称「全书 P6 统一」。",
+    "fix": "「图像塔」→「视觉塔」。"
+  },
+  {
+    "file": "models/06-vision-representations/03-autoencoders-and-tokenizers.md",
+    "loc": "§1（L7）对照 §4（L218/220/228）",
+    "severity": "S2",
+    "quote": "6.1 式 (3) 的硬切补丁 N = HW/p² 也只是折中——……且每个 patch 内部的高频结构……",
+    "issue": "B4 术语漂移 + 一词两义。§1 用「补丁」指 image patch，同句下文又写回英文「patch」，6.1 全章亦只用英文；而 §4 的「打两项补丁/补丁一/补丁二」是软件补丁义。同章内「补丁」两义并存，§1 句内还中英混用指同一物。",
+    "fix": "§1 的「硬切补丁」改为「硬切 patch」（与 6.1 一致）；§4 的「打补丁」义可保留。"
+  },
+  {
+    "file": "models/06-vision-representations/03-autoencoders-and-tokenizers.md",
+    "loc": "§4（L250）",
+    "severity": "S2",
+    "quote": "后来一大票 T2I 系统的 tokenizer 由此起步",
+    "issue": "B1 含糊量词「一大票」：无数值、无实例的模糊多数。",
+    "fix": "删量词作全称定性（「后来的 T2I 系统」），或举一至两个实例名。"
+  },
+  {
+    "file": "models/06-vision-representations/02-clip-and-contrastive.md",
+    "loc": "§1（L19）",
+    "severity": "S2",
+    "quote": "InfoNCE 用一张 batch 相似度矩阵加两个 softmax 一次性回答了这三个问题，下面逐步推。",
+    "issue": "B3 空洞过渡：「下面逐步推」是纯程序性收尾，承载信息为零（次节标题 §2.1 已承担引导功能）。",
+    "fix": "删「，下面逐步推」，句号止于「三个问题」。"
+  },
+  {
+    "file": "models/06-vision-representations/01-vit.md",
+    "loc": "§5（L173）",
+    "severity": "S3",
+    "quote": "高效实现不真的重排，而是做 cyclic shift",
+    "issue": "A2 家族空泛形容词「高效」无数值支撑（机制随后自明，不需要这个标签）。",
+    "fix": "改「工程实现」或径删「高效」。"
+  },
+  {
+    "file": "models/06-vision-representations/02-clip-and-contrastive.md",
+    "loc": "§2.3（L121，§5 L183 同款）",
+    "severity": "S3",
+    "quote": "顺手记 loss 本体的算力账",
+    "issue": "C 口语连接词「顺手」，同章 §5 复现一次（「计算账也顺手记」）。",
+    "fix": "两处均删「顺手」。"
+  },
+  {
+    "file": "models/06-vision-representations/02-clip-and-contrastive.md",
+    "loc": "§3（L133）",
+    "severity": "S3",
+    "quote": "代入数值感受一下尺度",
+    "issue": "C 教学腔口语「感受一下」。",
+    "fix": "改「代入数值看尺度」。"
+  },
+  {
+    "file": "models/06-vision-representations/03-autoencoders-and-tokenizers.md",
+    "loc": "§3.3（L208）",
+    "severity": "S3",
+    "quote": "顺带补一条 commitment 项的原文动机",
+    "issue": "C 口语连接词「顺带」。",
+    "fix": "删「顺带」，直写「补一条 commitment 项的原文动机」。"
+  },
+  {
+    "file": "models/06-vision-representations/03-autoencoders-and-tokenizers.md",
+    "loc": "§4（L248）",
+    "severity": "S3",
+    "quote": "机制一目了然：让两项在「对输出端的拉力」上始终同阶",
+    "issue": "C 断言显然性（近「不难发现」一族）；冒号后已给出机制本体，前缀是纯评论。",
+    "fix": "删「一目了然」，径作「机制：让两项……」。"
+  }
+]

@@ -1,0 +1,66 @@
+[
+  {
+    "file": "models/08-multimodal-llm/05-unified-understanding-generation.md",
+    "loc": "§3.1 (L67)",
+    "severity": "S2",
+    "quote": "与 Emu3 同属式 (3) 的全 AR 离散路线，差别在训练起点与混合深度：Emu3 之外，Chameleon 是早期融合（early-fusion）路线的代表——图文同词表、同序列、**从头训**，没有任何预训练单模态塔作为初始化资产",
+    "issue": "「差别在训练起点与混合深度」未指明比较对象，且紧邻 Emu3 出现，自然被读成「Chameleon 与 Emu3 的差别在训练起点」——但 Emu3 同样从头训（论文口径），按此读法即成事实错误。只有读成「Chameleon/Emu3 相对 Janus/Show-o（预训练 LLM 起步）的差别」才成立，而这正是后文括号里的对照。比较对象缺失造成歧义，兼疑似事实错误。",
+    "fix": "点明比较对象，如：「与 Emu3 同属式 (3) 的全 AR 离散路线，且同为从头训的早期融合；与路线 1 内部另一支（Janus 解耦、§5 Show-o 从预训练 LLM 起步）的差别在训练起点与混合深度」。"
+  },
+  {
+    "file": "models/08-multimodal-llm/04-video-understanding.md",
+    "loc": "§7 (L164)",
+    "severity": "S2",
+    "quote": "随后 OneVision 阶段把 1.6M 混合样本同训（350K 视频 + 560K 多图 + 800K 单图复用采样，未引入新单图数据；[Li et al., 2024](../references.md)，[A]，论文 Sec. 4–5 与 Table 1 口径；完整训练流程在此之前另有对齐与知识学习的前置 stage，与场景课程正交）",
+    "issue": "单层括号内用两个分号塞进三个信息点：混合数据构成、引用口径、以及「另有前置 stage、与场景课程正交」的限定——括号超载，最后一个分句与括号主信息（样本构成）不同类，读者要在括号里切换话题。",
+    "fix": "括号只留样本构成与引用口径；把「完整训练流程在此之前另有对齐与知识学习的前置 stage，与场景课程正交」拆成括号后的独立一句。"
+  },
+  {
+    "file": "models/08-multimodal-llm/04-video-understanding.md",
+    "loc": "§5 (L142)",
+    "severity": "S2",
+    "quote": "本节无收录条目（本轮研究未找到合用的开放论文锚点），按 w5-sources 降级口径只给机制描述，不引具体系统与数字。",
+    "issue": "「w5-sources」是作者研究流程的内部文件/工作流名，书中读者无法解析该回指（全书其余章未见此词，非通用口径）。内部流程名词泄漏进正文。",
+    "fix": "删去工作流名，直接陈述结论：「本节无收录条目（未找到合用的开放论文锚点），降级为机制描述，不引具体系统与数字」。"
+  },
+  {
+    "file": "models/08-multimodal-llm/05-unified-understanding-generation.md",
+    "loc": "§7 (L275)",
+    "severity": "S2",
+    "quote": "SEED-X / Emu2 式系统属此族（本条无收录引用条目——W5 research pass 未收录，按机制描述处理，不引具体文献）。",
+    "issue": "同上：「W5 research pass」是内部研究流程名词，读者不可解析；同句已有「本条无收录引用条目」，括号内流程说明冗余且不可考。",
+    "fix": "改为「本条无收录引用条目，按机制描述处理，不引具体文献」。"
+  },
+  {
+    "file": "models/08-multimodal-llm/03-training-objectives.md",
+    "loc": "§4.2 (L128)",
+    "severity": "S2",
+    "quote": "给输入图像逐级加噪（视觉不确定性增大）后，模型对高频对象、以及与图内对象高频共现的对象的幻觉倾向显著上升",
+    "issue": "「显著上升」为含糊量词无数值（rubric B1 明列「显著」）。此处是对照实验结论，论文有具体读数可引；全书他处同类断言均落到数值或明确标注「论文口径」的定性级，本句虽注「对照实验口径」但「显著」仍缺支撑。",
+    "fix": "给出论文数值（加噪前后幻觉率/准确率的幅度），或删「显著」写「幻觉倾向上升」。"
+  },
+  {
+    "file": "models/08-multimodal-llm/05-unified-understanding-generation.md",
+    "loc": "§8 (L287)",
+    "severity": "S2",
+    "quote": "流式渲染中图像按水平带自上而下渐次清晰、文字渲染与多轮编辑一致性显著强于同期扩散产品",
+    "issue": "「显著强于」无数值支撑（rubric B1）。本节为 [C] 证据级、仅登记可观测行为，本无数值可给，「显著」反而抬高了证据强度的暗示，与本节「不断言实现」的纪律相悖。",
+    "fix": "删「显著」，写「可观察到强于同期扩散产品」或直接「强于同期扩散产品」。"
+  },
+  {
+    "file": "models/08-multimodal-llm/03-training-objectives.md",
+    "loc": "§2.3 (L73)",
+    "severity": "S3",
+    "quote": "文本侧的偏好标注没有 ground truth 锚点，标注质量靠人味",
+    "issue": "「靠人味」为临时缩略语，语义需读者自行补全（依赖人工判断/标注者品味），偶发口语化措辞。",
+    "fix": "改为「标注质量依赖人工判断」。"
+  },
+  {
+    "file": "models/08-multimodal-llm/04-video-understanding.md",
+    "loc": "§1 (L26)",
+    "severity": "S3",
+    "quote": "15,360 个视觉 token ≈ 0.88 GB，86,400 个 ≈ 4.95 GB——单请求的 KV 预算被视觉段独占一头",
+    "issue": "「独占一头」非固定搭配（常见为「占大头/独占大头」），读感生涩。",
+    "fix": "改为「被视觉段占去大头」。"
+  }
+]

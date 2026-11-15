@@ -431,6 +431,7 @@
 | glm4voice-repo | zai-org/GLM-4-Voice 官方 repo（**THUDM/GLM-4-Voice 已 301 重定向至此**（API 301 body 实测），与 CogVideo 同迁移链；flow_inference.py、speech_tokenizer/ 文件级实测） | Z.ai | https://github.com/zai-org/GLM-4-Voice | [A] | 2026-11-13 | 10.4 |
 | kimi-audio-repo | MoonshotAI/Kimi-Audio 官方 repo（kimia_infer/、infer.py 文件级实测） | Moonshot AI | https://github.com/MoonshotAI/Kimi-Audio | [A] | 2026-11-13 | 10.4 |
 | step-audio-repo | stepfun-ai/Step-Audio 官方 repo | StepFun | https://github.com/stepfun-ai/Step-Audio | [A] | 2026-11-13 | 10.4 |
+| megabyte | MEGABYTE: Predicting Million-byte Sequences with Multiscale Transformers（多尺度 decoder：patch 内局部 + 跨 patch 全局的层次化分解，RQ-Transformer 同族思想出处） | Yu et al. | arXiv:2305.07185 | [B] | 2026-11-15 | 10.4 |
 
 ## 术语表
 

@@ -1,0 +1,66 @@
+[
+  {
+    "file": "models/04-modern-architectures/05-moe.md",
+    "loc": "§1（L32，稀疏度谱表后）",
+    "severity": "S2",
+    "quote": "稀疏度一路走高：Mixtral 的 8 选 2 还是「半个 dense」，V3 的 257 选 9 把 $\\rho$ 压到 3.5%。",
+    "issue": "比喻与章内数值冲突：8 选 2 的激活占比是 2/8 = 25%（同节锚点表与总结表均记 ρ = 25%，激活参数份额 12.9/46.7 ≈ 28%），「半个 dense」会把激活份额误导为约 50%，与本章自己的三处数字都对不上。",
+    "fix": "删去该比喻，或改成与数字一致的表述，如「Mixtral 的 8 选 2 激活占比尚有 1/4、是谱系中离 dense 端最近的点」。"
+  },
+  {
+    "file": "models/04-modern-architectures/05-moe.md",
+    "loc": "§2.2（L66/L76 定义）→ L114/L130 起",
+    "severity": "S2",
+    "quote": "所以 Switch 把式 (6) 的 top-1 特例与容量机制绑定使用：aux loss 负责把溢出率压下去，容量机制负责兜底。",
+    "issue": "B4 术语漂移：式 (6) 的概念在章首元信息与 §2.2 标题中以纯中文「负载均衡辅助损失」引入，未按「中文（English）」格式配对；自 L114（aux-loss-free）与 L130（aux loss）起全文切换为英文，两种词形并行至 §4 与总结表。",
+    "fix": "在首次出现处（§2.2 标题或 L76 定义）写作「负载均衡辅助损失（aux loss）」，此后统一用 aux loss。"
+  },
+  {
+    "file": "models/04-modern-architectures/05-moe.md",
+    "loc": "§2.2 (i)（L90）",
+    "severity": "S3",
+    "quote": "记第一项为 $N_e\\thinspace \\widehat{\\mathrm{Cov}}(f, P)$（在专家的均匀测度下的经验协方差）",
+    "issue": "术语漂移（minor）：全章统一用英文 expert（包括 §4 的「死 expert」），此处为全章唯一一次写作「专家」。",
+    "fix": "「专家」改为「expert」。"
+  },
+  {
+    "file": "models/04-modern-architectures/05-moe.md",
+    "loc": "§2.3（L130，token 溢出机制条目）",
+    "severity": "S2",
+    "quote": "质量影响随 CF 的扫描呈两段：溢出率压在小概率区（CF = 1.25）时影响可忽略；CF 压向 1.0、或 router 不均衡抬高溢出率时，质量显著退化。",
+    "issue": "B1「显著」无数值支撑：未给 CF=1.0 相对 1.25 的溢出率或质量差，同句前半「可忽略」有 CF=1.25 背书、后半「显著」悬空。",
+    "fix": "按 Switch / ST-MoE 口径补一个数（CF=1.0 的溢出率或 PPL 差），或删「显著」作「质量退化」。"
+  },
+  {
+    "file": "models/04-modern-architectures/06-long-context.md",
+    "loc": "§1（L7，节首）",
+    "severity": "S2",
+    "quote": "本节逐笔公式化；§2–§4 的每个方法都可以标注它付的是哪一笔。",
+    "issue": "B3 程序性宣告：「本节逐笔公式化」是 A1 词表「本节将」模板句的现在时变体，删后由四个小节标题自明；后半句（每个方法标注付哪笔账）是有效阅读指南，应保留。",
+    "fix": "删「本节逐笔公式化；」，保留后半句。"
+  },
+  {
+    "file": "models/04-modern-architectures/06-long-context.md",
+    "loc": "§4（L242，staged extension 段）",
+    "severity": "S2",
+    "quote": "为什么分阶段而不一步到位，可以用墙一算定量账：设阶段窗长按公比 $q$ 几何增长（ $W, qW, q^{2}W, \\ldots, sW$），每阶段投入相近的 token 预算 $B_k$——注意到 token 数预算下 attention FLOPs $\\propto B_k \\cdot W_k$（每 token 的 attention 成本正比于窗长），几何级数窗长下总开销 $\\propto \\sum_k B_k q^{k}$，被末阶段主导；若把全部预算直接砸在末窗 $sW$ 上，等 token 量下开销相同，但模型从未在中等长度上被校验过——阶段化买的不是 FLOPs 节省（两者同阶），而是「逐段可校验」的过程控制：每个阶段末都能用 needle 类测试确认当前窗已吸收，失败时回退的成本只有一个阶段。",
+    "issue": "B2 超长链句：单句约 250 字，两层破折号插入叠加冒号、分号，一句装三个论点（FLOPs 几何级数账、直接砸末窗的反事实等价、阶段化买的是过程控制）。",
+    "fix": "拆成三句：FLOPs 账止于「被末阶段主导」；「若把全部预算直接砸在末窗 sW 上…开销相同」独立成反事实句；「阶段化买的不是 FLOPs 节省…」另起一句给过程控制结论。"
+  },
+  {
+    "file": "models/04-modern-architectures/06-long-context.md",
+    "loc": "§5（L250，RULER 段末）",
+    "severity": "S2",
+    "quote": "论文的总体发现：多数受测模型的 effective context 显著短于其 claimed context（定性结论，[A]；逐模型数字以论文表格为准，本书不复录）",
+    "issue": "B1「显著」无数值支撑：既标注「定性结论」又不复录任何数字，读者无从判断短多少；RULER 论文本身有代表性数值可取一个。",
+    "fix": "按 RULER 论文表格口径填一个代表值或区间（如 effective/claimed 的中位比例，注明口径），或删「显著」改「短于」。"
+  },
+  {
+    "file": "models/04-modern-architectures/08-frontier-outlook.md",
+    "loc": "§1（L7，节首）",
+    "severity": "S2",
+    "quote": "本节给出它的完整形式化，然后与 AR 做公式级对账。",
+    "issue": "B3 程序性宣告：整句为节内路线图（A1「本节将」模板句的变体），删除不损失任何信息——形式化与对账表随后自带结构。",
+    "fix": "删该句；§1 由前一句的证据评估直接接「Forward：逐 token 独立腐蚀」。"
+  }
+]

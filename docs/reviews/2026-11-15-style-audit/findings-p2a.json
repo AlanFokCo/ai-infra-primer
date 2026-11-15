@@ -1,0 +1,50 @@
+[
+  {
+    "file": "models/02-transformer-anatomy/01-overview.md",
+    "loc": "§3 读表要点 1（行 94）",
+    "severity": "S2",
+    "quote": "教师强制（1.1 第 4 节）一次前向给全部 $T$ 个位置打分",
+    "issue": "术语漂移：1.1 第 4 节以「教师强制（teacher forcing）」首现后全书统一用英文；本章 §5/§6/§7（行 157、173、199）与 2.4 全章均用 teacher forcing，唯独此处用中文「教师强制」。",
+    "fix": "把「教师强制」改为 teacher forcing，与本章其余三处及 1.1 的既定口径一致。"
+  },
+  {
+    "file": "models/02-transformer-anatomy/01-overview.md",
+    "loc": "§3 读表要点 3（行 96）",
+    "severity": "S3",
+    "quote": "K/V 的 head 数 $H_{kv}=8 < H_q=32$ ，投影宽度砍半",
+    "issue": "歧义措辞：紧邻「K/V head 数 8 < 32」的「投影宽度砍半」自然读作 K/V 投影宽度减半，但 K/V 各自实为砍到 d/4（本章 §4 自己写明 $H_{kv}D=1024=d/4$）；「砍半」只有按 QKV 合计宽度（3d→1.5d）读才成立，读者对数必绊一下。",
+    "fix": "改为「K/V 投影宽度各砍到 d/4、QKV 合计恰半」之类，把砍半的宾语点明。"
+  },
+  {
+    "file": "models/02-transformer-anatomy/04-causality-and-kv-cache.md",
+    "loc": "§4.1（行 102）",
+    "severity": "S2",
+    "quote": "$k_t, v_t$ 是本步新量的",
+    "issue": "语句残缺：三类划分「本步新算的／本步新量的／历史量」中第二项不成词，「新量的」无解，只能猜测是「新算的」之笔误或「新产生的」脱字，读者在此必断读。",
+    "fix": "改为「$k_t, v_t$ 是本步新算的（但与历史量同构）」或「是本步新产生的」。"
+  },
+  {
+    "file": "models/02-transformer-anatomy/04-causality-and-kv-cache.md",
+    "loc": "§4.1–§5（行 102、110、120、147、179）",
+    "severity": "S2",
+    "quote": "把 §4.4 的缓存形态数成字节",
+    "issue": "术语漂移（rubric B4 的自举例）：名词「缓存」与「cache」全章混写——「缓存论证」（§4.1）、「缓存失效」（§4.2）、「缓存形态」（§4.4/§5）、「缓存串行 decode」（§4.4）与名词 cache（§3「cache 初始化」、§5 标题「cache size 公式」等）指同一对象。",
+    "fix": "名词统一为 cache（§5 标题已定此调）；「缓存」仅留作动词（如「只缓存 attention 中间量」）与派生词「可缓存性」。"
+  },
+  {
+    "file": "models/02-transformer-anatomy/04-causality-and-kv-cache.md",
+    "loc": "§5（行 204）",
+    "severity": "S3",
+    "quote": "QKV 投影参数只减 2 倍",
+    "issue": "倍数误用：「减 2 倍」按字面是减 200%（不可能），实指 3d²→1.5d² 的减半；在一本全程对账的书里，「倍」字口径应与其余数值断言同严。",
+    "fix": "改为「只减半」或「只减一半」。"
+  },
+  {
+    "file": "models/02-transformer-anatomy/04-causality-and-kv-cache.md",
+    "loc": "§6（行 228）",
+    "severity": "S2",
+    "quote": "参数项 $2N$ 取含输出头的全量口径，同 1.2 §9；…此处 $N$ 为层参数口径",
+    "issue": "超长嵌套括号一句装三个论点：括号内并排 (a) 分子 N 取含输出头口径、(b) attention 反超点 t=N/(2Ld)≈2.7×10⁴、(c) 与 1.2 §6 交叉点 T* 的关系；且同一句内符号 N 先后取两个口径（全量 7.5×10⁹ vs 层参数 6.98×10⁹），读者须自行消歧。",
+    "fix": "括号拆为独立句；两个 N 换符号区分（如 $N_{\\mathrm{full}}$ 与 $N$），反超点注记单独成句。"
+  }
+]

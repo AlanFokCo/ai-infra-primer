@@ -32,7 +32,7 @@ $$
 
 **符号**： $u_t \in \mathbb{R}^{d}$：MoE 层输入； $e_i \in \mathbb{R}^{d}$：router 的第 $i$ 个 expert 嵌入； $s_{i,t}$：sigmoid 亲和度（4.5 式 (16)，全 expert 归一化竞争推迟到 top-k 之后）； $g_{i,t}$：选中集内归一化后的门控权重（4.5 式 (17)）； $E_i$：第 $i$ 个 routed expert 的 SwiGLU FFN（2.6 式 (6) 三矩阵形）； $E_{\mathrm{shared}}$：常驻激活的 shared expert（4.5 §3.1，捕捉跨 token 公共知识、让 routed expert 专注差异化）。三件事都是 DeepSeekMoE→V3 谱系先立的项（4.5 式 (14)–(16)），Moonlight 的取点说明 2025 年初这套配方已是跨实验室的公共知识——5.2 的「架构基座」观察在此先垫一笔，§2.3 的 K2 把它推到旗舰规模。
 
-归属纠正（与 5.3 §2.3 互查）：dense→MoE 的 upcycling（dense FFN 复制成 $N_e$ 份 expert 初始化）常被记到 Moonlight 名下；Moonlight 论文全文 0 次提及 upcycling（W3 research pass 逐文核实），公开谱系里的旗舰级实例是 Qwen2-57B-A14B（report 未点名源模型；shape 证据指向 Qwen2-7B、排除 Qwen1.5-32B——公式、shape 证据与对称性代价分析见 5.3 §2.3 式 (4)）。Moonlight 自己的初始化路径论文正文已答：§3.3 明写 from scratch 预训练，且架构写明采用 deepseek-v3-small——DeepSeek 架构基座的跨实验室流通在 Moonlight 一代就已成形，§2.3 的 K2 叙事是它的旗舰规模续集。
+归属纠正（与 5.3 §2.3 互查）：dense→MoE 的 upcycling（dense FFN 复制成 $N_e$ 份 expert 初始化）常被记到 Moonlight 名下；Moonlight 论文全文 0 次提及 upcycling（W3 research pass 逐文核实），公开谱系里的旗舰级实例是 Qwen2-57B-A14B——report §2.2.3 明写源为 Qwen2-7B（「Qwen2-57B-A14B is upscaled from Qwen2-7B」，arXiv:2407.10671，2026-11-15 复核 ar5iv 全文）；shape 证据互证（公式、shape 证据与对称性代价分析见 5.3 §2.3 式 (4)）。Moonlight 自己的初始化路径论文正文已答：§3.3 明写 from scratch 预训练，且架构写明采用 deepseek-v3-small——DeepSeek 架构基座的跨实验室流通在 Moonlight 一代就已成形，§2.3 的 K2 叙事是它的旗舰规模续集。
 
 另记一笔谱系内回流：Kimi Linear 论文的发布档 checkpoint 用 5.7T tokens，正是「对齐 Moonlight 预训练量」（4.4 §4，论文 Appendix D 口径）——Moonlight 的训练量成了谱系内后续公平对照的基准刻度。
 
@@ -60,7 +60,7 @@ $$
 
 **符号**： $W^{QC,h}, W^{KC,h}$：第 $h$ 头内容通道的逐头 Q/K 因子（MLA 吸收形式里的逐头矩阵，4.1 §4.3）； $W^{QR,h}$：第 $h$ 头的 rope query 投影；共享 $W^{KR}$ 不出现在式 (4) 中。对账一行：内容项 $z^{C} \propto W^{QC} (W^{KC})^{\top}$ 缩 $\sqrt{\gamma} \times \sqrt{\gamma} = \gamma$；位置项 $z^{R} \propto W^{QR} (W^{KR})^{\top}$ 缩 $\gamma$（ $W^{KR}$ 共享、按头缩放会串扰其余头——位置项的 $\gamma$ 只能整个压在逐头的 $q^{R}$ 上）；两项同缩 $\gamma^{h}$，总分 $z = z^{C} + z^{R}$ 缩 $\gamma^{h}$，触发后新峰值恰为 $\tau$，未触发头 $\gamma^{h} = 1$ 为恒等。这份不对称是 MLA 结构强制的而非设计偏好：内容项两侧都有逐头矩阵可均摊 $\sqrt{\gamma}$（均摊避免单侧范数塌缩，练习 2 讨论其与 weight decay 的联动），位置项的 key 侧是共享件、无处可摊。缩放在内容子空间与位置子空间各自均匀——子空间内方向结构不变，该头的 attention 分布被整体「降温」 $\gamma^{h}$ 倍、熵抬升；注意「head 内所有 key 同比例缩小」对 MLA 不成立：共享 $k^{R}$ 保持原值，逐头收缩只发生在内容 key 与两条 query 通道上。
 
-把式 (3)(4) 放进时间维度读： $S_{\max}^{h}$ 是一条随训练演化的轨迹，式 (4) 是它的反射壁——越界即被精确压回 $\tau$，未越界时优化器照常工作、可以把 logit 再度养大。稳态因此不是不动点而是贴壁振荡，触发频率由高走低的曲线对应「logit 漂移速度对监控周期」的赛跑结果。这与 4.5 §3.2 (i) 对 aux-loss-free 偏置的极限环分析同型：控制回路类药物的稳态都不是点，而是围绕目标的带。MuonClip 的名字由此也读得通——Muon 管更新几何（动量更新正交化、谱形受控），QK-clip 管 logit 幅值的事后投影，「优化器 + 控制器」两段拼成一个词。工作点论文已给实数： $\tau = 100$（论文 §2.1；Appendix D 另有 $\tau = 30$ 的小尺度消融）；触发曲线同论文——前 70k 步有 12.7% 的头被触发，其后全部头的峰值低于阈值、控制器自退役（Appendix D 口径）。「贴壁振荡」的实测形状因而是早期密集触发、后期恒等；摘要的 zero loss spike 声明（15.5T tokens 全程，[A]）与这条曲线互证。
+把式 (3)(4) 放进时间维度读： $S_{\max}^{h}$ 是一条随训练演化的轨迹，式 (4) 是它的反射壁——越界即被精确压回 $\tau$，未越界时优化器照常工作、可以把 logit 再度养大。稳态因此不是不动点而是贴壁振荡，触发频率由高走低的曲线对应「logit 漂移速度对监控周期」的赛跑结果。这与 4.5 §3.2 (i) 对 aux-loss-free 偏置的极限环分析同型：控制回路类装置的稳态都不是点，而是围绕目标的带。MuonClip 的名字由此也读得通——Muon 管更新几何（动量更新正交化、谱形受控），QK-clip 管 logit 幅值的事后投影，「优化器 + 控制器」两段拼成一个词。工作点论文已给实数： $\tau = 100$（论文 §2.1；Appendix D 另有 $\tau = 30$ 的小尺度消融）；触发曲线同论文——前 70k 步有 12.7% 的头被触发，其后全部头的峰值低于阈值、控制器自退役（Appendix D 口径）。「贴壁振荡」的实测形状因而是早期密集触发、后期恒等；摘要的 zero loss spike 声明（15.5T tokens 全程，[A]）与这条曲线互证。
 
 这个设计的谱系位置要说准——它是**第三种 logit 稳定路线**，与 2.7 的两条既有路线同一目标、不同作用点：
 

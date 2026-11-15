@@ -11,7 +11,7 @@ DDPM 的默认配置从纯噪声采出一张图要 1000 次网络前向（[Ho et
 1. **一个可优化的训练目标**：给定来自未知真实分布 $p_{data}$ 的样本集，目标函数必须能给出关于参数 $\theta$ 的梯度，且梯度方向指向「模型分布 $p_\theta$ 更接近 $p_{data}$」；
 2. **一条可执行的采样路径**：训练完成后，能从某个已知的简单分布（标准高斯、bos token）出发，产出近似服从 $p_\theta$ 的样本，并标明这条路径要走几步、每步几次网络前向。
 
-五大家族——自回归（autoregressive, AR）、变分自编码器（variational autoencoder, VAE）、生成对抗网络（generative adversarial network, GAN）、归一化流（normalizing flow）、扩散模型（diffusion model）与 flow matching（FM）——对这两条的回答各不相同。本章用四个坐标把它们放进同一张表：
+五大家族——自回归（autoregressive, AR）、变分自编码器（variational autoencoder, VAE）、生成对抗网络（generative adversarial network, GAN）、归一化流（normalizing flow）、扩散模型与 flow matching（diffusion / FM，同族，本章按一族处理）——对这两条的回答各不相同。本章用四个坐标把它们放进同一张表：
 
 - **优化什么**：精确似然、似然的下界、minimax 对抗目标，还是一个回归目标；
 - **怎么采样**：一次前向、顺序串行，还是沿时间轴迭代；

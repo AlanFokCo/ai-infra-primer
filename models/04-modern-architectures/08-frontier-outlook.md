@@ -4,7 +4,7 @@
 
 ## 1. Diffusion LLM：把链式法则换成逐步去掩码
 
-LLaDA 把掩码扩散（masked diffusion）推到 8B 参数、从头训练、并与同规模自回归（AR）基线同量级对照（[Nie et al., 2025](../references.md)，arXiv:2502.09992，[A]）——文本扩散第一次有了「同量级 AR 对照」意义上的证据，而不再是玩具规模的存在性声明。本节给出它的完整形式化，然后与 AR 做公式级对账。
+LLaDA 把掩码扩散（masked diffusion）推到 8B 参数、从头训练、并与同规模自回归（AR）基线同量级对照（[Nie et al., 2025](../references.md)，arXiv:2502.09992，[A]）——文本扩散第一次有了「同量级 AR 对照」意义上的证据，而不再是玩具规模的存在性声明。
 
 **Forward：逐 token 独立腐蚀。** 词表外加一个吸收态（absorbing state）[M]；调度 $\alpha_t$ 从 $\alpha_0 = 1$ 单调降到 $\alpha_1 = 0$。每个位置独立地以概率 $1 - \alpha_t$ 被替换为 [M]：
 

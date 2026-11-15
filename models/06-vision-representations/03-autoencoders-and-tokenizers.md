@@ -4,7 +4,7 @@
 
 ## 1. 压缩的账：为什么不在像素空间生成
 
-一张 $512 \times 512$ 的 RGB 图像是 $786432$ 个标量。把它直接塞进 1.1 的样本空间框架，就是一条长 26 万的序列（每像素 3 个 8-bit 值），任何自回归模型都无法在这个长度上工作；6.1 式 (3) 的硬切补丁 $N = HW/p^{2}$ 也只是折中—— $p$ 取 8 时仍有 4096 个 token，且每个 patch 内部的高频结构被一次线性投影（6.1 式 (2)）提前丢掉，找不回来。
+一张 $512 \times 512$ 的 RGB 图像是 $786432$ 个标量。把它直接塞进 1.1 的样本空间框架，就是一条长 26 万的序列（每像素 3 个 8-bit 值），任何自回归模型都无法在这个长度上工作；6.1 式 (3) 的硬切 patch $N = HW/p^{2}$ 也只是折中—— $p$ 取 8 时仍有 4096 个 token，且每个 patch 内部的高频结构被一次线性投影（6.1 式 (2)）提前丢掉，找不回来。
 
 autoencoder 的回答是把「下采样」从固定算子换成可学映射：encoder $E$ 把 $x \in \mathbb{R}^{H \times W \times C}$ 压成 latent $z \in \mathbb{R}^{h \times w \times c}$，空间压缩率 $f = H/h$（全书约定：f8 即 $h = H/8$，f32 即 $h = H/32$）；decoder $D$ 学近似逆映射 $\hat{x} = D(z)$，训练目标让重建误差足够小。同一张 $512^{2}$ 图：f8 留 $64 \times 64 = 4096$ 个位点，f32 留 $16 \times 16 = 256$ 个，f64 只剩 $8 \times 8 = 64$ 个——已经低于 ViT 224/16 的 196 这一量级。与硬切 patch 的差别在信息论意义上：patch 投影是一个固定的线性算子，丢什么由网格决定； $E$ 是被重建目标监督过的非线性压缩，丢什么、留什么由数据决定。
 
@@ -164,7 +164,7 @@ decoder 只吃量化结果： $\hat{x} = D(z_q)$。量化之后，图像的表�
 
 ### 3.2 straight-through estimator：梯度拷贝推导
 
-式 (11) 的 $\mathrm{argmin}$ 不可微，且断得很干净：在 $z_e$ 的几乎所有取值处，微小扰动不改变最近邻编号， $\partial z_q / \partial z_e = 0$；在切换面上偏导无定义。反向传播到 $z_q$ 为止——decoder 与重建项有梯度，encoder 与 codebook 之外的参数一分梯度都收不到。
+式 (11) 的 $\mathrm{argmin}$ 不可微，且断得很干净：在 $z_e$ 的几乎所有取值处，微小扰动不改变最近邻编号， $\partial z_q / \partial z_e = 0$；在切换面上偏导无定义。反向传播到 $z_q$ 为止——重建项的梯度只到 decoder；encoder 与 codebook 在这条路上一分梯度都收不到（codebook 的更新走式 (14) 自己的两项，见 §3.3）。
 
 straight-through estimator（STE，直通估计器）的构造只有一步：定义一个前向值等于 $z_q$、反向雅可比等于恒等的替代节点，
 
@@ -199,7 +199,7 @@ $$
 
 与式 (8) 的对照值得停一步：离散化之后不再有解析后验，VAE 框架里的 KL 项去了哪里？VQ-VAE 论文的接法：取确定性后验 $`q(k^{*} \mid x) = 1`$（one-hot 在 argmin 上）、先验为 $K$ 类均匀分布，则 ELBO 的 KL 项退化成常数 $\log K$，不进任何梯度——式 (14) 的三项正是这个退化 ELBO 剩下的可优化部分。正则的角色由 codebook loss 与 commitment loss 接管：一个管 code 跟着数据走，一个管数据贴着 code 走。
 
-codebook loss 其实不必走梯度。对 entry $e_i$ 而言，式 (14) 第二项关于 $e_i$ 的极小有闭式：设 batch 内被分到 $e_i$ 的 encoder 输出集合为 $S_i$，对 $\sum_{z \in S_i} \Vert z - e_i \Vert^{2}$ 求导置零得 $e_i = |S_i|^{-1} \sum_{z \in S_i} z$——被分配点的均值，即 K-Means 更新（练习 2 推这一步）。全量数据的闭式解不能直接用于小 batch 训练，论文在 Appendix A.1 给出它的在线版——EMA 更新：
+codebook loss 不必走梯度。对 entry $e_i$ 而言，式 (14) 第二项关于 $e_i$ 的极小有闭式：设 batch 内被分到 $e_i$ 的 encoder 输出集合为 $S_i$，对 $\sum_{z \in S_i} \Vert z - e_i \Vert^{2}$ 求导置零得 $e_i = |S_i|^{-1} \sum_{z \in S_i} z$——被分配点的均值，即 K-Means 更新（练习 2 推这一步）。全量数据的闭式解不能直接用于小 batch 训练，论文在 Appendix A.1 给出它的在线版——EMA 更新：
 
 $$
 N_i \leftarrow \gamma N_i + (1 - \gamma)\thinspace n_i, \qquad m_i \leftarrow \gamma m_i + (1 - \gamma) \sum_{z \in S_i} z, \qquad e_i = \frac{m_i}{N_i} \qquad (15)
@@ -247,7 +247,7 @@ $$
 
 **符号**： $G_L$：decoder 最后一层的参数； $\nabla_{G_L}$ 取梯度后按范数计。机制一目了然：让两项在「对输出端的拉力」上始终同阶——训练早期重建梯度大、 $\lambda$ 自动缩小对抗项；重建收敛后对抗项接管细节。量化环节沿用 §3 的 STE（式 (12)(13)）与 EMA（式 (15)），原样嵌进式 (17) 的最小化侧。
 
-落地坐标：VQGAN 的常用档是 f16、 $K = 1024$（官方 checkpoint 命名 `vqgan_imagenet_f16_1024` 即此口径）—— $256^{2}$ 图被压成 $16 \times 16 = 256$ 个 code 的网格，「图像 = 256 个离散 token」由此成为可用实现，后来一大票 T2I 系统的 tokenizer 由此起步。
+落地坐标：VQGAN 的常用档是 f16、 $K = 1024$（官方 checkpoint 命名 `vqgan_imagenet_f16_1024` 即此口径）—— $256^{2}$ 图被压成 $16 \times 16 = 256$ 个 code 的网格，「图像 = 256 个离散 token」由此成为可用实现——后来的 T2I 系统（SD 系、DALL·E 系）的 tokenizer 都由此起步。
 
 ## 5. RVQ：残差量化递推与 bitrate 账
 
@@ -341,9 +341,9 @@ $$
 
 block 输出 = 卷积主路 + 捷径输出，中间 stage 按同一原则改造。机制：捷径把可保结构的低频分量直通下去，每个 block 的可学支路只需拟合本级的局部残差，优化景观从「学整图」变成「逐级学差分」——深压缩下这是训得动与训不动的分界（论文 Figure 3 的消融对照）。
 
-**(b) decoupled high-resolution adaptation（解耦高分辨率适配）**。动机是一笔实测账：f64 AE 从 $256^{2}$ 直接泛化到 $1024^{2}$ 时 rFID 从 0.50 掉到 7.40，而同设置下 f8 AE 反而从 0.51 改善到 0.19——论文称之为高空间压缩 AE 的 generalization penalty，压缩率越高越重。直接上高分辨率训练则两头挨打：训练成本高，且高分辨率 GAN 训练不稳定。DC-AE 的解法是三阶段（论文 Figure 6 口径）：(i) **phase 1 低分辨率全量训练**：完整 AE 在低分辨率（ $256^{2}$ 口径）上训，loss 为 L1 + LPIPS，不含 GAN；(ii) **phase 2 高分辨率 latent adaptation**：高分辨率下只调中间层——encoder 头部与 decoder 的**输入层**——其余冻结，loss 同 phase 1；作用是适配 latent 空间以缓解 generalization penalty，实验上只调中间层即够，显存从全量高分辨率训练的 153.98 GB 降到 67.81 GB（ $1024^{2}$、batch 12 口径）；(iii) **phase 3 低分辨率 local refinement**：GAN（PatchGAN）loss 解耦到本阶段才进场，只调 decoder 的头部层、其余全部冻结，并且在**低分辨率**上跑。phase 3 的机制依据有两条：重建 loss 单独已足够学到内容与语义，GAN loss 的边际贡献集中在局部细节与去 artifact（论文 Figure 5 对照），只调 decoder 头部即可拿到这份收益且比全量训练更准；同时冻结其余层保证 GAN 训练不改动 latent 空间，于是本阶段可以留在低分辨率、不必担心 generalization penalty——既绕开高分辨率 GAN 的不稳定，又再省一份训练成本。
+**(b) decoupled high-resolution adaptation（解耦高分辨率适配）**。动机是一笔实测账：f64 AE 从 $256^{2}$ 直接泛化到 $1024^{2}$ 时 rFID 从 0.50 恶化到 7.40，而同设置下 f8 AE 反而从 0.51 改善到 0.19——论文称之为高空间压缩 AE 的 generalization penalty，压缩率越高越重。直接上高分辨率训练则两头挨打：训练成本高，且高分辨率 GAN 训练不稳定。DC-AE 的解法是三阶段（论文 Figure 6 口径）：(i) **phase 1 低分辨率全量训练**：完整 AE 在低分辨率（ $256^{2}$ 口径）上训，loss 为 L1 + LPIPS，不含 GAN；(ii) **phase 2 高分辨率 latent adaptation**：高分辨率下只调中间层——encoder 头部与 decoder 的**输入层**——其余冻结，loss 同 phase 1；作用是适配 latent 空间以缓解 generalization penalty，实验上只调中间层即够，显存从全量高分辨率训练的 153.98 GB 降到 67.81 GB（ $1024^{2}$、batch 12 口径）；(iii) **phase 3 低分辨率 local refinement**：GAN（PatchGAN）loss 解耦到本阶段才进场，只调 decoder 的头部层、其余全部冻结，并且在**低分辨率**上跑。phase 3 的机制依据有两条：重建 loss 单独已足够学到内容与语义，GAN loss 的边际贡献集中在局部细节与去 artifact（论文 Figure 5 对照），只调 decoder 头部即可拿到这份收益且比全量训练更准；同时冻结其余层保证 GAN 训练不改动 latent 空间，于是本阶段可以留在低分辨率、不必担心 generalization penalty——既绕开高分辨率 GAN 的不稳定，又再省一份训练成本。
 
-账： $512^{2}$ 图经 f32 得 $16 \times 16 = 256$ 个 latent 位点、f64 得 $8 \times 8 = 64$ 个——对照 §1 的像素账，序列长度再省一到两个量级。DC-AE 是 SANA 文生图系统的 latent 基石（SANA 用 f32 档，P7 展开）；官方实现在 mit-han-lab/efficientvit 的 `applications/dc_ae` 目录（[efficientvit](../references.md)，[A]）。
+账： $512^{2}$ 图经 f32 得 $16 \times 16 = 256$ 个 latent 位点、f64 得 $8 \times 8 = 64$ 个——对照 §1 的 26 万位像素序列省约三个半量级，相对 p=8 的 patch 序列再省一到两个量级。DC-AE 是 SANA 文生图系统的 latent 基石（SANA 用 f32 档，P7 展开）；官方实现在 mit-han-lab/efficientvit 的 `applications/dc_ae` 目录（[efficientvit](../references.md)，[A]）。
 
 ### 7.4 离散 vs 连续：选择表
 

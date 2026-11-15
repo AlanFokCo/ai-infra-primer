@@ -1,0 +1,58 @@
+[
+  {
+    "file": "models/02-transformer-anatomy/05-positional-encoding.md",
+    "loc": "§5（line 297）",
+    "severity": "S2",
+    "quote": "NoPE 训练窗内表现与显式方案相当，若干长度泛化设置中不落下风——causal 结构自带的位置信号足以支撑相当程度的位置行为。",
+    "issue": "含糊量词无数值（rubric B1）：「若干」长度泛化设置不给个数或名称，「相当程度」再叠一层含糊；此处是 [B] 级文献结论的转述，论文里有具体设置可点名，两处虚词叠用使证据强度不可核验。",
+    "fix": "给出具体设置数或名称（如「在其扫描的 N 个长度泛化设置（训练 X token 外推 Y）中不落下风」）；若不想进细节，删去量化暗示，改成明确的定性表述并保留 [B] 粒度注记。"
+  },
+  {
+    "file": "models/02-transformer-anatomy/06-ffn.md",
+    "loc": "§1（line 19）",
+    "severity": "S3",
+    "quote": "FFN 中间量是反向传播前显存里的大头之一，也是激活检查点（training 维度）要重的账。",
+    "issue": "措辞脱字致误读：「要重的账」疑漏「算」字（激活检查点的机制是反向时重算中间量），现文可读作「要变重的账」，句意断裂。",
+    "fix": "改为「也是激活检查点（training 维度）要重算的那笔账」。"
+  },
+  {
+    "file": "models/02-transformer-anatomy/07-norm-and-residual.md",
+    "loc": "章首 metadata 行（line 3）",
+    "severity": "S3",
+    "quote": "残差侧给出梯度流恒等式 $\\partial L / \\partial x_l = (\\partial L / \\partial x_L)(I + \\partial \\sum f_i / \\partial x_l)$ 的 identity 项推导",
+    "issue": "同一短语内中英混用指同一物：「恒等式」接「identity 项」，而正文 §4 标题与全文统一用「恒等项」。metadata 行也在审查范围内。",
+    "fix": "metadata 中「identity 项」改为「恒等项」，与 §4 标题「梯度流的恒等项」对齐。"
+  },
+  {
+    "file": "models/02-transformer-anatomy/07-norm-and-residual.md",
+    "loc": "§1（line 35）与 §3/§5.1（lines 81、85、86、88、159）",
+    "severity": "S2",
+    "quote": "把被减均值吃掉的逐特征直流分量以可学形式还回（line 35）；后文五处：「stream 的 DC 分量」（line 81）、「全部特征共享的 DC 分量」（line 85）、「stream 的 DC 分量随训练自由漂移」（line 86）、「DC 分量只是一个固定方向上的内容」（line 88）、「被减均值吃掉的那一格正是 DC 方向」（line 159）",
+    "issue": "术语漂移（rubric B4）：同一概念（沿 1_d 方向的直流分量）首次出现用「直流分量」且未附英文对照，后文六处全部换成「DC 分量 / DC 方向」，违反本书「首次出现中文（English）后统一」的术语规则，读者需自行对齐两词。",
+    "fix": "line 35 首现处写「逐特征直流分量（DC 分量）」，后文统一用「DC 分量」。"
+  },
+  {
+    "file": "models/02-transformer-anatomy/07-norm-and-residual.md",
+    "loc": "§5.3（line 190）",
+    "severity": "S3",
+    "quote": "深度越深，两种摆放在初始化处的末层梯度差越多，这正是 Post-LN 在深模型上先撑不住的定量形态。",
+    "issue": "语法欠通：「差越多」在「越…越…」结构中缺补语标记（「差」此处表相差义，需「得」），宜为「差得越多」或「差距越大」。",
+    "fix": "改为「两种摆放在初始化处的末层梯度差距越大」。"
+  },
+  {
+    "file": "models/02-transformer-anatomy/07-norm-and-residual.md",
+    "loc": "§9（line 277）",
+    "severity": "S3",
+    "quote": "结构上正是本章式 (9) 的 Pre-LN 行加 final norm 收尾，在结构上绕开了 Post-LN 路线的 warmup 困境（§5.4）。",
+    "issue": "一句之内「结构上／在结构上」重复两次，第二次为冗余项（rubric C 可紧可松的措辞）。",
+    "fix": "第二处改为「由此绕开」或直接删去「在结构上」。"
+  },
+  {
+    "file": "models/02-transformer-anatomy/08-assembly.md",
+    "loc": "§7（line 446）",
+    "severity": "S3",
+    "quote": "在小 GEMM  regime 里这些非计算成分的占比更大",
+    "issue": "「GEMM」与「regime」之间双空格，排版 typo。",
+    "fix": "双空格改单空格。"
+  }
+]

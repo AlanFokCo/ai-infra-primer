@@ -8,7 +8,7 @@
 
 | 维度 | 状态 | 范围 |
 | --- | --- | --- |
-| [models/](models/README.md) | 进行中（W1） | 生成式模型的数学：文本 LLM 主干、视觉表征、扩散生图、多模态 LLM、视频生成、语音音频（10 Part / 51 章） |
+| [models/](models/README.md) | 已关闭（W1–W7 全部审结） | 生成式模型的数学：文本 LLM 主干、视觉表征、扩散生图、多模态 LLM、视频生成、语音音频（10 Part / 51 章） |
 | [training/](training/README.md) | 占位 | 训练算法与工程：optimizer、RLHF（PPO / GRPO）、FP8、分布式训练策略 |
 | [inference/](inference/README.md) | 占位 | serving 系统：continuous batching、PagedAttention、speculative decoding 的系统实现 |
 | [gpu/](gpu/README.md) | 占位 | GPU 硬件与 kernel：内存层级、roofline、FlashAttention 等算子的实现层 |
@@ -27,6 +27,6 @@
 
 ## 项目状态
 
-`波次 W1` `models 维度写作中` `training / inference / gpu / cluster 占位`
+`models 维度 51 章已关闭（W1–W7）` `training / inference / gpu / cluster 占位` `站点上线`
 
 逐章进度（未开始 / 已写 / 审查中 / 已关闭）见 [models/README.md](models/README.md) 的进度表。

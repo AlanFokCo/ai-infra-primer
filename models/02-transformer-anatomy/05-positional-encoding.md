@@ -294,7 +294,7 @@ def rope_half_split(x, cos, sin):
 
 ## 5. NoPE：causal mask 自带的隐式位置信号
 
-一个不注入任何位置编码的 decoder-only Transformer 并非位置盲——2.3 §6 的等变命题以「无 mask」为前提，而 causal mask（2.4 式 (3)）已经把位置锚进计算图：第 $t$ 行恰好看见 $t$ 个 key。换句话说，带 causal mask 的 attention 对一般置换本就不再等变——mask 自身就是位置敏感对象，等变命题的前提条件已被架构自己破坏。机制展开：设各位置 value 近似同分布（均值 $\mu$、方差 $\sigma^{2}$），均匀 attention 下位置 $t$ 的输出是 $t$ 个 value 的均值，其方差 $\sigma^{2} / t$ 随 $t$ 单调衰减——「输出的尺度与集中度」本身就是 $t$ 的可读签名，行归一化的分母里也明着含 $t$。第一层即可学出「均分 attention、从响应幅度读出 $1/t$」式的计数电路，位置信息沿层逐层加工。Kazemnejad et al. 在 decoder-only 设置下系统扫描了 NoPE 与各显式编码（[Kazemnejad et al., 2023](../references.md)，arXiv:2305.19466，[B]）：NoPE 训练窗内表现与显式方案相当，若干长度泛化设置中不落下风——causal 结构自带的位置信号足以支撑相当程度的位置行为。
+一个不注入任何位置编码的 decoder-only Transformer 并非位置盲——2.3 §6 的等变命题以「无 mask」为前提，而 causal mask（2.4 式 (3)）已经把位置锚进计算图：第 $t$ 行恰好看见 $t$ 个 key。换句话说，带 causal mask 的 attention 对一般置换本就不再等变——mask 自身就是位置敏感对象，等变命题的前提条件已被架构自己破坏。机制展开：设各位置 value 近似同分布（均值 $\mu$、方差 $\sigma^{2}$），均匀 attention 下位置 $t$ 的输出是 $t$ 个 value 的均值，其方差 $\sigma^{2} / t$ 随 $t$ 单调衰减——「输出的尺度与集中度」本身就是 $t$ 的可读签名，行归一化的分母里也明着含 $t$。第一层即可学出「均分 attention、从响应幅度读出 $1/t$」式的计数电路，位置信息沿层逐层加工。Kazemnejad et al. 在 decoder-only 设置下系统扫描了 NoPE 与各显式编码（[Kazemnejad et al., 2023](../references.md)，arXiv:2305.19466，[B]）：NoPE 在训练窗内与显式方案相当，在其扫描的长度泛化设置（训练窗截断、paraphrase 检索外推等）中不落下风——causal 结构自带的位置信号足以支撑位置行为。
 
 边界同样清楚。其一，双向（encoder）场景没有 causal mask，NoPE 不适用——该结论只属于 decoder-only。其二，计数信号是「长度」而非「内容寻址的相对位移」：表达「向左 3 位」这类量需网络从计数特征里二次构造，RoPE 则把它免费钉在 score 上（式 (13)）。其三，该论文无官方代码（[B]），结论的外推范围以其实验设置为准。现实坐标：本章四个锚点 config（Llama-3.1 / OLMo-2 / Qwen3 / DeepSeek-V3）全部带 rope_theta 字段、无一家走 NoPE——NoPE 的定位是诊断性对照组：它标出「架构白送的位置信号」这条下限，显式编码的收益都应在它之上衡量。
 
