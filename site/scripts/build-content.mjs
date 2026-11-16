@@ -68,8 +68,8 @@ const DIMENSIONS = [
       { num: 8, dir: '08-rl-math', titleEn: 'RL Mathematics', titleZh: 'RL 数学详解', tagline: '策略梯度定理、GAE、PPO、GRPO 与变体、LLM-RL 系统实现', wave: 'W5' },
       { num: 9, dir: '09-post-training', titleEn: 'Post-Training', titleZh: '后训练全流程', tagline: 'SFT、RLHF 全链、DPO 家族、RFT 与拒绝采样、RLVR 与推理模型', wave: 'W6' },
     ],
-    // W0：尚无章节落地，断言 0；W1 起随当波应发布章数滚动收紧（10→16→24→29→34→39）
-    asserts: { chapters: 0, parts: 0, refsMin: 0 },
+    // 建设期断言 = 当波应发布章数（滚动收紧）：W1=10 / W2=16 / W3=24 / W4=29 / W5=34 / W6=39
+    asserts: { chapters: 10, parts: 2, refsMin: 21 },
   },
 ];
 

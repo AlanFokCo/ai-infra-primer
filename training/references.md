@@ -36,7 +36,46 @@
 
 按 Part 分组；research pass 向对应 Part 的表追加，chapter → sources 映射体现在「被引章节」字段。
 
-（骨架：各 Part 表由对应波次的 research pass 建立——W1 建 P1/P2 表，W2 建 P3/P4，W3 建 P5/P6，W4 建 P7，W5 建 P8，W6 建 P9。）
+> **W1 research pass 收录说明（2026-11-16）**：下列条目的 arXiv ID↔标题经 arXiv API（export.arxiv.org）复核——大部分经 spec 预核实（2026-11-16，见 spec 附录）与 spec 四路对抗审查（A/B/C 三路）双重核实；repo 路径经 GitHub contents API 核实。W1 写作只需要 Part 1-2 组；跨波共享锚点（deepseekv3 / llama3 / olmo2 等）随本表先行收录，后续波次扩充其余 Part 组。
+
+### Part 1 · Autograd 与反向机制
+
+| key | 标题 | 作者 | arXiv ID / URL | 证据等级 | 核实日期 | 被引章节 |
+| --- | --- | --- | --- | --- | --- | --- |
+| baydin-ad-survey | Automatic Differentiation in Machine Learning: a Survey | Baydin et al. | arXiv:1502.05767 | [B] | 2026-11-16 | 1.1 |
+| pytorch-repo | pytorch/pytorch repo（torch.autograd、torch.optim、torch.utils.checkpoint、torch.nn.utils.clip_grad_norm_、torch.distributed.checkpoint） | PyTorch | https://github.com/pytorch/pytorch | 教学参照 | 2026-11-16 | 1.1, 1.2, 1.3, 1.4, 1.5, 2.1, 2.2, 2.4 |
+| pytorch-ddp | PyTorch Distributed: Experiences on Accelerating Data Parallel Training | Li et al. | arXiv:2006.15704 | [A] | 2026-11-16 | 1.1, 1.5, 4.1 |
+| flashattention | FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness | Dao et al. | arXiv:2205.14135 | [A] | 2026-11-16 | 1.2 |
+| liger-kernel | Liger Kernel: Efficient Triton Kernels for LLM Training | Hsu et al.（LinkedIn） | arXiv:2410.10989 ; https://github.com/linkedin/Liger-Kernel | [A] | 2026-11-16 | 1.2, 3.1 |
+| gradient-checkpointing | Training Deep Nets with Sublinear Memory Cost | Chen et al. | arXiv:1604.06174 | [B] | 2026-11-16 | 1.2, 1.4 |
+| megatron-sp | Reducing Activation Recomputation in Large Transformer Models | Korthikanti et al. | arXiv:2205.05198 | [A] | 2026-11-16 | 1.4, 5.2, 6.1 |
+| mixed-precision | Mixed Precision Training | Micikevicius et al. | arXiv:1710.03740 | [B] | 2026-11-16 | 1.3 |
+| fp8-formats | FP8 Formats for Deep Learning | Micikevicius et al. | arXiv:2209.05433 | [B] | 2026-11-16 | 1.3 |
+| deepseekv3 | DeepSeek-V3 Technical Report | DeepSeek-AI | arXiv:2412.19437 | [A] | 2026-11-16 | 1.3, 2.2, 2.3, 2.4, 4.4, 5.1, 5.3, 5.4, 5.5, 7.2, 7.5 |
+
+### Part 2 · Optimizer 与 LR 动力学
+
+| key | 标题 | 作者 | arXiv ID / URL | 证据等级 | 核实日期 | 被引章节 |
+| --- | --- | --- | --- | --- | --- | --- |
+| polyak1964 | Some Methods of Speeding up the Convergence of Iteration Methods | Polyak | USSR Computational Mathematics and Mathematical Physics 4(5):1-17（无 arXiv） | [B] | 2026-11-16 | 2.1 |
+| sutskever2013 | On the Importance of Initialization and Momentum in Deep Learning | Sutskever et al. | ICML 2013（PMLR 28(3):1139-1147，无 arXiv） | [B] | 2026-11-16 | 2.1 |
+| adam | Adam: A Method for Stochastic Optimization | Kingma & Ba | arXiv:1412.6980 | [B] | 2026-11-16 | 2.2 |
+| adamw | Decoupled Weight Decay Regularization | Loshchilov & Hutter | arXiv:1711.05101 | [A] | 2026-11-16 | 2.2, 2.4 |
+| amsgrad | On the Convergence of Adam and Beyond | Reddi et al. | arXiv:1904.09237 | [B] | 2026-11-16 | 2.2 |
+| gpt3 | Language Models are Few-Shot Learners | Brown et al. | arXiv:2005.14165 | [B] | 2026-11-16 | 2.2, 2.3, 2.4, 7.2 |
+| llama2 | Llama 2: Open Foundation and Fine-Tuned Chat Models | Touvron et al. | arXiv:2307.09288 | [A] | 2026-11-16 | 2.2, 7.2 |
+| llama3 | The Llama 3 Herd of Models | Grattafiori et al. | arXiv:2407.21783 | [A] | 2026-11-16 | 2.2, 2.3, 2.5, 7.2, 7.3, 7.4, 7.5, 9.1, 9.4 |
+| olmo2 | 2 OLMo 2 Furious | Team OLMo et al. | arXiv:2501.00656 | [A] | 2026-11-16 | 2.2, 2.3, 2.4, 4.4, 5.5, 7.2, 7.3 |
+| critical-batch | An Empirical Model of Large-Batch Training | McCandlish et al. | arXiv:1812.06162 | [B] | 2026-11-16 | 1.5, 2.1, 2.3 |
+| linear-scaling | Accurate, Large Minibatch SGD: Training ImageNet in 1 Hour | Goyal et al. | arXiv:1706.02677 | [B] | 2026-11-16 | 2.1, 2.3 |
+| minicpm | MiniCPM: Unveiling the Potential of Small Language Models with Scalable Training Strategies | Hu et al. | arXiv:2404.06395 | [A] | 2026-11-16 | 2.3, 7.1 |
+| radam | On the Variance of the Adaptive Learning Rate and Beyond | Liu et al. | arXiv:1908.03265 | [A] | 2026-11-16 | 2.3 |
+| glm-130b | GLM-130B: An Open Bilingual Pre-trained Model | Zeng et al. | arXiv:2210.02414 | [A] | 2026-11-16 | 2.4, 7.3 |
+| st-moe | ST-MoE: Designing Stable and Transferable Sparse Expert Models | Zoph et al. | arXiv:2202.08906 | [B] | 2026-11-16 | 2.4, 3.1 |
+| muon-blog | Muon: An optimizer for hidden layers（Keller Jordan 博客，Muon 原始出处） | Jordan | https://kellerjordan.github.io/posts/muon/ | 教学参照 | 2026-11-16 | 2.5 |
+| muon-repo | KellerJordan/Muon repo（Newton-Schulz 迭代官方实现） | Jordan | https://github.com/KellerJordan/Muon | 教学参照 | 2026-11-16 | 2.5 |
+| moonlight | Muon is Scalable for LLM Training（Moonlight） | Liu et al.（Moonshot AI） | arXiv:2502.16982 ; https://github.com/MoonshotAI/Moonlight | [A] | 2026-11-16 | 2.5, 7.2 |
+| kimi-k2 | Kimi K2: Open Agentic Intelligence | Kimi Team | arXiv:2507.20534 | [A] | 2026-11-16 | 2.5, 5.5 |
 
 ## 术语表
 

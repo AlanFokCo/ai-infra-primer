@@ -12,6 +12,8 @@ training 维度讲训练动力学与训练系统：autograd 与反向机制、op
 
 章节自包含：每个公式附符号表；跨章前置概念给纯文字指引，不重复展开。
 
+锚定纪律：官方实现引用一律到 repo + 文件 + 函数级并记录核实日期；库内部类名/路径随版本漂移时，正文标注核实时的版本（如「此类名核实于 PyTorch ≤ 2.10」）。
+
 ## 目录
 
 ### Part 1 · Autograd 与反向机制（`01-autograd-and-backprop/`，5 章，W1）
@@ -116,21 +118,21 @@ models 侧交叉链接到这里的章节（training 上线后这些指针生效�
 
 | 章节 | 文件 | 状态 |
 | --- | --- | --- |
-| 1.1 计算图与 autograd 的执行机制 | 01-computation-graph-and-autograd.md | 未开始 |
-| 1.2 训练算子的反向推导 | 02-operator-backward.md | 未开始 |
-| 1.3 混合精度与 FP8 | 03-mixed-precision.md | 未开始 |
-| 1.4 激活内存与 Gradient Checkpointing | 04-gradient-checkpointing.md | 未开始 |
-| 1.5 Gradient Accumulation 与 Micro-batch | 05-gradient-accumulation.md | 未开始 |
+| 1.1 计算图与 autograd 的执行机制 | 01-computation-graph-and-autograd.md | 已关闭 |
+| 1.2 训练算子的反向推导 | 02-operator-backward.md | 已关闭 |
+| 1.3 混合精度与 FP8 | 03-mixed-precision.md | 已关闭 |
+| 1.4 激活内存与 Gradient Checkpointing | 04-gradient-checkpointing.md | 已关闭 |
+| 1.5 Gradient Accumulation 与 Micro-batch | 05-gradient-accumulation.md | 已关闭 |
 
 ### Part 2 · Optimizer 与 LR 动力学（W1）
 
 | 章节 | 文件 | 状态 |
 | --- | --- | --- |
-| 2.1 SGD 与 Momentum 完整推导 | 01-sgd-and-momentum.md | 未开始 |
-| 2.2 Adam → AdamW 完整推导 | 02-adam-and-adamw.md | 未开始 |
-| 2.3 LR Schedule、Warmup 与 Batch 联动 | 03-lr-schedules.md | 未开始 |
-| 2.4 梯度裁剪与稳定性原语 | 04-gradient-clipping-and-stability.md | 未开始 |
-| 2.5 Muon 与谱方法 | 05-muon-and-spectral.md | 未开始 |
+| 2.1 SGD 与 Momentum 完整推导 | 01-sgd-and-momentum.md | 已关闭 |
+| 2.2 Adam → AdamW 完整推导 | 02-adam-and-adamw.md | 已关闭 |
+| 2.3 LR Schedule、Warmup 与 Batch 联动 | 03-lr-schedules.md | 已关闭 |
+| 2.4 梯度裁剪与稳定性原语 | 04-gradient-clipping-and-stability.md | 已关闭 |
+| 2.5 Muon 与谱方法 | 05-muon-and-spectral.md | 已关闭 |
 
 ### Part 3 · Loss 函数族（W2）
 
@@ -203,6 +205,7 @@ models 侧交叉链接到这里的章节（training 上线后这些指针生效�
 | 波次 | 日期 | 覆盖章节 | 审查轮次 | S1 | S2 | S3 | 未关闭项 | 结论 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | W0 | 2026-11-16 | spec 本身（9 Part / 39 章大纲）+ 脚手架 | builder-check ×1（6 findings 全修）+ 四路独立对抗审查 ×1（A: P1-P3 事实与数学 / B: P4-P6 与站点 lint / C: P7-P9 事实与数学 / D: 设计与一致性） | 2（全部关闭：Moonlight-µTransfer 误并、K1.5 语言混杂误归 R1） | 22（全部关闭） | 20（全部清零） | 无 | 放行（四路完整档案见 [training-spec-review-a](../docs/reviews/training-spec-review-a.md) / [b](../docs/reviews/training-spec-review-b.md) / [c](../docs/reviews/training-spec-review-c.md) / [d](../docs/reviews/training-spec-review-d.md)；spec 附录有汇总）。W0 工程：lint 维度参数化 + STYLE_GUIDE 泛化 + 站点维度层（构建与 QA 全绿） |
+| W1 | 2026-11-17 | P1+P2 共 10 章 | 逐章批量审查 × 3 批（批 1: P1 / 批 2: 2.1-2.3 / 批 3: 2.4-2.5+波末 sweep）+ 各批修复轮复审 × 3 | 2（全部关闭：1.4 §5 决策算例误用 GPT-3 基线 114→194 且结论翻转、2.2 §3「m̂²≤v̂ 逐坐标严格成立」伪定理——β1≠β2 时 C-S 不适用、数值反例 2.01η，双口径改写） | 13（全部关闭；含复审新引入 1 条 retain_graph 机制句） | 29（全部清零：修复 27 + 接受登记 2——1.2 §9 的 N 复用与 2.5 的 B 双用均有局部显式声明） | 无 | 暂不放行 → 修复并复审后 10 章全放行（强制重推导 9 项全 pass：1.2 matmul 反向+softmax-CE / 1.3 loss scaling / 1.4 √L / 2.1 momentum 等价+二次碗 / 2.2 bias correction+AdamW 解耦 / 2.3 linear scaling+critical batch / 2.5 msign+NS+尺度匹配；完整档案见 [training-w1-review-p1](../docs/reviews/training-w1-review-p1.md) / [p2a](../docs/reviews/training-w1-review-p2a.md) / [p2b](../docs/reviews/training-w1-review-p2b.md)）。波末收编：lint 脚本修 bash 3.2 下 `$pat`+CJK 误解析崩溃；writer 存疑项裁定 4 项（2 项成立、1 项照录正确、1 项幻影撤改）；/training/ 站点上线（80 页、QA 全绿） |
 
 **跨维度指针 errata 记录**（spec §2 条款授权，仅限指针句的最小修订）：
 

@@ -17,6 +17,12 @@ const PAGES = [
   ['ch-moe', '/models/04-modern-architectures/05-moe/'], // 表格密
   ['ch-ddpm', '/models/07-diffusion-image-generation/02-ddpm/'], // 推导重章
   ['ch-assembly', '/models/02-transformer-anatomy/08-assembly/'], // 代码+ASCII
+  // training 维度（W1 起；spec §8：公式密 / 表格密 / 推导重章各一）
+  ['training', '/training/'],
+  ['tr-references', '/training/references/'],
+  ['tr-ch-mixed-precision', '/training/01-autograd-and-backprop/03-mixed-precision/'], // 公式密
+  ['tr-ch-adamw', '/training/02-optimizers/02-adam-and-adamw/'], // 表格密（超参对照）
+  ['tr-ch-muon', '/training/02-optimizers/05-muon-and-spectral/'], // 推导重章
 ];
 
 const VIEWPORTS = [
