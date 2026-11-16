@@ -64,7 +64,7 @@
 | amsgrad | On the Convergence of Adam and Beyond | Reddi et al. | arXiv:1904.09237 | [B] | 2026-11-16 | 2.2 |
 | gpt3 | Language Models are Few-Shot Learners | Brown et al. | arXiv:2005.14165 | [B] | 2026-11-16 | 2.2, 2.3, 2.4, 7.2 |
 | llama2 | Llama 2: Open Foundation and Fine-Tuned Chat Models | Touvron et al. | arXiv:2307.09288 | [A] | 2026-11-16 | 2.2, 4.4, 7.2 |
-| llama3 | The Llama 3 Herd of Models | Grattafiori et al. | arXiv:2407.21783 | [A] | 2026-11-16 | 2.2, 2.3, 2.5, 4.3, 4.4, 7.2, 7.3, 7.4, 7.5, 9.1, 9.4 |
+| llama3 | The Llama 3 Herd of Models | Grattafiori et al. | arXiv:2407.21783 | [A] | 2026-11-16 | 2.2, 2.3, 2.5, 4.3, 4.4, 5.1, 5.2, 5.5, 7.2, 7.3, 7.4, 7.5, 9.1, 9.4 |
 | olmo2 | 2 OLMo 2 Furious | Team OLMo et al. | arXiv:2501.00656 | [A] | 2026-11-16 | 2.2, 2.3, 2.4, 4.4, 5.5, 7.2, 7.3 |
 | critical-batch | An Empirical Model of Large-Batch Training | McCandlish et al. | arXiv:1812.06162 | [B] | 2026-11-16 | 1.5, 2.1, 2.3 |
 | linear-scaling | Accurate, Large Minibatch SGD: Training ImageNet in 1 Hour | Goyal et al. | arXiv:1706.02677 | [B] | 2026-11-16 | 2.1, 2.3 |
@@ -87,22 +87,43 @@
 | bradley-terry | Rank Analysis of Incomplete Block Designs: The Method of Paired Comparisons | Bradley & Terry | Biometrika 39(3/4):324-345（1952，无 arXiv） | [B] | 2026-11-17 | 3.2, 9.2, 9.3 |
 | christiano | Deep Reinforcement Learning from Human Preferences | Christiano et al. | arXiv:1706.03741 | [B] | 2026-11-17 | 3.2, 9.2 |
 | dpo | Direct Preference Optimization: Your Language Model is Secretly a Reward Model | Rafailov et al. | arXiv:2305.18290 ; https://github.com/eric-mitchell/direct-preference-optimization | [A] | 2026-11-17 | 3.2, 9.3 |
-| trl-repo | huggingface/trl repo（SFT/DPO/GRPO 等 trainer；TRL 无独立论文） | HuggingFace | https://github.com/huggingface/trl | 教学参照 | 2026-11-17 | 3.2, 9.1, 9.3 |
+| trl-repo | huggingface/trl repo（SFT/DPO/GRPO 等 trainer；TRL 无独立论文） | HuggingFace | https://github.com/huggingface/trl | 教学参照 | 2026-11-17 | 3.2, 6.3, 9.1, 9.3 |
 
 ### Part 4 · 数据并行与显存切分
 
 | key | 标题 | 作者 | arXiv ID / URL | 证据等级 | 核实日期 | 被引章节 |
 | --- | --- | --- | --- | --- | --- | --- |
-| zero | ZeRO: Memory Optimizations Toward Training Trillion Parameter Models | Rajbhandari et al. | arXiv:1910.02054 | [A] | 2026-11-17 | 4.1, 4.2, 4.4 |
+| zero | ZeRO: Memory Optimizations Toward Training Trillion Parameter Models | Rajbhandari et al. | arXiv:1910.02054 | [A] | 2026-11-17 | 4.1, 4.2, 4.4, 5.5, 6.2 |
 | zero-offload | ZeRO-Offload: Democratizing Billion-Scale Model Training | Ren et al. | arXiv:2101.06840 | [A] | 2026-11-17 | 4.2 |
 | zero-infinity | ZeRO-Infinity: Breaking the GPU Memory Wall for Extreme Scale Deep Learning | Rajbhandari et al. | arXiv:2104.07857 | [A] | 2026-11-17 | 4.2 |
 | zero-plusplus | ZeRO++: Extremely Efficient Collective Communication for Giant Model Training | Wang et al. | arXiv:2306.10209 | [A] | 2026-11-17 | 4.2 |
 | deepspeed-repo | deepspeedai/DeepSpeed repo（ZeRO 各阶段实现；原 microsoft/DeepSpeed，组织已更名） | DeepSpeed | https://github.com/deepspeedai/DeepSpeed | [A] | 2026-11-17 | 4.2, 6.3 |
-| fsdp | PyTorch FSDP: Experiences on Scaling Fully Sharded Data Parallel | Zhao et al. | arXiv:2304.11277 | [A] | 2026-11-17 | 4.2, 4.3, 4.4, 7.4 |
+| fsdp | PyTorch FSDP: Experiences on Scaling Fully Sharded Data Parallel | Zhao et al. | arXiv:2304.11277 | [A] | 2026-11-17 | 4.2, 4.3, 4.4, 5.5, 7.4 |
 | torchtitan-repo | pytorch/torchtitan repo（PyTorch 原生最小训练栈） | PyTorch | https://github.com/pytorch/torchtitan | 教学参照 | 2026-11-17 | 4.3, 6.3 |
-| megatron-lm | Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism | Shoeybi et al. | arXiv:1909.08053 ; https://github.com/NVIDIA/Megatron-LM | [A] | 2026-11-17 | 4.1, 5.1, 6.1, 6.2 |
-| megatron-cluster | Efficient Large-Scale Language Model Training on GPU Clusters Using Megatron-LM | Narayanan et al. | arXiv:2104.04473 | [A] | 2026-11-17 | 5.3, 6.2 |
+| megatron-lm | Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism | Shoeybi et al. | arXiv:1909.08053 ; https://github.com/NVIDIA/Megatron-LM | [A] | 2026-11-17 | 4.1, 5.1, 5.2, 5.3, 5.4, 5.5, 6.1, 6.2 |
+| megatron-cluster | Efficient Large-Scale Language Model Training on GPU Clusters Using Megatron-LM | Narayanan et al. | arXiv:2104.04473 | [A] | 2026-11-17 | 5.3, 5.5, 6.2 |
 | gshard | GShard: Scaling Giant Models with Conditional Computation and Automatic Sharding | Lepikhin et al. | arXiv:2006.16668 | [B] | 2026-11-17 | 5.4 |
+
+
+### Part 5 · 模型并行全家桶
+
+| key | 标题 | 作者 | arXiv ID / URL | 证据等级 | 核实日期 | 被引章节 |
+| --- | --- | --- | --- | --- | --- | --- |
+| gpipe | GPipe: Efficient Training of Giant Neural Networks using Pipeline Parallelism | Huang et al. | arXiv:1811.06965 | [B] | 2026-11-17 | 5.3 |
+| zero-bubble | Zero Bubble Pipeline Parallelism | Qi et al. | arXiv:2401.10241 | [A] | 2026-11-17 | 5.3 |
+| ring-attention | Ring Attention with Blockwise Transformers for Near-Infinite Context | Liu et al. | arXiv:2310.01889 | [A] | 2026-11-17 | 5.2 |
+| striped-attention | Striped Attention: Faster Ring Attention for Causal Transformers | Brandon et al. | arXiv:2311.09431 ; https://github.com/exists-forall/striped_attention | [A]（官方 repo 在 exists-forall org——论文首页脚注出处；2026-11-17 复审核实。教训：初查 togethercomputer 系查错 org） | 2026-11-17 | 5.2 |
+| ulysses | DeepSpeed Ulysses: System Optimizations for Enabling Training of Extreme Long Sequence Transformer Models | Jacobs et al. | arXiv:2309.14509 | [A] | 2026-11-17 | 5.2 |
+
+### Part 6 · Megatron-LM 与现代训练栈
+
+| key | 标题 | 作者 | arXiv ID / URL | 证据等级 | 核实日期 | 被引章节 |
+| --- | --- | --- | --- | --- | --- | --- |
+| nemo | NVIDIA NeMo Framework（Megatron-Core 的上游封装；注意：NeMo 主仓已重组，github.com/NVIDIA/NeMo 现 301 至 NVIDIA-NeMo/Speech） | NVIDIA | https://github.com/NVIDIA-NeMo/Speech | 教学参照 | 2026-11-17 | 6.3 |
+| megatron-bridge | NVIDIA-NeMo/Megatron-Bridge repo（Megatron 模型训练库 + HF 双向转换；NeMo 重组后的 LLM 训练入口） | NVIDIA | https://github.com/NVIDIA-NeMo/Megatron-Bridge | 教学参照 | 2026-11-17 | 6.3 |
+| verl | HybridFlow: A Flexible and Efficient RLHF Framework（veRL 论文） | Hu et al. | arXiv:2409.19256 ; https://github.com/verl-project/verl | [A] | 2026-11-17 | 6.3, 8.5 |
+| openrlhf | OpenRLHF: An Easy-to-use, Scalable and High-performance RLHF Framework | Hu et al. | arXiv:2405.11143 ; https://github.com/OpenRLHF/OpenRLHF | [A] | 2026-11-17 | 6.3, 8.5, 9.2 |
+| olmo-core | allenai/OLMo-core repo（OLMo 2 的全开放训练栈） | AllenAI | https://github.com/allenai/OLMo-core | [A] | 2026-11-17 | 5.5, 6.3 |
 
 ## 术语表
 

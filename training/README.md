@@ -154,19 +154,19 @@ models 侧交叉链接到这里的章节（training 上线后这些指针生效�
 
 | 章节 | 文件 | 状态 |
 | --- | --- | --- |
-| 5.1 TP：列切、行切与 all-reduce 位置 | 01-tensor-parallelism.md | 未开始 |
-| 5.2 SP / CP：序列维的切分 | 02-sequence-and-context-parallelism.md | 未开始 |
-| 5.3 PP：流水线气泡与 Schedule | 03-pipeline-parallelism.md | 未开始 |
-| 5.4 EP：专家并行与 All-to-All | 04-expert-parallelism.md | 未开始 |
-| 5.5 组合策略与总账 | 05-combining-strategies.md | 未开始 |
+| 5.1 TP：列切、行切与 all-reduce 位置 | 01-tensor-parallelism.md | 已关闭 |
+| 5.2 SP / CP：序列维的切分 | 02-sequence-and-context-parallelism.md | 已关闭 |
+| 5.3 PP：流水线气泡与 Schedule | 03-pipeline-parallelism.md | 已关闭 |
+| 5.4 EP：专家并行与 All-to-All | 04-expert-parallelism.md | 已关闭 |
+| 5.5 组合策略与总账 | 05-combining-strategies.md | 已关闭 |
 
 ### Part 6 · Megatron-LM 与现代训练栈（W3）
 
 | 章节 | 文件 | 状态 |
 | --- | --- | --- |
-| 6.1 Megatron 的层栈并行原语 | 01-megatron-architecture.md | 未开始 |
-| 6.2 Megatron 运行时：进程组、调度与 Distributed Optimizer | 02-megatron-runtime.md | 未开始 |
-| 6.3 现代训练栈对照与选型（短篇） | 03-modern-training-stacks.md | 未开始 |
+| 6.1 Megatron 的层栈并行原语 | 01-megatron-architecture.md | 已关闭 |
+| 6.2 Megatron 运行时：进程组、调度与 Distributed Optimizer | 02-megatron-runtime.md | 已关闭 |
+| 6.3 现代训练栈对照与选型（短篇） | 03-modern-training-stacks.md | 已关闭 |
 
 ### Part 7 · 预训练全流程（W4）
 
@@ -207,9 +207,11 @@ models 侧交叉链接到这里的章节（training 上线后这些指针生效�
 | W0 | 2026-11-16 | spec 本身（9 Part / 39 章大纲）+ 脚手架 | builder-check ×1（6 findings 全修）+ 四路独立对抗审查 ×1（A: P1-P3 事实与数学 / B: P4-P6 与站点 lint / C: P7-P9 事实与数学 / D: 设计与一致性） | 2（全部关闭：Moonlight-µTransfer 误并、K1.5 语言混杂误归 R1） | 22（全部关闭） | 20（全部清零） | 无 | 放行（四路完整档案见 [training-spec-review-a](../docs/reviews/training-spec-review-a.md) / [b](../docs/reviews/training-spec-review-b.md) / [c](../docs/reviews/training-spec-review-c.md) / [d](../docs/reviews/training-spec-review-d.md)；spec 附录有汇总）。W0 工程：lint 维度参数化 + STYLE_GUIDE 泛化 + 站点维度层（构建与 QA 全绿） |
 | W1 | 2026-11-17 | P1+P2 共 10 章 | 逐章批量审查 × 3 批（批 1: P1 / 批 2: 2.1-2.3 / 批 3: 2.4-2.5+波末 sweep）+ 各批修复轮复审 × 3 | 2（全部关闭：1.4 §5 决策算例误用 GPT-3 基线 114→194 且结论翻转、2.2 §3「m̂²≤v̂ 逐坐标严格成立」伪定理——β1≠β2 时 C-S 不适用、数值反例 2.01η，双口径改写） | 13（全部关闭；含复审新引入 1 条 retain_graph 机制句） | 29（全部清零：修复 27 + 接受登记 2——1.2 §9 的 N 复用与 2.5 的 B 双用均有局部显式声明） | 无 | 暂不放行 → 修复并复审后 10 章全放行（强制重推导 9 项全 pass：1.2 matmul 反向+softmax-CE / 1.3 loss scaling / 1.4 √L / 2.1 momentum 等价+二次碗 / 2.2 bias correction+AdamW 解耦 / 2.3 linear scaling+critical batch / 2.5 msign+NS+尺度匹配；完整档案见 [training-w1-review-p1](../docs/reviews/training-w1-review-p1.md) / [p2a](../docs/reviews/training-w1-review-p2a.md) / [p2b](../docs/reviews/training-w1-review-p2b.md)）。波末收编：lint 脚本修 bash 3.2 下 `$pat`+CJK 误解析崩溃；writer 存疑项裁定 4 项（2 项成立、1 项照录正确、1 项幻影撤改）；/training/ 站点上线（80 页、QA 全绿） |
 | W2 | 2026-11-17 | P3+P4 共 6 章 | 逐章批量审查 × 2 批（批 1: P3+4.1 / 批 2: 4.2-4.4+波末 sweep）+ 各批修复轮复审 × 2 | 1（全部关闭：3.1 §5「CE 梯度流恒抬 log Z」伪不等式——反例 −0.12，正确充分条件为目标位 argmax，带条件改写） | 7（全部关闭：TRL fused LM head 过时、DDP div_factor_ 张冠李戴、docstring 注记挂错分支、`\;` 禁命令、ZeRO AR 变体 3N vs 2N、4.2/4.3 跨章 ÷m 口径统一、中断统计节号 §3.3.4） | 12（全部清零：修复 10 + 接受登记 2——4.3 的 G 分片组大小有显式声明、GPU GiB 口径已声明） | 无 | 暂不放行 → 修复并复审后 6 章全放行（强制重推导 4 项全 pass：4.1 ring all-reduce / 3.1 logsumexp+z-loss 梯度 / 4.2 ZeRO 各阶通信量与取回时序 / 4.4 总账重算；完整档案见 [training-w2-review-p3](../docs/reviews/training-w2-review-p3.md) / [p4](../docs/reviews/training-w2-review-p4.md)）。波末裁定：herd Table 4 确有 Llama-3 405B 全度数与 MFU（spec 审查 B 当年判错，spec 5.5 已回改）；Offload Table 1 末行原文属实、章节处理批准 |
+| W3 | 2026-11-17 | P5+P6 共 8 章 | 逐章批量审查 × 2 批（批 1: 5.1-5.3 / 批 2: 5.4-6.3+波末 sweep）+ 各批修复轮复审 × 2 | 1（全部关闭：striped-attention 的 arXiv ID 2405.13119 系宇宙学论文——spec 审查 B 当年给错 ID 沿 spec 传播，真身 2311.09431；references/spec/章节四处全线纠正，证据等级经 [B]→[A] 复核回升（官方 repo 在 exists-forall org）） | 12（全部关闭：5.4 三处口径（1/4→1/3、全程通信账、复算非对称注记）、5.5 表两行全程口径、5.2 zigzag/striped 机制分家重写、5.3 1F1B 图归属删改与级联重绘、5.3 三处节号、5.1 DGX-2H 16 卡、6.3 torchtitan 引文原文） | 15（全部清零：修复 13 + 接受登记 2） | 无 | 暂不放行 → 修复并复审后 8 章全放行（强制重推导 4 项全 pass：5.1 f/g+TP 通信账 / 5.3 气泡+1F1B / 5.4 EP all-to-all 细化 / 6.2 dist-opt↔ZeRO 对照；完整档案见 [training-w3-review-p5a](../docs/reviews/training-w3-review-p5a.md) / [p5b](../docs/reviews/training-w3-review-p5b.md)）。波末收编：models 4.5 §7 单位标签 errata 一处；NeMo 主仓重组注记 + megatron-bridge 补录；training 断言 24 章 / 6 Part、站点 98 页 QA 全绿 |
 
 **跨维度指针 errata 记录**（spec §2 条款授权，仅限指针句的最小修订）：
 
 | 日期 | 位置 | 修订 |
 | --- | --- | --- |
 | 2026-11-16 | models/04-modern-architectures/05-moe.md §7 末句 + 总结表 EP 行 | 「全部归 cluster 维度」收窄为「训练侧归 training 5.3/5.4、硬件与拓扑归 cluster」（DualPipe / EP 切分权衡 / all-to-all 通信账的实际归属） |
+| 2026-11-17 | models/04-modern-architectures/05-moe.md §7 接口量句 | 单位标签修正：「每 token 每 MoE 层 2kd 字节的通信上界」→「2kd 个元素（bf16 合 4kd 字节）」（公式 2·k·d·b 与 229 KB 数值不动；W3 审查批 2 S2-6 发现） |
