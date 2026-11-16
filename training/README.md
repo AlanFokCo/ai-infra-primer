@@ -138,17 +138,17 @@ models 侧交叉链接到这里的章节（training 上线后这些指针生效�
 
 | 章节 | 文件 | 状态 |
 | --- | --- | --- |
-| 3.1 CE 家族与数值稳定实现 | 01-ce-family.md | 未开始 |
-| 3.2 偏好与对比目标的接口 | 02-preference-and-contrastive-objectives.md | 未开始 |
+| 3.1 CE 家族与数值稳定实现 | 01-ce-family.md | 已关闭 |
+| 3.2 偏好与对比目标的接口 | 02-preference-and-contrastive-objectives.md | 已关闭 |
 
 ### Part 4 · 数据并行与显存切分（W2）
 
 | 章节 | 文件 | 状态 |
 | --- | --- | --- |
-| 4.1 DP → DDP：数据并行的数学与实现 | 01-dp-and-ddp.md | 未开始 |
-| 4.2 ZeRO：优化器状态、梯度、参数的逐阶切分 | 02-zero.md | 未开始 |
-| 4.3 FSDP / FSDP2：PyTorch 原生的全分片 | 03-fsdp.md | 未开始 |
-| 4.4 显存与通信的统一账 | 04-memory-and-comms-accounting.md | 未开始 |
+| 4.1 DP → DDP：数据并行的数学与实现 | 01-dp-and-ddp.md | 已关闭 |
+| 4.2 ZeRO：优化器状态、梯度、参数的逐阶切分 | 02-zero.md | 已关闭 |
+| 4.3 FSDP / FSDP2：PyTorch 原生的全分片 | 03-fsdp.md | 已关闭 |
+| 4.4 显存与通信的统一账 | 04-memory-and-comms-accounting.md | 已关闭 |
 
 ### Part 5 · 模型并行全家桶（W3）
 
@@ -206,6 +206,7 @@ models 侧交叉链接到这里的章节（training 上线后这些指针生效�
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | W0 | 2026-11-16 | spec 本身（9 Part / 39 章大纲）+ 脚手架 | builder-check ×1（6 findings 全修）+ 四路独立对抗审查 ×1（A: P1-P3 事实与数学 / B: P4-P6 与站点 lint / C: P7-P9 事实与数学 / D: 设计与一致性） | 2（全部关闭：Moonlight-µTransfer 误并、K1.5 语言混杂误归 R1） | 22（全部关闭） | 20（全部清零） | 无 | 放行（四路完整档案见 [training-spec-review-a](../docs/reviews/training-spec-review-a.md) / [b](../docs/reviews/training-spec-review-b.md) / [c](../docs/reviews/training-spec-review-c.md) / [d](../docs/reviews/training-spec-review-d.md)；spec 附录有汇总）。W0 工程：lint 维度参数化 + STYLE_GUIDE 泛化 + 站点维度层（构建与 QA 全绿） |
 | W1 | 2026-11-17 | P1+P2 共 10 章 | 逐章批量审查 × 3 批（批 1: P1 / 批 2: 2.1-2.3 / 批 3: 2.4-2.5+波末 sweep）+ 各批修复轮复审 × 3 | 2（全部关闭：1.4 §5 决策算例误用 GPT-3 基线 114→194 且结论翻转、2.2 §3「m̂²≤v̂ 逐坐标严格成立」伪定理——β1≠β2 时 C-S 不适用、数值反例 2.01η，双口径改写） | 13（全部关闭；含复审新引入 1 条 retain_graph 机制句） | 29（全部清零：修复 27 + 接受登记 2——1.2 §9 的 N 复用与 2.5 的 B 双用均有局部显式声明） | 无 | 暂不放行 → 修复并复审后 10 章全放行（强制重推导 9 项全 pass：1.2 matmul 反向+softmax-CE / 1.3 loss scaling / 1.4 √L / 2.1 momentum 等价+二次碗 / 2.2 bias correction+AdamW 解耦 / 2.3 linear scaling+critical batch / 2.5 msign+NS+尺度匹配；完整档案见 [training-w1-review-p1](../docs/reviews/training-w1-review-p1.md) / [p2a](../docs/reviews/training-w1-review-p2a.md) / [p2b](../docs/reviews/training-w1-review-p2b.md)）。波末收编：lint 脚本修 bash 3.2 下 `$pat`+CJK 误解析崩溃；writer 存疑项裁定 4 项（2 项成立、1 项照录正确、1 项幻影撤改）；/training/ 站点上线（80 页、QA 全绿） |
+| W2 | 2026-11-17 | P3+P4 共 6 章 | 逐章批量审查 × 2 批（批 1: P3+4.1 / 批 2: 4.2-4.4+波末 sweep）+ 各批修复轮复审 × 2 | 1（全部关闭：3.1 §5「CE 梯度流恒抬 log Z」伪不等式——反例 −0.12，正确充分条件为目标位 argmax，带条件改写） | 7（全部关闭：TRL fused LM head 过时、DDP div_factor_ 张冠李戴、docstring 注记挂错分支、`\;` 禁命令、ZeRO AR 变体 3N vs 2N、4.2/4.3 跨章 ÷m 口径统一、中断统计节号 §3.3.4） | 12（全部清零：修复 10 + 接受登记 2——4.3 的 G 分片组大小有显式声明、GPU GiB 口径已声明） | 无 | 暂不放行 → 修复并复审后 6 章全放行（强制重推导 4 项全 pass：4.1 ring all-reduce / 3.1 logsumexp+z-loss 梯度 / 4.2 ZeRO 各阶通信量与取回时序 / 4.4 总账重算；完整档案见 [training-w2-review-p3](../docs/reviews/training-w2-review-p3.md) / [p4](../docs/reviews/training-w2-review-p4.md)）。波末裁定：herd Table 4 确有 Llama-3 405B 全度数与 MFU（spec 审查 B 当年判错，spec 5.5 已回改）；Offload Table 1 末行原文属实、章节处理批准 |
 
 **跨维度指针 errata 记录**（spec §2 条款授权，仅限指针句的最小修订）：
 

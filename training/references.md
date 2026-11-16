@@ -43,12 +43,12 @@
 | key | 标题 | 作者 | arXiv ID / URL | 证据等级 | 核实日期 | 被引章节 |
 | --- | --- | --- | --- | --- | --- | --- |
 | baydin-ad-survey | Automatic Differentiation in Machine Learning: a Survey | Baydin et al. | arXiv:1502.05767 | [B] | 2026-11-16 | 1.1 |
-| pytorch-repo | pytorch/pytorch repo（torch.autograd、torch.optim、torch.utils.checkpoint、torch.nn.utils.clip_grad_norm_、torch.distributed.checkpoint） | PyTorch | https://github.com/pytorch/pytorch | 教学参照 | 2026-11-16 | 1.1, 1.2, 1.3, 1.4, 1.5, 2.1, 2.2, 2.4 |
+| pytorch-repo | pytorch/pytorch repo（torch.autograd、torch.optim、torch.utils.checkpoint、torch.nn.utils.clip_grad_norm_、torch.distributed.checkpoint） | PyTorch | https://github.com/pytorch/pytorch | 教学参照 | 2026-11-16 | 1.1, 1.2, 1.3, 1.4, 1.5, 2.1, 2.2, 2.4, 4.1, 4.3 |
 | pytorch-ddp | PyTorch Distributed: Experiences on Accelerating Data Parallel Training | Li et al. | arXiv:2006.15704 | [A] | 2026-11-16 | 1.1, 1.5, 4.1 |
 | flashattention | FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness | Dao et al. | arXiv:2205.14135 | [A] | 2026-11-16 | 1.2 |
 | liger-kernel | Liger Kernel: Efficient Triton Kernels for LLM Training | Hsu et al.（LinkedIn） | arXiv:2410.10989 ; https://github.com/linkedin/Liger-Kernel | [A] | 2026-11-16 | 1.2, 3.1 |
 | gradient-checkpointing | Training Deep Nets with Sublinear Memory Cost | Chen et al. | arXiv:1604.06174 | [B] | 2026-11-16 | 1.2, 1.4 |
-| megatron-sp | Reducing Activation Recomputation in Large Transformer Models | Korthikanti et al. | arXiv:2205.05198 | [A] | 2026-11-16 | 1.4, 5.2, 6.1 |
+| megatron-sp | Reducing Activation Recomputation in Large Transformer Models | Korthikanti et al. | arXiv:2205.05198 | [A] | 2026-11-16 | 1.4, 4.4, 5.2, 6.1 |
 | mixed-precision | Mixed Precision Training | Micikevicius et al. | arXiv:1710.03740 | [B] | 2026-11-16 | 1.3 |
 | fp8-formats | FP8 Formats for Deep Learning | Micikevicius et al. | arXiv:2209.05433 | [B] | 2026-11-16 | 1.3 |
 | deepseekv3 | DeepSeek-V3 Technical Report | DeepSeek-AI | arXiv:2412.19437 | [A] | 2026-11-16 | 1.3, 2.2, 2.3, 2.4, 4.4, 5.1, 5.3, 5.4, 5.5, 7.2, 7.5 |
@@ -63,8 +63,8 @@
 | adamw | Decoupled Weight Decay Regularization | Loshchilov & Hutter | arXiv:1711.05101 | [A] | 2026-11-16 | 2.2, 2.4 |
 | amsgrad | On the Convergence of Adam and Beyond | Reddi et al. | arXiv:1904.09237 | [B] | 2026-11-16 | 2.2 |
 | gpt3 | Language Models are Few-Shot Learners | Brown et al. | arXiv:2005.14165 | [B] | 2026-11-16 | 2.2, 2.3, 2.4, 7.2 |
-| llama2 | Llama 2: Open Foundation and Fine-Tuned Chat Models | Touvron et al. | arXiv:2307.09288 | [A] | 2026-11-16 | 2.2, 7.2 |
-| llama3 | The Llama 3 Herd of Models | Grattafiori et al. | arXiv:2407.21783 | [A] | 2026-11-16 | 2.2, 2.3, 2.5, 7.2, 7.3, 7.4, 7.5, 9.1, 9.4 |
+| llama2 | Llama 2: Open Foundation and Fine-Tuned Chat Models | Touvron et al. | arXiv:2307.09288 | [A] | 2026-11-16 | 2.2, 4.4, 7.2 |
+| llama3 | The Llama 3 Herd of Models | Grattafiori et al. | arXiv:2407.21783 | [A] | 2026-11-16 | 2.2, 2.3, 2.5, 4.3, 4.4, 7.2, 7.3, 7.4, 7.5, 9.1, 9.4 |
 | olmo2 | 2 OLMo 2 Furious | Team OLMo et al. | arXiv:2501.00656 | [A] | 2026-11-16 | 2.2, 2.3, 2.4, 4.4, 5.5, 7.2, 7.3 |
 | critical-batch | An Empirical Model of Large-Batch Training | McCandlish et al. | arXiv:1812.06162 | [B] | 2026-11-16 | 1.5, 2.1, 2.3 |
 | linear-scaling | Accurate, Large Minibatch SGD: Training ImageNet in 1 Hour | Goyal et al. | arXiv:1706.02677 | [B] | 2026-11-16 | 2.1, 2.3 |
@@ -76,6 +76,33 @@
 | muon-repo | KellerJordan/Muon repo（Newton-Schulz 迭代官方实现） | Jordan | https://github.com/KellerJordan/Muon | 教学参照 | 2026-11-16 | 2.5 |
 | moonlight | Muon is Scalable for LLM Training（Moonlight） | Liu et al.（Moonshot AI） | arXiv:2502.16982 ; https://github.com/MoonshotAI/Moonlight | [A] | 2026-11-16 | 2.5, 7.2 |
 | kimi-k2 | Kimi K2: Open Agentic Intelligence | Kimi Team | arXiv:2507.20534 | [A] | 2026-11-16 | 2.5, 5.5 |
+
+### Part 3 · Loss 函数族
+
+| key | 标题 | 作者 | arXiv ID / URL | 证据等级 | 核实日期 | 被引章节 |
+| --- | --- | --- | --- | --- | --- | --- |
+| label-smoothing | Rethinking the Inception Architecture for Computer Vision（label smoothing 出处） | Szegedy et al. | arXiv:1512.00567 | [B] | 2026-11-17 | 3.1 |
+| focal-loss | Focal Loss for Dense Object Detection | Lin et al. | arXiv:1708.02002 | [B] | 2026-11-17 | 3.1 |
+| chameleon | Chameleon: Mixed-Modal Early-Fusion Foundation Models（z-loss 输出侧出处） | Chameleon Team | arXiv:2405.09818 | [B] | 2026-11-17 | 3.1 |
+| bradley-terry | Rank Analysis of Incomplete Block Designs: The Method of Paired Comparisons | Bradley & Terry | Biometrika 39(3/4):324-345（1952，无 arXiv） | [B] | 2026-11-17 | 3.2, 9.2, 9.3 |
+| christiano | Deep Reinforcement Learning from Human Preferences | Christiano et al. | arXiv:1706.03741 | [B] | 2026-11-17 | 3.2, 9.2 |
+| dpo | Direct Preference Optimization: Your Language Model is Secretly a Reward Model | Rafailov et al. | arXiv:2305.18290 ; https://github.com/eric-mitchell/direct-preference-optimization | [A] | 2026-11-17 | 3.2, 9.3 |
+| trl-repo | huggingface/trl repo（SFT/DPO/GRPO 等 trainer；TRL 无独立论文） | HuggingFace | https://github.com/huggingface/trl | 教学参照 | 2026-11-17 | 3.2, 9.1, 9.3 |
+
+### Part 4 · 数据并行与显存切分
+
+| key | 标题 | 作者 | arXiv ID / URL | 证据等级 | 核实日期 | 被引章节 |
+| --- | --- | --- | --- | --- | --- | --- |
+| zero | ZeRO: Memory Optimizations Toward Training Trillion Parameter Models | Rajbhandari et al. | arXiv:1910.02054 | [A] | 2026-11-17 | 4.1, 4.2, 4.4 |
+| zero-offload | ZeRO-Offload: Democratizing Billion-Scale Model Training | Ren et al. | arXiv:2101.06840 | [A] | 2026-11-17 | 4.2 |
+| zero-infinity | ZeRO-Infinity: Breaking the GPU Memory Wall for Extreme Scale Deep Learning | Rajbhandari et al. | arXiv:2104.07857 | [A] | 2026-11-17 | 4.2 |
+| zero-plusplus | ZeRO++: Extremely Efficient Collective Communication for Giant Model Training | Wang et al. | arXiv:2306.10209 | [A] | 2026-11-17 | 4.2 |
+| deepspeed-repo | deepspeedai/DeepSpeed repo（ZeRO 各阶段实现；原 microsoft/DeepSpeed，组织已更名） | DeepSpeed | https://github.com/deepspeedai/DeepSpeed | [A] | 2026-11-17 | 4.2, 6.3 |
+| fsdp | PyTorch FSDP: Experiences on Scaling Fully Sharded Data Parallel | Zhao et al. | arXiv:2304.11277 | [A] | 2026-11-17 | 4.2, 4.3, 4.4, 7.4 |
+| torchtitan-repo | pytorch/torchtitan repo（PyTorch 原生最小训练栈） | PyTorch | https://github.com/pytorch/torchtitan | 教学参照 | 2026-11-17 | 4.3, 6.3 |
+| megatron-lm | Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism | Shoeybi et al. | arXiv:1909.08053 ; https://github.com/NVIDIA/Megatron-LM | [A] | 2026-11-17 | 4.1, 5.1, 6.1, 6.2 |
+| megatron-cluster | Efficient Large-Scale Language Model Training on GPU Clusters Using Megatron-LM | Narayanan et al. | arXiv:2104.04473 | [A] | 2026-11-17 | 5.3, 6.2 |
+| gshard | GShard: Scaling Giant Models with Conditional Computation and Automatic Sharding | Lepikhin et al. | arXiv:2006.16668 | [B] | 2026-11-17 | 5.4 |
 
 ## 术语表
 
