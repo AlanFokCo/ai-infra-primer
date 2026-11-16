@@ -1,15 +1,15 @@
-# STYLE_GUIDE — models 维度写作与审查唯一标准
+# STYLE_GUIDE — 写作与审查唯一标准（models / training 两维度适用）
 
-本文件是写作 agent 与 evaluator agent 的共同唯一标准。条款定义源自 `docs/superpowers/specs/2026-11-09-models-dimension-design.md` §4（写作规范，4.1-4.9）；evaluator 协议摘要对应 spec §6.3-6.4。写作与审查出现分歧时以本文件为准；本文件未覆盖的情形回查 spec。
+本文件是写作 agent 与 evaluator agent 的共同唯一标准。条款定义源自 `docs/superpowers/specs/2026-11-09-models-dimension-design.md` §4（写作规范，4.1-4.9），并经 `docs/superpowers/specs/2026-11-16-training-dimension-design.md` §4 声明对 training 维度全部适用（training 的维度级细化——证据分级对方法/框架锚点的口径、跨维度引用规则、符号约定表——以该 spec §4 为准）；evaluator 协议摘要对应各维度 spec §6.3-6.4。写作与审查出现分歧时以本文件为准；本文件未覆盖的情形回查对应维度 spec。
 
-适用范围：models 维度全部章节（10 Part / 51 章，W1-W7 各波）。每章提交前必须在仓库根目录通过 `bash scripts/lint-chapter.sh <chapter-file>`（检查项见本文 §11）；lint 通过只是下限，不替代 §9 自查与 evaluator 审查。
+适用范围：models 维度全部章节（10 Part / 51 章）与 training 维度全部章节（9 Part / 39 章）。每章提交前必须在仓库根目录通过 `bash scripts/lint-chapter.sh <chapter-file>`（检查项见本文 §11）；lint 通过只是下限，不替代 §9 自查与 evaluator 审查。
 
 ## 条款
 
 ### 1. 语言
 
 - 中文正文；专业术语保持英文：attention、token、embedding、MoE、router、KV cache、score、latent、codec 等不翻译。
-- 首次出现的概念用「中文（English Term）」格式并给出定义；全书术语表由 `models/references.md` 附带。
+- 首次出现的概念用「中文（English Term）」格式并给出定义；各维度术语表由本维度 `references.md` 附带。
 - 语气：资深工程师对同事讲话，直接、具体。
 
 ### 2. 纯技术规则（用户硬要求）
@@ -94,7 +94,7 @@
 
 ### 6. 引用与证据分级
 
-- 正文内 `[Vaswani et al., 2017]` 格式，链接到 `models/references.md` 对应条目。
+- 正文内 `[Vaswani et al., 2017]` 格式，链接到本维度 `references.md` 对应条目（models 章 → `models/references.md`，training 章 → `training/references.md`）。
 - 证据等级显式标注（五个标签）：
   - **[A]** = 正式 paper（arXiv）+ official repo + open weights，三者齐——公式拆解可对照真实代码。
   - **[B]** = 有 paper、无官方代码（或代码不全）——按论文拆公式，社区实现辅助并注明。
@@ -135,7 +135,7 @@
 - 短篇/展望章 ≥ 2500 字（如 4.8）；
 - 每章至少 1 张 ASCII 结构图或 shape 走读图。
 
-`models/references.md` 条目 schema 在 W0 定义，字段：key / 标题 / 作者 / arXiv ID 或 URL / 证据等级 / 核实日期 / 被引章节。
+各维度 `references.md` 条目 schema 同构（models 于 W0 定义、training 沿用），字段：key / 标题 / 作者 / arXiv ID 或 URL / 证据等级 / 核实日期 / 被引章节。
 
 ### 9. 去 AI 味 checklist（evaluator 审查项）
 
@@ -147,13 +147,13 @@
 - 每节以具体事实、公式或问题开场。
 - 数字优先于形容词；机制优先于评价。
 
-### 10. Evaluator 协议摘要（spec §6.3-6.4）
+### 10. Evaluator 协议摘要（各维度 spec §6.3-6.4 各自实例化）
 
-完整条款见 spec §6.3-6.4，此处为执行摘要：
+完整条款见对应维度 spec §6.3-6.4（models：`docs/superpowers/specs/2026-11-09-models-dimension-design.md`；training：`docs/superpowers/specs/2026-11-16-training-dimension-design.md`），此处为执行摘要：
 
-- 每波写作完成后，起**独立 fresh-context evaluator agent**（不继承写作上下文）。输入：该波章节文件 + 本文件 + `models/references.md` 对应 source list + spec 对应章节要求。
+- 每波写作完成后，起**独立 fresh-context evaluator agent**（不继承写作上下文）。输入：该波章节文件 + 本文件 + 本维度 `references.md` 对应 source list + 对应维度 spec 对应章节要求。
 - 三项任务：
-  1. **事实核查**：抽查所有公式、数值、日期、arXiv ID、repo 路径、attribution，evaluator 自己 WebFetch sources 对照；**独立重新推导数学重章的关键公式**（强制清单见 spec §6.3：1.3 Chinchilla Lagrangian / 2.3 attention √d_k / 2.4 KV cache / 2.5 RoPE / 2.7 Pre-Post-LN 梯度 / 4.1 MLA / 4.3 DeltaNet-GDN-KDA / 4.5 MoE routing / 6.2 InfoNCE / 6.3 ELBO / 7.2 DDPM / 7.4 CFG / 7.5 FM / 10.2 CTC——每波按覆盖章节指定子集）。
+  1. **事实核查**：抽查所有公式、数值、日期、arXiv ID、repo 路径、attribution，evaluator 自己 WebFetch sources 对照；**独立重新推导数学重章的关键公式**（强制清单在各维度 spec §6.3 各自实例化——models 清单示例：1.3 Chinchilla Lagrangian / 2.3 attention √d_k / 2.4 KV cache / 2.5 RoPE / 2.7 Pre-Post-LN 梯度等；training 清单见其 spec §6.3——每波按覆盖章节指定子集）。
   2. **教学审查**：推导断步、未定义符号、循环解释、前置知识缺口（对照 Part 依赖图）。
   3. **规范审查**：本文件逐条对照——重点抓历史叙事违规、AI 味、术语翻译、证据等级缺失、练习/总结缺失。
 - severity 判定：S1 = 事实性致命（张冠李戴的引用、错误公式、不存在的 repo/模型、虚构数值）；S2 = 实质问题（约定冲突、推导断裂、协议缺口、局部事实错误）；S3 = minor（措辞、格式、可选增补）。
@@ -162,10 +162,10 @@
 
 ### 11. 机械检查：lint 脚本
 
-`scripts/lint-chapter.sh` 强制执行本规范的可机械检查部分，T8-T18 每章提交前在仓库根目录运行：
+`scripts/lint-chapter.sh` 强制执行本规范的可机械检查部分，每章提交前在仓库根目录运行：
 
 ```bash
-bash scripts/lint-chapter.sh models/<part-dir>/<chapter-file>.md
+bash scripts/lint-chapter.sh <models|training>/<part-dir>/<chapter-file>.md
 ```
 
 检查项：
@@ -173,7 +173,7 @@ bash scripts/lint-chapter.sh models/<part-dir>/<chapter-file>.md
 1. AI 味禁令词（§9 词表）；
 2. 模板小节齐全（`## 总结` / `## 练习` / `## 参考`）；
 3. metadata 块（前 8 行内存在 `> ` 引用行）；
-4. 正文出现的 arXiv ID 在 `models/references.md` 有条目；
+4. 正文出现的 arXiv ID 在本维度 `references.md` 有条目（按章节路径首段选维度）；
 5. 证据等级标注存在（`[A]` / `[B]` / `[C]` / `[W]` / 教学参照）；
 6. `$$` 定界符配平。
 

@@ -1,6 +1,17 @@
 ---
 import Base from '../../layouts/Base.astro';
-import refs from '../../generated/references.json';
+import refsByDim from '../../generated/references.json';
+import manifest from '../../generated/manifest.json';
+
+export function getStaticPaths() {
+  // 维度门槛：有已发布章节才生成该维度文献页
+  return Object.entries(manifest.dimensions)
+    .filter(([, d]) => d.stats.chapters > 0)
+    .map(([key]) => ({ params: { dim: key } }));
+}
+
+const { dim } = Astro.params;
+const refs = refsByDim[dim];
 
 const base = import.meta.env.BASE_URL;
 const total = refs.groups.reduce((n, g) => n + g.entries.length, 0);
@@ -23,11 +34,11 @@ function linkFor(idOrUrl: string): string | null {
 }
 ---
 
-<Base title="文献索引" description={`models 维度全部引用：${total} 条，按 Part 分组，含证据等级与核实日期。`}>
+<Base title="文献索引" description={`${dim} 维度全部引用：${total} 条，按 Part 分组，含证据等级与核实日期。`}>
   <div class="refs-page">
     <header class="refs-head">
       <nav class="breadcrumb" aria-label="面包屑">
-        <a href={`${base}/models/`}>models</a>
+        <a href={`${base}/${dim}/`}>{dim}</a>
         <span class="sep">/</span>
         <span>references</span>
       </nav>

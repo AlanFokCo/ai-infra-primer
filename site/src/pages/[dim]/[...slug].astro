@@ -4,37 +4,41 @@ import Chapter from '../../layouts/Chapter.astro';
 import manifest from '../../generated/manifest.json';
 
 export function getStaticPaths() {
-  const modules = import.meta.glob('../../generated/chapters/*/*.md', { eager: true });
+  const modules = import.meta.glob('../../generated/chapters/*/*/*.md', { eager: true });
   const bySlug = {};
   for (const [path, mod] of Object.entries(modules)) {
     const m = path.match(/chapters\/(.+)\.md$/);
-    if (m) bySlug[m[1]] = mod;
+    if (m) bySlug[m[1]] = mod; // key 形如 models/02-transformer-anatomy/03-attention-mechanism
   }
 
   const paths = [];
-  for (const part of manifest.parts) {
-    paths.push({ params: { slug: part.dir }, props: { kind: 'part', part } });
-    for (const ch of part.chapters) {
-      paths.push({
-        params: { slug: ch.slug },
-        props: { kind: 'chapter', part, chapterMeta: ch, mod: bySlug[ch.slug] },
-      });
+  for (const [dimKey, dimData] of Object.entries(manifest.dimensions)) {
+    for (const part of dimData.parts) {
+      paths.push({ params: { dim: dimKey, slug: part.dir }, props: { kind: 'part', part } });
+      for (const ch of part.chapters) {
+        paths.push({
+          params: { dim: dimKey, slug: ch.slug },
+          props: { kind: 'chapter', part, chapterMeta: ch, mod: bySlug[`${dimKey}/${ch.slug}`] },
+        });
+      }
     }
   }
   return paths;
 }
 
 const { kind, part, chapterMeta, mod } = Astro.props;
+const dim = part.dim;
 const base = import.meta.env.BASE_URL;
 
 if (kind === 'chapter' && !mod) {
-  throw new Error(`章节模块缺失: ${chapterMeta.slug}`);
+  throw new Error(`章节模块缺失: ${dim}/${chapterMeta.slug}`);
 }
 
 const Content = kind === 'chapter' ? mod.default : null;
 const fm = kind === 'chapter' ? mod.frontmatter : null;
 const headings = fm?.headings ?? [];
-const flatEntry = kind === 'chapter' ? manifest.flat.find((c) => c.slug === chapterMeta.slug) : null;
+const flatEntry =
+  kind === 'chapter' ? manifest.dimensions[dim].flat.find((c) => c.slug === chapterMeta.slug) : null;
 
 const partCjk = part.chapters.reduce((n, c) => n + c.cjkChars, 0);
 const partFormulas = part.chapters.reduce((n, c) => n + (c.formulas ?? 0), 0);
@@ -45,7 +49,7 @@ const partFormulas = part.chapters.reduce((n, c) => n + (c.formulas ?? 0), 0);
     <Base title={`Part ${part.num} · ${part.titleZh}`} description={part.tagline}>
       <div class="part-page">
         <nav class="breadcrumb" aria-label="面包屑">
-          <a href={`${base}/models/`}>models</a>
+          <a href={`${base}/${dim}/`}>{dim}</a>
           <span class="sep">/</span>
           <span>Part {part.num}</span>
         </nav>
@@ -63,7 +67,7 @@ const partFormulas = part.chapters.reduce((n, c) => n + (c.formulas ?? 0), 0);
         <ol class="chapter-ledger">
           {part.chapters.map((c) => (
             <li>
-              <a class="chapter-row" href={`${base}/models/${c.slug}/`}>
+              <a class="chapter-row" href={`${base}/${dim}/${c.slug}/`}>
                 <span class="chapter-row-num">{c.num}</span>
                 <span class="chapter-row-titles">
                   <span class="chapter-row-zh">{c.titleZh}</span>

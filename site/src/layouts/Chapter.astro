@@ -22,7 +22,7 @@ const rich = richWithBadges;
 const readMinutes = Math.max(4, Math.round(fm.cjkChars / 420));
 ---
 
-<Base title={`${fm.num} ${fm.titleZh}`} description={`${fm.num} ${fm.titleZh}（${fm.titleEn}）— ai-infra-primer models 维度`}>
+<Base title={`${fm.num} ${fm.titleZh}`} description={`${fm.num} ${fm.titleZh}（${fm.titleEn}）— ai-infra-primer ${part.dim} 维度`}>
   <div class="reading-progress" aria-hidden="true"></div>
   <Fragment set:html={PULSE_GRAD_DEFS} />
 
@@ -30,9 +30,9 @@ const readMinutes = Math.max(4, Math.round(fm.cjkChars / 420));
     <header class="chapter-head">
       <div class="head-inner">
         <nav class="breadcrumb" aria-label="面包屑">
-          <a href={`${base}/models/`}>models</a>
+          <a href={`${base}/${part.dim}/`}>{part.dim}</a>
           <span class="sep">/</span>
-          <a href={`${base}/models/${part.dir}/`}>Part {part.num} · {part.titleZh}</a>
+          <a href={`${base}/${part.dim}/${part.dir}/`}>Part {part.num} · {part.titleZh}</a>
         </nav>
         <p class="ch-num-big">CHAPTER {fm.num}</p>
         <h1 class="chapter-title" data-pagefind-meta={`title:${fm.num} ${fm.titleZh}`}>{fm.titleZh}</h1>
@@ -90,14 +90,14 @@ const readMinutes = Math.max(4, Math.round(fm.cjkChars / 420));
       <span class="closure-stamp" aria-hidden="true">审</span>
       <span class="closure-text">
         本章已通过 evaluator 对抗审查并关闭（波次 {fm.partWave}，S1/S2 清零）。
-        审查记录与重推导清单见仓库 <a href="https://github.com/AlanFokCo/ai-infra-primer/blob/main/models/README.md" rel="noopener">models/README.md</a>。
+        审查记录与重推导清单见仓库 <a href={`https://github.com/AlanFokCo/ai-infra-primer/blob/main/${part.dim}/README.md`} rel="noopener">{part.dim}/README.md</a>。
       </span>
     </div>
 
     <nav class="chapter-pager" aria-label="上下章">
       <span>
         {prev && (
-          <a class="pager-link" href={`${base}/models/${prev.slug}/`}>
+          <a class="pager-link" href={`${base}/${part.dim}/${prev.slug}/`}>
             <span class="pager-dir">上一章 {prev.num}</span>
             <span class="pager-title">{prev.titleZh}</span>
           </a>
@@ -105,7 +105,7 @@ const readMinutes = Math.max(4, Math.round(fm.cjkChars / 420));
       </span>
       <span class="pager-next">
         {next && (
-          <a class="pager-link" href={`${base}/models/${next.slug}/`}>
+          <a class="pager-link" href={`${base}/${part.dim}/${next.slug}/`}>
             <span class="pager-dir">下一章 {next.num}</span>
             <span class="pager-title">{next.titleZh}</span>
           </a>

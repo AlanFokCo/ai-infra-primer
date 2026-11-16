@@ -2,58 +2,59 @@
 import Base from '../../layouts/Base.astro';
 import DependencyGraph from '../../components/DependencyGraph.astro';
 import manifest from '../../generated/manifest.json';
+import { DIMENSIONS } from '../../lib/dimensions.mjs';
 
+export function getStaticPaths() {
+  // 维度门槛：有已发布章节才生成该维度页面（training 在 W1 首波落地时自动出现）
+  return Object.entries(manifest.dimensions)
+    .filter(([, d]) => d.stats.chapters > 0)
+    .map(([key]) => ({ params: { dim: key } }));
+}
+
+const { dim } = Astro.params;
+const cfg = DIMENSIONS[dim];
+const dimData = manifest.dimensions[dim];
+const stats = dimData.stats;
 const base = import.meta.env.BASE_URL;
-const stats = manifest.stats;
 ---
 
-<Base title="models 维度" description="生成式模型的数学：文本 LLM 主干、视觉表征、扩散生图、多模态 LLM、视频生成、语音音频，10 Part / 51 章，全部公式级。">
+<Base title={`${dim} 维度`} description={`${cfg.scope}。关键公式完整推导不跳步、逐公式附符号表、与官方实现代码对照；数值事实全部带出处并标注证据等级。`}>
   <div class="models-page">
     <header class="models-head">
-      <p class="ch-num-big">DIMENSION 01 / 05</p>
-      <h1 class="models-title">models <span class="title-zh">模型</span></h1>
-      <p class="models-lede">
-        生成式模型的数学：文本 LLM 主干、视觉表征、扩散生图、多模态 LLM、视频生成、语音音频。
-        关键公式完整推导不跳步、逐公式附符号表、与官方实现代码对照；
-        数值事实全部带出处并标注证据等级。
-      </p>
+      <p class="ch-num-big">{cfg.orderLabel}</p>
+      <h1 class="models-title">{dim} <span class="title-zh">{cfg.zh}</span></h1>
+      <p class="models-lede">{cfg.lede}</p>
       <p class="ch-ledger">
         <span>{stats.chapters} 章</span>
         <span>{(stats.totalCjk / 10000).toFixed(1)} 万字</span>
         <span>{stats.formulas.toLocaleString('en-US')} 式</span>
-        <span>全部已关闭</span>
+        {cfg.ledgerNote && <span>{cfg.ledgerNote}</span>}
       </p>
     </header>
 
     <section aria-labelledby="dep-h" class="models-section">
       <h2 id="dep-h" class="section-title">依赖图</h2>
-      <p class="section-note">
-        主干 P1→P2→P3→P4→P5 是文本 LLM 线，按序读。支线从 P2 分出：P6 讲图像如何变成 latent / token，
-        P7 在其上建扩散数学，P8 复用 P6 的 ViT / CLIP 与 P7 的扩散目标，P9 把 P7 的 DiT 扩到时空维，
-        P10 复用 P6.3 的 RVQ 公式建音频 codec。
-      </p>
+      <p class="section-note">{cfg.depNote}</p>
       <div class="graph-wrap">
-        <DependencyGraph />
+        <DependencyGraph dim={dim} />
       </div>
     </section>
 
     <section aria-labelledby="pre-h" class="models-section">
       <h2 id="pre-h" class="section-title">前置知识</h2>
       <ul class="pre-list">
-        <li><strong>线性代数</strong>——矩阵乘法与 rank、内积与投影、特征分解；张量 shape 全书统一 [B, T, H, D] 记法</li>
-        <li><strong>概率论</strong>——条件分布与边缘化、期望、KL 散度、高斯分布、Bayes 规则；7.3 / 7.5 另需 ODE 直觉</li>
-        <li><strong>Python / PyTorch</strong>——能读官方 modeling 代码；代码走读锚点是 transformers、flash-attention、diffusers 等 repo 的具体文件与函数</li>
+        {cfg.prereqs.map((p) => <li set:html={p} />)}
       </ul>
-      <p class="section-note">章节自包含：每个公式附符号表；跨章前置概念给链接，不重复展开。</p>
+      <p class="section-note">{cfg.prereqNote}</p>
     </section>
 
     <section aria-labelledby="all-h" class="models-section">
       <h2 id="all-h" class="section-title">全部章节</h2>
       {
-        manifest.parts.map((p) => (
+        dimData.parts.map((p) => (
           <div class="index-part">
             <h3 class="index-part-head">
-              <a href={`${base}/models/${p.dir}/`}>
+              <a href={`${base}/${dim}/${p.dir}/`}>
                 <span class="mono-num">P{p.num}</span>
                 <span class="part-zh">{p.titleZh}</span>
                 <span class="part-en">{p.titleEn}</span>
@@ -62,7 +63,7 @@ const stats = manifest.stats;
             <ol class="index-list">
               {p.chapters.map((c) => (
                 <li>
-                  <a class="index-row" href={`${base}/models/${c.slug}/`}>
+                  <a class="index-row" href={`${base}/${dim}/${c.slug}/`}>
                     <span class="mono-num">{c.num}</span>
                     <span class="index-title">{c.titleZh}</span>
                     <span class="index-stats">{(c.cjkChars / 1000).toFixed(1)}k 字 · {c.formulas ?? 0} 式</span>

@@ -5,6 +5,8 @@ import DependencyGraph from '../components/DependencyGraph.astro';
 import manifest from '../generated/manifest.json';
 import '../styles/landing.css';
 
+import { DIMENSIONS, DIMENSION_ORDER, FORTHCOMING } from '../lib/dimensions.mjs';
+
 const base = import.meta.env.BASE_URL;
 const stats = manifest.stats;
 
@@ -20,13 +22,22 @@ const beats = [
   },
 ].map((b) => ({ ...b, html: katex.renderToString(b.tex, { displayMode: true, throwOnError: true }) }));
 
-const dimensions = [
-  { key: 'models', zh: '模型', en: 'models', scope: '生成式模型的数学：文本主干、视觉、扩散、多模态、视频、语音', status: `${stats.chapters} 章已关闭`, live: true },
-  { key: 'training', zh: '训练', en: 'training', scope: 'optimizer、RLHF（PPO / GRPO）、FP8、分布式训练策略', status: 'forthcoming', live: false },
-  { key: 'inference', zh: '推理', en: 'inference', scope: 'continuous batching、PagedAttention、speculative decoding', status: 'forthcoming', live: false },
-  { key: 'gpu', zh: '硬件', en: 'gpu', scope: '内存层级、roofline、FlashAttention 等算子的实现层', status: 'forthcoming', live: false },
-  { key: 'cluster', zh: '集群', en: 'cluster', scope: 'EP、all-to-all、Ring Attention、网络拓扑', status: 'forthcoming', live: false },
-];
+// 维度账本行：live 状态由 manifest 驱动——维度有已发布章节即自动翻转（training 随 W1 首波上线）
+const chapterCount = (key) => manifest.dimensions[key]?.stats.chapters ?? 0;
+const dimensions = DIMENSION_ORDER.map((key) => {
+  const live = chapterCount(key) > 0;
+  const cfg = DIMENSIONS[key] ?? { zh: FORTHCOMING[key]?.zh ?? key, scope: FORTHCOMING[key]?.scope ?? '' };
+  return {
+    key,
+    zh: cfg.zh,
+    en: key,
+    scope: cfg.scope,
+    status: live ? `${chapterCount(key)} 章已关闭` : 'forthcoming',
+    live,
+  };
+});
+// 已上线维度的索引区（每个 live 维度一节）
+const liveDims = dimensions.filter((d) => d.live);
 ---
 
 <Base title="首页">
@@ -95,7 +106,7 @@ const dimensions = [
             <tr class:list={[!d.live && 'forthcoming']}>
               <td class="dim-name">
                 {d.live ? (
-                  <a href={`${base}/models/`}>
+                  <a href={`${base}/${d.key}/`}>
                     <span class="dim-zh">{d.zh}</span>
                     <span class="dim-en">{d.en}</span>
                   </a>
@@ -115,28 +126,30 @@ const dimensions = [
     </table>
   </section>
 
-  <!-- ============ models 索引 ============ -->
-  <section class="section" aria-labelledby="idx-h">
-    <h2 id="idx-h" class="section-title">models 索引</h2>
-    <p class="section-note">十个 Part，五十一章。主干 P1→P5 按序读，支线从 P2 分出。</p>
-    <ol class="part-index">
-      {
-        manifest.parts.map((p) => (
-          <li>
-            <a class="part-row" href={`${base}/models/${p.dir}/`}>
-              <span class="part-num">P{p.num}</span>
-              <span class="part-titles">
-                <span class="part-zh">{p.titleZh}</span>
-                <span class="part-en">{p.titleEn}</span>
-              </span>
-              <span class="part-tagline">{p.tagline}</span>
-              <span class="part-count">{p.chapters.length} 章</span>
-            </a>
-          </li>
-        ))
-      }
-    </ol>
-  </section>
+  <!-- ============ 各维度索引（live 维度逐节） ============ -->
+  {
+    liveDims.map((d) => (
+      <section class="section" aria-labelledby={`idx-${d.key}`}>
+        <h2 id={`idx-${d.key}`} class="section-title">{d.key} 索引</h2>
+        <p class="section-note">{DIMENSIONS[d.key].depNoteShort ?? ''}</p>
+        <ol class="part-index">
+          {manifest.dimensions[d.key].parts.map((p) => (
+            <li>
+              <a class="part-row" href={`${base}/${d.key}/${p.dir}/`}>
+                <span class="part-num">P{p.num}</span>
+                <span class="part-titles">
+                  <span class="part-zh">{p.titleZh}</span>
+                  <span class="part-en">{p.titleEn}</span>
+                </span>
+                <span class="part-tagline">{p.tagline}</span>
+                <span class="part-count">{p.chapters.length} 章</span>
+              </a>
+            </li>
+          ))}
+        </ol>
+      </section>
+    ))
+  }
 
   <!-- ============ 阅读路径 ============ -->
   <section class="section" aria-labelledby="path-h">

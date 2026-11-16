@@ -26,8 +26,11 @@ const desc =
   description ??
   `一套把 AI 基础设施算到公式级的中文教程：${stats.chapters} 章 · ${stats.parts} Part · ${(stats.totalCjk / 10000).toFixed(1)} 万字`;
 
-const isModels = path.startsWith(`${base}/models`);
-const isRefs = path.startsWith(`${base}/models/references`);
+// 导航维度感知：当前路径落在哪个维度，教程/文献就指向哪个维度
+const dimMatch = path.match(new RegExp(`^${base}/(models|training|inference|gpu|cluster)`));
+const curDim = dimMatch ? dimMatch[1] : 'models';
+const isDimHome = path.startsWith(`${base}/${curDim}`);
+const isRefs = path.startsWith(`${base}/${curDim}/references`);
 ---
 
 <html lang="zh-CN" data-base={base}>
@@ -52,8 +55,8 @@ const isRefs = path.startsWith(`${base}/models/references`);
       </a>
       <SearchBox />
       <nav class="site-nav" aria-label="主导航">
-        <a href={`${base}/models/`} aria-current={isModels && !isRefs ? 'page' : undefined}>教程</a>
-        <a href={`${base}/models/references/`} aria-current={isRefs ? 'page' : undefined}>文献</a>
+        <a href={`${base}/${curDim}/`} aria-current={isDimHome && !isRefs ? 'page' : undefined}>教程</a>
+        <a href={`${base}/${curDim}/references/`} aria-current={isRefs ? 'page' : undefined}>文献</a>
         <a href="https://github.com/AlanFokCo/ai-infra-primer" rel="noopener">github</a>
       </nav>
     </header>

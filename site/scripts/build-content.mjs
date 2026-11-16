@@ -20,138 +20,203 @@ for (const f of SIG_MODULES) {
 }
 const SIGNATURE_FIGURES = [...CORE_FIVE, ...MODULE_FIGS];
 
-// 场景替换注册表：slug#blockIndex → figure
+// 场景替换注册表：dim/slug#blockIndex → figure
+// figures 模块的 slug 形如 '02-transformer-anatomy/03-attention-mechanism'（models 存量约定）；
+// dim 字段缺省视为 'models'（101 张存量注册零改动），training 图模块显式写 dim: 'training'。
 const sceneByBlock = new Map();
-const sceneKey = (slug, idx) => `${slug}#${idx}`;
+const sceneKey = (dim, slug, idx) => `${dim}/${slug}#${idx}`;
 for (const f of SIGNATURE_FIGURES) {
-  if (typeof f.replacesBlock === 'number') sceneByBlock.set(sceneKey(f.slug, f.replacesBlock), f);
+  const dim = f.dim ?? 'models';
+  if (typeof f.replacesBlock === 'number') sceneByBlock.set(sceneKey(dim, f.slug, f.replacesBlock), f);
 }
 
 const SITE = path.dirname(fileURLToPath(import.meta.url)).replace(/\/scripts$/, '');
 const REPO = path.resolve(SITE, '..');
-const MODELS = path.join(REPO, 'models');
 const OUT = path.join(SITE, 'src/generated');
 const BASE = '/ai-infra-primer';
 
-// Part 元数据（事实源：models/README.md 目录节；tagline 为该 Part 章节描述的浓缩）
-const PARTS = [
-  { num: 1, dir: '01-foundations', titleEn: 'Foundations', titleZh: '基础', tagline: '语言建模的数学形式化、参数/计算/内存的账、scaling laws', wave: 'W1' },
-  { num: 2, dir: '02-transformer-anatomy', titleEn: 'Transformer Anatomy', titleZh: 'Transformer 解剖', tagline: '从 tokenization 到组装完整 decoder block，每个组件的推导', wave: 'W1' },
-  { num: 3, dir: '03-objectives-and-variants', titleEn: 'Objectives & Variants', titleZh: '目标与变体', tagline: 'CLM / MLM 统一形式化、encoder 家族、in-context learning', wave: 'W2' },
-  { num: 4, dir: '04-modern-architectures', titleEn: 'Modern Architectures', titleZh: '现代架构', tagline: 'KV 压缩、sparse / linear attention、MoE、long context、可解释性', wave: 'W2' },
-  { num: 5, dir: '05-case-studies', titleEn: 'Case Studies', titleZh: '案例研究', tagline: 'Llama / DeepSeek / Qwen / GLM / Kimi 五家谱系逐代拆解', wave: 'W3' },
-  { num: 6, dir: '06-vision-representations', titleEn: 'Vision Representations', titleZh: '视觉表征', tagline: 'ViT、CLIP 对比学习、visual tokenizer', wave: 'W3' },
-  { num: 7, dir: '07-diffusion-image-generation', titleEn: 'Diffusion & Image Generation', titleZh: '扩散与图像生成', tagline: 'DDPM、SDE/ODE、guidance、flow matching、DiT', wave: 'W4' },
-  { num: 8, dir: '08-multimodal-llm', titleEn: 'Multimodal LLMs', titleZh: '多模态 LLM', tagline: 'VLM 架构分类学、connector、训练目标、视频理解、统一生成', wave: 'W5' },
-  { num: 9, dir: '09-video-generation', titleEn: 'Video Generation', titleZh: '视频生成', tagline: 'video VAE、时空 DiT、训练加速、控制与编辑', wave: 'W6' },
-  { num: 10, dir: '10-audio-speech', titleEn: 'Audio & Speech', titleZh: '音频与语音', tagline: '音频表征与 codec、ASR、TTS、speech LLM 与全双工', wave: 'W7' },
+// 维度层（training spec §8）：每维度 = key / 源目录 / PARTS 表 / references 文件 / 断言组。
+// Part 元数据事实源：各维度 README.md 目录节；tagline 为该 Part 章节描述的浓缩。
+// 断言口径：models 收官锁定 51/10；training 建设期 = 当波应发布章数（W1 起滚动收紧，W7 锁死 39/9）。
+const DIMENSIONS = [
+  {
+    key: 'models',
+    parts: [
+      { num: 1, dir: '01-foundations', titleEn: 'Foundations', titleZh: '基础', tagline: '语言建模的数学形式化、参数/计算/内存的账、scaling laws', wave: 'W1' },
+      { num: 2, dir: '02-transformer-anatomy', titleEn: 'Transformer Anatomy', titleZh: 'Transformer 解剖', tagline: '从 tokenization 到组装完整 decoder block，每个组件的推导', wave: 'W1' },
+      { num: 3, dir: '03-objectives-and-variants', titleEn: 'Objectives & Variants', titleZh: '目标与变体', tagline: 'CLM / MLM 统一形式化、encoder 家族、in-context learning', wave: 'W2' },
+      { num: 4, dir: '04-modern-architectures', titleEn: 'Modern Architectures', titleZh: '现代架构', tagline: 'KV 压缩、sparse / linear attention、MoE、long context、可解释性', wave: 'W2' },
+      { num: 5, dir: '05-case-studies', titleEn: 'Case Studies', titleZh: '案例研究', tagline: 'Llama / DeepSeek / Qwen / GLM / Kimi 五家谱系逐代拆解', wave: 'W3' },
+      { num: 6, dir: '06-vision-representations', titleEn: 'Vision Representations', titleZh: '视觉表征', tagline: 'ViT、CLIP 对比学习、visual tokenizer', wave: 'W3' },
+      { num: 7, dir: '07-diffusion-image-generation', titleEn: 'Diffusion & Image Generation', titleZh: '扩散与图像生成', tagline: 'DDPM、SDE/ODE、guidance、flow matching、DiT', wave: 'W4' },
+      { num: 8, dir: '08-multimodal-llm', titleEn: 'Multimodal LLMs', titleZh: '多模态 LLM', tagline: 'VLM 架构分类学、connector、训练目标、视频理解、统一生成', wave: 'W5' },
+      { num: 9, dir: '09-video-generation', titleEn: 'Video Generation', titleZh: '视频生成', tagline: 'video VAE、时空 DiT、训练加速、控制与编辑', wave: 'W6' },
+      { num: 10, dir: '10-audio-speech', titleEn: 'Audio & Speech', titleZh: '音频与语音', tagline: '音频表征与 codec、ASR、TTS、speech LLM 与全双工', wave: 'W7' },
+    ],
+    asserts: { chapters: 51, parts: 10, refsMin: 100 },
+  },
+  {
+    key: 'training',
+    parts: [
+      { num: 1, dir: '01-autograd-and-backprop', titleEn: 'Autograd & Backprop', titleZh: 'Autograd 与反向机制', tagline: '计算图与 vjp、算子反向推导、混合精度与 FP8、checkpointing、accumulation', wave: 'W1' },
+      { num: 2, dir: '02-optimizers', titleEn: 'Optimizers & LR', titleZh: 'Optimizer 与 LR 动力学', tagline: 'SGD/momentum → Adam → AdamW、LR schedule、梯度裁剪、Muon 与谱方法', wave: 'W1' },
+      { num: 3, dir: '03-loss-functions', titleEn: 'Loss Functions', titleZh: 'Loss 函数族', tagline: 'CE 数值稳定变体、z-loss、偏好与对比目标的接口', wave: 'W2' },
+      { num: 4, dir: '04-data-parallelism', titleEn: 'Data Parallelism', titleZh: '数据并行与显存切分', tagline: 'DDP、ZeRO 各阶段、FSDP/FSDP2、显存与通信的统一账', wave: 'W2' },
+      { num: 5, dir: '05-model-parallelism', titleEn: 'Model Parallelism', titleZh: '模型并行全家桶', tagline: 'TP 列/行切分、SP/CP、PP 气泡与 schedule、EP 与 all-to-all、组合策略', wave: 'W3' },
+      { num: 6, dir: '06-megatron-and-stacks', titleEn: 'Megatron & Training Stacks', titleZh: 'Megatron 与现代训练栈', tagline: '层栈并行原语走读、运行时与 distributed optimizer、框架选型', wave: 'W3' },
+      { num: 7, dir: '07-pretraining', titleEn: 'Pretraining', titleZh: '预训练全流程', tagline: '数据管线与配比、配方、训练稳定性、checkpoint 与续训、长上下文扩展', wave: 'W4' },
+      { num: 8, dir: '08-rl-math', titleEn: 'RL Mathematics', titleZh: 'RL 数学详解', tagline: '策略梯度定理、GAE、PPO、GRPO 与变体、LLM-RL 系统实现', wave: 'W5' },
+      { num: 9, dir: '09-post-training', titleEn: 'Post-Training', titleZh: '后训练全流程', tagline: 'SFT、RLHF 全链、DPO 家族、RFT 与拒绝采样、RLVR 与推理模型', wave: 'W6' },
+    ],
+    // W0：尚无章节落地，断言 0；W1 起随当波应发布章数滚动收紧（10→16→24→29→34→39）
+    asserts: { chapters: 0, parts: 0, refsMin: 0 },
+  },
 ];
 
 function main() {
   rmSync(OUT, { recursive: true, force: true });
   mkdirSync(path.join(OUT, 'chapters'), { recursive: true });
 
-  const manifest = { generatedAt: new Date().toISOString().slice(0, 10), parts: [] };
-  let chapterCount = 0;
-  let totalCjk = 0;
-  let totalFormulas = 0;
+  const manifest = { generatedAt: new Date().toISOString().slice(0, 10), dimensions: {} };
+  const references = {};
+  const grand = { chapters: 0, parts: 0, totalCjk: 0, formulas: 0, refs: 0 };
 
-  for (const part of PARTS) {
-    const partPath = path.join(MODELS, part.dir);
-    const files = readdirSync(partPath)
-      .filter((f) => /^\d{2}-[\da-z-]+\.md$/.test(f))
-      .sort();
-    const chapters = [];
+  for (const dim of DIMENSIONS) {
+    const SRC = path.join(REPO, dim.key);
+    const dimOut = { key: dim.key, parts: [] };
+    let chapterCount = 0;
+    let totalCjk = 0;
+    let totalFormulas = 0;
 
-    for (const f of files) {
-      const relPath = `models/${part.dir}/${f}`;
-      const source = readFileSync(path.join(MODELS, part.dir, f), 'utf8');
-      const meta = parseChapter(source, relPath);
+    for (const part of dim.parts) {
+      const partPath = path.join(SRC, part.dir);
+      let files = [];
+      try {
+        files = readdirSync(partPath)
+          .filter((f) => /^\d{2}-[\da-z-]+\.md$/.test(f))
+          .sort();
+      } catch {
+        // 建设期维度允许 Part 目录尚不存在（training W0）：跳过，不计入 manifest
+      }
+      if (files.length === 0) continue;
+      const chapters = [];
 
-      // 断言：转换前后 $`...`$ 计数守恒（转换后必须为 0）
-      const before = countBacktickMath(source);
-      let body = transformMath(source);
-      const after = countBacktickMath(body);
-      if (after !== 0) throw new Error(`${relPath}: $'...'$ 转换残留 ${after}/${before}`);
-      if (/\\thinspace\b|\\negthinspace\b|\\hspace\{[45]mu\}/.test(body)) {
-        throw new Error(`${relPath}: 间距命令回映残留`);
+      for (const f of files) {
+        const relPath = `${dim.key}/${part.dir}/${f}`;
+        const source = readFileSync(path.join(SRC, part.dir, f), 'utf8');
+        const meta = parseChapter(source, relPath);
+
+        // 断言：转换前后 $`...`$ 计数守恒（转换后必须为 0）
+        const before = countBacktickMath(source);
+        let body = transformMath(source);
+        const after = countBacktickMath(body);
+        if (after !== 0) throw new Error(`${relPath}: $'...'$ 转换残留 ${after}/${before}`);
+        if (/\\thinspace\b|\\negthinspace\b|\\hspace\{[45]mu\}/.test(body)) {
+          throw new Error(`${relPath}: 间距命令回映残留`);
+        }
+
+        body = rewriteLinks(body, { base: BASE, partDir: part.dir, dim: dim.key });
+        if (body.includes('](../references.md')) {
+          throw new Error(`${relPath}: references 相对链接重写残留`);
+        }
+
+        // ASCII 结构图 → 矢量动图（SVG + 数据流光点）；伪代码/表格类围栏保持深色图版
+        body = replaceDiagrams(body, dim.key, `${part.dir}/${meta.file}`);
+        // 签名动图：按锚点插入（新增描述图，不动源文件）
+        body = insertSignatureFigures(body, dim.key, `${part.dir}/${meta.file}`);
+
+        // 生成文件：frontmatter + 正文（去掉源 H1 与 metadata 块——两者由章节布局
+        // 从 frontmatter 以设计化版面呈现，meta 内的 $...$ 由布局侧 KaTeX 渲染）
+        const bodyStripped = stripHeaderBlock(body);
+        const chapterFormulas = countFormulas(body);
+        totalFormulas += chapterFormulas;
+        const frontmatter = toFrontmatter({
+          dim: dim.key,
+          num: meta.num,
+          titleZh: meta.titleZh,
+          titleEn: meta.titleEn,
+          partDir: part.dir,
+          partNum: part.num,
+          partTitleEn: part.titleEn,
+          partTitleZh: part.titleZh,
+          partWave: part.wave,
+          file: meta.file,
+          cjkChars: meta.cjkChars,
+          formulas: chapterFormulas,
+          evidenceLevels: meta.evidenceLevels,
+          headings: meta.headings,
+          positioning: transformMath(meta.metaLine.positioning),
+          prerequisites: transformMath(meta.metaLine.prerequisites),
+          anchors: transformMath(meta.metaLine.anchors),
+        });
+        const outDir = path.join(OUT, 'chapters', dim.key, part.dir);
+        mkdirSync(outDir, { recursive: true });
+        writeFileSync(path.join(outDir, f), frontmatter + bodyStripped);
+
+        chapters.push({
+          num: meta.num,
+          file: meta.file,
+          titleZh: meta.titleZh,
+          titleEn: meta.titleEn,
+          slug: `${part.dir}/${meta.file}`,
+          cjkChars: meta.cjkChars,
+          formulas: chapterFormulas,
+          evidenceLevels: meta.evidenceLevels,
+        });
+        chapterCount += 1;
+        totalCjk += meta.cjkChars;
       }
 
-      // 公式计数（转换后口径：display 块 + 行内）——在下方计入 frontmatter
-
-      body = rewriteLinks(body, { base: BASE, partDir: part.dir });
-      if (body.includes('](../references.md')) {
-        throw new Error(`${relPath}: references 相对链接重写残留`);
-      }
-
-      // ASCII 结构图 → 矢量动图（SVG + 数据流光点）；伪代码/表格类围栏保持深色图版
-      body = replaceDiagrams(body, `${part.dir}/${meta.file}`);
-      // 签名动图：按锚点插入（新增描述图，不动源文件）
-      body = insertSignatureFigures(body, `${part.dir}/${meta.file}`);
-
-      // 生成文件：frontmatter + 正文（去掉源 H1 与 metadata 块——两者由章节布局
-      // 从 frontmatter 以设计化版面呈现，meta 内的 $...$ 由布局侧 KaTeX 渲染）
-      const bodyStripped = stripHeaderBlock(body);
-      const chapterFormulas = countFormulas(body);
-      totalFormulas += chapterFormulas;
-      const frontmatter = toFrontmatter({
-        num: meta.num,
-        titleZh: meta.titleZh,
-        titleEn: meta.titleEn,
-        partDir: part.dir,
-        partNum: part.num,
-        partTitleEn: part.titleEn,
-        partTitleZh: part.titleZh,
-        partWave: part.wave,
-        file: meta.file,
-        cjkChars: meta.cjkChars,
-        formulas: chapterFormulas,
-        evidenceLevels: meta.evidenceLevels,
-        headings: meta.headings,
-        positioning: transformMath(meta.metaLine.positioning),
-        prerequisites: transformMath(meta.metaLine.prerequisites),
-        anchors: transformMath(meta.metaLine.anchors),
+      dimOut.parts.push({
+        num: part.num,
+        dim: dim.key,
+        dir: part.dir,
+        titleEn: part.titleEn,
+        titleZh: part.titleZh,
+        tagline: part.tagline,
+        chapters,
       });
-      const outDir = path.join(OUT, 'chapters', part.dir);
-      mkdirSync(outDir, { recursive: true });
-      writeFileSync(path.join(outDir, f), frontmatter + bodyStripped);
-
-      chapters.push({
-        num: meta.num,
-        file: meta.file,
-        titleZh: meta.titleZh,
-        titleEn: meta.titleEn,
-        slug: `${part.dir}/${meta.file}`,
-        cjkChars: meta.cjkChars,
-        formulas: chapterFormulas,
-        evidenceLevels: meta.evidenceLevels,
-      });
-      chapterCount += 1;
-      totalCjk += meta.cjkChars;
     }
 
-    manifest.parts.push({
-      num: part.num,
-      dir: part.dir,
-      titleEn: part.titleEn,
-      titleZh: part.titleZh,
-      tagline: part.tagline,
-      chapters,
+    // 维度内阅读顺序的 prev/next（Part 升序、章号升序）
+    const flat = dimOut.parts.flatMap((p) =>
+      p.chapters.map((c) => ({ ...c, dim: dim.key, partDir: p.dir, partNum: p.num, partTitleEn: p.titleEn, partTitleZh: p.titleZh }))
+    );
+    flat.forEach((ch, i) => {
+      ch.prev = i > 0 ? { slug: flat[i - 1].slug, num: flat[i - 1].num, titleZh: flat[i - 1].titleZh } : null;
+      ch.next = i < flat.length - 1 ? { slug: flat[i + 1].slug, num: flat[i + 1].num, titleZh: flat[i + 1].titleZh } : null;
     });
+    dimOut.flat = flat;
+    dimOut.stats = { chapters: chapterCount, parts: dimOut.parts.length, totalCjk, formulas: totalFormulas };
+    manifest.dimensions[dim.key] = dimOut;
+
+    // references.md
+    const refSource = readFileSync(path.join(SRC, 'references.md'), 'utf8');
+    const refs = parseReferences(refSource);
+    const refCount = refs.groups.reduce((n, g) => n + g.entries.length, 0);
+    references[dim.key] = refs;
+
+    // 维度断言组
+    if (chapterCount !== dim.asserts.chapters)
+      throw new Error(`${dim.key} 章节数 ${chapterCount} !== ${dim.asserts.chapters}`);
+    if (dimOut.parts.length !== dim.asserts.parts)
+      throw new Error(`${dim.key} Part 数 ${dimOut.parts.length} !== ${dim.asserts.parts}`);
+    if (refCount < dim.asserts.refsMin)
+      throw new Error(`${dim.key} references 条目数 ${refCount} < ${dim.asserts.refsMin}`);
+
+    grand.chapters += chapterCount;
+    grand.parts += dimOut.parts.length;
+    grand.totalCjk += totalCjk;
+    grand.formulas += totalFormulas;
+    grand.refs += refCount;
+    console.log(
+      `[build-content] ${dim.key}: ${chapterCount} 章 / ${dimOut.parts.length} Part / ${refCount} 条文献 / ${(totalCjk / 10000).toFixed(1)} 万 CJK 字`
+    );
   }
 
-  // 全书阅读顺序的 prev/next（Part 升序、章号升序）
-  const flat = manifest.parts.flatMap((p) =>
-    p.chapters.map((c) => ({ ...c, partDir: p.dir, partNum: p.num, partTitleEn: p.titleEn, partTitleZh: p.titleZh }))
-  );
-  flat.forEach((ch, i) => {
-    ch.prev = i > 0 ? { slug: flat[i - 1].slug, num: flat[i - 1].num, titleZh: flat[i - 1].titleZh } : null;
-    ch.next = i < flat.length - 1 ? { slug: flat[i + 1].slug, num: flat[i + 1].num, titleZh: flat[i + 1].titleZh } : null;
-  });
-  manifest.flat = flat;
-  manifest.stats = { chapters: chapterCount, parts: PARTS.length, totalCjk, formulas: totalFormulas };
-
+  manifest.stats = grand;
   writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 2));
+  writeFileSync(path.join(OUT, 'references.json'), JSON.stringify(references, null, 2));
 
   // KaTeX CSS 补丁版：注入 font-display: swap（原 css 未声明，公式字体 FOIT 会阻塞首屏 LCP），
   // 字体只收 woff2（现代浏览器全覆盖），重写到同目录 fonts/ 供 Vite 打包
@@ -181,25 +246,10 @@ function main() {
     }
     writeFileSync(path.join(OUT, 'katex.min.css'), css);
   }
-
-  // references.md
-  const refSource = readFileSync(path.join(MODELS, 'references.md'), 'utf8');
-  const refs = parseReferences(refSource);
-  const refCount = refs.groups.reduce((n, g) => n + g.entries.length, 0);
-  writeFileSync(path.join(OUT, 'references.json'), JSON.stringify(refs, null, 2));
-
-  // 全局断言
-  if (chapterCount !== 51) throw new Error(`章节数 ${chapterCount} !== 51`);
-  if (manifest.parts.length !== 10) throw new Error(`Part 数 ${manifest.parts.length} !== 10`);
-  if (refCount < 100) throw new Error(`references 条目数 ${refCount} < 100`);
-
-  console.log(
-    `[build-content] ${chapterCount} 章 / ${PARTS.length} Part / ${refCount} 条文献 / ${(totalCjk / 10000).toFixed(1)} 万 CJK 字`
-  );
 }
 
 /** 无语言围栏 → 场景图（有注册场景时）/结构图/网格图/算法面板；带语言围栏逐字保留 */
-function replaceDiagrams(body, slug) {
+function replaceDiagrams(body, dim, slug) {
   const lines = body.split('\n');
   const out = [];
   let i = 0;
@@ -227,7 +277,7 @@ function replaceDiagrams(body, slug) {
       continue;
     }
     const myBlock = blockIdx++;
-    const registered = sceneByBlock.get(sceneKey(slug, myBlock));
+    const registered = sceneByBlock.get(sceneKey(dim, slug, myBlock));
     if (registered) {
       figNo += 1;
       out.push(
@@ -282,8 +332,8 @@ function replaceDiagrams(body, slug) {
 }
 
 /** 签名动图插入：匹配到锚点标题行后紧跟插入 */
-function insertSignatureFigures(body, slug) {
-  const targets = SIGNATURE_FIGURES.filter((f) => f.slug === slug);
+function insertSignatureFigures(body, dim, slug) {
+  const targets = SIGNATURE_FIGURES.filter((f) => (f.dim ?? 'models') === dim && f.slug === slug);
   if (targets.length === 0) return body;
   const lines = body.split('\n');
   const out = [];
