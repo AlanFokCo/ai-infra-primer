@@ -85,9 +85,9 @@
 | focal-loss | Focal Loss for Dense Object Detection | Lin et al. | arXiv:1708.02002 | [B] | 2026-11-17 | 3.1 |
 | chameleon | Chameleon: Mixed-Modal Early-Fusion Foundation Models（z-loss 输出侧出处） | Chameleon Team | arXiv:2405.09818 | [B] | 2026-11-17 | 3.1 |
 | bradley-terry | Rank Analysis of Incomplete Block Designs: The Method of Paired Comparisons | Bradley & Terry | Biometrika 39(3/4):324-345（1952，无 arXiv） | [B] | 2026-11-17 | 3.2, 9.2, 9.3 |
-| christiano | Deep Reinforcement Learning from Human Preferences | Christiano et al. | arXiv:1706.03741 | [B] | 2026-11-17 | 3.2, 8.1, 9.2 |
+| christiano | Deep Reinforcement Learning from Human Preferences | Christiano et al. | arXiv:1706.03741 | [B] | 2026-11-17 | 3.2, 8.1, 9.2, 9.4 |
 | dpo | Direct Preference Optimization: Your Language Model is Secretly a Reward Model | Rafailov et al. | arXiv:2305.18290 ; https://github.com/eric-mitchell/direct-preference-optimization | [A] | 2026-11-17 | 3.2, 9.3 |
-| trl-repo | huggingface/trl repo（SFT/DPO/GRPO 等 trainer；TRL 无独立论文） | HuggingFace | https://github.com/huggingface/trl | 教学参照 | 2026-11-17 | 3.2, 6.3, 9.1, 9.3 |
+| trl-repo | huggingface/trl repo（SFT/DPO/GRPO 等 trainer；TRL 无独立论文） | HuggingFace | https://github.com/huggingface/trl | 教学参照 | 2026-11-17 | 3.2, 6.3, 9.1, 9.3, 9.4 |
 
 ### Part 4 · 数据并行与显存切分
 
@@ -121,7 +121,7 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | nemo | NVIDIA NeMo Framework（Megatron-Core 的上游封装；注意：NeMo 主仓已重组，github.com/NVIDIA/NeMo 现 301 至 NVIDIA-NeMo/Speech） | NVIDIA | https://github.com/NVIDIA-NeMo/Speech | 教学参照 | 2026-11-17 | 6.3 |
 | megatron-bridge | NVIDIA-NeMo/Megatron-Bridge repo（Megatron 模型训练库 + HF 双向转换；NeMo 重组后的 LLM 训练入口） | NVIDIA | https://github.com/NVIDIA-NeMo/Megatron-Bridge | 教学参照 | 2026-11-17 | 6.3 |
-| verl | HybridFlow: A Flexible and Efficient RLHF Framework（veRL 论文） | Sheng et al. | arXiv:2409.19256 ; https://github.com/verl-project/verl | [A] | 2026-11-17 | 6.3, 8.5 |
+| verl | HybridFlow: A Flexible and Efficient RLHF Framework（veRL 论文） | Sheng et al. | arXiv:2409.19256 ; https://github.com/verl-project/verl | [A] | 2026-11-17 | 6.3, 8.5, 9.5 |
 | openrlhf | OpenRLHF: An Easy-to-use, Scalable and High-performance RLHF Framework | Hu et al. | arXiv:2405.11143 ; https://github.com/OpenRLHF/OpenRLHF | [A] | 2026-11-17 | 6.3, 8.3, 8.5, 9.2 |
 | olmo-core | allenai/OLMo-core repo（OLMo 2 的全开放训练栈） | AllenAI | https://github.com/allenai/OLMo-core | [A] | 2026-11-17 | 5.5, 6.3 |
 
@@ -135,7 +135,7 @@
 | doremi | DoReMi: Optimizing Data Mixtures Speeds Up Language Model Pretraining | Xie et al. | arXiv:2305.10429 | [B] | 2026-11-17 | 7.1 |
 | tensor-programs-v | Tensor Programs V: Tuning Large Neural Networks via Zero-Shot Hyperparameter Transfer（µP / µTransfer） | Yang et al. | arXiv:2203.03466 | [B] | 2026-11-17 | 7.2 |
 | glm-4.5 | GLM-4.5: Agentic, Reasoning, and Coding (ARC) Foundation Models | GLM Team | arXiv:2508.06471 | [A] | 2026-11-17 | 7.1, 7.2, 7.5 |
-| qwen3 | Qwen3 Technical Report | Qwen Team | arXiv:2505.09388 | [A] | 2026-11-17 | 7.2 |
+| qwen3 | Qwen3 Technical Report | Qwen Team | arXiv:2505.09388 | [A] | 2026-11-17 | 7.2, 9.5 |
 | qwen2.5-1m | Qwen2.5-1M Technical Report | Qwen Team | arXiv:2501.15383 | [A] | 2026-11-17 | 7.5 |
 | yarn | YaRN: Efficient Context Window Extension of Large Language Models | Peng et al. | arXiv:2309.00071 | [A] | 2026-11-17 | 7.5 |
 
@@ -152,9 +152,9 @@
 | ppo | Proximal Policy Optimization Algorithms | Schulman et al. | arXiv:1707.06347 | [B] | 2026-11-17 | 8.3 |
 | trpo | Trust Region Policy Optimization | Schulman et al. | arXiv:1502.05477 | [B] | 2026-11-17 | 8.3 |
 | cleanrl | vwxyzjn/cleanrl repo（PPO 等单文件教学实现） | Huang et al. | https://github.com/vwxyzjn/cleanrl | 教学参照 | 2026-11-17 | 8.2, 8.3 |
-| deepseekmath | DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models（GRPO 出处） | Shao et al. | arXiv:2402.03300 | [A] | 2026-11-17 | 8.4 |
+| deepseekmath | DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models（GRPO 出处） | Shao et al. | arXiv:2402.03300 | [A] | 2026-11-17 | 8.4, 9.5 |
 | deepseek-r1 | DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning | DeepSeek-AI | arXiv:2501.12948 | [A] | 2026-11-17 | 8.4, 9.5 |
-| dapo | DAPO: An Open-Source LLM Reinforcement Learning System at Scale | Yu et al. | arXiv:2503.14476 | [A] | 2026-11-17 | 8.4 |
+| dapo | DAPO: An Open-Source LLM Reinforcement Learning System at Scale | Yu et al. | arXiv:2503.14476 | [A] | 2026-11-17 | 8.4, 9.5 |
 | dr-grpo | Understanding R1-Zero-Like Training: A Critical Perspective（Dr.GRPO 出处） | Liu et al. | arXiv:2503.20783 | [A] | 2026-11-17 | 8.4, 9.5 |
 | gspo | Group Sequence Policy Optimization | Zheng et al. | arXiv:2507.18071 | [A] | 2026-11-17 | 8.4 |
 | schulman-kl | Approximating KL Divergence（k1/k2/k3 KL 估计器出处） | Schulman | http://joschu.net/blog/kl-approx.html（2020 博客，无 arXiv） | 教学参照 | 2026-11-17 | 8.4, 9.2 |

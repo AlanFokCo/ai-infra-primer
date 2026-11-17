@@ -192,11 +192,11 @@ models 侧交叉链接到这里的章节（training 上线后这些指针生效�
 
 | 章节 | 文件 | 状态 |
 | --- | --- | --- |
-| 9.1 SFT：指令微调的流程与数据形态 | 01-sft.md | 未开始 |
-| 9.2 RLHF 全链：Reward Model → PPO | 02-rlhf-pipeline.md | 未开始 |
-| 9.3 DPO 家族：直接偏好优化 | 03-dpo-family.md | 未开始 |
-| 9.4 RFT 与拒绝采样 | 04-rejection-sampling-and-rft.md | 未开始 |
-| 9.5 RLVR 与推理模型的训练 | 05-rlvr-and-reasoning.md | 未开始 |
+| 9.1 SFT：指令微调的流程与数据形态 | 01-sft.md | 已关闭 |
+| 9.2 RLHF 全链：Reward Model → PPO | 02-rlhf-pipeline.md | 已关闭 |
+| 9.3 DPO 家族：直接偏好优化 | 03-dpo-family.md | 已关闭 |
+| 9.4 RFT 与拒绝采样 | 04-rejection-sampling-and-rft.md | 已关闭 |
+| 9.5 RLVR 与推理模型的训练 | 05-rlvr-and-reasoning.md | 已关闭 |
 
 ## 审查记录
 
@@ -210,6 +210,7 @@ models 侧交叉链接到这里的章节（training 上线后这些指针生效�
 | W3 | 2026-11-17 | P5+P6 共 8 章 | 逐章批量审查 × 2 批（批 1: 5.1-5.3 / 批 2: 5.4-6.3+波末 sweep）+ 各批修复轮复审 × 2 | 1（全部关闭：striped-attention 的 arXiv ID 2405.13119 系宇宙学论文——spec 审查 B 当年给错 ID 沿 spec 传播，真身 2311.09431；references/spec/章节四处全线纠正，证据等级经 [B]→[A] 复核回升（官方 repo 在 exists-forall org）） | 12（全部关闭：5.4 三处口径（1/4→1/3、全程通信账、复算非对称注记）、5.5 表两行全程口径、5.2 zigzag/striped 机制分家重写、5.3 1F1B 图归属删改与级联重绘、5.3 三处节号、5.1 DGX-2H 16 卡、6.3 torchtitan 引文原文） | 15（全部清零：修复 13 + 接受登记 2） | 无 | 暂不放行 → 修复并复审后 8 章全放行（强制重推导 4 项全 pass：5.1 f/g+TP 通信账 / 5.3 气泡+1F1B / 5.4 EP all-to-all 细化 / 6.2 dist-opt↔ZeRO 对照；完整档案见 [training-w3-review-p5a](../docs/reviews/training-w3-review-p5a.md) / [p5b](../docs/reviews/training-w3-review-p5b.md)）。波末收编：models 4.5 §7 单位标签 errata 一处；NeMo 主仓重组注记 + megatron-bridge 补录；training 断言 24 章 / 6 Part、站点 98 页 QA 全绿 |
 | W4 | 2026-11-17 | P7 共 5 章 | 逐章批量审查 × 2 批（批 1: 7.1-7.3 / 批 2: 7.4-7.5+波末 sweep）+ 修复轮（controller 单行复核制） | 0 | 2（全部关闭：7.2「长上下文阶段吸收缺口」与 herd Table 4 矛盾（改为 ramp 吸收 + Table 4 恒 16M 注记）、7.5 mid-training 量级带与自家锚点冲突） | 10（全部清零） | 无 | 有条件放行 → 修复后 5 章全放行（强制重推导 4 项全 pass：7.2 µP 结论表九格逐格一致 + MinHash 双源核验 / 7.4 14N 字节账 + MTBF 最优间隔 / 7.5 成本账；完整档案见 [training-w4-review-p7a](../docs/reviews/training-w4-review-p7a.md) / [p7b](../docs/reviews/training-w4-review-p7b.md)）。波末裁定：GLM-4.5「全披露」系 spec 审查 C 判错（spec 7.2 大纲已修正）；herd 58.7% vs Table 5 系原文不自洽（7.3 注记处置正确）；references 补录 qwen3 |
 | W5 | 2026-11-17 | P8 共 5 章 | 逐章批量审查 × 2 批（批 1: 8.1-8.3 / 批 2: 8.4-8.5+波末 sweep）+ 各批修复轮复审 × 2 | 1（全部关闭：references verl 条目作者张冠李戴 Hu et al.→Sheng et al.——W0 时期 controller 的错，W5 批 2 抓到，传播 6 处全线纠正） | 12（全部关闭：8.4 对照表 KL 列与 DAPO/GSPO 原文矛盾、8.5 式 3 悬空与 N_a 一章两义、8.3 的 PPO 式号/Atari-MuJoCo 张冠李戴/Table 1 消融措辞/break 层级等引用定位、8.1 的 S&B 节号与最优 baseline 归属、8.2 数值对照；S2-4 一条经复审驳回——evaluator 误读缩进、原文正确） | 13（全部清零） | 无 | 暂不放行 → 修复并复审后 5 章全放行（强制重推导 5 项全 pass：8.1 PG 定理两形式+baseline / 8.2 GAE / 8.3 PPO clip 分情形 / 8.4 GRPO 组基线 (G−1)/G 偏差 + k3 KL / 8.5 四模型显存账 + 权重同步；完整档案见 [training-w5-review-p8a](../docs/reviews/training-w5-review-p8a.md) / [p8b](../docs/reviews/training-w5-review-p8b.md)）。波末收编：references 补录 greensmith2004；writer 存疑项裁定 6 项 |
+| W6 | 2026-11-18 | P9 共 5 章 | 逐章批量审查 × 2 批（批 1: 9.1-9.3 / 批 2: 9.4-9.5+波末 sweep）+ 各批修复轮复审 × 2 | 1（全部关闭：9.4 式 (2) 旁注恒等式 −H 应 +H——反例 π̂=π 即假） | 9（全部关闭：9.3 练习 1(e) 题干错、9.1 TRL 分流误述与警告口径、9.2 InstructGPT 节号与 RM 精度出处、9.5 Dr.GRPO 节号、9.4 RS 质检归 model-as-judge 与过程标记删除） | 15（全部清零） | 无 | 暂不放行 → 修复并复审后 5 章全放行（强制重推导 4 项全 pass：9.2 RM 目标+Goodhart / 9.3 DPO 全链+IPO / 9.4 截断-再归一化+判据表 / 9.5 R1 四阶段逐阶段核对——含 language consistency reward 归 R1 阶段 2 确认；完整档案见 [training-w6-review-p9a](../docs/reviews/training-w6-review-p9a.md) / [p9b](../docs/reviews/training-w6-review-p9b.md)）。**training 维度 39/39 章全维度收官** |
 
 **跨维度指针 errata 记录**（spec §2 条款授权，仅限指针句的最小修订）：
 
