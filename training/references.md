@@ -43,15 +43,15 @@
 | key | 标题 | 作者 | arXiv ID / URL | 证据等级 | 核实日期 | 被引章节 |
 | --- | --- | --- | --- | --- | --- | --- |
 | baydin-ad-survey | Automatic Differentiation in Machine Learning: a Survey | Baydin et al. | arXiv:1502.05767 | [B] | 2026-11-16 | 1.1 |
-| pytorch-repo | pytorch/pytorch repo（torch.autograd、torch.optim、torch.utils.checkpoint、torch.nn.utils.clip_grad_norm_、torch.distributed.checkpoint） | PyTorch | https://github.com/pytorch/pytorch | 教学参照 | 2026-11-16 | 1.1, 1.2, 1.3, 1.4, 1.5, 2.1, 2.2, 2.4, 4.1, 4.3 |
+| pytorch-repo | pytorch/pytorch repo（torch.autograd、torch.optim、torch.utils.checkpoint、torch.nn.utils.clip_grad_norm_、torch.distributed.checkpoint） | PyTorch | https://github.com/pytorch/pytorch | 教学参照 | 2026-11-16 | 1.1, 1.2, 1.3, 1.4, 1.5, 2.1, 2.2, 2.4, 4.1, 4.3, 7.4 |
 | pytorch-ddp | PyTorch Distributed: Experiences on Accelerating Data Parallel Training | Li et al. | arXiv:2006.15704 | [A] | 2026-11-16 | 1.1, 1.5, 4.1 |
-| flashattention | FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness | Dao et al. | arXiv:2205.14135 | [A] | 2026-11-16 | 1.2 |
+| flashattention | FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness | Dao et al. | arXiv:2205.14135 | [A] | 2026-11-16 | 1.2, 7.1 |
 | liger-kernel | Liger Kernel: Efficient Triton Kernels for LLM Training | Hsu et al.（LinkedIn） | arXiv:2410.10989 ; https://github.com/linkedin/Liger-Kernel | [A] | 2026-11-16 | 1.2, 3.1 |
 | gradient-checkpointing | Training Deep Nets with Sublinear Memory Cost | Chen et al. | arXiv:1604.06174 | [B] | 2026-11-16 | 1.2, 1.4 |
 | megatron-sp | Reducing Activation Recomputation in Large Transformer Models | Korthikanti et al. | arXiv:2205.05198 | [A] | 2026-11-16 | 1.4, 4.4, 5.2, 6.1 |
 | mixed-precision | Mixed Precision Training | Micikevicius et al. | arXiv:1710.03740 | [B] | 2026-11-16 | 1.3 |
 | fp8-formats | FP8 Formats for Deep Learning | Micikevicius et al. | arXiv:2209.05433 | [B] | 2026-11-16 | 1.3 |
-| deepseekv3 | DeepSeek-V3 Technical Report | DeepSeek-AI | arXiv:2412.19437 | [A] | 2026-11-16 | 1.3, 2.2, 2.3, 2.4, 4.4, 5.1, 5.3, 5.4, 5.5, 7.2, 7.5 |
+| deepseekv3 | DeepSeek-V3 Technical Report | DeepSeek-AI | arXiv:2412.19437 | [A] | 2026-11-16 | 1.3, 2.2, 2.3, 2.4, 4.4, 5.1, 5.3, 5.4, 5.5, 7.1, 7.2, 7.3, 7.5 |
 
 ### Part 2 · Optimizer 与 LR 动力学
 
@@ -68,14 +68,14 @@
 | olmo2 | 2 OLMo 2 Furious | Team OLMo et al. | arXiv:2501.00656 | [A] | 2026-11-16 | 2.2, 2.3, 2.4, 4.4, 5.5, 7.2, 7.3 |
 | critical-batch | An Empirical Model of Large-Batch Training | McCandlish et al. | arXiv:1812.06162 | [B] | 2026-11-16 | 1.5, 2.1, 2.3 |
 | linear-scaling | Accurate, Large Minibatch SGD: Training ImageNet in 1 Hour | Goyal et al. | arXiv:1706.02677 | [B] | 2026-11-16 | 2.1, 2.3 |
-| minicpm | MiniCPM: Unveiling the Potential of Small Language Models with Scalable Training Strategies | Hu et al. | arXiv:2404.06395 | [A] | 2026-11-16 | 2.3, 7.1 |
+| minicpm | MiniCPM: Unveiling the Potential of Small Language Models with Scalable Training Strategies | Hu et al. | arXiv:2404.06395 | [A] | 2026-11-16 | 2.3, 7.1, 7.2 |
 | radam | On the Variance of the Adaptive Learning Rate and Beyond | Liu et al. | arXiv:1908.03265 | [A] | 2026-11-16 | 2.3 |
 | glm-130b | GLM-130B: An Open Bilingual Pre-trained Model | Zeng et al. | arXiv:2210.02414 | [A] | 2026-11-16 | 2.4, 7.3 |
 | st-moe | ST-MoE: Designing Stable and Transferable Sparse Expert Models | Zoph et al. | arXiv:2202.08906 | [B] | 2026-11-16 | 2.4, 3.1 |
 | muon-blog | Muon: An optimizer for hidden layers（Keller Jordan 博客，Muon 原始出处） | Jordan | https://kellerjordan.github.io/posts/muon/ | 教学参照 | 2026-11-16 | 2.5 |
 | muon-repo | KellerJordan/Muon repo（Newton-Schulz 迭代官方实现） | Jordan | https://github.com/KellerJordan/Muon | 教学参照 | 2026-11-16 | 2.5 |
-| moonlight | Muon is Scalable for LLM Training（Moonlight） | Liu et al.（Moonshot AI） | arXiv:2502.16982 ; https://github.com/MoonshotAI/Moonlight | [A] | 2026-11-16 | 2.5, 7.2 |
-| kimi-k2 | Kimi K2: Open Agentic Intelligence | Kimi Team | arXiv:2507.20534 | [A] | 2026-11-16 | 2.5, 5.5 |
+| moonlight | Muon is Scalable for LLM Training（Moonlight） | Liu et al.（Moonshot AI） | arXiv:2502.16982 ; https://github.com/MoonshotAI/Moonlight | [A] | 2026-11-16 | 2.5, 7.2, 7.3 |
+| kimi-k2 | Kimi K2: Open Agentic Intelligence | Kimi Team | arXiv:2507.20534 | [A] | 2026-11-16 | 2.5, 5.5, 7.3 |
 
 ### Part 3 · Loss 函数族
 
@@ -100,7 +100,7 @@
 | deepspeed-repo | deepspeedai/DeepSpeed repo（ZeRO 各阶段实现；原 microsoft/DeepSpeed，组织已更名） | DeepSpeed | https://github.com/deepspeedai/DeepSpeed | [A] | 2026-11-17 | 4.2, 6.3 |
 | fsdp | PyTorch FSDP: Experiences on Scaling Fully Sharded Data Parallel | Zhao et al. | arXiv:2304.11277 | [A] | 2026-11-17 | 4.2, 4.3, 4.4, 5.5, 7.4 |
 | torchtitan-repo | pytorch/torchtitan repo（PyTorch 原生最小训练栈） | PyTorch | https://github.com/pytorch/torchtitan | 教学参照 | 2026-11-17 | 4.3, 6.3 |
-| megatron-lm | Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism | Shoeybi et al. | arXiv:1909.08053 ; https://github.com/NVIDIA/Megatron-LM | [A] | 2026-11-17 | 4.1, 5.1, 5.2, 5.3, 5.4, 5.5, 6.1, 6.2 |
+| megatron-lm | Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism | Shoeybi et al. | arXiv:1909.08053 ; https://github.com/NVIDIA/Megatron-LM | [A] | 2026-11-17 | 4.1, 5.1, 5.2, 5.3, 5.4, 5.5, 6.1, 6.2, 7.4 |
 | megatron-cluster | Efficient Large-Scale Language Model Training on GPU Clusters Using Megatron-LM | Narayanan et al. | arXiv:2104.04473 | [A] | 2026-11-17 | 5.3, 5.5, 6.2 |
 | gshard | GShard: Scaling Giant Models with Conditional Computation and Automatic Sharding | Lepikhin et al. | arXiv:2006.16668 | [B] | 2026-11-17 | 5.4 |
 
@@ -124,6 +124,54 @@
 | verl | HybridFlow: A Flexible and Efficient RLHF Framework（veRL 论文） | Hu et al. | arXiv:2409.19256 ; https://github.com/verl-project/verl | [A] | 2026-11-17 | 6.3, 8.5 |
 | openrlhf | OpenRLHF: An Easy-to-use, Scalable and High-performance RLHF Framework | Hu et al. | arXiv:2405.11143 ; https://github.com/OpenRLHF/OpenRLHF | [A] | 2026-11-17 | 6.3, 8.5, 9.2 |
 | olmo-core | allenai/OLMo-core repo（OLMo 2 的全开放训练栈） | AllenAI | https://github.com/allenai/OLMo-core | [A] | 2026-11-17 | 5.5, 6.3 |
+
+
+### Part 7 · 预训练全流程
+
+| key | 标题 | 作者 | arXiv ID / URL | 证据等级 | 核实日期 | 被引章节 |
+| --- | --- | --- | --- | --- | --- | --- |
+| fineweb | The FineWeb Datasets: Decanting the Web for the Finest Text Data at Scale | Penedo et al. | arXiv:2406.17557 | [A] | 2026-11-17 | 7.1 |
+| dclm | DataComp-LM: In search of the next generation of training sets for language models | Li et al. | arXiv:2406.11794 | [A] | 2026-11-17 | 7.1 |
+| doremi | DoReMi: Optimizing Data Mixtures Speeds Up Language Model Pretraining | Xie et al. | arXiv:2305.10429 | [B] | 2026-11-17 | 7.1 |
+| tensor-programs-v | Tensor Programs V: Tuning Large Neural Networks via Zero-Shot Hyperparameter Transfer（µP / µTransfer） | Yang et al. | arXiv:2203.03466 | [B] | 2026-11-17 | 7.2 |
+| glm-4.5 | GLM-4.5: Agentic, Reasoning, and Coding (ARC) Foundation Models | GLM Team | arXiv:2508.06471 | [A] | 2026-11-17 | 7.1, 7.2, 7.5 |
+| qwen3 | Qwen3 Technical Report | Qwen Team | arXiv:2505.09388 | [A] | 2026-11-17 | 7.2 |
+| qwen2.5-1m | Qwen2.5-1M Technical Report | Qwen Team | arXiv:2501.15383 | [A] | 2026-11-17 | 7.5 |
+| yarn | YaRN: Efficient Context Window Extension of Large Language Models | Peng et al. | arXiv:2309.00071 | [A] | 2026-11-17 | 7.5 |
+
+
+### Part 8 · RL 数学详解
+
+| key | 标题 | 作者 | arXiv ID / URL | 证据等级 | 核实日期 | 被引章节 |
+| --- | --- | --- | --- | --- | --- | --- |
+| williams1992 | Simple statistical gradient-following algorithms for connectionist reinforcement learning（REINFORCE） | Williams | Machine Learning 8:229-256（1992，无 arXiv） | [B] | 2026-11-17 | 8.1 |
+| sutton1999 | Policy Gradient Methods for Reinforcement Learning with Function Approximation | Sutton et al. | NeurIPS 1999（无 arXiv） | [B] | 2026-11-17 | 8.1 |
+| sutton-barto | Reinforcement Learning: An Introduction（第 2 版） | Sutton & Barto | MIT Press 2018，http://incompleteideas.net/book/the-book-2nd.html | [B] | 2026-11-17 | 8.1, 8.2 |
+| gae | High-Dimensional Continuous Control Using Generalized Advantage Estimation | Schulman et al. | arXiv:1506.02438 | [B] | 2026-11-17 | 8.2, 8.3 |
+| ppo | Proximal Policy Optimization Algorithms | Schulman et al. | arXiv:1707.06347 | [B] | 2026-11-17 | 8.3 |
+| trpo | Trust Region Policy Optimization | Schulman et al. | arXiv:1502.05477 | [B] | 2026-11-17 | 8.3 |
+| cleanrl | vwxyzjn/cleanrl repo（PPO 等单文件教学实现） | Huang et al. | https://github.com/vwxyzjn/cleanrl | 教学参照 | 2026-11-17 | 8.2, 8.3 |
+| deepseekmath | DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models（GRPO 出处） | Shao et al. | arXiv:2402.03300 | [A] | 2026-11-17 | 8.4 |
+| deepseek-r1 | DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning | DeepSeek-AI | arXiv:2501.12948 | [A] | 2026-11-17 | 8.4, 9.5 |
+| dapo | DAPO: An Open-Source LLM Reinforcement Learning System at Scale | Yu et al. | arXiv:2503.14476 | [A] | 2026-11-17 | 8.4 |
+| dr-grpo | Understanding R1-Zero-Like Training: A Critical Perspective（Dr.GRPO 出处） | Liu et al. | arXiv:2503.20783 | [A] | 2026-11-17 | 8.4, 9.5 |
+| gspo | Group Sequence Policy Optimization | Zheng et al. | arXiv:2507.18071 | [A] | 2026-11-17 | 8.4 |
+| schulman-kl | Approximating KL Divergence（k1/k2/k3 KL 估计器出处） | Schulman | http://joschu.net/blog/kl-approx.html（2020 博客，无 arXiv） | 教学参照 | 2026-11-17 | 8.4, 9.2 |
+| vllm | Efficient Memory Management for Large Language Model Serving with PagedAttention | Kwon et al. | arXiv:2309.06180 | [A] | 2026-11-17 | 8.5 |
+
+
+### Part 9 · 后训练全流程
+
+| key | 标题 | 作者 | arXiv ID / URL | 证据等级 | 核实日期 | 被引章节 |
+| --- | --- | --- | --- | --- | --- | --- |
+| instructgpt | Training language models to follow instructions with human feedback | Ouyang et al. | arXiv:2203.02155 | [B] | 2026-11-17 | 9.2 |
+| ipo | A General Theoretical Paradigm to Understand Learning from Human Preferences（IPO / ΨPO） | Azar et al. | arXiv:2310.12036 | [B] | 2026-11-17 | 9.3 |
+| kto | KTO: Model Alignment as Prospect Theoretic Optimization | Ethayarajh et al. | arXiv:2402.01306 | [A] | 2026-11-17 | 9.3 |
+| simpo | SimPO: Simple Preference Optimization with a Reference-Free Reward | Meng et al. | arXiv:2405.14734 | [A] | 2026-11-17 | 9.3 |
+| orpo | ORPO: Monolithic Preference Optimization without Reference Model | Hong et al. | arXiv:2403.07691 | [A] | 2026-11-17 | 9.3 |
+| star | STaR: Bootstrapping Reasoning with Reasoning | Zelikman et al. | arXiv:2203.14465 | [B] | 2026-11-17 | 9.4 |
+| lima | LIMA: Less Is More for Alignment | Zhou et al. | arXiv:2305.11206 | [B] | 2026-11-17 | 9.1 |
+| kimi-k1.5 | Kimi k1.5: Scaling Reinforcement Learning with LLMs | Kimi Team | arXiv:2501.12599 | [A] | 2026-11-17 | 9.5 |
 
 ## 术语表
 

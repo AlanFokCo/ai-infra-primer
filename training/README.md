@@ -172,11 +172,11 @@ models 侧交叉链接到这里的章节（training 上线后这些指针生效�
 
 | 章节 | 文件 | 状态 |
 | --- | --- | --- |
-| 7.1 数据管线与配比 | 01-data-pipeline.md | 未开始 |
-| 7.2 预训练配方：lr / bsz / warmup / decay / µP | 02-recipes.md | 未开始 |
-| 7.3 训练稳定性：Loss Spike、监控与干预 | 03-training-stability.md | 未开始 |
-| 7.4 Checkpoint 与续训 | 04-checkpointing-and-resumption.md | 未开始 |
-| 7.5 长上下文扩展与中后期训练（短篇） | 05-long-context-and-mid-training.md | 未开始 |
+| 7.1 数据管线与配比 | 01-data-pipeline.md | 已关闭 |
+| 7.2 预训练配方：lr / bsz / warmup / decay / µP | 02-recipes.md | 已关闭 |
+| 7.3 训练稳定性：Loss Spike、监控与干预 | 03-training-stability.md | 已关闭 |
+| 7.4 Checkpoint 与续训 | 04-checkpointing-and-resumption.md | 已关闭 |
+| 7.5 长上下文扩展与中后期训练（短篇） | 05-long-context-and-mid-training.md | 已关闭 |
 
 ### Part 8 · RL 数学详解（W5）
 
@@ -208,6 +208,7 @@ models 侧交叉链接到这里的章节（training 上线后这些指针生效�
 | W1 | 2026-11-17 | P1+P2 共 10 章 | 逐章批量审查 × 3 批（批 1: P1 / 批 2: 2.1-2.3 / 批 3: 2.4-2.5+波末 sweep）+ 各批修复轮复审 × 3 | 2（全部关闭：1.4 §5 决策算例误用 GPT-3 基线 114→194 且结论翻转、2.2 §3「m̂²≤v̂ 逐坐标严格成立」伪定理——β1≠β2 时 C-S 不适用、数值反例 2.01η，双口径改写） | 13（全部关闭；含复审新引入 1 条 retain_graph 机制句） | 29（全部清零：修复 27 + 接受登记 2——1.2 §9 的 N 复用与 2.5 的 B 双用均有局部显式声明） | 无 | 暂不放行 → 修复并复审后 10 章全放行（强制重推导 9 项全 pass：1.2 matmul 反向+softmax-CE / 1.3 loss scaling / 1.4 √L / 2.1 momentum 等价+二次碗 / 2.2 bias correction+AdamW 解耦 / 2.3 linear scaling+critical batch / 2.5 msign+NS+尺度匹配；完整档案见 [training-w1-review-p1](../docs/reviews/training-w1-review-p1.md) / [p2a](../docs/reviews/training-w1-review-p2a.md) / [p2b](../docs/reviews/training-w1-review-p2b.md)）。波末收编：lint 脚本修 bash 3.2 下 `$pat`+CJK 误解析崩溃；writer 存疑项裁定 4 项（2 项成立、1 项照录正确、1 项幻影撤改）；/training/ 站点上线（80 页、QA 全绿） |
 | W2 | 2026-11-17 | P3+P4 共 6 章 | 逐章批量审查 × 2 批（批 1: P3+4.1 / 批 2: 4.2-4.4+波末 sweep）+ 各批修复轮复审 × 2 | 1（全部关闭：3.1 §5「CE 梯度流恒抬 log Z」伪不等式——反例 −0.12，正确充分条件为目标位 argmax，带条件改写） | 7（全部关闭：TRL fused LM head 过时、DDP div_factor_ 张冠李戴、docstring 注记挂错分支、`\;` 禁命令、ZeRO AR 变体 3N vs 2N、4.2/4.3 跨章 ÷m 口径统一、中断统计节号 §3.3.4） | 12（全部清零：修复 10 + 接受登记 2——4.3 的 G 分片组大小有显式声明、GPU GiB 口径已声明） | 无 | 暂不放行 → 修复并复审后 6 章全放行（强制重推导 4 项全 pass：4.1 ring all-reduce / 3.1 logsumexp+z-loss 梯度 / 4.2 ZeRO 各阶通信量与取回时序 / 4.4 总账重算；完整档案见 [training-w2-review-p3](../docs/reviews/training-w2-review-p3.md) / [p4](../docs/reviews/training-w2-review-p4.md)）。波末裁定：herd Table 4 确有 Llama-3 405B 全度数与 MFU（spec 审查 B 当年判错，spec 5.5 已回改）；Offload Table 1 末行原文属实、章节处理批准 |
 | W3 | 2026-11-17 | P5+P6 共 8 章 | 逐章批量审查 × 2 批（批 1: 5.1-5.3 / 批 2: 5.4-6.3+波末 sweep）+ 各批修复轮复审 × 2 | 1（全部关闭：striped-attention 的 arXiv ID 2405.13119 系宇宙学论文——spec 审查 B 当年给错 ID 沿 spec 传播，真身 2311.09431；references/spec/章节四处全线纠正，证据等级经 [B]→[A] 复核回升（官方 repo 在 exists-forall org）） | 12（全部关闭：5.4 三处口径（1/4→1/3、全程通信账、复算非对称注记）、5.5 表两行全程口径、5.2 zigzag/striped 机制分家重写、5.3 1F1B 图归属删改与级联重绘、5.3 三处节号、5.1 DGX-2H 16 卡、6.3 torchtitan 引文原文） | 15（全部清零：修复 13 + 接受登记 2） | 无 | 暂不放行 → 修复并复审后 8 章全放行（强制重推导 4 项全 pass：5.1 f/g+TP 通信账 / 5.3 气泡+1F1B / 5.4 EP all-to-all 细化 / 6.2 dist-opt↔ZeRO 对照；完整档案见 [training-w3-review-p5a](../docs/reviews/training-w3-review-p5a.md) / [p5b](../docs/reviews/training-w3-review-p5b.md)）。波末收编：models 4.5 §7 单位标签 errata 一处；NeMo 主仓重组注记 + megatron-bridge 补录；training 断言 24 章 / 6 Part、站点 98 页 QA 全绿 |
+| W4 | 2026-11-17 | P7 共 5 章 | 逐章批量审查 × 2 批（批 1: 7.1-7.3 / 批 2: 7.4-7.5+波末 sweep）+ 修复轮（controller 单行复核制） | 0 | 2（全部关闭：7.2「长上下文阶段吸收缺口」与 herd Table 4 矛盾（改为 ramp 吸收 + Table 4 恒 16M 注记）、7.5 mid-training 量级带与自家锚点冲突） | 10（全部清零） | 无 | 有条件放行 → 修复后 5 章全放行（强制重推导 4 项全 pass：7.2 µP 结论表九格逐格一致 + MinHash 双源核验 / 7.4 14N 字节账 + MTBF 最优间隔 / 7.5 成本账；完整档案见 [training-w4-review-p7a](../docs/reviews/training-w4-review-p7a.md) / [p7b](../docs/reviews/training-w4-review-p7b.md)）。波末裁定：GLM-4.5「全披露」系 spec 审查 C 判错（spec 7.2 大纲已修正）；herd 58.7% vs Table 5 系原文不自洽（7.3 注记处置正确）；references 补录 qwen3 |
 
 **跨维度指针 errata 记录**（spec §2 条款授权，仅限指针句的最小修订）：
 

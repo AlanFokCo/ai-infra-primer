@@ -70,7 +70,7 @@ $$
 
 工程落地一句：每个「Q 块 × 收到的 K/V 块」的部分 attention 由支持分块 K/V 摄入的 FlashAttention 族 kernel 完成，online softmax 状态的合并（重缩放与累加）在 kernel 边界显式进行；块调度与 SRAM 驻留的 kernel 细节归 gpu 维度，训练栈侧的 CP 组配置走读归 6.2。
 
-**归属边界**：ring 轮转与 online softmax 累积的机制出自 Ring Attention 原文；下一节的负载均衡修正（striped / zigzag）不在其中（[Liu et al., 2023](../references.md) 不含此项——出处勿张冠李戴）。
+**归属边界**：ring 轮转与 online softmax 累积的机制出自 Ring Attention 原文；下一节的负载均衡修正（striped / zigzag）不在其中（[Liu et al., 2023](../references.md) 不含此项——出处勿张冠李戴）。指针一句：本章只管「长序列怎么切」；上下文窗口本身的训练期扩展（staged 拉长与 mid-training 配方一侧）归 7.5。
 
 ## 4. causal 负载均衡：倾斜推导与 striped / zigzag 两种修法【关键推导】
 
