@@ -186,7 +186,7 @@ $$
 
 且不回传梯度（原文： $z_0$ 只控制损失饱和位置）；clamp 在 0 使估计带正偏但方差更低。用错配对的而不用本配对的理由：数据里的 $(x, y)$ 是被刻意挑选的好/坏样本，log 比幅度不代表策略的典型行为。TRL main 的 `kto_trainer.py` 逐项对应： `kl = (KL_logps - ref_KL_logps).mean().detach()` 后 `.clamp(min=0)`，chosen 支 `1 - sigmoid(beta * (logratios - kl))`、rejected 支 `1 - sigmoid(beta * (kl - logratios))`，权重乘 `desirable_weight` / `undesirable_weight`（教学参照，2026-11-18 核实）。由此也得到一个 batch 约束：估计 $z_0$ 需要 microbatch ≥ 2。
 
-超参口径（其 §4.2，逐条原文）：KTO 对学习率比 DPO 更敏感，推荐起点 5e-6（DPO 默认 5e-7 的 2-10 倍），因为参考点调整后的 reward 幅度更小； $\beta$ 分两档——已过 SFT 的较大模型取 $[0.01, 0.10]$，未经 SFT 直接对齐的较小模型取 $[0.10, 1.00]$；类别不平衡用权重配平，经验区间 $\lambda_D n_D / (\lambda_U n_U) \in [1, 3/2]$（得侧灵敏度略占优）， $n_D, n_U$ 为两类样本数。实证位置：GPT-4 裁判的胜率口径下，KTO 在各模型规模上不劣于 DPO；对 Llama 系列，KTO 单用（不经过 SFT）即匹配 SFT+DPO 两阶段的成绩、且显著好于 DPO 单用（其 Figure 3 口径）；「每 prompt 只留一个 $y$」的去配对消融（one-y-per-x）验证了单边数据的可行性（[Ethayarajh et al., 2024](../references.md)，[A]，Figure 3 与 §4）。
+超参口径（其 §4.2，逐条原文）：KTO 对学习率比 DPO 更敏感，推荐起点 5e-6（DPO 默认 5e-7 的 2-10 倍），因为参考点调整后的 reward 幅度更小； $\beta$ 分两档——已过 SFT 的较大模型取 $[0.01, 0.10]$，未经 SFT 直接对齐的较小模型取 $[0.10, 1.00]$；类别不平衡用权重配平，经验区间 $\lambda_D n_D / (\lambda_U n_U) \in [1, 3/2]$（得侧灵敏度略占优）， $n_D, n_U$ 为两类样本数。实证位置：GPT-4 裁判的胜率口径下，KTO 在各模型规模上不劣于 DPO；对 Llama 系列，KTO 单用（不经过 SFT）即匹配 SFT+DPO 两阶段的成绩、且好于 DPO 单用（其 Figure 3 口径，误差棒为 90% 二项置信区间）；「每 prompt 只留一个 $y$」的去配对消融（one-y-per-x）验证了单边数据的可行性（[Ethayarajh et al., 2024](../references.md)，[A]，Figure 3 与 §4）。
 
 ## 8. SimPO：reference-free 的平均 logp 与 margin
 
@@ -216,7 +216,7 @@ $$
 
 ## 9. ORPO：把偏好惩罚折进 SFT 的 odds ratio
 
-ORPO（[Hong et al., 2024](../references.md)，arXiv:2403.07691，[A]）的起点是一个对 SFT 的观察：SFT 只对 chosen 回答做最大似然，对 rejected 回答的概率**无任何约束**——其 §3 的实证（OPT-350M 在 HH-RLHF 上微调，Figure 3）：尽管监督只打在 chosen 上，chosen 与 rejected 两支的 log 概率**同时上升**，rejected 有时甚至高于 chosen——域内适配的代价是 rejected 风格被顺带抬升；而后置的偏好对齐阶段（DPO 等）才是纠偏环节。ORPO 的主张：纠偏不需要独立阶段——在 SFT 的 NLL 上加一个拉开两支差距的小惩罚即可，单阶段、无 reference 模型。
+ORPO（[Hong et al., 2024](../references.md)，arXiv:2403.07691，[A]）的起点是一个对 SFT 的观察：SFT 只对 chosen 回答做最大似然，对 rejected 回答的概率**无任何约束**——其 §3 的实证（OPT-350M 在 HH-RLHF 上微调，Figure 3）：尽管监督只打在 chosen 上，chosen 与 rejected 两支的 log 概率**同时上升**，rejected 有时甚至高于 chosen——域内适配的代价是 rejected 风格被一并抬升；而后置的偏好对齐阶段（DPO 等）才是纠偏环节。ORPO 的主张：纠偏不需要独立阶段——在 SFT 的 NLL 上加一个拉开两支差距的小惩罚即可，单阶段、无 reference 模型。
 
 惩罚的构造用 odds ratio。对序列级「概率」 $P_\theta(y \mid x)$（论文式 (3) 的口径：其 log 取逐 token 平均 log 似然，即几何平均意义上的序列得分）定义 odds：
 

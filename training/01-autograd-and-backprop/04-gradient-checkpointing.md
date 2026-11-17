@@ -68,7 +68,7 @@ $$
 
 ## 3. full vs selective：Megatron 的选择账
 
-式 (3) 的段取到最细（每段一层）就是 full activation recomputation：只存层输入，每层 $2sbh$ 字节、全模型 $2sbhL$ ，激活从式 (1) 的 $(34 + 5as/h)$ 倍压到 2 倍；代价即第 2 节的一次额外前向，30–40% 时间开销。介于「全存」与「full」之间的粗粒度折中——只 checkpoint 一部分层、其余层全存——在 PP 下经常失效：层已按 stage 切薄，可调的层数所剩无几（MT-NLG 每设备只有 3 层，论文 §5）。Megatron 论文的观察是这笔交易可以拆细：**不是所有激活都同样难算**（[Korthikanti et al., 2022](../references.md)，[A]，§5）。式 (1) 里 $5as^{2}b$ 那五项—— $QK^{\top}$ 、softmax、softmax dropout、 $PV$ ——张量巨大但每元素 FLOPs 极低（softmax、dropout 是逐元素算子；两个 matmul 的收缩维只有 head 维 $h/a$ ）；其余 34 项对应的投影与 MLP matmul 才是算力大头。selective activation recomputation 据此只重算 attention 核心、保留其余全部激活：内存占大头的没了，重算的 FLOPs 只是零头。
+式 (3) 的段取到最细（每段一层）就是 full activation recomputation：只存层输入，每层 $2sbh$ 字节、全模型 $2sbhL$ ，激活从式 (1) 的 $(34 + 5as/h)$ 倍压到 2 倍；代价即第 2 节的一次额外前向，30–40% 时间开销。介于「全存」与「full」之间的粗粒度折中——只 checkpoint 一部分层、其余层全存——在 PP 下经常失效：层已按 stage 切薄，可调的层数所剩无几（MT-NLG 每设备只有 3 层，论文 §5）。Megatron 论文的观察是这笔交易可以拆细：**不是所有激活都同样难算**（[Korthikanti et al., 2022](../references.md)，[A]，§5）。式 (1) 里 $5as^{2}b$ 那五项—— $QK^{\top}$ 、softmax、softmax dropout、 $PV$ ——字节数占全层大头但每元素 FLOPs 极低（softmax、dropout 是逐元素算子；两个 matmul 的收缩维只有 head 维 $h/a$ ）；其余 34 项对应的投影与 MLP matmul 才是算力大头。selective activation recomputation 据此只重算 attention 核心、保留其余全部激活：字节大头消失，重算的 FLOPs 只是零头。
 
 论文的两个实例（§5）：GPT-3 175B（ $5as/h = 80$ ）省 70% 激活内存、重算仅引入 2.7% FLOPs 开销；MT-NLG 530B（ $5as/h = 64$ ）省 65%、1.6%。这两个 FLOPs 数可以独立复核。重算内容是 $QK^{\top}$ 与 $PV$ 两个 matmul（softmax / dropout 的逐元素开销相对低一个 head 维因子）：每序列每层 $4 s^{2} h$ FLOPs——朴素实现先算满 $s \times s$ 矩阵再 mask，causal 不减这笔账（models 1.2 式 (6) 的减半是 causal 感知实现的口径）；对照层前向 matmul 总量 $24 s h^{2}$（QKV 投影 $6sh^{2}$ 、输出投影 $2sh^{2}$ 、MLP $16sh^{2}$ ）：
 

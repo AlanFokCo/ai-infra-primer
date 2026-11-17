@@ -36,7 +36,7 @@ stage4   ·   ·   ·   F1  F2  F3  F4  B1  B2  B3  B4  ·   ·   ·
 flush：t = 14 之后统一参数更新（同步语义）
 ```
 
-气泡的推导只需要追踪两个时刻。第一步，末段的前向：micro-batch $j$ 的前向到达 stage $p$ 之前要走 $p$ 段，而 stage $p$ 自己的 $m$ 个前向是连续的，故 stage $p$ 的最后一个前向结束于
+**气泡推导（本章关键推导之一）**。气泡的推导只需要追踪两个时刻。第一步，末段的前向：micro-batch $j$ 的前向到达 stage $p$ 之前要走 $p$ 段，而 stage $p$ 自己的 $m$ 个前向是连续的，故 stage $p$ 的最后一个前向结束于
 
 $$
 t_{\mathrm{F,end}} = (p - 1)\thinspace t_f + m \thinspace t_f \qquad (2)
@@ -302,7 +302,7 @@ Megatron-LM 的官方实现把 §2-4 落在 `megatron/core/pipeline_parallel/sch
 
 1F1B 函数里的 warmup 计数与 §3 逐字对应：`num_warmup_microbatches = total_stages - current_stage - 1`（0 起始 rank；钳到 $m$），随后 `num_microbatches_remaining` 个「F/B 交替」稳态步，尾部排空剩余 B——三相对应的正是 §3 的图。反向经 `backward_step` 调 `custom_backward`（输入梯度与参数梯度在 autograd 引擎内一次算出、未拆分——ZB 式 B/W 分离不在 Megatron 主线里）；P2P 收发由 `P2PCommunicator` 封装；注意非交错档对 `overlap_p2p_comm` 直接抛错（收发必须串行于计算流），P2P 重叠是交错档的专属优化。flush 的落点：所有 micro-batch 跑完后由 `finalize_model_grads_func` 收尾（梯度 finalize 与同步），同步语义的 flush 边界由此实现。interleaved 档的 warmup 公式在 `get_pp_rank_microbatches`：`(p − rank − 1) * 2 + (num_model_chunks − 1) * microbatch_group_size_per_vp_stage`——代码注释把第二项写为全体 worker 统一执行的组数、第一项随 stage 深度线性（靠前 stage 预热更多、末段几乎立即进 1F1B）；MoE 场景开 `overlap_moe_expert_parallel_comm` 时再 +1（保证 1F1B 步内前向与反向相互独立，该 flag 的注释原话）。
 
-Zero Bubble 的官方实现是论文作者基于 Megatron-LM 的 fork（sail-sg/zero-bubble-pipeline-parallelism，论文摘要给出的地址；[A]），B/W 拆分落在自定义的反向图调度上；V3 技术报告只交付了 DualPipe 的算法描述与通信内核（5.4 §6 的 DeepEP 一句），调度器实现后于 2025 年单独开源（deepseek-ai/DualPipe repo，2025-02 创建）。教学对照：§3 的模拟器与 Megatron 代码的关系是「依赖结构一致、工程细节全略」——真实实现要处理变长序列、多模态 loss 缩放（`_get_moe_loss_scale` / `_get_mtp_loss_scale`）、首末 stage 的 embedding 激活缓冲清理（`clear_embedding_activation_buffer`）等分支，均不改变式 (1)-(8) 的账。
+Zero Bubble 的官方实现是论文作者基于 Megatron-LM 的 fork（sail-sg/zero-bubble-pipeline-parallelism，论文摘要给出的地址；[A]），B/W 拆分落在自定义的反向图调度上；V3 技术报告只交付了 DualPipe 的算法描述与通信内核（5.4 §6 的 DeepEP 一句），调度器实现于 2025 年 2 月单独开源（deepseek-ai/DualPipe repo）。教学对照：§3 的模拟器与 Megatron 代码的关系是「依赖结构一致、工程细节全略」——真实实现要处理变长序列、多模态 loss 缩放（`_get_moe_loss_scale` / `_get_mtp_loss_scale`）、首末 stage 的 embedding 激活缓冲清理（`clear_embedding_activation_buffer`）等分支，均不改变式 (1)-(8) 的账。
 
 ## 总结
 

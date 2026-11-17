@@ -26,7 +26,7 @@ $$
 X^{\prime} = P \thinspace X, \qquad Y = P^{\top} \thinspace (W \odot F(X^{\prime})) \qquad (1)
 $$
 
-**符号**： $X \in \mathbb{R}^{n \times d}$：EP 组的输入隐状态（ $d$ = hidden 维）； $P \in \lbrace 0,1 \rbrace^{nk \times n}$：dispatch 的复制-置换矩阵； $F$：逐行施加的 expert FFN（第 $(t,i)$ 行走 expert $i$ 的参数）； $W \in \mathbb{R}^{nk \times d}$：路由权重 $w_{ti}$ 的逐行广播； $Y \in \mathbb{R}^{n \times d}$：合并输出。式 (1) 第一行说 dispatch 是「复制加置换」（每个 (token, expert) 对一份副本），第二行说 combine 是同一个置换的加权转置（发回原位并按 $w_{ti}$ 求和）——这就是「dispatch 矩阵 = one-hot 路由的置换形式化」。系统层的对应物：all-to-all 是没有归约语的集合通信——每对 rank 互换的数据内容各不相同（对照 4.1 的 all-reduce：同一份数据的逐元素求和）；combine 回程在通信上还是 all-to-all，归约（加权求和）发生在接收之后的本地。
+**符号**： $X \in \mathbb{R}^{n \times d}$：EP 组的输入隐状态（ $d$ = hidden 维）； $P \in \lbrace 0,1 \rbrace^{nk \times n}$：dispatch 的复制-置换矩阵； $F$：逐行施加的 expert FFN（第 $(t,i)$ 行走 expert $i$ 的参数）； $W \in \mathbb{R}^{nk \times d}$：路由权重 $w_{ti}$ 的逐行广播； $Y \in \mathbb{R}^{n \times d}$：合并输出。式 (1) 第一行说 dispatch 是「复制加置换」（每个 (token, expert) 对一份副本），第二行说 combine 是同一个置换的加权转置（发回原位并按 $w_{ti}$ 求和）——这就是「dispatch 矩阵 = one-hot 路由的置换形式化」。系统层的对应物：all-to-all 是没有归约语义的集合通信——每对 rank 互换的数据内容各不相同（对照 4.1 的 all-reduce：同一份数据的逐元素求和）；combine 回程在通信上还是 all-to-all，归约（加权求和）发生在接收之后的本地。
 
 通信量的上界由此直接读出： $X^{\prime}$ 有 $nk$ 行，dispatch 移动 $nkd$ 个元素，combine 同量——每 token 每层 $2kd$ 个元素，bf16 合 $4kd$ bytes。这正是 models 4.5 §7 交付的「每 token 每层 $2kd$ 个元素（bf16 合 $4kd$ bytes）、扇出 $\le M$ 节点」的上界（V3 实例： $2 \times 8 \times 7168 \times 2 \approx 229$ KB，乘 58 个 MoE 层），本章不重复推导，只在 §2 把这个上界按命中分布细化。
 
@@ -121,7 +121,7 @@ def ep_moe_forward(x, topk_idx, topk_w, expert_fns, n_expert, e):
 
 | 主题 | 公式 / 数值 | 要点 |
 | --- | --- | --- |
-| dispatch/combine | 式 (1)： $X' = PX$、 $Y = P^{\top}(W \odot F(X'))$ | 置换矩阵与其加权转置；all-to-all 无归约语、归约在本地 |
+| dispatch/combine | 式 (1)： $X' = PX$、 $Y = P^{\top}(W \odot F(X'))$ | 置换矩阵与其加权转置；all-to-all 无归约语义、归约在本地 |
 | 通信上界 | 每 token 每层 $2kd$ 个元素（bf16 合 $4kd$ bytes）；全程 $\le 8kd$ bytes | models 4.5 §7 已交付；V3 实例约 229 KB × 58 层 |
 | 命中细化 | 式 (2)(3)：去重后 $2D_t d$ ；均衡下 $\mathbb{E}[D] = e(1-(1-1/e)^k)$ | 卡级去重收益小（7.6/8）；节点级去重 + 组限定（ $M$ = 4）是主战场 |
 | 偏斜 | 式 (4)：层时间 $\propto \max_j R_j$ | 木桶乘性劣化；尾延迟问题 |

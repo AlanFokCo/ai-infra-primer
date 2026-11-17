@@ -10,7 +10,7 @@ $$
 \max_\theta \thinspace \mathbb{E}_{y \sim \pi_\theta(\cdot|x)}\left[ R(x, y) \right]
 $$
 
-期望号下的分布依赖 $\theta$ ，被期望的函数 $R$ 只能前向求值——RM 是另一个网络，verifier 是符号判定，两者都不提供 $\partial R / \partial \theta$ 。这类「分布含参数、函数只求值」的优化问题有通用解法：score function estimator（对数导数技巧），它就是策略梯度的全部内容。本章走三步：MDP 与目标函数的形式化（§2-3）、策略梯度定理与 baseline 的推导（§4-5）、REINFORCE 算法与它的方差问题（§6-7）。
+期望号下的分布依赖 $\theta$ ，被期望的函数 $R$ 只能前向求值——RM 是另一个网络，verifier 是符号判定，两者都不提供 $\partial R / \partial \theta$ 。这类「分布含参数、函数只求值」的优化问题有通用解法：score function estimator（对数导数技巧），它就是策略梯度的全部内容。
 
 ## 2. MDP 形式化与 LLM 的退化结构
 
@@ -138,7 +138,7 @@ $$
 
 ## 4. 策略梯度定理：因果引理、Q 形式、状态分布
 
-式 (9) 是轨迹形式的梯度。策略梯度定理（policy gradient theorem）把它改写成「逐步 score × 该步动作的价值」的形式，下面三步走完。
+式 (9) 是轨迹形式的梯度。策略梯度定理（policy gradient theorem）把它改写成「逐步 score × 该步动作的价值」的形式。
 
 ### 4.1 因果引理：动作影响不了过去的奖励
 

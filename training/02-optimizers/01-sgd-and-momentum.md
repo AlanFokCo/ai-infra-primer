@@ -10,7 +10,7 @@ $$
 \theta_{t+1} = \theta_t - \eta \thinspace g(\theta_t) \qquad (1)
 $$
 
-**符号**： $\theta \in \mathbb{R}^{N}$ ：参数； $\eta$ ：步长（learning rate, LR）； $t$ ：step 下标； $\mathcal{L}$ 取期望口径，有限数据集时替换为经验平均，本章结论不变。
+**符号**： $\theta \in \mathbb{R}^{N}$ ：参数； $\eta$ ：步长（learning rate）； $t$ ：step 下标； $\mathcal{L}$ 取期望口径，有限数据集时替换为经验平均，本章结论不变。
 
 真梯度算不起：一次 $g$ 要扫完全部数据。mini-batch SGD 用 $B$ 个 iid 样本的均值代替：
 
@@ -54,9 +54,9 @@ $$
 \eta^{\ast}(B) = \frac{\lVert g \rVert^{2}}{L \left(\lVert g \rVert^{2} + \mathrm{tr}\thinspace \Sigma / B\right)} = \frac{1}{L} \cdot \frac{1}{1 + \mathcal{B}_{\mathrm{simple}} / B} \qquad (7)
 $$
 
-**符号**： $`\eta^{\ast}(B)`$ ：该 batch 下最大化单步期望进展的步长。式 (7) 把整个 batch-LR 关系压缩成一条曲线，两个 regime 直接读出：
+**符号**： $`\eta^{\ast}(B)`$ ：该 batch 下最大化单步期望进展的步长。式 (7) 把整个 batch-步长关系压缩成一条曲线，两个 regime 直接读出：
 
-- **小 batch 区**（ $`B \ll \mathcal{B}_{\mathrm{simple}}`$ ）： $`\eta^{\ast} \approx \dfrac{B}{L \thinspace \mathcal{B}_{\mathrm{simple}}}`$ ——最优步长**正比于** batch。这就是 [Goyal et al., 2017](../references.md)（arXiv:1706.02677，[B]）linear scaling rule 的经验形式「batch 乘 $k$ 、LR 乘 $k$ 、其余超参不动」在小噪声区的一阶行为；该文用它在 ImageNet 上把 batch 推到 8192 且精度不掉。式 (7) 给出了规则的适用区与比例系数：它是噪声主导区的近似，不是普适规律。
+- **小 batch 区**（ $`B \ll \mathcal{B}_{\mathrm{simple}}`$ ）： $`\eta^{\ast} \approx \dfrac{B}{L \thinspace \mathcal{B}_{\mathrm{simple}}}`$ ——最优步长**正比于** batch。这就是 [Goyal et al., 2017](../references.md)（arXiv:1706.02677，[B]）linear scaling rule 的经验形式「batch 乘 $k$ 、步长乘 $k$ 、其余超参不动」在小噪声区的一阶行为；该文用它在 ImageNet 上把 batch 推到 8192 且精度不掉。式 (7) 给出了规则的适用区与比例系数：它是噪声主导区的近似，不是普适规律。
 - **大 batch 区**（ $`B \gg \mathcal{B}_{\mathrm{simple}}`$ ）： $`\eta^{\ast} \to 1/L`$ 饱和。代回式 (6)，最大单步期望进展 $\to \lVert g \rVert^{2} / (2L)$ 同样饱和——batch 再大也换不来更多每步进展，拐点量级就是 $`\mathcal{B}_{\mathrm{simple}}`$ 。这是 critical batch size 的一阶定义，精确口径（对训练全程积分、随训练漂移）归 2.3。
 
 这条曲线同时解释了为什么「batch 大一倍、step 数减半」只在噪声区近似成立：饱和区里加 batch 几乎不减少所需步数，只是白烧数据与算力。
@@ -95,7 +95,7 @@ $$
 
 三个直接读数：
 
-- **有效步长放大**：历史梯度同号的方向上，更新幅度 ≈ $\eta \cdot \frac{1}{1-\beta} \cdot \lVert \hat g \rVert$ ——momentum 把有效 LR 放大 $1/(1-\beta)$ 倍（ $\beta = 0.9$ 为 10 倍）。换 $\beta$ 必须联动 $\eta$ ，否则步长偷偷变了一个数量级。
+- **有效步长放大**：历史梯度同号的方向上，更新幅度 ≈ $\eta \cdot \frac{1}{1-\beta} \cdot \lVert \hat g \rVert$ ——momentum 把有效步长放大 $1/(1-\beta)$ 倍（ $\beta = 0.9$ 为 10 倍）。换 $\beta$ 必须联动 $\eta$ ，否则步长偷偷变了一个数量级。
 - **平均视野**：最近 $k$ 步的权重占比 $1 - \beta^{k}$ ；覆盖 90% 权重需 $k \ge \ln 0.1 / \ln \beta$ ： $\beta$ = 0.9 / 0.95 / 0.99 对应约 22 / 45 / 229 步。 $\beta$ 的含义就是记忆长度。
 - **符号交替分量自相抵消**：噪声与锯齿分量方向来回变，加权和被压——§6 给出精确方差账。
 
@@ -108,13 +108,13 @@ $$
 
 EMA 形式还有一个开局细节： $m_0 = 0$ 意味着前若干步的 $m_t$ 系统性偏小—— $t$ 步后权重和只有 $1 - \beta^{t}$ ，前期估计带着 $1 - \beta^{t}$ 的衰减偏差。SGD-momentum 实践通常不处理（PyTorch 首步直接以 $\hat g_1$ 初始化 buffer，见下）；Adam 把这个偏差显式除掉（bias correction，2.2 推导），两处对照着看就知道后者在修正什么。
 
-**第三种约定：LR 在速度内部**。[Sutskever et al., 2013](../references.md)（ICML 2013，PMLR 28(3):1139-1147，无 arXiv，[B]）原文的 classical momentum（CM）：
+**第三种约定：步长在速度内部**。[Sutskever et al., 2013](../references.md)（ICML 2013，PMLR 28(3):1139-1147，无 arXiv，[B]）原文的 classical momentum（CM）：
 
 $$
 v_{t+1} = \mu \thinspace v_t - \varepsilon \thinspace \hat g_t, \qquad \theta_{t+1} = \theta_t + v_{t+1} \qquad (12)
 $$
 
-代换 $u_t = -v_t / \varepsilon$ 立即化为式 (8)（ $\eta = \varepsilon$ ），定常 LR 下两约定等价。**但 LR 随时间变化时不再等价**：式 (12) 的历史项里固化的是旧 LR，切换到新 LR 需把历史乘 $\eta_{t+1} / \eta_t$ ——[Goyal et al., 2017](../references.md)（[B]，§3 式 (9)–(10)）把这个修正称为 momentum correction，并指出 warmup 期 LR 快速上升时缺了它会不稳定（历史项相对新梯度过小）。PyTorch 的式 (8) 约定（LR 在速度外）天然免修正——这是 warmup 普及后更稳的写法。
+代换 $u_t = -v_t / \varepsilon$ 立即化为式 (8)（ $\eta = \varepsilon$ ），定常步长下两约定等价。**但步长随时间变化时不再等价**：式 (12) 的历史项里固化的是旧步长，切换到新步长需把历史乘 $\eta_{t+1} / \eta_t$ ——[Goyal et al., 2017](../references.md)（[B]，§3 式 (9)–(10)）把这个修正称为 momentum correction，并指出 warmup 期步长快速上升时缺了它会不稳定（历史项相对新梯度过小）。PyTorch 的式 (8) 约定（步长在速度外）天然免修正——这是 warmup 普及后更稳的写法。
 
 **PyTorch 实现核对**（pytorch/pytorch repo `torch/optim/sgd.py`，教学参照 + 官方实现；`_single_tensor_sgd` 逐行）。核心两行：`buf.mul_(momentum).add_(grad, alpha=1-dampening)` 即式 (8) 第一式——dampening $\tau$ 把新梯度乘 $(1-\tau)$ ，等价于有效步长乘 $(1-\tau)$ ，默认 0；`param.add_(grad, alpha=-lr)` 即第二式。三个附带事实：首步 `buf` 直接克隆首个梯度而非从零加——恰对应 $v_0 = 0$ 下 $v_1 = \hat g_1$ ；`weight_decay` 参数把 $\lambda \theta$ **加进梯度**再进 buffer（L2 与 momentum 耦合进同一 EMA，2.2 证明这在自适应优化器下不等价于 weight decay，正是 AdamW 的动机）；`foreach` / `fused` 分支是同一数学的算子融合变体，逐行语义相同。momentum buffer 本身是一份与参数同形的常驻内存——优化器状态内存账从这里开始，2.2 会再加两份。
 
@@ -249,7 +249,7 @@ LLM 预训练的主流却不是 SGD-momentum：各家公开配方的 optimizer �
 | 二阶矩分解 | $\mathbb{E}\lVert\hat g\rVert^{2} = \lVert g\rVert^{2} + \mathrm{tr}\thinspace\Sigma/B$ | 式 (4)；噪声尺度 $`\mathcal{B}_{\mathrm{simple}} = \mathrm{tr}\thinspace\Sigma/\lVert g\rVert^{2}`$ |
 | 最优步长 | $`\eta^{\ast} = L^{-1} / \left(1 + \mathcal{B}_{\mathrm{simple}}/B\right)`$ | 式 (7)；小 $B$ 区 $\eta \propto B$（linear scaling 适用区）、大 $B$ 区饱和 $\to 1/L$ |
 | momentum 等价 | 式 (8)↔(9)， $\eta' = \eta/(1-\beta)$ | 式 (10)；有效步长 × $1/(1-\beta)$ 、视野 $1/(1-\beta)$ 步 |
-| LR-in-velocity 约定 | 式 (12)；LR 变化需乘 $\eta_{t+1}/\eta_t$ | momentum correction（Goyal §3）；PyTorch 约定免修正 |
+| 速度内含步长的约定 | 式 (12)；步长变化需乘 $\eta_{t+1}/\eta_t$ | momentum correction（Goyal §3）；PyTorch 约定免修正 |
 | Nesterov | 外推点求梯，式 (13)(14) | 动量项 $\mu \to \mu^{2}$ 、梯度项 $1 \to 1+\mu$ ；PyTorch `nesterov=True` 为同式重排 |
 | GD 二次碗 | $\rho = (\kappa-1)/(\kappa+1)$ | 式 (16)；步数 $\Theta(\kappa \ln(1/\varepsilon))$ |
 | heavy ball 二次碗 | $\rho = (\sqrt\kappa-1)/(\sqrt\kappa+1)$ | 式 (20)；Polyak 1964；步数 $\Theta(\sqrt\kappa \ln(1/\varepsilon))$ |

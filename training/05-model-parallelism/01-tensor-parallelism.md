@@ -86,7 +86,7 @@ $$
 g: \quad \text{前向 } g(x) = \mathrm{AllReduce}(x), \qquad \text{反向 } \frac{\partial L}{\partial x} = \frac{\partial L}{\partial g} \text{（恒等）} \qquad (6)
 $$
 
-**符号**： $\mathrm{AllReduce}$：TP 组内逐元素求和（4.1 §2 的集合通信；求和语义，DP 侧的「平均」归 DD P 管，见本节末注记）。f 贴在列切层的**输入**前，g 贴在行切层的**输出**后。两个方向各验证一遍这对定义确实是 §2 的通信规则、且前向语义与单卡恒等。
+**符号**： $\mathrm{AllReduce}$：TP 组内逐元素求和（4.1 §2 的集合通信；求和语义，DP 侧的「平均」归 DDP 管，见本节末注记）。f 贴在列切层的**输入**前，g 贴在行切层的**输出**后。两个方向各验证一遍这对定义确实是 §2 的通信规则、且前向语义与单卡恒等。
 
 **前向等价**。f 前向是恒等 ⇒ 列切层看到的是原封不动的 $X$；g 前向 all-reduce ⇒ 行切层的部分和被求和成完整输出。拼起来： $g(\sum_p \varphi(f(X)\thinspace A_p)\thinspace B_p)$ 一类的复合在前向与单卡 $Y = \varphi(XA)\thinspace B$ 逐项相等（ $\varphi$ 为逐位置算子的情形见 §4）——f/g 不改变前向函数，只改变中间量的存放方式。
 
@@ -129,7 +129,7 @@ class ReduceFromTPRegion(torch.autograd.Function):
 
 官方实现的逐行对照在 NVIDIA/Megatron-LM repo `megatron/core/tensor_parallel/mappings.py`：`_CopyToModelParallelRegion`（forward 返回输入本身、backward 调 `_reduce` 做 `torch.distributed.all_reduce`）即式 (5)，`_ReduceFromModelParallelRegion`（forward 调 `_reduce`、backward 原样回传）即式 (6)——与上面教学版逐行同构（文件与类名核实于 2026-11-16；`layers.py` 侧的调用点走读归 6.1）。对外的公开包装是 `copy_to_tensor_model_parallel_region` / `reduce_from_tensor_model_parallel_region` 两个函数。同文件还有对称的另一对：`_ScatterToModelParallelRegion`（前向沿末维切、反向 all-gather）与 `_GatherFromModelParallelRegion`（前向 all-gather、反向沿末维切）——把「恒等 / all-reduce」换成「切 / 拼」得到的变体，用于 embedding 与可选的输出拼接路径，5.2 会看到它们沿序列维的 SP 版本。
 
-两处实现注记。其一，归约语义是**求和**：TP 组内各卡算的是同一批数据的不同分片，部分和该加不该平均——「除以度数」是 DDP 梯度平均（4.1 §3.2）的事，与 f/g 无关，两套归约语义不可串味。其二，f 的前向恒等意味着反向的 all-reduce 必须对**全部** TP rank 同步发起，而各卡反向到达 f 的时刻由本地计算决定——f/g 把 TP 组的反向锁成同步步进，任何一卡的 straggler 直接顶到 all-reduce 的延迟项上（4.1 式 (3) 的 $2(t-1)\alpha$ 项），这是 TP 组要小、要同构的另一条理由。其三，**RNG 同步注记**：dropout 等随机算子的随机性在 TP 组内必须分区管理——TP 区段内各卡分片上的 dropout 用各卡独立的随机流（分片内容本就不同），复制区段（g 之后、残差与 norm 一带）的 dropout 则必须跨 TP 组共享同一张 mask，否则各卡前向不再一致、g 的归约语义被破坏；Megatron 的对应设计是把随机状态分成「TP 组内共享」与「按分片独立」两组管理（[Shoeybi et al., 2019](../references.md)，arXiv:1909.08053，[A]，附录 B.2 口径）。
+三处实现注记。其一，归约语义是**求和**：TP 组内各卡算的是同一批数据的不同分片，部分和该加不该平均——「除以度数」是 DDP 梯度平均（4.1 §3.2）的事，与 f/g 无关，两套归约语义不可串味。其二，f 的前向恒等意味着反向的 all-reduce 必须对**全部** TP rank 同步发起，而各卡反向到达 f 的时刻由本地计算决定——f/g 把 TP 组的反向锁成同步步进，任何一卡的 straggler 直接顶到 all-reduce 的延迟项上（4.1 式 (3) 的 $2(t-1)\alpha$ 项），这是 TP 组要小、要同构的另一条理由。其三，**RNG 同步注记**：dropout 等随机算子的随机性在 TP 组内必须分区管理——TP 区段内各卡分片上的 dropout 用各卡独立的随机流（分片内容本就不同），复制区段（g 之后、残差与 norm 一带）的 dropout 则必须跨 TP 组共享同一张 mask，否则各卡前向不再一致、g 的归约语义被破坏；Megatron 的对应设计是把随机状态分成「TP 组内共享」与「按分片独立」两组管理（[Shoeybi et al., 2019](../references.md)，arXiv:1909.08053，[A]，附录 B.2 口径）。
 
 ## 4. MLP 块的 TP：列切接行切，中间不拼接
 

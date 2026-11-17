@@ -75,7 +75,7 @@ $$
 
 表中「未披露」三格本身是信息：tokens 预算与序列切分方案恰是各家最不透明的一段——窗长路径与 RoPE base 阶梯可公开（它们定义产品能力），扩窗花了多少 tokens、用什么并行切分则接近成本结构。读这类报告时，「披露到什么粒度」与数字一样值得对照（Qwen3 TR 连超参数数值都不披露的先例见 7.2）。
 
-外推侧只立纪律、不展开（机制归 models 4.6 §2.5）：DCA 把相对位置重编号进训练见过的值域，YaRN attention scaling 给 attention logits 补温度，两者合用在 Qwen2.5-1M 上把 256K 训练模型推到 1M 推理。TR 自己的消融是最好的口径教具：只在 32K 上训练过的 Qwen2.5-7B/14B-Instruct 加 DCA 后，passkey retrieval 在 1M tokens 上仍超 80% 准确率（§5.1）——训练长度与推理外推长度是两个独立变量，写表混排即事实错误。反方向的依赖 TR 也登记了："training on longer sequences (up to 256k tokens) substantially improves the model's ability to extrapolate"——训练窗决定外推质量的上限，两列独立但不无关。
+外推侧只立纪律、不展开（机制归 models 4.6 §2.5）：DCA 把相对位置重编号进训练见过的值域，YaRN attention scaling 给 attention logits 补温度，两者合用在 Qwen2.5-1M 上把 256K 训练模型推到 1M 推理。TR 自己的消融即口径实例：只在 32K 上训练过的 Qwen2.5-7B/14B-Instruct 加 DCA 后，passkey retrieval 在 1M tokens 上仍超 80% 准确率（§5.1）——训练长度与推理外推长度是两个独立变量，写表混排即事实错误。反方向的依赖 TR 也登记了："training on longer sequences (up to 256k tokens) substantially improves the model's ability to extrapolate"——训练窗决定外推质量的上限，两列独立但不无关。
 
 ## 总结
 

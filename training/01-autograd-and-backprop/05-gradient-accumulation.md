@@ -28,7 +28,7 @@ $$
 
 第二步用梯度的线性性。即：累加方案拿到的参数梯度与大 batch 一次反向完全相同。这条性质还有一个常用方向：它说明 gradient accumulation 与 gradient checkpointing（1.4）是两种不同的显存手段——checkpointing 用一次额外前向换激活不落地（FLOPs 涨到约 $8ND$ ），累加不动 FLOPs 但每步算得慢（ $m$ 次小前向反向的固定开销）；两者可以叠加，先靠累加把单步 batch 抬到目标，再靠 checkpointing 把每个 micro-batch 的激活峰值压进显存。
 
-$1/m$ 这个因子的位置有三种等价放法——(a) 每个 micro-batch 的 loss 先除 $m$ 再 `backward()`（本章代码的写法）；(b) 累加 $m$ 份原始梯度、更新前统一除 $m$ ；(c) 更新时把 LR 临时除 $m$ 。只能选一处放。漏放的效果 = 梯度放大 $m$ 倍 ≈ LR 放大 $m$ 倍： $m = 16$ 的设定下等于无声地把 LR 抬 16 倍，训练轻则 loss 曲线整体偏漂、重则直接发散——这是累加实现里最常见的 bug。(c) 会把 LR 的语义搅乱（schedule、warmup、裁剪阈值都要跟着换算），只作等价性说明，不要落地。
+$1/m$ 这个因子的位置有三种等价放法——(a) 每个 micro-batch 的 loss 先除 $m$ 再 `backward()`（本章代码的写法）；(b) 累加 $m$ 份原始梯度、更新前统一除 $m$ ；(c) 更新时把 LR 临时除 $m$ 。只能选一处放。漏放的效果 = 梯度放大 $m$ 倍 ≈ LR 放大 $m$ 倍： $m = 16$ 的设定下等于无声地把 LR 抬 16 倍，训练轻则 loss 曲线整体偏漂、重则直接发散——这是累加实现里典型的 bug：不抛异常，只改训练语义。(c) 会把 LR 的语义搅乱（schedule、warmup、裁剪阈值都要跟着换算），只作等价性说明，不要落地。
 
 等价性成立依赖三个前提，逐条核对：
 
@@ -65,7 +65,7 @@ $$
 
 ## 3. 顺序与状态陷阱：裁剪、噪声、优化器内部计数
 
-式 (3) 的等价不等于「随便拆都对」。三个陷阱按踩中频率排：
+式 (3) 的等价不等于「随便拆都对」。三个陷阱：
 
 **梯度裁剪必须作用于累加之后**。`clip_grad_norm_` 读的是 `.grad` 的当前值，正确顺序： $m$ 个 micro-batch 全部累加完（DP 下含一次 all-reduce，§4）→ clip → `step()` → `zero_grad()`。逐 micro-batch 裁剪不是任何意义上的近似——裁剪是按范数的非线性缩放：两个真实方向相反的 micro-batch 梯度 $g_1 = 0.9$ 、 $g_2 = -0.9$ （一维示意），全和为 0、不该动；逐段以阈值 0.5 裁剪得 $0.5 - 0.5 = 0$ ，此例侥幸相同；换成 $g_1 = 2$ 、 $g_2 = -0.1$ ：全和 $1.9$ 、按比例缩到阈值 1.0，方向不变；逐段裁得 $1.0 - 0.1 = 0.9$ ——方向与幅度都错了。一般地 $\mathrm{clip}\left(\sum_i g_i\right) \neq \sum_i \mathrm{clip}(g_i)$ ，逐段裁剪系统性扭曲更新。范数裁剪的公式与阈值选择归 2.4，本章只立顺序语义。fp16 loss scaling 场景同理：unscale 也必须发生在累加完成之后、clip 之前（scaling 机制归 1.3）。
 
@@ -73,7 +73,7 @@ $$
 
 **优化器的步数计数不感知累加**。Adam 的 bias correction 因子 $1 - \beta^{t}$ 、二阶矩 EMA、warmup 状态全部按 `step()` 调用次数推进（2.2）。 $m$ 从 1 改到 8，优化器看到的「训练进度」按 step 计不变、按 token 计缩 8 倍——任何按 step 标定的量（bias correction、schedule、日志横轴、checkpoint 间隔）都不与 token 轴自动对齐，换算出错时曲线看起来「没问题」但配方已经变了。
 
-**`.grad` 的生命周期**。每个 optimizer step 结束后 `zero_grad(set_to_none=True)` 一次：置 None 而非写零，下一次 `backward()` 重新分配——语义与清零等价，省一次全参数写。顺序颠倒（先 zero 再 clip / step）是第二常见的累加 bug，症状是参数完全不动或裁了个空。
+**`.grad` 的生命周期**。每个 optimizer step 结束后 `zero_grad(set_to_none=True)` 一次：置 None 而非写零，下一次 `backward()` 重新分配——语义与清零等价，省一次全参数写。顺序颠倒（先 zero 再 clip / step）的症状是参数完全不动或裁了个空。
 
 **日志语义随之改变**。逐 micro-batch 打 loss 打出来的是 $m$ 个不同子集的平均，方差比整批 loss 大约 $m$ 倍（子集小 $m$ 倍、式 (4) 同权时），曲线显得毛糙；对账口径是累加期间把各 micro-batch 的 loss（已乘 $1/m$ ）求和、每个 optimizer step 记一次——这个数才是与「大 batch 训练曲线」可比的量。吞吐口径同理：tokens/s 按实际消费的 token 计（含累加步），与 optimizer step 数解耦。评估侧不需要累加：无反向就无激活驻留（`no_grad` / `inference_mode` 语义归 1.1），eval batch 可以拉到显存上限，与训练侧的 $b$ 无关。
 

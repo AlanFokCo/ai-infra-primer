@@ -53,7 +53,7 @@ $$
 - **`torch.distributed.checkpoint`（DCP）**（pytorch repo `torch/distributed/checkpoint/`，教学参照+官方实现）：`save` 以 SPMD 方式工作——正确处理 `ShardedTensor` 与 DTensor，每个 rank 只保存自己的本地分片（官方文档口径）；planner 层把各 rank 的局部写计划（SavePlan / WriteItem）合成全局 metadata，加载侧按新网格生成读计划（LoadPlan / ReadItem），实现保存 / 加载并行度解耦——加载时的 world size 可以与保存时不同，读计划按目标网格重新声明每个 rank 需要哪些全局区间，存储层按 offset 切片读出。`state_dict` 里嵌了 `Stateful` 对象（模型、优化器）时，保存走各自的 `state_dict()` 钩子。
 - **Megatron dist-ckpt**（[Shoeybi et al., 2019](../references.md)，arXiv:1909.08053，[A]，repo 的 `megatron/core/dist_checkpointing/`）：同一思想在 Megatron 栈内的形态——`ShardedTensor` 元数据登记、保存 / 加载网格解耦、distributed optimizer 的分片区间映射随 checkpoint 携带；机制级走读已在 6.2 §5 交付，本章只登记其作为 resharding 参照的位置。
 
-FSDP 家族（[Zhao et al., 2023](../references.md)，arXiv:2304.11277，[A]；语义走读归 4.3）的全分片模型状态使「每 rank 存本地分片」成为唯一自然的保存形态——分片 checkpoint 不是可选优化而是分片训练的直接后果；DCP 对 `ShardedTensor` 的一等支持正是顺着这个语义长出来的。元数据与数据分离还带来两个顺手的工程能力：只读元数据即可检视 checkpoint 内容清单而不搬任何张量字节（Megatron dist-ckpt 有对应的只读元数据接口，6.2 §5）；按 key 子集加载即得部分恢复——只取模型参数、跳过优化器态，就是「评测加载」与「换优化器续训」两个场景的同一机制（后者接 §5 的重 warmup 判别）。
+FSDP 家族（[Zhao et al., 2023](../references.md)，arXiv:2304.11277，[A]；语义走读归 4.3）的全分片模型状态使「每 rank 存本地分片」成为唯一自然的保存形态——分片 checkpoint 不是可选优化而是分片训练的直接后果；DCP 对 `ShardedTensor` 的一等支持正是顺着这个语义长出来的。元数据与数据分离还附带两个工程能力：只读元数据即可检视 checkpoint 内容清单而不搬任何张量字节（Megatron dist-ckpt 有对应的只读元数据接口，6.2 §5）；按 key 子集加载即得部分恢复——只取模型参数、跳过优化器态，就是「评测加载」与「换优化器续训」两个场景的同一机制（后者接 §5 的重 warmup 判别）。
 
 ```
 保存网格（DP=4，每 rank 1/4）          逻辑全量张量（元数据：全局 shape + offset）

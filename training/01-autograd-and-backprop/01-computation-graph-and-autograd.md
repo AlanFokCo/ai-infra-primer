@@ -53,7 +53,7 @@ $$
 
 **符号**： $\nabla \ell \in \mathbb{R}^{1 \times n_K}$：损失对末层激活的梯度（行向量）； $J_k$：第 $k$ 个算子的雅可比矩阵（Jacobian matrix）。
 
-矩阵乘法有结合律——从哪头开始乘是自由选择的，成本却天差地别。从右往左：先算两个 $n \times n$ 矩阵之积（ $O(n^{3})$ ），逐层压出全链 Jacobian 再乘向量，且每个 $J_k$ 要先物化： $n_k \times n_{k-1}$ 个元素。代入现实尺度看一眼物化的下场： $d$ = 4096 的逐位置算子作用在 $M$ = 4096 个 token 上，每个 token 对应一个 $4096 \times 4096$ 的 Jacobian，bf16 下共 $M d^{2} \times 2$ bytes = 128 GiB——这只是一层、一个 step、一份 Jacobian；32 层的 8B 模型连一层的零头都放不下。FLOPs 同样不成立：从右往左乘全链每 token 约 $K n^{3}$， $K$ = 32、 $n$ = 4096 时约 $2.2 \times 10^{12}$——是同 token 前向（ $2N \approx 1.4 \times 10^{10}$ ）的 150 倍以上。
+矩阵乘法有结合律——从哪头开始乘是自由选择的，成本却天差地别。从右往左：先算两个 $n \times n$ 矩阵之积（ $O(n^{3})$ ），逐层压出全链 Jacobian 再乘向量，且每个 $J_k$ 要先物化： $n_k \times n_{k-1}$ 个元素。代入现实尺度看物化的代价： $d$ = 4096 的逐位置算子作用在 $M$ = 4096 个 token 上，每个 token 对应一个 $4096 \times 4096$ 的 Jacobian，bf16 下共 $M d^{2} \times 2$ bytes = 128 GiB——这只是一层、一个 step、一份 Jacobian；32 层的 8B 模型连一层的零头都放不下。FLOPs 同样不成立：从右往左乘全链每 token 约 $K n^{3}$， $K$ = 32、 $n$ = 4096 时约 $2.2 \times 10^{12}$——是同 token 前向（ $2N \approx 1.4 \times 10^{10}$ ）的 150 倍以上。
 
 从左往右才是反向传播。定义逐节点 adjoint $`\bar{x}_k`$ $:= \partial L / \partial x_k \in \mathbb{R}^{1 \times n_k}$，递推：
 

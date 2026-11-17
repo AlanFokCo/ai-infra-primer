@@ -4,7 +4,7 @@
 
 ## 1. spike 的可观测形态：grad norm 先行，loss 后到
 
-GLM-130B 的训练日志留下了公开文献里最重要的一条稳定性实证：「a training collapse usually lags behind a 'spike' in gradient norm by a few training steps」——训练崩溃通常**滞后**于梯度范数突刺数步，grad norm 突刺是先行指标而非同时现象（[Zeng et al., 2022](../references.md)，arXiv:2210.02414，[A]，§3）。OLMo 2 在其基线 OLMo-0424 上独立记录了同构的形态：突发 loss spike 之前往往先出现更剧烈的 grad norm 突刺；模型越大突刺越频繁；grad norm 的慢速爬升与突刺频率正相关，两者合流后训练走向发散（[Team OLMo et al., 2025](../references.md)，arXiv:2501.00656，[A]，§3 开头的问题清单）。
+GLM-130B 的训练日志留下了公开文献里少见的带逐步记录的稳定性实证：「a training collapse usually lags behind a 'spike' in gradient norm by a few training steps」——训练崩溃通常**滞后**于梯度范数突刺数步，grad norm 突刺是先行指标而非同时现象（[Zeng et al., 2022](../references.md)，arXiv:2210.02414，[A]，§3）。OLMo 2 在其基线 OLMo-0424 上独立记录了同构的形态：突发 loss spike 之前往往先出现更剧烈的 grad norm 突刺；模型越大突刺越频繁；grad norm 的慢速爬升与突刺频率正相关，两者合流后训练走向发散（[Team OLMo et al., 2025](../references.md)，arXiv:2501.00656，[A]，§3 开头的问题清单）。
 
 先行性把「检测」从 loss 端提前到梯度端，判据形式化为一行滚动统计检测。设被监控序列为 $x_t$（grad norm、loss 或其他标量指标），取最近 $W$ 步的滚动均值 $`\bar{x}_t^{(W)}`$ 与滚动标准差 $`\sigma_t^{(W)}`$，定义标准化偏离
 

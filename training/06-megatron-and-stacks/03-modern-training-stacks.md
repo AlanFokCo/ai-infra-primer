@@ -14,7 +14,7 @@ NeMo（框架层：recipe / 数据 / 评测 / 导出） ──► Megatron-Core�
 Megatron-LM（参考实现：Core + 预配置训练脚本） ────┘
 ```
 
-NeMo 是再上一层的框架封装（references 口径：「Megatron-Core 的上游封装」）。组织现状有一处 2026 年的变动需要登记（核实于 2026-11-17）：`NVIDIA/NeMo` 现 301 重定向到 `NVIDIA-NeMo/Speech`——后者即 2019 年创建的原 NeMo 库（nemo-toolkit 包名与徽章未变），NVIDIA-NeMo 组织下另拆出 RL、Curator、Evaluator、Automodel、Megatron-Bridge 等独立库；references.md 里 nemo 条目的 URL 经重定向仍可达。拆库之后框架层的职能按库名即可读：数据策展（Curator）、评测（Evaluator）、导出部署（Export-Deploy）、后训练 RL（RL）、内容护栏（Guardrails）、HF 生态直连（Automodel），加上原 NeMo 本体（Speech）。对只关心大规模预训练的团队，日日打交道的仍是最下面两层：Megatron-Core 的库接口与 Megatron-LM 的参考脚本。
+NeMo 是再上一层的框架封装（references 口径：「Megatron-Core 的上游封装」）。组织现状有一处 2026 年的变动需要登记（核实于 2026-11-17）：`NVIDIA/NeMo` 现 301 重定向到 `NVIDIA-NeMo/Speech`——后者即 2019 年创建的原 NeMo 库（nemo-toolkit 包名与徽章未变），NVIDIA-NeMo 组织下另拆出 RL、Curator、Evaluator、Automodel、Megatron-Bridge 等独立库；references.md 里 nemo 条目的 URL 经重定向仍可达。拆库之后框架层的职能按库名即可读：数据策展（Curator）、评测（Evaluator）、导出部署（Export-Deploy）、后训练 RL（RL）、内容护栏（Guardrails）、HF 生态直连（Automodel），加上原 NeMo 本体（Speech）。对只关心大规模预训练的团队，日常打交道的仍是最下面两层：Megatron-Core 的库接口与 Megatron-LM 的参考脚本。
 
 Megatron-Bridge（`NVIDIA-NeMo/Megatron-Bridge`）的 repo 自述是 "Training library for Megatron-based models with bidirectional Hugging Face conversion capability"：一头接 HF 生态的模型定义与权重格式，一头接 Megatron-Core 的 5D 并行运行时，双向 checkpoint 转换是其核心功能。典型用法：把 HF 上的开放权重转进 Megatron 做大规模继续训练或微调，再转回 HF 格式发布。三层各自的读者不同：Megatron-Core 面向搭自有训练框架的人（库接口），Megatron-LM 参考实现层面向要「能跑起来的默认答案」的人（预配置脚本把 Core 按经典配置装配好，新模型接入通常从复制参考实现开始），NeMo / Bridge 面向要把模型、数据、评测、导出整条链一次拿走的人。
 
@@ -48,7 +48,7 @@ pytorch/torchtitan 的 README 首行标语是 "A PyTorch-native platform for pre
 
 ## 3. DeepSpeed：ZeRO 原厂与组合用法的现状
 
-ZeRO 的原厂实现在 deepspeedai/DeepSpeed 的 `deepspeed/runtime/zero/`（4.2 §6 已做文件级走读，此处不重复）。与 Megatron 的组合范式由 Megatron-DeepSpeed 仓承载（TP/PP 走 Megatron、ZeRO 分片走 DeepSpeed）；该仓随组织更名现居 `deepspeedai/Megatron-DeepSpeed`，最近一次提交是 2025-08-14（核实 2026-11-17），对照 DeepSpeed 主仓 2026-11 仍在日更。组合需求降温的原因：Megatron-Core 自带 dist-opt 之后，「Megatron 并行 + ZeRO-1/2 分片」不再需要外挂 DeepSpeed（6.2 §4 的机制）——此句为本书分析读法。DeepSpeed 仍独占一档：ZeRO-Offload / ZeRO-Infinity 的 CPU/NVMe 卸载（4.2 §5 的 $4N$ bytes/step PCIe 下界账）在卡少模型大场景没有替代品。另两件独有武器登记位置：ZeRO++ 的跨节点通信三件套（qwZ / hpZ / qgZ，跨节点 $3M \to 0.75M$ ，4.2 §5.3），以及配置面 `zero_optimization.stage` 的枚举语义（1/2/3 = 这一阶新切优化器状态 / 梯度 / 参数，4.2 §6）。
+ZeRO 的原厂实现在 deepspeedai/DeepSpeed 的 `deepspeed/runtime/zero/`（4.2 §6 已做文件级走读，此处不重复）。与 Megatron 的组合范式由 Megatron-DeepSpeed 仓承载（TP/PP 走 Megatron、ZeRO 分片走 DeepSpeed）；该仓随组织更名现居 `deepspeedai/Megatron-DeepSpeed`，最近一次提交是 2025-08-14（核实 2026-11-17），对照 DeepSpeed 主仓 2026-11 仍在日更。组合需求降温的原因：Megatron-Core 自带 dist-opt 之后，「Megatron 并行 + ZeRO-1/2 分片」不再需要外挂 DeepSpeed（6.2 §4 的机制）——此句为本书分析读法。DeepSpeed 仍独占一档：ZeRO-Offload / ZeRO-Infinity 的 CPU/NVMe 卸载（4.2 §5 的 $4N$ bytes/step PCIe 下界账）在卡少模型大场景没有替代品。另两项独有能力的出处登记如下：ZeRO++ 的跨节点通信三件套（qwZ / hpZ / qgZ，跨节点 $3M \to 0.75M$ ，4.2 §5.3），以及配置面 `zero_optimization.stage` 的枚举语义（1/2/3 = 这一阶新切优化器状态 / 梯度 / 参数，4.2 §6）。
 
 ## 4. OLMo-core：全开放配套栈
 

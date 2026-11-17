@@ -4,7 +4,7 @@
 
 ## 1. 动机：为什么每个坐标要独立步长
 
-SGD（2.1）用同一个全局学习率 $\eta$ 更新全部坐标。这在梯度各向同性时没有问题，但真实网络的梯度是高度各向异性的：embedding 的大部分行在一个 batch 里梯度为零、命中行梯度很大；不同层、同一矩阵不同坐标之间的梯度尺度可以差多个数量级。单一 $\eta$ 被迫迁就梯度最大的坐标（否则该坐标发散），其余坐标的步长被同比例压小——2.1 二次碗分析中条件数 $\kappa$ 对收敛速率的压制，在逐坐标视角下就是这个现象。
+SGD（2.1）用同一个全局学习率（learning rate, lr；本章正文一律记 lr） $\eta$ 更新全部坐标。这在梯度各向同性时没有问题，但真实网络的梯度是高度各向异性的：embedding 的大部分行在一个 batch 里梯度为零、命中行梯度很大；不同层、同一矩阵不同坐标之间的梯度尺度可以差多个数量级。单一 $\eta$ 被迫迁就梯度最大的坐标（否则该坐标发散），其余坐标的步长被同比例压小——2.1 二次碗分析中条件数 $\kappa$ 对收敛速率的压制，在逐坐标视角下就是这个现象。
 
 各向异性在 LLM 里有三个可点名的来源：embedding 行的命中是稀疏的（一个 batch 只触到词表的一小部分）；深度方向上梯度尺度逐层变化（Pre-LN 下浅层信号被恒等通路放大，models 2.7 §5）；输出头的 logit 尺度随训练漂移。逐坐标自适应（per-coordinate adaptivity）的回答：为每个坐标维护其梯度尺度的在线估计 $v_i$，让步长除以该尺度：
 
@@ -28,7 +28,7 @@ v_t &= \beta_2 \thinspace v_{t-1} + (1 - \beta_2)\thinspace g_t^{2} \\
 \end{aligned} \qquad (2)
 $$
 
-**符号**： $\theta_t \in \mathbb{R}^{n}$：第 $t$ 步参数； $g_t$：第 $t$ 步 batch 梯度； $m_t, v_t \in \mathbb{R}^{n}$：梯度一阶矩与二阶原始矩的 EMA，零初始化 $m_0 = v_0 = 0$； $\beta_1, \beta_2 \in [0, 1)$：EMA 衰减系数； $\eta$：学习率； $`\hat{m}_t`$、 $`\hat{v}_t`$：偏差校正（bias correction）后的估计，推导见 §3。 $m_t$ 即 2.1 momentum 的 EMA 写法，有效记忆窗量级 $1/(1-\beta_1)$（ $\beta_1 = 0.9$ 对应约 10 步）； $v_t$ 估计 $\mathbb{E}[g^{2}]$——注意是二阶**原始矩**而非方差 $\mathrm{Var}(g) = \mathbb{E}[g^{2}] - (\mathbb{E}g)^{2}$，这个差别在 §6 的 L2 污染分析里会起作用。除以 $`\sqrt{\hat{v}_t}`$ 即式 (1) 的逐坐标归一化； $\hat{m} / \sqrt{\hat{v}}$ 的方向由梯度均值的符号主导、量级被压到 $O(1)$， $\eta$ 由此获得直接语义：每坐标每步位移的典型量级（严格上界见 §3 末）。
+**符号**： $\theta_t \in \mathbb{R}^{n}$：第 $t$ 步参数； $g_t$：第 $t$ 步 batch 梯度； $m_t, v_t \in \mathbb{R}^{n}$：梯度一阶矩与二阶原始矩的 EMA，零初始化 $m_0 = v_0 = 0$； $\beta_1, \beta_2 \in [0, 1)$：EMA 衰减系数； $\eta$：lr； $`\hat{m}_t`$、 $`\hat{v}_t`$：偏差校正（bias correction）后的估计，推导见 §3。 $m_t$ 即 2.1 momentum 的 EMA 写法，有效记忆窗量级 $1/(1-\beta_1)$（ $\beta_1 = 0.9$ 对应约 10 步）； $v_t$ 估计 $\mathbb{E}[g^{2}]$——注意是二阶**原始矩**而非方差 $\mathrm{Var}(g) = \mathbb{E}[g^{2}] - (\mathbb{E}g)^{2}$，这个差别在 §6 的 L2 污染分析里会起作用。除以 $`\sqrt{\hat{v}_t}`$ 即式 (1) 的逐坐标归一化； $\hat{m} / \sqrt{\hat{v}}$ 的方向由梯度均值的符号主导、量级被压到 $O(1)$， $\eta$ 由此获得直接语义：每坐标每步位移的典型量级（严格上界见 §3 末）。
 
 一个两坐标算例把式 (2) 的行为走一遍。坐标 A：梯度恒为 $g_A = 100$；坐标 B：梯度在 $\pm 1$ 之间交替、均值为 0。 $t = 1$ 时 bias correction 给出 $`\hat{m}_1 = g_1`$、 $`\hat{v}_1 = g_1^{2}`$ 精确成立，两个坐标的首步都是 $\eta \cdot g_1 / (|g_1| + \epsilon) \approx \eta \cdot \mathrm{sign}(g_1)$——与尺度无关的满步长。走到平稳态：A 坐标 $\hat{m} \to 100$、 $\hat{v} \to 10^{4}$，步长 $\to \eta \cdot 100/100 = \eta$（保持满步长）；B 坐标 $\hat{m} \to 0$、 $\hat{v} \to 1$，步长 $\to 0$。SGD 对这两个坐标只能给同一个 $\eta$：照顾 B 的噪声则 A 爬行，照顾 A 的尺度则 B 在噪声里随机游走；Adam 把两个坐标自动分开。
 
@@ -83,7 +83,7 @@ $$
 $\epsilon$ 在式 (2) 中的位置是 $\sqrt{\hat{v}}$ 之后、除法之前（原论文与 PyTorch 实现同口径）。它把每个坐标的步长夹在两个 regime 之间：
 
 - **自适应 regime**（ $`\sqrt{\hat{v}_i} \gg \epsilon`$ ）：步长 $`\approx \eta \cdot \hat{m}_i / \sqrt{\hat{v}_i}`$，逐坐标归一化起作用， §1 的缩放不变性成立。
-- **线性 regime**（ $`\sqrt{\hat{v}_i} \ll \epsilon`$ ）：分母 $\approx \epsilon$，步长 $`\approx (\eta / \epsilon) \cdot \hat{m}_i`$——退回梯度线性的 SGD 型更新，有效学习率被钳在 $\eta / \epsilon$，且 $\hat{v}$ 的估计噪声不再放大步长； $\hat{v} \to 0$ 的除零也在这里被兜住。
+- **线性 regime**（ $`\sqrt{\hat{v}_i} \ll \epsilon`$ ）：分母 $\approx \epsilon$，步长 $`\approx (\eta / \epsilon) \cdot \hat{m}_i`$——退回梯度线性的 SGD 型更新，有效 lr 被钳在 $\eta / \epsilon$，且 $\hat{v}$ 的估计噪声不再放大步长； $\hat{v} \to 0$ 的除零也在这里被兜住。
 
 两个 regime 的分界在 $\hat{v} \approx \epsilon^{2}$： $\epsilon = 10^{-8}$ 时分界 $\hat{v} = 10^{-16}$， $\epsilon = 10^{-5}$ 时分界 $\hat{v} = 10^{-10}$。稀疏坐标让 $\epsilon$ 从数值补丁变成 regime 开关：embedding 中未被本 batch 命中的行梯度为零，其 $v$ 按 $\beta_2$ 逐步衰减、 $\hat{v}$ 指数缩水， $\sqrt{\hat{v}}$ 可以落到 $\epsilon$ 附近——这些行在两次命中之间处在线性 regime，命中时被 $\sqrt{\hat{v}}$ 压制。坐标「多久被命中一次」与 $\beta_2$ 的遗忘速度共同决定它停在哪个 regime。
 
@@ -99,13 +99,13 @@ $$
 
 **符号**： $C$：大梯度常数。每三步出现一次大梯度 $C$，其余两步梯度为 $-1$。时间平均损失 $\bar{f}(x) = (C-2)\thinspace x / 3$ 关于 $x$ 递增（ $C > 2$ ； $C = 2$ 时 $\bar{f} \equiv 0$、所有点并列最优， $C \gt 2$ 是让 $x = -1$ 成为唯一最优的临界），最优定点 $x^{\ast} = -1$。
 
-取 $\beta_1 = 0$（去掉 momentum 只留自适应项）、 $\beta_2 = 1/(1+C^{2})$、恒定步长 $\alpha$，走稳态三步循环（渐近估计，忽略 bias correction），以 $C = 3$（即 $\beta_2 = 0.1$ ）为例：
+取 $\beta_1 = 0$（去掉 momentum 只留自适应项）、 $\beta_2 = 1/(1+C^{2})$、恒定 lr $\alpha$，走稳态三步循环（渐近估计，忽略 bias correction），以 $C = 3$（即 $\beta_2 = 0.1$ ）为例：
 
 - 大梯度步： $g = +3$， $v \approx (1-\beta_2) \times 9 = 8.1$，位移 $\approx -\alpha \times 3 / \sqrt{8.1} \approx -1.05\alpha$；
 - 小梯度步一： $g = -1$， $v = 0.1 \times 8.1 + 0.9 \times 1 = 1.71$，位移 $\approx +\alpha / \sqrt{1.71} \approx +0.76\alpha$；
 - 小梯度步二： $v = 0.1 \times 1.71 + 0.9 \approx 1.07$，位移 $\approx +0.97\alpha$。
 
-净漂移约 $+0.68\alpha$ / 循环——Adam 稳定爬向 $x = +1$。此时 $\bar{f}(+1) - \bar{f}(-1) = 2(C-2)/3 > 0$：算法钉在可行域内**最坏**的点， $R_T / T$ 收敛到正常数而非零（原文 Theorem 1；同一问题上 SGD 与 AdaGrad 正常收敛）。机制诊断：罕见的大梯度被自己贡献的 $v$ 除掉（ $\sqrt{v} \approx C$ ）——量级信息恰好被逐坐标归一化抹掉，只留下符号；而小梯度步里 $v$ 回落、有效步长 $\alpha/\sqrt{\hat{v}}$ 回升。论文把病根定位到其收敛分析所需的量： $\Gamma_t = \sqrt{V_t}/\alpha_t - \sqrt{V_{t-1}}/\alpha_{t-1}$（ $V_t = \mathrm{diag}(v_t)$ ），逐坐标有效学习率不增等价于 $\Gamma_t \succeq 0$；Adam/RMSprop 的 $v$ 可减， $\Gamma_t$ 可以不定号，原 Adam 证明误设了它半正定。原文进一步证明：对任意满足 $\beta_1 \lt \sqrt{\beta_2}$ 的常数 $\beta_1, \beta_2$，都存在使 Adam 平均 regret 非零的在线问题（Theorem 2）。随机版（Theorem 3）的构造把三步循环换成独立同分布抽样：以概率 $p = (1+\delta)/(C+1)$ 出大梯度 $C$（ $\delta$ 为小正数）、以概率 $1-p$ 出 $-1$，则期望损失 $\mathbb{E}[f(x)] = \delta \cdot x$ 的最优点仍是 $x = -1$，而 Adam 在该分布下收敛到错误一侧（详细分析见原文）。这组构造还解释了一个工程直觉： $\beta_2$ 越大、 $v$ 的记忆越长，偶发大梯度对分母的贡献越持久——原文以此说明实践中大 $\beta_2$ 为何更稳；但 Theorem 2 的要点是**任何**满足 $\beta_1 \lt \sqrt{\beta_2}$ 的常数组合都治不好它，只能换算法。
+净漂移约 $+0.68\alpha$ / 循环——Adam 稳定爬向 $x = +1$。此时 $\bar{f}(+1) - \bar{f}(-1) = 2(C-2)/3 > 0$：算法钉在可行域内**最坏**的点， $R_T / T$ 收敛到正常数而非零（原文 Theorem 1；同一问题上 SGD 与 AdaGrad 正常收敛）。机制诊断：罕见的大梯度被自己贡献的 $v$ 除掉（ $\sqrt{v} \approx C$ ）——量级信息恰好被逐坐标归一化抹掉，只留下符号；而小梯度步里 $v$ 回落、有效 lr $\alpha/\sqrt{\hat{v}}$ 回升。论文把病根定位到其收敛分析所需的量： $\Gamma_t = \sqrt{V_t}/\alpha_t - \sqrt{V_{t-1}}/\alpha_{t-1}$（ $V_t = \mathrm{diag}(v_t)$ ），逐坐标有效 lr 不增等价于 $\Gamma_t \succeq 0$；Adam/RMSprop 的 $v$ 可减， $\Gamma_t$ 可以不定号，原 Adam 证明误设了它半正定。原文进一步证明：对任意满足 $\beta_1 \lt \sqrt{\beta_2}$ 的常数 $\beta_1, \beta_2$，都存在使 Adam 平均 regret 非零的在线问题（Theorem 2）。随机版（Theorem 3）的构造把三步循环换成独立同分布抽样：以概率 $p = (1+\delta)/(C+1)$ 出大梯度 $C$（ $\delta$ 为小正数）、以概率 $1-p$ 出 $-1$，则期望损失 $\mathbb{E}[f(x)] = \delta \cdot x$ 的最优点仍是 $x = -1$，而 Adam 在该分布下收敛到错误一侧（详细分析见原文）。这组构造还解释了一个工程直觉： $\beta_2$ 越大、 $v$ 的记忆越长，偶发大梯度对分母的贡献越持久——原文以此说明实践中大 $\beta_2$ 为何更稳；但 Theorem 2 的要点是**任何**满足 $\beta_1 \lt \sqrt{\beta_2}$ 的常数组合都治不好它，只能换算法。
 
 修正只需要一行：维护历史 $\hat{v}$ 的逐坐标最大值
 
@@ -113,7 +113,7 @@ $$
 \hat{v}_t^{\max} = \max\left(\hat{v}_{t-1}^{\max},\ \hat{v}_t\right), \qquad \theta_t = \theta_{t-1} - \alpha_t \thinspace \frac{\hat{m}_t}{\sqrt{\hat{v}_t^{\max}}} \qquad (6)
 $$
 
-分母只增不减 ⇒ 逐坐标有效步长单调不增 ⇒ $\Gamma_t \succeq 0$ 恢复，平均 regret 以 $O(1/\sqrt{T})$ 收敛（原文 Theorem 4 及推论）。这就是 AMSGrad。代回反例： $\hat{v}^{\max}$ 被钉在 8.1，两个小梯度步各只有 $+\alpha/\sqrt{8.1} \approx +0.35\alpha$，净漂移 $-1.05\alpha + 0.70\alpha \lt 0$，回归 $x^{\ast}$ 方向。式 (6) 与 learning rate schedule 的关系也值得记一句： $\alpha_t$ 单调衰减时 $\Gamma_t \succeq 0$ 更容易成立——AMSGrad 的本质是把「有效步长不增」从 schedule 层的近似性质挪成算法层的逐坐标保证。PyTorch 的 Adam/AdamW 以 `amsgrad=True` 开关实现式 (6)（§9 走读），但 LLM 预训练实践中无人打开： $\beta_2$ 接近 1、schedule 全程衰减，「有效步长不增」在实践轨迹上近似成立，反例是刻意构造的对抗形态——此条为本书评注，无单一出处。
+分母只增不减 ⇒ 逐坐标有效 lr 单调不增 ⇒ $\Gamma_t \succeq 0$ 恢复，平均 regret 以 $O(1/\sqrt{T})$ 收敛（原文 Theorem 4 及推论）。这就是 AMSGrad。代回反例： $\hat{v}^{\max}$ 被钉在 8.1，两个小梯度步各只有 $+\alpha/\sqrt{8.1} \approx +0.35\alpha$，净漂移 $-1.05\alpha + 0.70\alpha \lt 0$，回归 $x^{\ast}$ 方向。式 (6) 与 lr schedule 的关系也值得记一句： $\alpha_t$ 单调衰减时 $\Gamma_t \succeq 0$ 更容易成立——AMSGrad 的本质是把「有效 lr 不增」从 schedule 层的近似性质挪成算法层的逐坐标保证。PyTorch 的 Adam/AdamW 以 `amsgrad=True` 开关实现式 (6)（§9 走读），但 LLM 预训练实践中无人打开： $\beta_2$ 接近 1、schedule 全程衰减，「有效 lr 不增」在实践轨迹上近似成立，反例是刻意构造的对抗形态——此条为本书评注，无单一出处。
 
 ## 6. L2 ≠ weight decay：AdamW 的解耦证明
 
@@ -125,7 +125,7 @@ $$
 \theta_t = \theta_{t-1} - \alpha \thinspace \left( \nabla f_t + \lambda^{\prime} \thinspace \theta_{t-1} \right) = (1 - \alpha \lambda^{\prime}) \thinspace \theta_{t-1} - \alpha \thinspace \nabla f_t \qquad (7)
 $$
 
-**符号**： $\alpha$：学习率； $\lambda^{\prime}$：L2 系数。右端正是「weight decay 率 $\lambda = \alpha \lambda^{\prime}$ 的解耦衰减」 $\theta_t = (1-\lambda)\theta_{t-1} - \alpha \nabla f_t$。两个写法在 SGD 下逐步相同，换算关系 $\lambda^{\prime} = \lambda / \alpha$——「L2 就是 weight decay」这句话的唯一合法语境，也是深度学习库里长期混用的根源。
+**符号**： $\alpha$：lr； $\lambda^{\prime}$：L2 系数。右端正是「weight decay 率 $\lambda = \alpha \lambda^{\prime}$ 的解耦衰减」 $\theta_t = (1-\lambda)\theta_{t-1} - \alpha \nabla f_t$。两个写法在 SGD 下逐步相同，换算关系 $\lambda^{\prime} = \lambda / \alpha$——「L2 就是 weight decay」这句话的唯一合法语境，也是深度学习库里长期混用的根源。
 
 **Adam 情形：等价不成立（原文 Prop 2 的内容）**。把 L2 加进 Adam：梯度变为 $`\tilde{g}_t = \nabla f_t + \lambda^{\prime} \theta_{t-1}`$，两个矩都建立在 $\tilde{g}$ 上：
 
@@ -146,13 +146,13 @@ $$
 
 **固定预条件子下的等价形式（原文 Prop 3）**。若 $M = \mathrm{diag}(s)^{-1}$ 是**固定**对角阵，「decay 率 $\lambda$」与「对尺度加权范数 $\frac{\lambda}{2\alpha} \lVert \theta \odot \sqrt{s} \rVert^{2}$ 的 L2」逐步等价——验证只需两行：该正则项的梯度是 $(\lambda/\alpha) \thinspace s \odot \theta$，穿过 $M$ 得 $-\alpha \cdot \mathrm{diag}(s)^{-1} \cdot (\lambda/\alpha) \thinspace s \odot \theta = -\lambda\theta$，与解耦衰减一致。读法：weight decay 隐含的惩罚按 $s_i$（历史梯度尺度）加权——大梯度坐标被惩罚得更重；反过来说，均匀惩罚的普通 L2 对大梯度坐标正则**相对不足**。这也是原文的机制解读：with L2，历史梯度大的权重被正则的相对量更小；decoupled weight decay 对所有权重施加同一相对衰减率 $\lambda$。
 
-**AdamW：把衰减移出梯度**。原文 Algorithm 2 第 12 行（ $\eta_t$ 为 schedule 乘子、 $\alpha$ 为基础学习率）：
+**AdamW：把衰减移出梯度**。原文 Algorithm 2 第 12 行（ $\eta_t$ 为 schedule 乘子、 $\alpha$ 为基础 lr）：
 
 $$
 \theta_t = \theta_{t-1} - \eta_t \left( \alpha \thinspace \frac{\hat{m}_t}{\sqrt{\hat{v}_t} + \epsilon} + \lambda \thinspace \theta_{t-1} \right) \qquad (9)
 $$
 
-衰减项不经过 $m$、 $v$、 $\sqrt{\hat{v}}$，直接按固定相对率收缩 $\theta$。把 schedule 乘子折进学习率（ $\eta_t \cdot \alpha$ 即当步 $`\mathrm{lr}_t`$ ），就是 PyTorch 的形式： $\theta \leftarrow \theta\thinspace(1 - \mathrm{lr} \cdot \lambda) - \mathrm{lr} \cdot \hat{m}/(\sqrt{\hat{v}} + \epsilon)$。一处单位换算：两边的衰减因子分别为 $\eta_t \lambda$ 与 $`\mathrm{lr}_t \cdot \mathrm{wd}`$，由 $`\mathrm{lr}_t = \eta_t \thinspace \alpha`$ 折合即得 torch 的 `weight_decay` 对应原文的 $\lambda / \alpha$。这个「衰减跟随 schedule」的语义有直接的实践证据：Llama-3 的 scaling-law 实验设定每步 weight decay 为当步学习率的 0.1 倍（[Grattafiori et al., 2024](../references.md)，arXiv:2407.21783，[A]，§3.2.1）——正是式 (9) 中 $\eta_t \lambda$ 的结构（该论文未披露 $\beta$ 与 $\epsilon$，纪律注记见 §7）。原文附录另给出 normalized weight decay 提议： $\lambda = \lambda_{\mathrm{norm}} \sqrt{b/(BT)}$（ $b$ = batch 大小、 $B$ = 数据集大小、 $T$ = epoch 数），把衰减对「总步数随 batch 改变」的隐式依赖显式化——这是附录级的提议而非主结果，列出备查。
+衰减项不经过 $m$、 $v$、 $\sqrt{\hat{v}}$，直接按固定相对率收缩 $\theta$。把 schedule 乘子折进 lr（ $\eta_t \cdot \alpha$ 即当步 $`\mathrm{lr}_t`$ ），就是 PyTorch 的形式： $\theta \leftarrow \theta\thinspace(1 - \mathrm{lr} \cdot \lambda) - \mathrm{lr} \cdot \hat{m}/(\sqrt{\hat{v}} + \epsilon)$。一处单位换算：两边的衰减因子分别为 $\eta_t \lambda$ 与 $`\mathrm{lr}_t \cdot \mathrm{wd}`$，由 $`\mathrm{lr}_t = \eta_t \thinspace \alpha`$ 折合即得 torch 的 `weight_decay` 对应原文的 $\lambda / \alpha$。这个「衰减跟随 schedule」的语义有直接的实践证据：Llama-3 的 scaling-law 实验设定每步 weight decay 为当步 lr 的 0.1 倍（[Grattafiori et al., 2024](../references.md)，arXiv:2407.21783，[A]，§3.2.1）——正是式 (9) 中 $\eta_t \lambda$ 的结构（该论文未披露 $\beta$ 与 $\epsilon$，纪律注记见 §7）。原文附录另给出 normalized weight decay 提议： $\lambda = \lambda_{\mathrm{norm}} \sqrt{b/(BT)}$（ $b$ = batch 大小、 $B$ = 数据集大小、 $T$ = epoch 数），把衰减对「总步数随 batch 改变」的隐式依赖显式化——这是附录级的提议而非主结果，列出备查。
 
 式 (9) 还有一个账本读法：整个训练里参数的累计衰减因子约为 $\prod_t (1 - \eta_t \lambda) \approx \exp(-\lambda \sum_t \eta_t)$——总衰减量由 $\lambda$ 乘 **lr 曲线下的面积**决定，而不是由单独的步数或峰值决定。schedule 拉长、峰值提高都等比例放大正则强度；normalized weight decay 想要归一化的正是这个面积对 batch/epoch 口径的依赖。这个读法同时解释了为什么 wd 的调整在换 schedule 时必须重调： $\lambda$ 不变而 $\sum_t \eta_t$ 变了，等效正则量就变了（本书分析）。
 
@@ -183,7 +183,7 @@ $\beta_1, \beta_2, \epsilon, \lambda$ 四个数的逐家出处（均为一手口
 - **decay 组**：参与矩阵乘的权重（各线性层的二维权重矩阵）；
 - **no-decay 组**：norm 增益、偏置（bias）、以及（多家的）embedding。
 
-norm 增益与偏置不进 decay 的理由有两层：它们的参数占比在小数点后多个量级（下文的账），正则化收益可忽略；归一化增益还存在联合尺度冗余——RMSNorm 增益 $\gamma$ 放大 $c$ 倍、下游线性层权重缩小 $c$ 倍，函数不变，decay $\gamma$ 主要推动的是这个冗余方向的参数化而非函数本身（本书分析）。embedding 不进 decay 有一个记录在案的失败案例：OLMo 2 发现对 embedding 施加标准 weight decay 会把 embedding 范数压得过头，而 LN 对输入 $x$ 的 Jacobian 正比于 $1/\lVert x \rVert$（models 2.7 §5.1 的引理口径），过小的 embedding 会在早期层制造大梯度；OLMo 2 的方案是直接对 embedding 关 wd，之后 embedding 范数稳定在健康区间（[Team OLMo et al., 2025](../references.md)，arXiv:2501.00656，[A]，§3.4.2；配置实证：OLMo-core `OLMo2-7B.py` 中 `OptimGroupOverride(params=["embeddings.weight"], opts=dict(weight_decay=0.0))`）。
+norm 增益与偏置不进 decay 的理由有两层：它们的参数占比极低（norm 合计约 0.003%，账见下文），正则化收益可忽略；归一化增益还存在联合尺度冗余——RMSNorm 增益 $\gamma$ 放大 $c$ 倍、下游线性层权重缩小 $c$ 倍，函数不变，decay $\gamma$ 主要推动的是这个冗余方向的参数化而非函数本身（本书分析）。embedding 不进 decay 有一个记录在案的失败案例：OLMo 2 发现对 embedding 施加标准 weight decay 会把 embedding 范数压得过头，而 LN 对输入 $x$ 的 Jacobian 正比于 $1/\lVert x \rVert$（models 2.7 §5.1 的引理口径），过小的 embedding 会在早期层制造大梯度；OLMo 2 的方案是直接对 embedding 关 wd，之后 embedding 范数稳定在健康区间（[Team OLMo et al., 2025](../references.md)，arXiv:2501.00656，[A]，§3.4.2；配置实证：OLMo-core `OLMo2-7B.py` 中 `OptimGroupOverride(params=["embeddings.weight"], opts=dict(weight_decay=0.0))`）。
 
 代码层面的形态（教学用，非优化实现；生产栈的等价机制是配置级的 group override，如上文 OLMo-core 一行）：
 

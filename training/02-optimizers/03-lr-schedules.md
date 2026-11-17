@@ -1,18 +1,18 @@
 # 2.3 LR Schedule、Warmup 与 Batch 联动（LR Schedules, Warmup, and Batch Coupling）
 
-> 本章回答学习率的三个结构问题：开头为什么必须从小往上爬（warmup 的两个独立论证：models 2.7 的 Post-LN 梯度剖面 + RAdam 对 Adam 早期 $\hat{v}$ 方差的解析）、主体到收尾走什么曲线（constant / cosine / linear / WSD 梯形，含 MiniCPM 的 checkpoint 复用机制）、 $\eta$ 与 batch $B$ 怎么联动（linear scaling rule 的假设链、sqrt 规则、McCandlish 的 critical batch size 推导与测量）——全部落到 GPT-3 / Llama-3 / DeepSeek-V3 / OLMo 2 的真实日程上 | 前置：2.1（梯度噪声 $\Sigma/B$）、2.2（AdamW 更新式 (2)(9)、bias correction）；models 2.7 §5（Pre/Post-LN 梯度分析，纯文字指引） | 锚点：OLMo 2 [A]、Llama-3 herd [A]、MiniCPM [A]、DeepSeek-V3 [A]；McCandlish et al. [B]、Goyal et al. [B]、RAdam [A]
+> 本章回答 lr 的三个结构问题：开头为什么必须从小往上爬（warmup 的两个独立论证：models 2.7 的 Post-LN 梯度剖面 + RAdam 对 Adam 早期 $\hat{v}$ 方差的解析）、主体到收尾走什么曲线（constant / cosine / linear / WSD 梯形，含 MiniCPM 的 checkpoint 复用机制）、 $\eta$ 与 batch $B$ 怎么联动（linear scaling rule 的假设链、sqrt 规则、McCandlish 的 critical batch size 推导与测量）——全部落到 GPT-3 / Llama-3 / DeepSeek-V3 / OLMo 2 的真实日程上 | 前置：2.1（梯度噪声 $\Sigma/B$）、2.2（AdamW 更新式 (2)(9)、bias correction）；models 2.7 §5（Pre/Post-LN 梯度分析，纯文字指引） | 锚点：OLMo 2 [A]、Llama-3 herd [A]、MiniCPM [A]、DeepSeek-V3 [A]；McCandlish et al. [B]、Goyal et al. [B]、RAdam [A]
 
 ## 1. 问题设定： $\eta(t)$ 的三个自由度
 
 四个真实日程先把问题的形状摆出来。DeepSeek-V3：linear warmup 2000 步到 $2.2 \times 10^{-4}$，恒定到 10T tokens，cosine 衰减 4.3T tokens 到 $2.2 \times 10^{-5}$，最后 500B tokens 走两段常数（[DeepSeek-AI, 2024](../references.md)，arXiv:2412.19437，[A]，§4.2）。Llama-3 405B：linear warmup 8000 步，cosine 从 $8 \times 10^{-5}$ 衰减到 $8 \times 10^{-7}$、全程 1,200,000 步（[Grattafiori et al., 2024](../references.md)，arXiv:2407.21783，[A]，§3.4.1）。OLMo 2 7B：linear warmup 2000 步到 $3 \times 10^{-4}$，cosine 计划 5T tokens、在 4T 处截断转入 mid-training（[Team OLMo et al., 2025](../references.md)，arXiv:2501.00656，[A]，§3.5）。GPT-3：linear warmup 覆盖前 375M tokens，cosine 260B tokens 内降到峰值的 10%，其后恒定（[Brown et al., 2020](../references.md)，arXiv:2005.14165，[B]，App. B）。
 
-四家没有一个用恒定学习率，且结构高度一致：warmup 段（千步级，占总步数 0.1%–1% 量级）+ 主体段（恒定或高平台）+ 收尾段（衰减到峰值的 1%–10% 量级）。把日程写成 $\eta_t = \eta_{\max} \cdot s(t)$，全部问题拆成三个自由度： $s(t)$ 开头怎么爬（§2）、主体到收尾走什么曲线（§3）、 $\eta_{\max}$ 与 batch $B$ 怎么联动（§4、§5）。
+四家没有一个用恒定学习率（learning rate, lr；本章正文一律记 lr），且结构高度一致：warmup 段（千步级，占总步数 0.1%–1% 量级）+ 主体段（恒定或高平台）+ 收尾段（衰减到峰值的 1%–10% 量级）。把日程写成 $\eta_t = \eta_{\max} \cdot s(t)$，全部问题拆成三个自由度： $s(t)$ 开头怎么爬（§2）、主体到收尾走什么曲线（§3）、 $\eta_{\max}$ 与 batch $B$ 怎么联动（§4、§5）。
 
 ## 2. Warmup 的两个独立论证
 
 warmup 的形式统一为：前 $W$ 步把 $\eta_t$ 从 0（或一个小常数）线性升到 $\eta_{\max}$。它有两个互相独立的必要性论证——一个来自架构，一个来自优化器统计；两者缺一时实践中都见过发散。
 
-**论证 A：初始化处的梯度剖面（架构侧）**。models 2.7 §5 的 Pre/Post-LN 梯度分析给出：Post-LN 结构在初始化时最后一层 FFN 的梯度上界为 $O(d\sqrt{\ln d})$、与深度 $L$ 无关，且参数梯度靠近输出端大、向输入端逐层衰减——逐层安全的学习率本该逐层不同、输出端最小。warmup 用一个时变的全局 $\eta(t)$ 近似这个逐层条件：把最初几百步的有效更新压到各层统计能适应的尺度内，几百步后梯度范数的层间比例趋于稳定，单一 $\eta$ 重新可行。Pre-LN 的 $1/\sqrt{L}$ 因子自带保守的初始化梯度尺度，把这个危机大幅缓解——但现代 LLM（全是 Pre-LN 或其变体）仍保留千步级 warmup，因为危机的另一半在优化器侧。
+**论证 A：初始化处的梯度剖面（架构侧）**。models 2.7 §5 的 Pre/Post-LN 梯度分析给出：Post-LN 结构在初始化时最后一层 FFN 的梯度上界为 $O(d\sqrt{\ln d})$、与深度 $L$ 无关，且参数梯度靠近输出端大、向输入端逐层衰减——逐层安全的 lr 本该逐层不同、输出端最小。warmup 用一个时变的全局 $\eta(t)$ 近似这个逐层条件：把最初几百步的有效更新压到各层统计能适应的尺度内，几百步后梯度范数的层间比例趋于稳定，单一 $\eta$ 重新可行。Pre-LN 的 $1/\sqrt{L}$ 因子自带保守的初始化梯度尺度，把这个危机大幅缓解——但现代 LLM（全是 Pre-LN 或其变体）仍保留千步级 warmup，因为危机的另一半在优化器侧。
 
 **论证 B： $\hat{v}$ 的早期方差（优化器侧）**。2.2 §3 的 bias correction 修正的是矩估计的**均值**；早期 $\hat{v}$ 的**方差**是另一个问题： $t$ 很小时 $`\hat{v}_t`$ 只由个位数梯度样本构成，逐坐标的 $1/\sqrt{\hat{v}}$ 是一个高方差的随机变量，步长被随机放大。RAdam（[Liu et al., 2020](../references.md)，arXiv:1908.03265，[A]）把这个方差解析出来：把 $v_t$ 的分布近似为自由度 $\rho$ 的 scaled-inv- $\chi^{2}$，自适应学习率 $`\psi_t = 1/\sqrt{\hat{v}_t}`$ 的方差近似为
 
@@ -68,9 +68,9 @@ $$
 
 **lr 与训练时长的耦合**有一个记录在案的实证：OLMo 2 把 7B 的峰值 lr 从 $3 \times 10^{-4}$ 扫到 $30 \times 10^{-4}$，发现更高的 lr 早期 loss 一律更低、但最终被更低的 lr 反超—— $3 \times 10^{-4}$ 对 $6 \times 10^{-4}$ 的交叉点在 200B tokens 之后，而 $30 \times 10^{-4}$ 在 warmup 期间就出现未能完全恢复的 loss spike 被放弃（[A]，§3.5）。两个教训：评 lr 必须跑到收尾，短 horizon 的 lr 扫描会得出系统性偏大的结论；warmup 期是 spike 最先暴露的窗口，与 §2 的两个论证一致。OLMo 2 的另一发现：mid-training 阶段把 lr 线性降到 0，50B 与 100B tokens 两种退火长度的训练 loss 等效——收尾段的总量比形状更要紧。
 
-## 4. LR × Batch：linear scaling 与 sqrt 规则
+## 4. lr × Batch：linear scaling 与 sqrt 规则
 
-batch 放大 $k$ 倍，lr 该放大多少？Goyal et al. 的 linear scaling rule 给出答案与它的假设链（[Goyal et al., 2017](../references.md)，arXiv:1706.02677，[B]，§2.1）。对照两条轨迹：小 batch $n$、步长 $\eta$ 走 $k$ 步，与大 batch $kn$、步长 $\hat{\eta}$ 走一步：
+batch 放大 $k$ 倍，lr 该放大多少？Goyal et al. 的 linear scaling rule 给出答案与它的假设链（[Goyal et al., 2017](../references.md)，arXiv:1706.02677，[B]，§2.1）。对照两条轨迹：小 batch $n$、lr $\eta$ 走 $k$ 步，与大 batch $kn$、lr $\hat{\eta}$ 走一步：
 
 $$
 w_{t+k} = w_t - \eta \thinspace \frac{1}{n} \sum_{j \lt k} \sum_{x \in \mathcal{B}_j} \nabla l(x, w_{t+j}), \qquad \hat{w}_{t+1} = w_t - \hat{\eta} \cdot \frac{1}{kn} \sum_{j \lt k} \sum_{x \in \mathcal{B}_j} \nabla l(x, w_t) \qquad (5)
@@ -98,7 +98,7 @@ $$
 \mathcal{B}_{\mathrm{noise}} = \frac{\mathrm{tr}(H\Sigma)}{g^{\top} H g}, \qquad \mathcal{B}_{\mathrm{simple}} = \frac{\mathrm{tr}(\Sigma)}{\lVert g \rVert^{2}} \qquad (8)
 $$
 
-**符号**： $`\mathcal{B}_{\mathrm{noise}}`$：噪声尺度（noise scale），论文式 (2.8) 的定义，带 Hessian 预条件； $`\mathcal{B}_{\mathrm{simple}}`$：论文式 (2.9) 的 simple noise scale——良条件化简（ $H \propto I$ ）后的形式，论文实测两者只差一个小的常数倍、工程上测的是 $`\mathcal{B}_{\mathrm{simple}}`$； $`\epsilon_{\mathrm{opt}}(B)`$：期望意义下的最优步长； $`\Delta L_{\mathrm{opt}}(B)`$：对应单步期望损失下降， $`\Delta L_{\max}`$ 为其 $B \to \infty$ 极限。
+**符号**： $`\mathcal{B}_{\mathrm{noise}}`$：噪声尺度（noise scale），论文式 (2.8) 的定义，带 Hessian 预条件； $`\mathcal{B}_{\mathrm{simple}}`$：论文式 (2.9) 的 simple noise scale——良条件化简（ $H \propto I$ ）后的形式，论文实测两者只差一个小的常数倍、工程上测的是 $`\mathcal{B}_{\mathrm{simple}}`$； $`\epsilon_{\mathrm{opt}}(B)`$：期望意义下的最优步长（即此局部二次模型下的 lr）； $`\Delta L_{\mathrm{opt}}(B)`$：对应单步期望损失下降， $`\Delta L_{\max}`$ 为其 $B \to \infty$ 极限。
 
 式 (7) 一口气回答三问。小 batch  regime（ $`B \ll \mathcal{B}_{\mathrm{noise}}`$ ）： $`\epsilon_{\mathrm{opt}} \approx \epsilon_{\max} \cdot B / \mathcal{B}_{\mathrm{noise}} \propto B`$、 $`\Delta L_{\mathrm{opt}} \propto B`$——batch 翻倍单步进展翻倍，linear scaling rule 就是这个 regime 的近似。大 batch regime（ $`B \gg \mathcal{B}_{\mathrm{noise}}`$ ）： $`\epsilon_{\mathrm{opt}} \to \epsilon_{\max}`$、 $`\Delta L_{\mathrm{opt}} \to \Delta L_{\max}`$ 饱和——再加 batch 只浪费算力，这是 §4 失效边界 (ii) 的精确位置。拐点本身：把全程的「步数 $S$ × 样本数 $E$」权衡对式 (7) 逐段积分，论文得到
 
