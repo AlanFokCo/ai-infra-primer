@@ -85,7 +85,7 @@
 | focal-loss | Focal Loss for Dense Object Detection | Lin et al. | arXiv:1708.02002 | [B] | 2026-11-17 | 3.1 |
 | chameleon | Chameleon: Mixed-Modal Early-Fusion Foundation Models（z-loss 输出侧出处） | Chameleon Team | arXiv:2405.09818 | [B] | 2026-11-17 | 3.1 |
 | bradley-terry | Rank Analysis of Incomplete Block Designs: The Method of Paired Comparisons | Bradley & Terry | Biometrika 39(3/4):324-345（1952，无 arXiv） | [B] | 2026-11-17 | 3.2, 9.2, 9.3 |
-| christiano | Deep Reinforcement Learning from Human Preferences | Christiano et al. | arXiv:1706.03741 | [B] | 2026-11-17 | 3.2, 9.2 |
+| christiano | Deep Reinforcement Learning from Human Preferences | Christiano et al. | arXiv:1706.03741 | [B] | 2026-11-17 | 3.2, 8.1, 9.2 |
 | dpo | Direct Preference Optimization: Your Language Model is Secretly a Reward Model | Rafailov et al. | arXiv:2305.18290 ; https://github.com/eric-mitchell/direct-preference-optimization | [A] | 2026-11-17 | 3.2, 9.3 |
 | trl-repo | huggingface/trl repo（SFT/DPO/GRPO 等 trainer；TRL 无独立论文） | HuggingFace | https://github.com/huggingface/trl | 教学参照 | 2026-11-17 | 3.2, 6.3, 9.1, 9.3 |
 
@@ -121,8 +121,8 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | nemo | NVIDIA NeMo Framework（Megatron-Core 的上游封装；注意：NeMo 主仓已重组，github.com/NVIDIA/NeMo 现 301 至 NVIDIA-NeMo/Speech） | NVIDIA | https://github.com/NVIDIA-NeMo/Speech | 教学参照 | 2026-11-17 | 6.3 |
 | megatron-bridge | NVIDIA-NeMo/Megatron-Bridge repo（Megatron 模型训练库 + HF 双向转换；NeMo 重组后的 LLM 训练入口） | NVIDIA | https://github.com/NVIDIA-NeMo/Megatron-Bridge | 教学参照 | 2026-11-17 | 6.3 |
-| verl | HybridFlow: A Flexible and Efficient RLHF Framework（veRL 论文） | Hu et al. | arXiv:2409.19256 ; https://github.com/verl-project/verl | [A] | 2026-11-17 | 6.3, 8.5 |
-| openrlhf | OpenRLHF: An Easy-to-use, Scalable and High-performance RLHF Framework | Hu et al. | arXiv:2405.11143 ; https://github.com/OpenRLHF/OpenRLHF | [A] | 2026-11-17 | 6.3, 8.5, 9.2 |
+| verl | HybridFlow: A Flexible and Efficient RLHF Framework（veRL 论文） | Sheng et al. | arXiv:2409.19256 ; https://github.com/verl-project/verl | [A] | 2026-11-17 | 6.3, 8.5 |
+| openrlhf | OpenRLHF: An Easy-to-use, Scalable and High-performance RLHF Framework | Hu et al. | arXiv:2405.11143 ; https://github.com/OpenRLHF/OpenRLHF | [A] | 2026-11-17 | 6.3, 8.3, 8.5, 9.2 |
 | olmo-core | allenai/OLMo-core repo（OLMo 2 的全开放训练栈） | AllenAI | https://github.com/allenai/OLMo-core | [A] | 2026-11-17 | 5.5, 6.3 |
 
 
@@ -147,6 +147,7 @@
 | williams1992 | Simple statistical gradient-following algorithms for connectionist reinforcement learning（REINFORCE） | Williams | Machine Learning 8:229-256（1992，无 arXiv） | [B] | 2026-11-17 | 8.1 |
 | sutton1999 | Policy Gradient Methods for Reinforcement Learning with Function Approximation | Sutton et al. | NeurIPS 1999（无 arXiv） | [B] | 2026-11-17 | 8.1 |
 | sutton-barto | Reinforcement Learning: An Introduction（第 2 版） | Sutton & Barto | MIT Press 2018，http://incompleteideas.net/book/the-book-2nd.html | [B] | 2026-11-17 | 8.1, 8.2 |
+| greensmith2004 | Variance Reduction Techniques for Gradient Estimates in Reinforcement Learning（最优 baseline 方差最小化的标准出处） | Greensmith et al. | JMLR 5:1471-1530（2004，无 arXiv） | [B] | 2026-11-18 | 8.1 |
 | gae | High-Dimensional Continuous Control Using Generalized Advantage Estimation | Schulman et al. | arXiv:1506.02438 | [B] | 2026-11-17 | 8.2, 8.3 |
 | ppo | Proximal Policy Optimization Algorithms | Schulman et al. | arXiv:1707.06347 | [B] | 2026-11-17 | 8.3 |
 | trpo | Trust Region Policy Optimization | Schulman et al. | arXiv:1502.05477 | [B] | 2026-11-17 | 8.3 |

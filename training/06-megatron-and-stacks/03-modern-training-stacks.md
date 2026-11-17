@@ -59,7 +59,7 @@ allenai/OLMo-core 是 OLMo 2 的训练栈（[Team OLMo et al., 2025](../referenc
 P9 的三个栈在这里只立接口定位，数学与系统展开归 8.4 / 8.5 与 P9：
 
 - TRL（huggingface/trl，[教学参照 + 官方实现](../references.md)）：HF 生态的 SFT / DPO / GRPO trainer 库，中小规模与教学场景的标准入口；其偏好数据接口（DPOTrainer 的输入格式）已在 3.2 走读过——TRL 与本 Part 各栈的关系是「训练循环全部交给 HF Trainer，并行能力继承 transformers / accelerate 生态」，大规模 RL 不是它的设计目标；
-- veRL（[Hu et al., 2024](../references.md)，arXiv:2409.19256，[A]）：字节的 RL 训练框架，核心是 hybrid 控制模型（数据流编排用单控制器、模型内计算用多控制器），训练引擎可插 Megatron 或 FSDP——8.5 的主走读对象之一；
+- veRL（[Sheng et al., 2024](../references.md)，arXiv:2409.19256，[A]）：字节的 RL 训练框架，核心是 hybrid 控制模型（数据流编排用单控制器、模型内计算用多控制器），训练引擎可插 Megatron 或 FSDP——8.5 的主走读对象之一；
 - OpenRLHF（[Hu et al., 2024](../references.md)，arXiv:2405.11143，[A]）：Ray + vLLM 组合的 RLHF 栈，actor / critic / reward / ref 四模型按 Ray actor 分布、rollout 交 vLLM——8.5 的对照对象。
 
 三个栈共享的系统问题也就是 8.5 的章节目录：四模型同驻的显存账、训练引擎与 rollout 引擎之间的权重同步成本、rollout 与训练版本错位带来的 off-policy 校正。本章只立接口：这些栈对「训练引擎」的要求恰好是本 Part 各栈的产出形态（一个能 forward/backward/step 并能导出权重的大模型实例）。
@@ -126,5 +126,5 @@ P9 的三个栈在这里只立接口定位，数学与系统展开归 8.4 / 8.5 
 - [AllenAI, allenai/OLMo-core repo](../references.md)（key: olmo-core，[A]）——包结构与 OLMo 2 训练配置形态（2026-11-17 核实）
 - [Team OLMo et al., 2025](../references.md)：2 OLMo 2 Furious，arXiv:2501.00656，[A]（key: olmo2）——OLMo-core 对应的配方论文
 - [HuggingFace, huggingface/trl repo](../references.md)（key: trl-repo，教学参照 + 官方实现）——§5 的 TRL 接口定位
-- [Hu et al., 2024](../references.md)：HybridFlow: A Flexible and Efficient RLHF Framework（veRL 论文），arXiv:2409.19256，[A]（key: verl）——§5 的 veRL 接口定位
+- [Sheng et al., 2024](../references.md)：HybridFlow: A Flexible and Efficient RLHF Framework（veRL 论文），arXiv:2409.19256，[A]（key: verl）——§5 的 veRL 接口定位
 - [Hu et al., 2024](../references.md)：OpenRLHF: An Easy-to-use, Scalable and High-performance RLHF Framework，arXiv:2405.11143，[A]（key: openrlhf）——§5 的 OpenRLHF 接口定位
