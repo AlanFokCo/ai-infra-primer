@@ -1,6 +1,6 @@
 # 5.6 跨家对照与方法论（Cross-Lab Comparison and Methodology）
 
-> Part 5 的收口章：把 5.1–5.5 五家的旗舰摆上同一张对照表（每格数字回指各章 config 实测与调研锁定值），用三笔账解释 MoE 全勤、subquadratic 结构（四家答题、GLM 留对照）与 MTP（三家明装）的收敛线，用 cache / 计算 / 实现复杂度三个维度拆 MLA 与 GQA 系的分歧，最后把前五章反复演示的读法沉淀为可独立执行的方法论——config.json 字段字典表、HF modeling 阅读路径、tech report 五步读法、30 分钟拆解 checklist | 前置：5.1–5.5（全部数值来源）、1.2–1.3（成本口径与全生命周期账）、2.4（KV cache 账）、2.5（RoPE 波长账）、2.8（config 读法）、4.1（MLA）、4.2（DSA）、4.4（hybrid 内存账）、4.5（MoE 经济与 MTP）、4.6（扩窗配方） | 锚点：Llama-4 Scout config + blog [W]、DeepSeek-V3.2 论文与官方 repo [A]、Qwen3-Next config + model card [W]、GLM-4.6 config [W]、Kimi K3 report [A]
+> Part 5 的收束章。先把 5.1–5.5 五家的旗舰摆上同一张对照表，每格数字回指各章 config 实测与调研锁定值；再用三笔账解释三条收敛线：MoE 全勤、subquadratic 结构（四家答题、GLM 留对照）、MTP（三家明装）。然后用 cache / 计算 / 实现复杂度三个维度拆 MLA 与 GQA 系的分歧。最后把前五章反复演示的读法沉淀为可独立执行的方法论：config.json 字段字典表、HF modeling 阅读路径、tech report 五步读法、30 分钟拆解 checklist | 前置：5.1–5.5（全部数值来源）、1.2–1.3（成本口径与全生命周期账）、2.4（KV cache 账）、2.5（RoPE 波长账）、2.8（config 读法）、4.1（MLA）、4.2（DSA）、4.4（hybrid 内存账）、4.5（MoE 经济与 MTP）、4.6（扩窗配方） | 锚点：Llama-4 Scout config + blog [W]、DeepSeek-V3.2 论文与官方 repo [A]、Qwen3-Next config + model card [W]、GLM-4.6 config [W]、Kimi K3 report [A]
 
 ## 1. 跨家对照总表
 
@@ -14,9 +14,9 @@
 | GLM-4.6 [W] | GQA（ $g$=12，8 KV 头×128） | RoPE $\theta=10^{6}$ + partial 0.5（旋 64/128 维， $\lambda_{\max}$≈4.1M 原生覆盖） | 160+1 top-8，前 3 层 dense | RMSNorm + QK-Norm + QKV bias（叠加） | 151552 | 202752 | 368 KiB | 32B/355B ≈ 9.0%（含 MTP、不含词表） | 有（ $D$=1，整件 MoE 层） | 否 |
 | Kimi K3 [A] | KDA : full 交错（层型比以 report 正文为准） | KDA 侧靠衰减门控、无 RoPE；full 侧本书未锁定 | LatentMoE 896 top-16（routed 口径 $\rho$≈1.8%） | 本书未锁定 | 本书未锁定（谱系内 163840） | 1M（report 口径） | 未锁定（full 层数未锁定；linear 侧定长状态） | 104B/2.8T ≈ 3.7% | 三件套之外未列 | 是 |
 
-表注四条。其一，**cache 列口径**：GQA/MLA 行是「每 token 新增字节」的斜率；Qwen3-Next 与 K3 是 hybrid，斜率只由 full 层贡献，linear 层另付一份与 $T$ 无关的定长状态（Qwen3-Next 为 36 × 1 MiB = 36 MiB，4.4 §7）。其二，**激活比分母口径不一**：Qwen3-Next 官标「3B 激活、非 embedding 79B」，GLM 为 report 摘要口径（含 MTP 层、不含词表两侧，5.4 §4），Kimi 为 report 摘要口径，Scout 为 blog 口径——照抄不换算。其三，**K3 行只登记三件套坐标**：层数、层型比、full 层位置方案等以 report 正文为准（5.5 §2.5、4.4 §5），本书未锁定的格子标「未锁定」而不臆填——这是 5.4 §3 无 paper 读法纪律在对照表上的执行。其四，**MTP 列**：三家明装里 GLM 的取点最独特—— $D$=1 模块不是小头而是整件 MoE 层（161 expert + attention，`num_nextn_predict_layers=1`，report 原文 "we add an MoE layer as the MTP layer"，5.4 §2.4）；「无签名」= config 与公开 report 均未列该模块，不等于不存在，只等于公开证据边界到此为止。
+表注四条。其一，**cache 列口径**：GQA/MLA 行是「每 token 新增字节」的斜率；Qwen3-Next 与 K3 是 hybrid，斜率只由 full 层贡献，linear 层另付一份与 $T$ 无关的定长状态（Qwen3-Next 为 36 × 1 MiB = 36 MiB，4.4 §7）。其二，**激活比分母口径不一**：Qwen3-Next 官标「3B 激活、非 embedding 79B」，GLM 为 report 摘要口径（含 MTP 层、不含词表两侧，5.4 §4），Kimi 为 report 摘要口径，Scout 为 blog 口径——照抄不换算。其三，**K3 行只登记三件套坐标**：层数、层型比、full 层位置方案等以 report 正文为准（5.5 §2.5、4.4 §5），本书未锁定的格子标「未锁定」而不臆填——这是 5.4 §3 无 paper 读法纪律在对照表上的执行。其四，**MTP 列**：三家明装里 GLM 的取点最独特—— $D$=1 模块不是小头而是整件 MoE 层（161 expert + attention，`num_nextn_predict_layers=1`，report 原文 "we add an MoE layer as the MTP layer"，5.4 §2.4）。「无签名」= config 与公开 report 均未列该模块；它不等于不存在，只等于公开证据边界到此为止。
 
-沿列读四点观察。（1）**attention 列五落点互不重合**：纯 GQA（GLM）、GQA+chunk+iRoPE（Llama）、MLA+sparse（DeepSeek）、GQA:linear hybrid（Qwen）、KDA:full hybrid（Kimi）——4.1–4.4 的整条技术谱系在五家旗舰上各取一格，没有两家重合同一格。（2）**vocab 列五档**：129280 / 151552 / 151936 / 163840（K3 谱系）/ 202048，2.2 的 vocab 三方账（参数 $2Vd$、压缩率、长尾冷启动）在每家的取点不同；GLM 151552 与 Qwen 151936 同量级不同档，tokenizer 同源与否未锁定（5.4 §4）。（3）**ctx 列跨 64 倍**（163840 → 10,485,760，约 1.8 个数量级），且「声明窗」与「工作窗」要分开读：V3.2 的 163840 是 YaRN f40 外推结果（工作窗 128K），Scout 的 10M 是 blog 宣称口径，K3 的 1M 是 report 口径——4.6 的 RULER 方法论问题（声明窗 ≠ 有效窗）对五行全部适用。（4）**MoE 列五家全勤**，粒度从 16 到 896（56×，约 1.75 个数量级），routing 从 top-1 到 top-16——§2.1 解释为什么这一列必然全勤。
+沿列读四点观察。（1）**attention 列五落点互不重合**：纯 GQA（GLM）、GQA+chunk+iRoPE（Llama）、MLA+sparse（DeepSeek）、GQA:linear hybrid（Qwen）、KDA:full hybrid（Kimi）——4.1–4.4 的整条技术谱系在五家旗舰上各取一格，没有两家重合同一格。（2）**vocab 列五档**：129280 / 151552 / 151936 / 163840（K3 谱系）/ 202048，2.2 的 vocab 三方账（参数 $2Vd$、压缩率、长尾冷启动）在每家的取点不同；GLM 151552 与 Qwen 151936 同量级不同档，tokenizer 同源与否未锁定（5.4 §4）。（3）**ctx 列跨 64 倍**（163840 → 10,485,760，约 1.8 个数量级）。「声明窗」与「工作窗」要分开读：V3.2 的 163840 是 YaRN f40 外推结果（工作窗 128K），Scout 的 10M 是 blog 宣称口径，K3 的 1M 是 report 口径。4.6 的 RULER 方法论问题（声明窗 ≠ 有效窗）对五行全部适用。（4）**MoE 列五家全勤**，粒度从 16 到 896（56×，约 1.75 个数量级），routing 从 top-1 到 top-16——§2.1 解释为什么这一列必然全勤。
 
 ## 2. 收敛点：三笔共同的账
 
@@ -24,19 +24,19 @@
 
 ### 2.1 为什么都上 MoE：推理经济公式
 
-4.5 §1 把 1.3 的全生命周期成本改写成 MoE 口径（recap）：
+答案在推理经济里。4.5 §1 把 1.3 的全生命周期成本改写成 MoE 口径（recap）：
 
 $$
 \mathrm{TC}(N_{\mathrm{tot}}, N_{\mathrm{act}}, D, Q) = \underbrace{6 N_{\mathrm{act}} D}_{\text{train}} + \underbrace{2 N_{\mathrm{act}} Q}_{\text{inference}}, \qquad L \approx L(N_{\mathrm{tot}}, D) \qquad (1)
 $$
 
-**符号**： $N_{\mathrm{tot}}$ / $N_{\mathrm{act}}$：总 / 激活参数； $D$：训练 token 数； $Q$：服务期推理 token 总量； $L$：loss 约束——由总参数与数据摊薄，不进 FLOPs 目标。式 (1) 的全部经济含义：服务成本只认 $N_{\mathrm{act}}$（延迟与吞吐定价），容量维度 $N_{\mathrm{tot}}$ 按显存与互联定价，两本账分开优化。 $Q$ 越大的服务方，最优解越把 $N_{\mathrm{tot}}/N_{\mathrm{act}}$ 拉大——这就是对照表 MoE 列全勤的机制：不是某家的偏好，是式 (1) 在 $Q$ 大 regime 下的唯一方向。
+**符号**： $N_{\mathrm{tot}}$ / $N_{\mathrm{act}}$：总 / 激活参数； $D$：训练 token 数； $Q$：服务期推理 token 总量； $L$：loss 约束——由总参数与数据摊薄，不进 FLOPs 目标。式 (1) 的全部经济含义在两本账分开优化：服务成本只认 $N_{\mathrm{act}}$（延迟与吞吐定价），容量维度 $N_{\mathrm{tot}}$ 按显存与互联定价。 $Q$ 越大的服务方，最优解越把 $N_{\mathrm{tot}}/N_{\mathrm{act}}$ 拉大——这就是对照表 MoE 列全勤的机制：不是某家的偏好，是式 (1) 在 $Q$ 大 regime 下的唯一方向。
 
-稀疏度谱（对照表激活比列）：Scout 15.6% → GLM-4.6 9.0% → V3.2 5.5% → Qwen3-Next 3.75% → K3 3.7%（routed 口径 1.8%），与 4.5 §1 登记的 $N_{\mathrm{tot}}/N_{\mathrm{act}}$ 谱（Mixtral ≈ 3.6 → Qwen3-30B ≈ 9.2 → V3 ≈ 18.1）同向单调。用 config 字段可自算的等价口径是 FFN 侧「等总参 dense 的 per-token FLOPs 倍数」 $N_e/(k+K_s)$：Scout 17/2 ≈ 8.5×（16 routed + 1 shared，blog/config 口径，5.1 §5.1/§6）、V3.2 257/9 ≈ 28.6×、GLM-4.6 161/9 ≈ 17.9×、Qwen3-Next 513/11 ≈ 46.6×、K3 896/16 = 56×（routed 口径）。代价侧同样收敛地出现：router 均衡机制（V3 的 aux-loss-free 偏置、Qwen3-Next 的 norm_topk_prob、Llama-4 未公开）、前导 dense 层端点加固（V3/GLM 取 3、K2/Kimi Linear 取 1）、expert 并行的 all-to-all 通信账（4.5 §7 预告，归系统维度）——式 (1) 只给方向，这三个旋钮是每家必须自己填的工程空格。
+稀疏度谱（对照表激活比列）：Scout 15.6% → GLM-4.6 9.0% → V3.2 5.5% → Qwen3-Next 3.75% → K3 3.7%（routed 口径 1.8%）。这与 4.5 §1 登记的 $N_{\mathrm{tot}}/N_{\mathrm{act}}$ 谱（Mixtral ≈ 3.6 → Qwen3-30B ≈ 9.2 → V3 ≈ 18.1）同向单调。用 config 字段可自算的等价口径，是 FFN 侧「等总参 dense 的 per-token FLOPs 倍数」 $N_e/(k+K_s)$：Scout 17/2 ≈ 8.5×（16 routed + 1 shared，blog/config 口径，5.1 §5.1/§6）、V3.2 257/9 ≈ 28.6×、GLM-4.6 161/9 ≈ 17.9×、Qwen3-Next 513/11 ≈ 46.6×、K3 896/16 = 56×（routed 口径）。代价侧同样收敛地出现：router 均衡机制（V3 的 aux-loss-free 偏置、Qwen3-Next 的 norm_topk_prob、Llama-4 未公开）；前导 dense 层端点加固（V3/GLM 取 3、K2/Kimi Linear 取 1）；expert 并行的 all-to-all 通信账（4.5 §7 预告，归系统维度）。式 (1) 只给方向，这三个旋钮是每家必须自己填的工程空格。
 
 ### 2.2 为什么四家上了 subquadratic：1M ctx 的 KV 账
 
-2.4 的 KV cache 账按「每 token 斜率 × 窗长」写法 recap（GQA 系，bf16 字节系数 $b$=2）：
+为什么 1M ctx 逼出 subquadratic 结构？先把 2.4 的 KV cache 账按「每 token 斜率 × 窗长」的写法 recap 一遍（GQA 系，bf16 字节系数 $b$=2）：
 
 $$
 M_{\mathrm{cache}} = \underbrace{2\thinspace b\thinspace L\thinspace H_{kv}\thinspace d_{\mathrm{head}}}_{\text{slope}} \cdot \hspace{5mu} T \qquad (2)
@@ -53,13 +53,13 @@ Qwen3-Next   24 KiB/token |##                    |  @1M → 24 GiB + 36 MiB 定�
 Kimi Linear  7.9 KiB/token |#                     |  @1M → 7.9 GiB + 20 MiB 定长（4.4 §7 原账）
 ```
 
-纯 GQA 在 1M 窗下每序列 cache 192–368 GiB——单序列就顶满多张显卡的显存，batch 维彻底没有空间。这还只是内存；算力侧 full attention 每 token 打分约 $4 H_q d_{\mathrm{head}} T$（4.4 §7 口径），Scout 形态（40 头 × 128 维 × 48 层）在 $T$ = 1M 处仅 attention 打分一项就约 $4 \times 40 \times 128 \times 2^{20} \times 48 \approx 10^{12}$ FLOPs/token——每解一个 token 付一万亿次乘加，且随 $T$ 线性继续涨。内存斜率与算力斜率双双顶墙，subquadratic 就是必答题而不是探索题。
+纯 GQA 在 1M 窗下每序列 cache 192–368 GiB——单序列就顶满多张显卡的显存，batch 维彻底没有空间。这还只是内存。算力侧，full attention 每 token 打分约 $4 H_q d_{\mathrm{head}} T$（4.4 §7 口径）；Scout 形态（40 头 × 128 维 × 48 层）在 $T$ = 1M 处，仅 attention 打分一项就约 $4 \times 40 \times 128 \times 2^{20} \times 48 \approx 10^{12}$ FLOPs/token。每解一个 token 付一万亿次乘加，且随 $T$ 线性继续涨。内存斜率与算力斜率双双顶墙，subquadratic 就是必答题而不是探索题。
 
-带 subquadratic 结构的四家分三条路线。**压读取（sparse）**：V3.2 的 DSA 保持 576 元素/token 全量驻留，每步只 gather indexer 选中的 top-2048 行——decode 读取 144 MB vs 全量 9.2 GB @131072（64×，4.2 §6），cache 总账不动、动的是每步带宽。**压层数（hybrid）**：Qwen3-Next 3:1 把斜率除以 4（48 层只 12 层付），Kimi Linear 名义 3:1 把斜率压到 7/27 ≈ 26%——cache −75% 的数字来源就是层数比（4.4 §7）；K3 把同一主线推到 frontier 规模。**压可见窗（chunk + NoPE）**：Llama-4 Scout 不换 mixer，RoPE 层按 chunk 8192 分块、每第 4 层换 NoPE 配对数温度（5.1 §5.2）——斜率不变，但把注意力范围与位置外推的代价重排；其 10M 宣称窗若全量驻留达 1.9 TiB/序列，工程兑现依赖 chunk 边界上的 cache 处置，该实现细节公开材料未锁定 [W]。**不在图上的一家**：GLM-4.6 以 $\theta=10^{6}$ + partial 0.5 原生覆盖 202752（ $\lambda_{\max}$ ≈ 4.1M，5.4 §2.4），窗长停在 200K 量级、368 KiB/token 的斜率照付——71.1 GiB 的整窗账在 5.4 §2.4 算过，它是「暂不答这道题」的对照样本。三条路线与 §3 的分歧是同一枚硬币的两面。
+带 subquadratic 结构的四家分三条路线。**压读取（sparse）**：V3.2 的 DSA 保持 576 元素/token 全量驻留，每步只 gather indexer 选中的 top-2048 行。decode 读取 144 MB vs 全量 9.2 GB @131072（64×，4.2 §6）；cache 总账不动，动的是每步带宽。**压层数（hybrid）**：Qwen3-Next 3:1 把斜率除以 4（48 层只 12 层付）；Kimi Linear 名义 3:1 把斜率压到 7/27 ≈ 26%，cache −75% 的数字来源就是层数比（4.4 §7）；K3 把同一主线推到 frontier 规模。**压可见窗（chunk + NoPE）**：Llama-4 Scout 不换 mixer，RoPE 层按 chunk 8192 分块、每第 4 层换 NoPE 配对数温度（5.1 §5.2）。斜率不变，但注意力范围与位置外推的代价被重排；其 10M 宣称窗若全量驻留达 1.9 TiB/序列，工程兑现依赖 chunk 边界上的 cache 处置，该实现细节公开材料未锁定 [W]。**不在图上的一家**：GLM-4.6 以 $\theta=10^{6}$ + partial 0.5 原生覆盖 202752（ $\lambda_{\max}$ ≈ 4.1M，5.4 §2.4），窗长停在 200K 量级，368 KiB/token 的斜率照付。71.1 GiB 的整窗账在 5.4 §2.4 算过；它是「暂不答这道题」的对照样本。三条路线与 §3 的分歧是同一枚硬币的两面。
 
 ### 2.3 为什么 MTP 开始普及：speculative 收益
 
-4.5 §6 的接受率账（recap）：草稿分布 $q$ 对目标分布 $p$ 的逐位置接受率 $\alpha$ 与 $D$ 步草稿的期望产出
+MTP 为什么开始普及？先 recap 4.5 §6 的接受率账：草稿分布 $q$ 对目标分布 $p$ 的逐位置接受率 $\alpha$，与 $D$ 步草稿的期望产出
 
 $$
 \alpha = 1 - D_{\mathrm{TV}}(p, q), \qquad \mathbb{E}[\text{tokens}/\text{forward}] = \frac{1 - \alpha^{\gamma+1}}{1 - \alpha} \qquad (3)
@@ -67,9 +67,9 @@ $$
 
 **符号**： $D_{\mathrm{TV}}$：全变差距离； $\gamma$：每步验证的草稿长度（MTP $D$=1 即 $\gamma$=1， $\mathbb{E} = 1 + \alpha$）。V3 实测第二 token 接受率 85–90%（跨生成主题）， $\mathbb{E}$ ≈ 1.85–1.9 token/前向，端到端约 1.8× TPS（[DeepSeek-AI, 2024](../references.md)，arXiv:2412.19437，[A]）。
 
-普及的机制原因有三层。**草稿白捡**：MTP 模块与主模型共享 embedding 与输出头、只加 $D$ 个完整 block——相比独立草稿模型，服务端零额外模型成本，且共享表示正是把 $D_{\mathrm{TV}}$ 压小的结构手段（4.5 §6.2）；GLM 的变体把这一个 block 加成整件 MoE 层，也只约占总参 1%（5.4 §4）。**无损**：接受规则 $\min(1, p(x)/q(x))$ 保证输出分布精确等于 $p$——加速不付质量（4.5 §6.2 的推导与练习）。**正交**：MTP 挂在主干之上不占层数预算，与 dense/MoE、full/hybrid 全部架构轴正交（4.4 §3 的登记），任何谱系都能后挂——V3.2 相对 V3 只动 attention 侧、MTP 原样继承（5.2 §1）即为实例。训练侧另有监督加密收益（每个位置对更远 horizon 供监督，4.5 §6.1）。
+普及的机制原因有三层。**草稿白捡**：MTP 模块与主模型共享 embedding 与输出头，只加 $D$ 个完整 block。相比独立草稿模型，服务端零额外模型成本；且共享表示正是把 $D_{\mathrm{TV}}$ 压小的结构手段（4.5 §6.2）。GLM 的变体把这一个 block 加成整件 MoE 层，也只约占总参 1%（5.4 §4）。**无损**：接受规则 $\min(1, p(x)/q(x))$ 保证输出分布精确等于 $p$——加速不付质量（4.5 §6.2 的推导与练习）。**正交**：MTP 挂在主干之上不占层数预算，与 dense/MoE、full/hybrid 全部架构轴正交（4.4 §3 的登记），任何谱系都能后挂。V3.2 相对 V3 只动 attention 侧、MTP 原样继承（5.2 §1），即为实例。训练侧另有监督加密收益（每个位置对更远 horizon 供监督，4.5 §6.1）。
 
-证据边界必须写明：公开列装的是三家——DeepSeek（V3 起，[A]）、Qwen3-Next（model card 列装，[W]）与 GLM（4.5 report 明写、4.6 config `num_nextn_predict_layers=1` 实测，5.4 §2.4）；Llama-4 与 K2/K3 的 config 与公开 report 均无 MTP 签名。GLM 的取点值得单独登记：它的 $D$=1 模块不是小头而是**整件 MoE 层**（161 expert + attention），训练口径的 355B/32B 都含这一层，推理期可整体弃置（弃置后激活 32.4B → 32.0B，5.4 §4）——MTP 的「模块粒度」由此多出一个公开坐标。「普及」在本书证据边界内的准确表述是：技术包已被三家旗舰验证，接管门槛（一个 block 到一整层 MoE + 接受率校准）低到任何一家都可后挂——是否已挂，以各家 config / report 签名而非传闻为准。
+证据边界必须写明。公开列装的是三家：DeepSeek（V3 起，[A]）、Qwen3-Next（model card 列装，[W]）与 GLM（4.5 report 明写、4.6 config `num_nextn_predict_layers=1` 实测，5.4 §2.4）。Llama-4 与 K2/K3 的 config 与公开 report 均无 MTP 签名。GLM 的取点值得单独登记：它的 $D$=1 模块不是小头，而是**整件 MoE 层**（161 expert + attention）。训练口径的 355B/32B 都含这一层，推理期可整体弃置（弃置后激活 32.4B → 32.0B，5.4 §4）——MTP 的「模块粒度」由此多出一个公开坐标。「普及」在本书证据边界内的准确表述是：技术包已被三家旗舰验证，接管门槛（一个 block 到一整层 MoE + 接受率校准）低到任何一家都可后挂。是否已挂，以各家 config / report 签名为准，不以传闻为准。
 
 ## 3. 分歧点：MLA vs linear+full hybrid vs 纯 GQA
 
@@ -81,9 +81,9 @@ $$
 | 计算 | decode 打分在 $128{+}64$ = 192 维上进行； $W^{UK}$/$`W^{UV}`$ 吸收使 up-projection 不进 decode 内循环（4.1）；prefill/训练多付 down+up 投影 | full 层打分（GQA 或 MLA，因家而异）× 少数层；linear 层每 token 定常 $\approx 4 H d_v d_k$ FLOPs，与 $T$ 无关（4.4 §7） | 与 MHA 同形、 $g$ 倍省 cache 读取与 KV 投影 FLOPs；无额外结构开销 |
 | 实现复杂度 | 吸收重写 + decoupled RoPE（RoPE×低秩冲突是设计起点，4.1 §4）+ 专用 kernel | 双 mixer kernel（chunkwise linear + full）+ 层型调度 + 双 cache 管理（定长 + 线性） | MHA 的 reshape 级推广，任何 FlashAttention 族 kernel 直接支持 |
 
-三个维度的读法各一句。**cache 维**：MLA 压斜率（每层的单价）、hybrid 压层数（付单价的层数）、纯 GQA 不压斜率靠 chunk 重排可见窗——1M 窗下三者的整窗账 68.6 GiB / 24 GiB / 192+ GiB 已在 §2.2 的图上排开。**计算维**：MLA 的吸收技巧把 decode 内循环压到 576 维 latent 上做（数学上与原式精确等价，4.1），代价是 prefill 与训练侧多一串投影、以及 kernel 需要认识这套重写；hybrid 把 decode 算力变成「大固定项 + 小线性项」，1M 处 full 层打分仍是全模型算力主项（4.4 §7 的两千倍对照）；纯 GQA 的算力侧无任何新机制，省多少完全由 $g$ 决定。**实现复杂度维**：GQA 最低（reshape 级）、MLA 居中（一套重写 + 一种 kernel）、hybrid 最高（两套 mixer、两种 cache、层型装配）——transformers 的 `modeling_qwen3_next.py` 对 GDN 层直接调 fla 库的 `chunk_gated_delta_rule` 而不自研（5.3 §4.3，[fla-org](../references.md)，[A]），就是这条复杂度账单的具体一笔。
+三个维度的读法各一句。**cache 维**：MLA 压斜率（每层的单价），hybrid 压层数（付单价的层数），纯 GQA 不压斜率、靠 chunk 重排可见窗。1M 窗下三者的整窗账 68.6 GiB / 24 GiB / 192+ GiB 已在 §2.2 的图上排开。**计算维**：MLA 的吸收技巧把 decode 内循环压到 576 维 latent 上做（数学上与原式精确等价，4.1），代价是 prefill 与训练侧多一串投影，以及 kernel 需要认识这套重写。hybrid 把 decode 算力变成「大固定项 + 小线性项」，1M 处 full 层打分仍是全模型算力主项（4.4 §7 的两千倍对照）。纯 GQA 的算力侧无任何新机制，省多少完全由 $g$ 决定。**实现复杂度维**：GQA 最低（reshape 级），MLA 居中（一套重写 + 一种 kernel），hybrid 最高（两套 mixer、两种 cache、层型装配）。transformers 的 `modeling_qwen3_next.py` 对 GDN 层直接调 fla 库的 `chunk_gated_delta_rule` 而不自研（5.3 §4.3，[fla-org](../references.md)，[A]），就是这条复杂度账单的具体一笔。
 
-质量证据侧三家也各有锚点：V2 报告 MLA 与同规模 MHA 相当或更强（[DeepSeek-AI, 2024](../references.md)，arXiv:2405.04434，[A]）——「cache 压缩必损检索分辨率」的直觉在 512 维共享 latent 上不成立；Kimi Linear 的 1.4T 同配方公平对照报告全面超过 MLA 基线（[Kimi Team, 2025](../references.md)，arXiv:2510.26692，[A]）；GQA-8（8 KV 组）作为 cache/质量 Pareto 中间点的定位出自原论文（[Ainslie et al., 2023](../references.md)，arXiv:2305.13245，[B]）。还有一个谱系级事实值得登记：K2 的 `architectures = DeepseekV3ForCausalLM`（5.5 §2.3）证明 MLA + DeepSeekMoE 这一组合已成为可跨实验室整体复用的架构类——分歧的各方都在成为公共零件箱的一部分。
+质量证据侧三家也各有锚点。V2 报告 MLA 与同规模 MHA 相当或更强（[DeepSeek-AI, 2024](../references.md)，arXiv:2405.04434，[A]）——「cache 压缩必损检索分辨率」的直觉在 512 维共享 latent 上不成立。Kimi Linear 的 1.4T 同配方公平对照报告全面超过 MLA 基线（[Kimi Team, 2025](../references.md)，arXiv:2510.26692，[A]）。GQA-8（8 KV 组）作为 cache/质量 Pareto 中间点的定位出自原论文（[Ainslie et al., 2023](../references.md)，arXiv:2305.13245，[B]）。还有一个谱系级事实值得登记：K2 的 `architectures = DeepseekV3ForCausalLM`（5.5 §2.3）证明 MLA + DeepSeekMoE 这一组合已成为可跨实验室整体复用的架构类。分歧的各方都在成为公共零件箱的一部分。
 
 ## 4. 方法论：如何独立读懂一个新模型
 
@@ -128,15 +128,15 @@ config.json ──► configuration_*.py ──► modeling_*.py
                                       └─ *Model / *ForCausalLM: 层栈装配 / norm 拓扑 / 输出头 tying / MTP 挂点
 ```
 
-三处落点的读法各配一个本书实例。**Attention.forward**：先看四个投影的 shape（q_proj 是 $d \to H_q d_{\mathrm{head}}$,Qwen3-Next 的 2048→4096 就是在这里坐实 head_dim 256 的），再看 RoPE 在哪一步施加、旋多少维（partial_rotary_factor 的落点），最后看 KV cache 的写入与读取位置。锚点：transformers 的 `modeling_llama.py`（2.3/2.4 的走读对象，[HuggingFace](../references.md)，[A]）。**MoE block**：router 打分函数（softmax 还是 sigmoid）、top-k 选择、归一化位置（`norm_topk_prob` 的代码落点）、加权求和、shared expert 是否无条件并联——DeepSeek-V3 官方 `inference/model.py` 的 Gate（4.5 §3.3）与 Mixtral 的 `MixtralSparseMoeBlock`（4.5 §1）是这条路径的两个走读过的端点。**Model 层**：层型列表如何生成与装配（`full_attention_interval` → 48 项 `layer_types`，5.3 §4.1）、norm 在残差流的哪一侧、输出头是否 tying、MTP 模块挂在哪。`modeling_qwen3_next.py` 的三处实现级证据（zero-centered norm 的 zeros 初始化、输出门从 q_proj 切出、GDN 调 fla kernel，5.3 §4.3）示范了「config 一句话 = 代码三行」的互证密度。
+三处落点的读法，各配一个本书实例。**Attention.forward**：先看四个投影的 shape（q_proj 是 $d \to H_q d_{\mathrm{head}}$，Qwen3-Next 的 2048→4096 就是在这里坐实 head_dim 256 的）；再看 RoPE 在哪一步施加、旋多少维（partial_rotary_factor 的落点）；最后看 KV cache 的写入与读取位置。锚点：transformers 的 `modeling_llama.py`（2.3/2.4 的走读对象，[HuggingFace](../references.md)，[A]）。**MoE block**：依次看五件事——router 打分函数（softmax 还是 sigmoid）、top-k 选择、归一化位置（`norm_topk_prob` 的代码落点）、加权求和、shared expert 是否无条件并联。DeepSeek-V3 官方 `inference/model.py` 的 Gate（4.5 §3.3）与 Mixtral 的 `MixtralSparseMoeBlock`（4.5 §1）是这条路径的两个走读过的端点。**Model 层**：看层型列表如何生成与装配（`full_attention_interval` → 48 项 `layer_types`，5.3 §4.1）、norm 在残差流的哪一侧、输出头是否 tying、MTP 模块挂在哪。`modeling_qwen3_next.py` 的三处实现级证据（zero-centered norm 的 zeros 初始化、输出门从 q_proj 切出、GDN 调 fla kernel，5.3 §4.3）示范了「config 一句话 = 代码三行」的互证密度。
 
 ### 4.3 tech report 五步读法
 
 report 的价值分布极不均匀；五步按信息密度排序，每步配一个前五章的执行实例：
 
-1. **架构表 ↔ config 互证 + 参数复算**。目标是闭合而非止步：GLM-4.6 全字段锁定后复算 ≈355.2B 对官方 355B（含 MTP、不含词表口径）闭合到 0.06% 以内，闭合同时反证两个未单列字段的取值——shared expert 与 routed 同宽、MTP 恰为一层（5.4 §4）；该章初稿曾以「残差 4.9B、归属未锁定」收尾，而 dense FFN 宽度与 MTP 字段本就在 config 里——「字段没读完不要宣布未锁定」，这条更正记录本身就是教材。同法样本：V3 的 671B 五项分解（5.2 §3.3）、K2 的 1T 复算「99% 是 expert 参数」（5.5 §3.1）。复算闭合是「读懂了」的最低标准。
+1. **架构表 ↔ config 互证 + 参数复算**。目标是闭合而非止步：GLM-4.6 全字段锁定后复算 ≈355.2B，对官方 355B（含 MTP、不含词表口径）闭合到 0.06% 以内；闭合同时反证两个未单列字段的取值——shared expert 与 routed 同宽、MTP 恰为一层（5.4 §4）。该章初稿曾以「残差 4.9B、归属未锁定」收尾，而 dense FFN 宽度与 MTP 字段本就在 config 里。「字段没读完不要宣布未锁定」——这条更正记录本身就是教材。同法样本：V3 的 671B 五项分解（5.2 §3.3）、K2 的 1T 复算「99% 是 expert 参数」（5.5 §3.1）。复算闭合是「读懂了」的最低标准。
 2. **ablation 存在性检查**。逐项消融有无决定组件收益的证据等级：QK-Norm 无公开消融，收益只能登记为「宣称」并列开放问题（5.3 §5）；iRoPE 的超参（3:1、chunk 8192）同样无公开对照（5.1 §7）。没有 ablation 的组件不是错，是不能当结论用。
-3. **数据与成本口径**。tokens 数横向对照（V3 14.8T / GLM-4.5 23T / K2 15.5T / Qwen3-Next 15T / Moonlight 5.7T）；成本数字先问口径再转述——V3 的 2.788M H800 GPU-hours 是 2664K+119K+5K 三段之和、且 GPU-hours ≠ 货币（5.2 §3.4）。**[W]/[C] 级材料不做数据断言**（5.4 §3 的纪律）。
+3. **数据与成本口径**。tokens 数横向对照（V3 14.8T / GLM-4.5 23T / K2 15.5T / Qwen3-Next 15T / Moonlight 5.7T）。成本数字先问口径再转述：V3 的 2.788M H800 GPU-hours 是 2664K+119K+5K 三段之和，且 GPU-hours ≠ 货币（5.2 §3.4）。**[W]/[C] 级材料不做数据断言**（5.4 §3 的纪律）。
 4. **评测协议与对照公平性**。对照是否同配方：Kimi Linear 的 1.4T 同数据档是公平对照、5.7T 是发布档，两个数字服务的论证不同（4.4 §4）；长上下文宣称要过 4.6 的 RULER 口径检查（声明窗 ≠ 有效窗）。
 5. **局限与未做项**。作者自列的 failure modes 与没做的实验是下一章问题的富矿；读完落一份开放问题清单——前五章每章末的清单（5.1 §7、5.2 §7、5.3 §5、5.4 §5、5.5 §5）示范了写法：每条可判定、指向具体的缺失证据。
 

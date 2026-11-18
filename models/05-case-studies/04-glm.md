@@ -1,10 +1,10 @@
 # 5.4 GLM 谱系：从自研 objective 到标准零件箱（The GLM Lineage）
 
-> GLM 是本书五家案例中唯一一条从自研 objective 出发的谱系：GLM 2021 用 blank infilling + 2D 位置编码把理解与生成收进同一组权重（机制推导在 3.1，本章结算技术后果的账），GLM-130B 把该 objective 推到 130B 双语并留下 100B 级训练稳定性记录，ChatGLM → GLM-4 转入对话服务代，GLM-4.5/4.6/4.7 的 config 显示旗舰已整体收敛到标准零件箱（GQA + RoPE + 细粒度 MoE）；4.6 无独立 tech report、4.7 无 arXiv，本章顺带以其为「如何对待无 paper 模型」的示范样本。按 P5 固定模板展开：配置谱系表 → 标志性架构决策的公式级分析 → 无 paper 读法示范 → GLM-4.6 config 逐字段精读 → 技术开放问题 | 前置：2.4（KV cache 账）、2.5（RoPE 波长账）、2.7（Pre/Post-LN 与 warmup、DeepNorm 家族）、2.8（head_dim 误解）、3.1（blank infilling 式 (8)–(11)、可生成判定式 (16)）、4.1（GQA）、4.5（MoE 稀疏度谱）、5.2（first_k_dense_replace 读法）、5.3（QKV bias → QK-Norm 分野） | 锚点：THUDM/GLM（2021 代码，3.1 已锚定）[A]、zai-org/GLM-4 [A]、zai-org/GLM-4.5 [A]、zai-org/GLM-4.6 / GLM-4.7 HF config（2026-11-12 实测）[W]；论文：GLM [A]、GLM-130B [A]、ChatGLM 代际报告 [A]、GLM-4.5 [A]、GLM-4.5V [A]；[W]：GLM-4.6、GLM-4.7
+> GLM 是本书五家案例中唯一一条从自研 objective 出发的谱系。GLM 2021 用 blank infilling 加 2D 位置编码，把理解与生成装进同一组权重（机制推导在 3.1，本章只结算技术后果的账）。GLM-130B 把同一 objective 推到 130B 双语，留下一份 100B 级训练稳定性记录。ChatGLM → GLM-4 转入对话服务代。GLM-4.5/4.6/4.7 的 config 显示，旗舰已整体收敛到标准零件箱（GQA + RoPE + 细粒度 MoE）。4.6 无独立 tech report，4.7 无 arXiv——本章顺带拿它们示范「无 paper 模型怎么读」。展开顺序按 P5 固定模板：配置谱系表 → 标志性架构决策的公式级分析 → 无 paper 读法示范 → GLM-4.6 config 逐字段精读 → 技术开放问题 | 前置：2.4（KV cache 账）、2.5（RoPE 波长账）、2.7（Pre/Post-LN 与 warmup、DeepNorm 家族）、2.8（head_dim 误解）、3.1（blank infilling 式 (8)–(11)、可生成判定式 (16)）、4.1（GQA）、4.5（MoE 稀疏度谱）、5.2（first_k_dense_replace 读法）、5.3（QKV bias → QK-Norm 分野） | 锚点：THUDM/GLM（2021 代码，3.1 已锚定）[A]、zai-org/GLM-4 [A]、zai-org/GLM-4.5 [A]、zai-org/GLM-4.6 / GLM-4.7 HF config（2026-11-12 实测）[W]；论文：GLM [A]、GLM-130B [A]、ChatGLM 代际报告 [A]、GLM-4.5 [A]、GLM-4.5V [A]；[W]：GLM-4.6、GLM-4.7
 
 ## 1. 配置谱系表
 
-GLM-4.6 的 config.json 与 GLM-4.5 逐字段 diff 只剩一项：max_position_embeddings 131072 → 202752（两 config 本轮同拉对照，2026-11-12）；GLM-4.7 的 config 再与 4.6 逐字段完全一致（同轮实测）。一条从自研 objective 出发的谱系，到旗舰代已经把全部架构字段写进了与 5.1–5.3 各家同型的标准零件箱。全谱系（列序按 W3 约定：model | total/active 参数 | layers | hidden | heads Q/KV | head_dim | attention 方案 | MoE | norm | vocab | ctx（max_position_embeddings）| rope_theta | 证据 key）：
+GLM-4.6 的 config.json 与 GLM-4.5 逐字段 diff 只剩一项：max_position_embeddings 131072 → 202752（两 config 本轮同拉对照，2026-11-12）。GLM-4.7 的 config 再与 4.6 逐字段完全一致（同轮实测）。一条从自研 objective 出发的谱系，到旗舰代已经把全部架构字段写进了与 5.1–5.3 各家同型的标准零件箱。全谱系如下，列序按 W3 约定：model | total/active 参数 | layers | hidden | heads Q/KV | head_dim | attention 方案 | MoE | norm | vocab | ctx（max_position_embeddings）| rope_theta | 证据 key。
 
 | 模型 | total/active | layers | hidden | heads Q/KV | head_dim | attention 方案 | MoE | norm | vocab | ctx | rope_theta | key |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -17,13 +17,13 @@ GLM-4.6 的 config.json 与 GLM-4.5 逐字段 diff 只剩一项：max_position_e
 
 表注六条。其一，「—」= 本轮 research pass 未实测该字段：GLM 2021 / GLM-130B / ChatGLM / GLM-4 各行的逐字段 config 未纳入本书实测序列，谱系结论不依赖这些格子；数值口径优先级为 config.json 实测 > tech report 架构表 > model card > blog（W3 约定页）。其二，total/active 不是 config 字段：355B/32B 引 GLM-4.5 report 摘要（[GLM-4.5 Team, 2025](../references.md)，arXiv:2508.06471，[A]），4.6/4.7 行照抄该数字的合法性来自 §3 的 config 同构验证，不是当然成立。其三，GLM-4.5/4.6/4.7 的架构字段以 GLM-4.6/4.7 config 实测为准（2026-11-12），4.5 行与 4.6 唯一的差异已在 diff 中排除（仅 ctx）。其四，head_dim 128 $\neq$ 5120/96 ≈ 53.3——2.8「head_dim 误解」条目的又一实例，q 投影实为 5120 → 12288、K/V 各 5120 → 1024。其五，GLM-4.7 的 API 侧 ctx 标称 204800（OpenRouter 旁证，2026-11-12）与 config 字段 202752 并存——服务口径与字段口径之差登记在此，不互相覆盖。其六，旗舰三行的 norm 列与 partial 标注为 config 实测（`rms_norm_eps`= $10^{-5}$ 的字段签名 + `use_qk_norm`=true + `partial_rotary_factor`=0.5，2026-11-12 fix round 复核 hf-mirror config）；MTP ×1 即 `num_nextn_predict_layers`=1，机制归 4.5 §6。
 
-读表得出的结构观察是两段式。**objective 驱动期**（GLM 2021、GLM-130B）：谱系的独有机制（blank infilling、2D 位置编码、[gMASK]）由 objective 反向决定，填不满的列恰是「该期还没有标准零件箱」的侧面。**收敛期**（GLM-4.5 起）：每一列都能填，且取值与 DeepSeek/Qwen 同族——GQA、RoPE、细粒度 MoE + shared expert + dense 前导层、untied 词表。两段之间的过渡带是 ChatGLM → GLM-4：对话服务化（instruction / RLHF 归 training 维度），代际报告（[Team GLM, 2024](../references.md)，arXiv:2406.12793，[A]）一篇覆盖 GLM-130B 到 GLM-4 全家族，标题里的 All Tools 即工具调用定位；本 pass 未实测该过渡带各代 config，其架构字段本章不断言。GLM-4.5V（[GLM-V Team, 2025](../references.md)，arXiv:2507.01006，[A]）为视觉版（GLM-4.5V 与 GLM-4.1V-Thinking），多模态细节归 P8，本章只登记存在性。
+读表得出的结构观察是两段式。**objective 驱动期**（GLM 2021、GLM-130B）：谱系的独有机制——blank infilling、2D 位置编码、[gMASK]——由 objective 反向决定；填不满的列恰是「该期还没有标准零件箱」的侧面。**收敛期**（GLM-4.5 起）：每一列都能填，取值与 DeepSeek/Qwen 同族：GQA、RoPE、细粒度 MoE + shared expert + dense 前导层、untied 词表。两段之间的过渡带是 ChatGLM → GLM-4。这一代转向对话服务（instruction / RLHF 归 training 维度）；代际报告（[Team GLM, 2024](../references.md)，arXiv:2406.12793，[A]）一篇覆盖 GLM-130B 到 GLM-4 全家族，标题里的 All Tools 即工具调用定位。本 pass 未实测过渡带各代的 config，其架构字段本章不断言。GLM-4.5V（[GLM-V Team, 2025](../references.md)，arXiv:2507.01006，[A]）为视觉版（GLM-4.5V 与 GLM-4.1V-Thinking），多模态细节归 P8，本章只登记存在性。
 
 ## 2. 标志性架构决策的公式级分析
 
 ### 2.1 GLM 2021：一个 objective 买两种能力，账是多少
 
-机制推导全部在 3.1 §4：span 长度采自 Poisson（ $\lambda$=3）、覆盖 15%、每条 span 塌缩成单个 [MASK] 得 Part A、乱序拼接成 Part B、目标函数对排列取期望（3.1 式 (8)）；2D 位置 id $(p^{(1)}, p^{(2)})$ = 空白地址 × 空内偏移（3.1 式 (9)–(11)）。本章不重复推导，只 recap 最小实例（0-indexed，与 3.1 §4.3 同例）并结算技术后果：
+这个 objective 买到什么、付掉什么？机制推导全部在 3.1 §4，这里只复述要点：span 长度采自 Poisson（ $\lambda$=3）、覆盖 15%；每条 span 塌缩成单个 [MASK] 得 Part A，乱序拼接成 Part B；目标函数对排列取期望（3.1 式 (8)）。2D 位置 id $(p^{(1)}, p^{(2)})$ = 空白地址 × 空内偏移（3.1 式 (9)–(11)）。本章不重复推导，只 recap 最小实例（0-indexed，与 3.1 §4.3 同例），然后结算技术后果：
 
 ```
 Part A（双向）       ‖  Part B（乱序 span，span 内因果）
@@ -33,9 +33,9 @@ p2: 0  0  0  0  0      0  1  2  0  1
 ℓ : 0  0  0  0  0      0  1  1  0  1
 ```
 
-**买到的一：可生成性判定通过。** 3.1 式 (16) 的条件 $c_{\pi(\tau)} \subseteq G_{\tau} \cup I$ 对 GLM 成立： $I$ = Part A（生成前完整已知），span 逐条生成、span 内因果，条件集 = $x^{c} \cup$ 已生成 span $\cup$ 本 span 前缀。对照组是 BERT：MLM 的条件集含未来真值，同一判定直接失败（3.1 §7）——GLM 与 BERT 的距离不是「双向程度」，是一条可判定不等式的成立与否。
+**买到的一：可生成性判定通过。** 3.1 式 (16) 的条件 $c_{\pi(\tau)} \subseteq G_{\tau} \cup I$ 对 GLM 成立。逐项代入： $I$ = Part A（生成前完整已知）；span 逐条生成、span 内因果，条件集 = $x^{c} \cup$ 已生成 span $\cup$ 本 span 前缀。对照组是 BERT：MLM 的条件集含未来真值，同一判定直接失败（3.1 §7）。GLM 与 BERT 的距离不是「双向程度」，而是一条可判定不等式的成立与否。
 
-**买到的二：理解与生成同体。** Part A 内部全双向（ $M$ 的 A-A 块全 0），填空条件分布以完整上下文为条件——同一组权重既是理解探针又是生成器；模式切换在数据侧（[MASK] 短空 / [gMASK] 文档级长空的位置与数量），不在架构侧。对照 T5 的同一件事需要 encoder-decoder 两个 stack（3.1 §1 已证两种写法同构，只是 $M$ 布局差异），GLM 用单 stack 单 loss 完成。这是「理解生成同体」的精确内容：同一权重集 + 同一目标函数，理解/生成只是 mask 布局的两个取值。
+**买到的二：理解与生成同体。** Part A 内部全双向（ $M$ 的 A-A 块全 0），填空条件分布以完整上下文为条件。同一组权重既是理解探针又是生成器；模式切换在数据侧（[MASK] 短空 / [gMASK] 文档级长空的位置与数量），不在架构侧。对照 T5：同一件事在 T5 需要 encoder-decoder 两个 stack（3.1 §1 已证两种写法同构，只是 $M$ 布局差异），GLM 用单 stack 单 loss 完成。这就是「理解生成同体」的精确内容：同一权重集加同一目标函数，理解/生成只是 mask 布局的两个取值。
 
 **付掉的：监督密度与序列开销。** 设原序列长 $T$、span 集 $\lbrace s_1, \ldots, s_m\rbrace$，输入序列总长
 
@@ -43,17 +43,17 @@ $$
 |x_{\mathrm{in}}| = \big(T - \sum_{i} |s_i| + m\big) + \big(\sum_{i} (|s_i| + 1)\big) = T + 2m \qquad (1)
 $$
 
-**符号**：第一项为 Part A（每条 span 塌缩成 1 个 [MASK]），第二项为 Part B（每条 span 前置 1 个起始符 [s]）； $m$：span 条数。代入 $T$=512、15% 覆盖、均长 3： $m \approx 26$， $|x_{\mathrm{in}}| = 564 \approx 1.10\thinspace T$，被监督位置只有 span 内容 77 个。CLM 同一序列 512 个前向位置换 512 个监督位；GLM 564 个前向位置换 77 个——**每被监督 token 的前向成本约为 CLM 的 7.3 倍**。「理解力红利」按这个倍率付费；练习 3 推导一般式 $(1 + 2r/\mu)/r$。
+**符号**：第一项为 Part A（每条 span 塌缩成 1 个 [MASK]），第二项为 Part B（每条 span 前置 1 个起始符 [s]）； $m$：span 条数。代入 $T$=512、15% 覆盖、均长 3： $m \approx 26$， $|x_{\mathrm{in}}| = 564 \approx 1.10\thinspace T$，被监督位置只有 span 内容 77 个。CLM 同一序列 512 个前向位置换 512 个监督位；GLM 564 个前向位置换 77 个——**每被监督 token 的前向成本约为 CLM 的 7.3 倍**。这就是「理解力红利」的价格；练习 3 推导一般式 $(1 + 2r/\mu)/r$。
 
-**谱系坐标。** 本书五家案例中，GLM 是唯一 objective 自研的谱系（Llama / DeepSeek / Qwen / Kimi 全部 CLM 主线，5.1–5.3、5.5）；2D 位置编码是这个 objective 反向决定的架构件——缺 $p^{(1)}$ 不知在填哪个空、缺 $p^{(2)}$ 不知空内第几（3.1 §4.3 的必要性论证），需求清单由 blank infilling 写出，架构件只是应答。
+**谱系坐标。** 本书五家案例中，GLM 是唯一 objective 自研的谱系（Llama / DeepSeek / Qwen / Kimi 全部 CLM 主线，5.1–5.3、5.5）。2D 位置编码正是这个 objective 反向决定的架构件：缺 $p^{(1)}$ 不知在填哪个空，缺 $p^{(2)}$ 不知空内第几（3.1 §4.3 的必要性论证）。需求清单由 blank infilling 写出，架构件只是应答。
 
 ### 2.2 2D 位置编码的退出：退化角读法
 
 GLM-4.5/4.6/4.7 的 config 没有任何 2D 位置字段，有的是 rope_theta = $10^{6}$——谱系起点的标志性架构件没有进入当代旗舰。这不是败退叙事，机制层面的读法有两步。
 
-第一步，服务形态落在 GLM objective 空间的退化角上。取 $m$=1、span = 后缀，GLM 逐符号退化为 prefix-LM（3.1 §4.4 已证）；对话服务的生成形态——给定 prompt、自回归续写——正是这个角。退化角上 $p^{(1)}$ 恒等于唯一空白的地址（无信息载荷）， $p^{(2)}$ 退化为后缀内偏移——位置需求与 CLM 完全相同，2D 寻址的两维各失去一维。
+第一步，服务形态落在 GLM objective 空间的退化角上。取 $m$=1、span = 后缀，GLM 逐符号退化为 prefix-LM（3.1 §4.4 已证）；对话服务的生成形态——给定 prompt、自回归续写——正是这个角。退化角上 $p^{(1)}$ 恒等于唯一空白的地址（无信息载荷）， $p^{(2)}$ 退化为后缀内偏移。位置需求与 CLM 完全相同，2D 寻址的两维各失去一维。
 
-第二步，RoPE 是该需求的更优参数化。相对性（score 只依赖位置差）、无查表参数、外推账可算（2.5）——当「多空白寻址」不再是主用法，绝对位置表 ($T_{\max} + L_{\max}) \times d$ 的查表方案在每一条对照轴上都不占优。config 里 rope_theta 字段的出现与 2D 字段的缺席，是「退化角成为主用法」这一事实的序列化痕迹。
+第二步，RoPE 是该需求的更优参数化。它有三项优势：score 只依赖位置差（相对性）；不需要查表参数；外推账可算（2.5）。当「多空白寻址」不再是主用法，绝对位置表 ($T_{\max} + L_{\max}) \times d$ 的查表方案在每一条对照轴上都不占优。config 里 rope_theta 字段的出现与 2D 字段的缺席，正是「退化角成为主用法」这一事实留下的序列化痕迹。
 
 边界必须说清：config 只能证明**架构件**退出，证明不了 **objective** 退出。blank infilling 是数据侧构造（3.1 §4.2 的管线），在 config 里不留字段；GLM-4.5 预训练是否仍混合 blank infilling 变体，report 摘要层面未锁定，列入 §5。
 
@@ -65,7 +65,7 @@ GLM-130B（[Zeng et al., 2022](../references.md)，arXiv:2210.02414，[A]）的�
 
 ### 2.4 GLM-4.5/4.6/4.7：旗舰字段的零件坐标
 
-三代同 config（§3 验证同构），逐列对到账上。
+三代同 config（§3 已验证同构），下面逐列对到账上。
 
 **GQA $g$=12 与 KV cache 账。** cache 公式（2.4 式 (9)）：
 
@@ -77,11 +77,11 @@ $$
 
 **MoE 稀疏度取点。** 160 routed + 1 shared、top-8，层内口径 $`\rho = 9/161 \approx 5.6\%`$；总量口径 32/355 ≈ 9.0%。在 4.5 §1 的稀疏度谱上居中：DeepSeek-V3 层内 3.5%（256+1 top-8）、Qwen3-Next 2.1%（512+1 top-10）、GLM 5.6%。expert 中间维 1536 与 Qwen3-235B 同值，是细粒度切分（4.5 式 (14)(15)：expert 数乘 $m$、中间维除 $m$）落在相近粒度档的信号。
 
-**first_k_dense_replace = 3。** 前 3 层 dense——与 DeepSeek-V3 同取 3，5.2 §6 的两条机制读法照搬：浅层表示未分化、路由信号噪声最大，dense 前导层给统一基底变换；浅层 MoE 均衡回路早期最不稳，dense 起步把振荡隔离在表示基底之外。K2 取 1（5.5），三家取点无公开消融，列入 §5。另记两笔字段级证据。其一，GLM-4.6 config 的 MoE 字段名（first_k_dense_replace、moe_intermediate_size、norm_topk_prob、routed_scaling_factor、n_group/topk_group）与 DeepSeek-V3 config 同形——字段字典层面的谱系信号；但 architectures = Glm4MoeForCausalLM、model_type = glm4_moe（自有架构类，config 实测），强度因此低于 K2 的 architectures = DeepseekV3ForCausalLM（5.5 的复用证据）：GLM 借的是 schema 而非类。其二，路由的 config 落点：`norm_topk_prob = true` + `routed_scaling_factor = 2.5` 是 4.5 式 (16)(17) 族「选中集内归一 + 缩放常数」的签名（取点同 5.2 §6 的 V3）；`n_group = 1`、`topk_group = 1` 把 V3 的组限定分发（8 选 4，4.5 §7 的通信动机）退化为全域路由。打分函数形态（sigmoid/softmax）config 无字段，未锁定（§5）。
+**first_k_dense_replace = 3。** 前 3 层 dense，与 DeepSeek-V3 同取 3。5.2 §6 的两条机制读法照搬：其一，浅层表示未分化、路由信号噪声最大，dense 前导层给统一基底变换；其二，浅层 MoE 均衡回路早期最不稳，dense 起步把振荡隔离在表示基底之外。K2 取 1（5.5）。三家取点无公开消融，列入 §5。另记两笔字段级证据。其一，GLM-4.6 config 的 MoE 字段名（first_k_dense_replace、moe_intermediate_size、norm_topk_prob、routed_scaling_factor、n_group/topk_group）与 DeepSeek-V3 config 同形——这是字段字典层面的谱系信号。但 architectures = Glm4MoeForCausalLM、model_type = glm4_moe（自有架构类，config 实测），强度因此低于 K2 的 architectures = DeepseekV3ForCausalLM（5.5 的复用证据）：GLM 借的是 schema 而非类。其二，路由的 config 落点：`norm_topk_prob = true` + `routed_scaling_factor = 2.5` 是 4.5 式 (16)(17) 族「选中集内归一 + 缩放常数」的签名（取点同 5.2 §6 的 V3）；`n_group = 1`、`topk_group = 1` 把 V3 的组限定分发（8 选 4，4.5 §7 的通信动机）退化为全域路由。打分函数形态（sigmoid/softmax）config 无字段，未锁定（§5）。
 
-**MTP ×1：草稿模块是整件 MoE 层。** config 实测 `num_nextn_predict_layers = 1`；GLM-4.5 report 明写 "we add an MoE layer as the MTP layer"（[A]）——即 4.5 §6 的 $D$=1 链式模块在 GLM 的取点不是小头而是完整一层 MoE（161 expert + attention），训练期监督加密、推理期 self-speculative 草稿、可整体弃置（机制推导归 4.5 §6，不重复）。参数量账进 §4 式 (4)。
+**MTP ×1：草稿模块是整件 MoE 层。** config 实测 `num_nextn_predict_layers = 1`；GLM-4.5 report 明写 "we add an MoE layer as the MTP layer"（[A]）。也就是说，4.5 §6 的 $D$=1 链式模块在 GLM 的取点不是小头，而是完整一层 MoE（161 expert + attention）。它有三重身份：训练期监督加密，推理期 self-speculative 草稿，且可整体弃置（机制推导归 4.5 §6，不重复）。参数量账进 §4 式 (4)。
 
-**attention_bias = true 且 use_qk_norm = true：bias 与 QK-Norm 叠加。** 两个字段同 config 实测（2026-11-12）：GLM-4.5/4.6/4.7 不是「保留 bias、拒绝 QK-Norm」，而是两件都要——GLM-4.5 report Table 1 明写 QK-Norm: Yes，正文自述 "incorporate QK-Norm to stabilize the range of attention logits"（[A]）。与 Qwen3 的分野因此不是二选一：Qwen3 是纯 QK-Norm（attention_bias=false，5.3 §2.2），GLM 是叠加——QK-Norm 把 logit 幅度结构性封顶 $|z| \le \sqrt{d_k}$，bias 保留逐通道常数位移的自由度，同一个稳定性问题（logit 失控 → softmax 饱和 → 梯度消失，2.3 §3.4）上 GLM 多付一份可学参数。bias 参数量每层 $12288 + 1024 + 1024 = 14336$ 个、92 层合计约 1.3M——参数的边角料；叠加是否冗余（封顶之后位移自由度还剩多少表达贡献）无公开消融，列入 §5。
+**attention_bias = true 且 use_qk_norm = true：bias 与 QK-Norm 叠加。** 两个字段同 config 实测（2026-11-12）。GLM-4.5/4.6/4.7 不是「保留 bias、拒绝 QK-Norm」，而是两件都要：GLM-4.5 report Table 1 明写 QK-Norm: Yes，正文自述 "incorporate QK-Norm to stabilize the range of attention logits"（[A]）。与 Qwen3 的分野因此不是二选一。Qwen3 是纯 QK-Norm（attention_bias=false，5.3 §2.2）；GLM 是叠加：QK-Norm 把 logit 幅度结构性封顶 $|z| \le \sqrt{d_k}$，bias 保留逐通道常数位移的自由度。在同一个稳定性问题（logit 失控 → softmax 饱和 → 梯度消失，2.3 §3.4）上，GLM 多付一份可学参数。参数量很小：bias 每层 $12288 + 1024 + 1024 = 14336$ 个，92 层合计约 1.3M，参数的边角料。叠加是否冗余——封顶之后位移自由度还剩多少表达贡献——无公开消融，列入 §5。
 
 **rope_theta = $10^{6}$ + partial 0.5，原生覆盖。** config 实测 `partial_rotary_factor = 0.5`：128 维 head_dim 只旋 64 维，位置信号集中在旋转维上、其余 64 维纯内容内积（2.5 §4.7 的 partial RoPE 账）。最慢旋转通道波长公式里 $d$ 取旋转维数：
 
@@ -89,24 +89,24 @@ $$
 \lambda_{\max} = 2\pi\thinspace \theta^{\thinspace1 - 2/d_{\mathrm{rope}}} \qquad (3)
 $$
 
-**符号**： $\theta$：RoPE base； $d_{\mathrm{rope}}$：旋转维数 = partial_rotary_factor × head_dim。代入 $\theta$= $10^{6}$、 $d_{\mathrm{rope}}$=64： $\lambda_{\max} \approx 4.1 \times 10^{6}$，202752 的窗口占最慢波长的约 5.0%——`rope_scaling` 字段存在但值为 null（config 实测），原生覆盖成立，对照 DeepSeek-V3 的 $\theta$= $10^{4}$ 必须外挂 YaRN factor 40 才到 163840（5.2 §3.6）。131072 → 202752 的代际扩窗在架构字段上只有 max_position_embeddings 一格变动，扩窗配方（数据与训练日程）属训练侧，[W] 边界内不断言。注意 GLM 的 partial 与 DeepSeek-V3 的 64/192 同刻度不同处境：V3 的 nope 维是 MLA 权重吸收的前提（2.5 §4.7），GLM 是纯 GQA、无吸收需求——partial 在此的动机公开材料未说明（§5）。
+**符号**： $\theta$：RoPE base； $d_{\mathrm{rope}}$：旋转维数 = partial_rotary_factor × head_dim。代入 $\theta$= $10^{6}$、 $d_{\mathrm{rope}}$=64： $\lambda_{\max} \approx 4.1 \times 10^{6}$，202752 的窗口占最慢波长的约 5.0%。`rope_scaling` 字段存在但值为 null（config 实测），原生覆盖成立；对照 DeepSeek-V3： $\theta$= $10^{4}$ 必须外挂 YaRN factor 40 才到 163840（5.2 §3.6）。131072 → 202752 的代际扩窗，在架构字段上只有 max_position_embeddings 一格变动；扩窗配方（数据与训练日程）属训练侧，[W] 边界内不断言。注意 GLM 的 partial 与 DeepSeek-V3 的 64/192 同刻度、不同处境：V3 的 nope 维是 MLA 权重吸收的前提（2.5 §4.7），GLM 是纯 GQA、无吸收需求。partial 在此的动机，公开材料未说明（§5）。
 
-**训练侧口径登记。** 355B/32B、23T tokens 多阶段训练、hybrid reasoning（thinking / direct 双模式）、ARC（Agentic, Reasoning, Coding）定位——全部引 GLM-4.5 report 摘要（[A]）。双模式的机制本体归 training 维度；模型侧痕迹与 Qwen3 thinking 同型（5.3 已处理），本章不展开。
+**训练侧口径登记。** 以下几项全部引 GLM-4.5 report 摘要（[A]）：355B/32B；23T tokens 多阶段训练；hybrid reasoning（thinking / direct 双模式）；ARC（Agentic, Reasoning, Coding）定位。双模式的机制本体归 training 维度；模型侧痕迹与 Qwen3 thinking 同型（5.3 已处理），本章不展开。
 
 ## 3. 无 paper 模型怎么读：GLM-4.6/4.7 示范
 
-GLM-4.6 无独立 tech report，GLM-4.7 连 arXiv 条目都没有（搜索 0 条，2026-11-12）——两代的正确处理流程本身值得写成一节，这是 5.6 方法论章的预演。事实样式（全部本轮实测，2026-11-12）：
+GLM-4.6 无独立 tech report，GLM-4.7 连 arXiv 条目都没有（搜索 0 条，2026-11-12）。这两代该怎么读，本身值得写成一节——也是 5.6 方法论章的预演。事实样式（全部本轮实测，2026-11-12）：
 
-1. **GLM-4.6 的 README 只有 58 行**：0 个参数数字、5 个链接指向 GLM-4.5 资源。参数级断言的唯一合法来源是 4.5 report 摘要（355B/32B，[A]）——但引用它的前提是先证架构同构，否则「4.6 = 355B」就是无出处转述。
+1. **GLM-4.6 的 README 只有 58 行**：0 个参数数字、5 个链接指向 GLM-4.5 资源。参数级断言的唯一合法来源是 4.5 report 摘要（355B/32B，[A]）。但引用它有一个前提：先证架构同构，否则「4.6 = 355B」就是无出处转述。
 2. **同构证明 = config 逐字段 diff**：GLM-4.5 与 4.6 两 config 同拉对照，唯一差异是 max_position_embeddings 131072 → 202752。架构同构成立，355B/32B 的援引才合法；「4.6 = 4.5 架构 + 长窗化」是 config 级事实。能力增量（编码等宣称）只是 model card 级证据，[W] 降级引用。
 3. **GLM-4.7 的 config 与 4.6 逐字段完全一致**：同 checkpoint 迭代线，架构零变更、能力升级。能力宣称引旁证渠道（OpenRouter 模型清单，2026-11-12：「Z.ai's latest flagship…enhanced programming + multi-step reasoning」，ctx 标称 204800）——旁证一律标日期；标称 ctx 与 config 字段 202752 的口径差已在 §1 表注五登记。
 4. **一般化为四步**：(i) 先拉 config，与最近前代逐字段 diff；(ii) 无 report 时，参数/配方数字找最近前代 report，且以 (i) 的同构验证为援引前提；(iii) model card / API 旁证全部标日期、按 [W] 降级；(iv) 训练配方类断言在无 paper 时不做。四步在 4.6/4.7 上的完整走样即本节——5.6 会把同一流程展开成通用 checklist。
 
-一个反面提醒：4.6 README 的 58 行里没有任何可独立成立的架构数字，全部数值断言都要么落到 config（架构字段）要么落到 4.5 report（参数与配方）——「新模型发布即有新事实源」的直觉在这类迭代线上不成立，发布物的信息量要用行数与指针数衡量。
+一个反面提醒：4.6 README 的 58 行里没有任何可独立成立的架构数字；全部数值断言要么落到 config（架构字段），要么落到 4.5 report（参数与配方）。「新模型发布即有新事实源」的直觉在这类迭代线上不成立——发布物的信息量要用行数与指针数衡量。
 
 ## 4. 旗舰 config 精读：GLM-4.6 逐字段
 
-证据等级 [W]：架构事实以 HF config.json 实测为准（2026-11-12），GLM-4.5 report [A] 提供参数与配方口径。逐字段读法（按 2.8 §2 的方法：每个字段在公式里点名位置）：
+证据等级 [W]：架构事实以 HF config.json 实测为准（2026-11-12），GLM-4.5 report [A] 提供参数与配方口径。逐字段读法按 2.8 §2 的方法：每个字段都要指出它在公式里的位置。
 
 | 字段 | 值 | 读法 |
 | --- | --- | --- |
@@ -152,7 +152,7 @@ $$
 
 **符号**：expert 按 SwiGLU 三矩阵计（`hidden_act = "silu"` 实测，gated 口径坐实）；attention 项 = Q/K/V/O 四个投影；MTP = 一个完整 MoE 层（report 原文 "we add an MoE layer as the MTP layer"），其 expert / attention / router 已并入前三项的系数 90 / 93 / 90。数值：experts ≈ 341.9B、attention ≈ 12.7B、dense FFN ≈ 0.57B、router ≈ 0.07B，合计 ≈ 355.2B——与官方 355B 闭合到 0.2B（约 0.06%）以内，残差即 QKV bias（92 层 × 14336 ≈ 1.3M）、norm 增益与 MTP 拼接投影小项。闭合同时反证两个未单列字段的取值：shared expert 与 routed 同宽 1536（否则总和溢出 355B），MTP 恰为一层。词表两侧 $2Vd$ ≈ 1.55B 按官方口径不入账。本节初稿曾以「残差 4.9B、归属未锁定字段」收尾——dense FFN 宽度与 MTP 字段本就在 config 里，初稿的「未锁定」认定是漏读（fix round 1 更正）；残差框架本身保留。
 
-**激活侧（每 token，同口径含 MTP、不含词表）**：attention $93 \times 136.3\text{M}$ ≈ 12.7B + MoE 激活 $90 \times 9 \times 23.6\text{M}$ ≈ 19.1B + dense FFN 0.57B ≈ 32.4B，与官方「32B activated」（report 摘要口径，[A]）吻合到 1%。推理期 MTP 可整体弃置（4.5 §6），弃置后激活 ≈ 32.0B——官方口径含 MTP 是训练配置口径，两个数字都登记。
+**激活侧（每 token，同口径含 MTP、不含词表）**：attention $93 \times 136.3\text{M}$ ≈ 12.7B + MoE 激活 $90 \times 9 \times 23.6\text{M}$ ≈ 19.1B + dense FFN 0.57B ≈ 32.4B，与官方「32B activated」（report 摘要口径，[A]）吻合到 1%。推理期 MTP 可整体弃置（4.5 §6），弃置后激活 ≈ 32.0B。官方口径含 MTP 是训练配置口径，两个数字都登记。
 
 ## 5. 技术开放问题清单
 
