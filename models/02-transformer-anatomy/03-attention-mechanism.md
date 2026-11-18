@@ -1,6 +1,6 @@
 # 2.3 Attention 机制解剖（Anatomy of the Attention Mechanism）
 
-> 本章把一个公式拆到底： $\mathrm{Attention}(Q,K,V) = \mathrm{softmax}(QK^{\top}/\sqrt{d_k})\thinspace V$ ——检索直觉（argmax 为何必须软化）、QKV 三投影的角色、 $\sqrt{d_k}$ 的完整推导链（方差 → 饱和 → softmax Jacobian → 梯度消失）、multi-head 的参数账与子空间解释、permutation equivariance 证明（2.5 位置编码必要性的前提）、FLOPs 两项拆分与 $O(T^{2})$ 内存账、手写实现与融合算子的逐行对照 | 前置：1.1（softmax 数值注记、 $\Delta^{V-1}$）、1.2（ $2mnk$ FLOPs 口径、式 (6) 的 attention 二次项）、2.1（ $[B,T,H,D]$ 记法、scores 是唯一 $T^{2}$ 对象、 $12Ld^{2}$ 的 attention 项 $4d^{2}$）、2.2（embedding 输出即本章输入 $X$）| 锚点：Llama-3.1-8B config [A]（32 Q heads、 $d_k = 128$ 的 MHA 口径算例；GQA 留给 4.1）、OLMo-2-7B config 与 modeling 代码 [A]；Vaswani et al. [A]、Team OLMo et al. [A]
+> 本章把一个公式拆到底： $\mathrm{Attention}(Q,K,V) = \mathrm{softmax}(QK^{\top}/\sqrt{d_k})\thinspace V$ 。先给检索直觉（argmax 为何必须软化）与 QKV 三投影的角色；再推 $\sqrt{d_k}$ 的完整链条（方差 → 饱和 → softmax Jacobian → 梯度消失）；然后算 multi-head 的参数账、证明 permutation equivariance（2.5 位置编码必要性的前提）；最后记 FLOPs 两项拆分与 $O(T^{2})$ 内存账，并把手写实现与融合算子逐行对照 | 前置：1.1（softmax 数值注记、 $\Delta^{V-1}$）、1.2（ $2mnk$ FLOPs 口径、式 (6) 的 attention 二次项）、2.1（ $[B,T,H,D]$ 记法、scores 是唯一 $T^{2}$ 对象、 $12Ld^{2}$ 的 attention 项 $4d^{2}$）、2.2（embedding 输出即本章输入 $X$）| 锚点：Llama-3.1-8B config [A]（32 Q heads、 $d_k = 128$ 的 MHA 口径算例；GQA 留给 4.1）、OLMo-2-7B config 与 modeling 代码 [A]；Vaswani et al. [A]、Team OLMo et al. [A]
 
 ## 1. 检索直觉：argmax 不可导，softmax 可导
 
@@ -12,7 +12,7 @@ $$
 
 **符号**： $q \in \mathbb{R}^{d_k}$：query，当前位置要找什么； $k_s \in \mathbb{R}^{d_k}$：key，位置 $s$ 广告的内容； $v_s \in \mathbb{R}^{d_k}$：value，位置 $s$ 被选中后交付的内容； $\langle \cdot, \cdot \rangle$：内积。
 
-式 (1) 作为字典查询没有问题，作为可训练组件有一个致命伤： $o$ 对 $q$ 与 $k_s$ 分段常数——score 的微小扰动不改变 argmax 的结果，除非跨过并列边界。于是 $\partial o / \partial q$ 几乎处处为 0、在并列处不存在，梯度下降拿不到任何信号， $q$、 $k$、 $v$ 的表示无从学起。「哪个 key 最匹配」不可导，就必须把选择软化。
+式 (1) 作为字典查询没有问题，作为可训练组件却有一个致命伤： $o$ 对 $q$ 与 $k_s$ 分段常数。score 的微小扰动不改变 argmax 的结果，除非跨过并列边界。于是 $\partial o / \partial q$ 几乎处处为 0、在并列处不存在，梯度下降拿不到任何信号， $q$、 $k$、 $v$ 的表示无从学起。「哪个 key 最匹配」不可导，就必须把选择软化。
 
 软化的标准做法是把 argmax 换成 softmax，输出从「选中一个值」变成「全部值的凸组合」：
 
@@ -22,7 +22,7 @@ $$
 
 **符号**： $\tau > 0$：温度（temperature）； $p = (p_1, \ldots, p_T) \in \Delta^{T-1}$：注意力权重（attention weights）， $\Delta^{T-1}$ 为概率单纯形（1.1 式 (1)）。
 
-两个极限把式 (1)(2) 焊在一起： $\tau \to 0^{+}$ 时 $p$ 收敛到 argmax 上的 one-hot（并列则均分），式 (2) 退回式 (1)； $\tau \to \infty$ 时 $p$ 趋于均匀分布，输出退化为全部 value 的平均，检索消失。中间温度的行为用三个 score 走一遍： $\langle q, k_s \rangle = (2.0, 0.5, -1.0)$、 $\tau = 1$ 时 $p = (0.786, 0.175, 0.039)$——第一名拿走约 79%，但另两名仍分到非零权重， $\partial o / \partial q$ 因此处处存在且非零。softmax 就是可导的 argmax。剩下唯一的问题是 $\tau$ 取多少：第 3 节的方差推导给出答案 $\tau = \sqrt{d_k}$，而且这个答案不是调参调出来的，是算出来的。
+两个极限把式 (1)(2) 焊在一起。 $\tau \to 0^{+}$ 时， $p$ 收敛到 argmax 上的 one-hot（并列则均分），式 (2) 退回式 (1)。 $\tau \to \infty$ 时， $p$ 趋于均匀分布，输出退化为全部 value 的平均，检索消失。中间温度的行为用三个 score 走一遍： $\langle q, k_s \rangle = (2.0, 0.5, -1.0)$、 $\tau = 1$ 时 $p = (0.786, 0.175, 0.039)$。第一名拿走约 79%，另两名仍分到非零权重， $\partial o / \partial q$ 因此处处存在且非零。softmax 就是可导的 argmax。剩下唯一的问题是 $\tau$ 取多少。第 3 节的方差推导给出答案 $\tau = \sqrt{d_k}$ ——这个答案不是调参调出来的，是算出来的。
 
 ## 2. QKV 投影与 scaled dot-product attention
 
@@ -34,7 +34,7 @@ $$
 
 **符号**： $d$：stream 宽度（config 的 hidden_size）； $d_k$：head 维，即 2.1 shape 记法 $[B,T,H,D]$ 中的 $D$，本章按论文口径记 $d_k$； $Q, K, V \in \mathbb{R}^{T \times d_k}$。三个投影无 bias——Llama-3.1-8B、OLMo-2-7B 的 attention_bias 均为 false（各 config 条目，[A]）。
 
-同一份 $x_t$ 被读三次、读出三个角色： $q_t$ 是「位置 $t$ 要找什么」， $k_t$ 是「位置 $t$ 广告什么」， $v_t$ 是「位置 $t$ 被选中时交付什么」。分工全部由梯度塑造；公式本身只保证 $q$ 与 $k$ 同住 $\mathbb{R}^{d_k}$ 以便内积、 $v$ 供加权和。
+同一份 $x_t$ 被读三次，读出三个角色： $q_t$ 是「位置 $t$ 要找什么」， $k_t$ 是「位置 $t$ 广告什么」， $v_t$ 是「位置 $t$ 被选中时交付什么」。分工全部由梯度塑造；公式本身只保证 $q$ 与 $k$ 同住 $\mathbb{R}^{d_k}$ 以便内积、 $v$ 供加权和。
 
 代入 §1 的软检索（逐 query 一行），得到 scaled dot-product attention：
 
@@ -59,7 +59,7 @@ X [B, T, d]                          ← 2.1 式 (1) 中 RMSNorm(x) 的输出
                           O = PV   [B, T, d_k]
 ```
 
-score 的另一种读法值得登记： $\langle q_t, k_s \rangle = x_t^{\top} W^{Q} W^{K\top} x_s$。矩阵 $A = W^{Q} W^{K\top} \in \mathbb{R}^{d \times d}$ 的秩至多为 $d_k$——attention 通过一个 rank-$`d_k`$ 的双线性型（bilinear form）读 stream。代入锚点： $d$ = 4096、 $d_k$ = 128（Llama-3.1-8B 与 OLMo-2-7B 同值），每个 score 只经过 rank-128 的透镜，是 $d$ 维内容的 3% 截面。多头（第 5 节）就是并排摆放 $H$ 个这样的低秩透镜。
+score 的另一种读法值得登记： $\langle q_t, k_s \rangle = x_t^{\top} W^{Q} W^{K\top} x_s$。矩阵 $A = W^{Q} W^{K\top} \in \mathbb{R}^{d \times d}$ 的秩至多为 $d_k$ ——attention 通过一个 rank-$`d_k`$ 的双线性型（bilinear form）读 stream。代入锚点： $d$ = 4096、 $d_k$ = 128（Llama-3.1-8B 与 OLMo-2-7B 同值），每个 score 只经过 rank-128 的透镜，是 $d$ 维内容的 3% 截面。多头（第 5 节）就是并排摆放 $H$ 个这样的低秩透镜。
 
 ## 3. $\sqrt{d_k}$ 完整推导链
 
@@ -95,8 +95,8 @@ $$
 
 把一行 $T$ 个 score 看作近似 iid 的 $\mathcal{N}(0, d_k)$ 样本（同一 query 对全部 key）。 $T$ 个标准正态样本的最大值约为 $\sqrt{2 \ln T}$ 个标准差（正态次序统计量的标准估计），代入 $d_k$ = 128（ $\sigma_s = 11.3$）、 $T$ = 4096（ $\sqrt{2 \ln T} \approx 4.1$）走一遍量级：
 
-- **不缩放**：行内最大 score 高出中心的量级为 $\sigma_s \sqrt{2 \ln T} \approx 46$ nat（首阶近似；计入最大值修正项后约 40 nat，与 Monte Carlo 中位数一致）。中位 key（score ≈ 0）相对最大值的权重 $e^{-40} \approx 4 \times 10^{-18}$：约七成 key 的权重**各自**低于 $10^{-15}$、机器精度下为零——是「各自」而非「合计」，顶部少数 key 仍握着可见权重。顶部沿名次的典型间距约 $\sigma_s / \sqrt{2 \ln T} \approx 2.8$ nat，权重按公比 $`r = e^{-2.8} \approx 6\%`$ 几何衰减：恒定间距近似下，非最大项合计是几何级数 $`\sum_{k \ge 1} r^{k} = r / (1 - r) \approx 6.5\%`$，即 $p_{\max} \approx 0.94$；更细一层，高斯次序统计量的间距随名次以 $\sim 1/k$ 收缩（近顶部更密），非最大合计升至约 15%–20%、 $p_{\max} \approx 0.8$（Monte Carlo 中位 0.84）。两个口径结论一致：单个 top key 握有 $O(1)$ 权重（0.8–0.94），其余 4095 个共分零头——对照均匀分布的 $1/T \approx 2.4 \times 10^{-4}$，这就是饱和（saturation）：softmax 输出逼近 one-hot。
-- **缩放后**（ $z_s = s_s / \sqrt{d_k}$，方差为 1）：行内最大值约 4.1，其余近似标准正态， $\mathbb{E}[e^{z}] = e^{1/2} \approx 1.65$，于是 $p_{\max} \approx \dfrac{e^{4.1}}{e^{4.1} + 4095 \times 1.65} \approx 0.009$——接近均匀起步，每个 key 都握着非零权重。
+- **不缩放**：行内最大 score 高出中心的量级为 $\sigma_s \sqrt{2 \ln T} \approx 46$ nat（首阶近似；计入最大值修正项后约 40 nat，与 Monte Carlo 中位数一致）。先看中位 key（score ≈ 0）：它相对最大值的权重是 $e^{-40} \approx 4 \times 10^{-18}$ 。约七成 key 的权重**各自**低于 $10^{-15}$ ，机器精度下为零——注意是「各自」而非「合计」，顶部少数 key 仍握着可见权重。再看顶部：沿名次的典型间距约 $\sigma_s / \sqrt{2 \ln T} \approx 2.8$ nat，权重按公比 $`r = e^{-2.8} \approx 6\%`$ 几何衰减。恒定间距近似下，非最大项合计是几何级数 $`\sum_{k \ge 1} r^{k} = r / (1 - r) \approx 6.5\%`$，即 $p_{\max} \approx 0.94$。更细一层：高斯次序统计量的间距随名次以 $\sim 1/k$ 收缩（近顶部更密），非最大合计升至约 15%–20%， $p_{\max} \approx 0.8$（Monte Carlo 中位 0.84）。两个口径结论一致：单个 top key 握有 $O(1)$ 权重（0.8–0.94），其余 4095 个共分零头。对照均匀分布的 $1/T \approx 2.4 \times 10^{-4}$ ——这就是饱和（saturation）：softmax 输出逼近 one-hot。
+- **缩放后**（ $z_s = s_s / \sqrt{d_k}$，方差为 1）：行内最大值约 4.1，其余近似标准正态， $\mathbb{E}[e^{z}] = e^{1/2} \approx 1.65$，于是 $p_{\max} \approx \dfrac{e^{4.1}}{e^{4.1} + 4095 \times 1.65} \approx 0.009$ ——接近均匀起步，每个 key 都握着非零权重。
 
 饱和为什么要紧，答案写在梯度上。
 
@@ -118,18 +118,18 @@ $$
 \frac{\partial L}{\partial z_j} = \sum_{i=1}^{T} g_i \thinspace p_i \left( \delta_{ij} - p_j \right) = p_j \left( g_j - \bar{g} \right), \qquad \bar{g} = \sum_{i=1}^{T} p_i \thinspace g_i \qquad (9)
 $$
 
-即：logit 收到的梯度 = 自身权重 $p_j$ 乘「 $g_j$ 超出权重均值 $\bar{g}$ 的部分」。代入饱和形态 $p_m = 1 - \varepsilon$（ $m$ 为 argmax 位置），其余权重合计 $\varepsilon$：
+即：logit 收到的梯度 = 自身权重 $p_j$ 乘「 $g_j$ 超出权重均值 $\bar{g}$ 的部分」。代入饱和形态： $p_m = 1 - \varepsilon$（ $m$ 为 argmax 位置），其余权重合计 $\varepsilon$。
 
 - 非最大项 $j \neq m$： $\left| \partial L / \partial z_j \right| = p_j \left| g_j - \bar{g} \right| \le 2 p_j \lVert g \rVert_{\infty}$。 $p_j$ 本身是 $e^{-\Delta_j}$ 量级（ $\Delta_j$ 为与最大 score 的差距），§3.2 的中位 key（ $\Delta \approx 40$ nat）梯度约 $10^{-17} \lVert g \rVert_\infty$——机器精度下的零。
 - 最大项 $j = m$： $\bar{g} = (1 - \varepsilon) g_m + O(\varepsilon)$，故 $g_m - \bar{g} = O(\varepsilon)$，梯度 $\le 2 \varepsilon (1 - \varepsilon) \lVert g \rVert_{\infty} = O(\varepsilon)$。
 
-整行梯度被「饱和亏空」 $\varepsilon$ 统一压制： $\left\lVert \partial L / \partial z \right\rVert_{\infty} \le 2 \varepsilon \lVert g \rVert_{\infty}$。代入 §3.2 的初始化估算， $\varepsilon$ 在 0.06–0.2 量级，且 $d_k$、 $T$ 越大越饱和。极端情形 $\varepsilon \to 0$（精确 one-hot）时式 (9) 恒等于 0：one-hot 行是梯度的死胡同，无论上游信号多强，score 与上游的 Q/K 投影一概收不到更新。 $\varepsilon$ 不是固定常数——训练中权重幅度增长会继续拉大 logit 差距， $\varepsilon$ 向 0 滑，消失自我强化。
+整行梯度被「饱和亏空」 $\varepsilon$ 统一压制： $\left\lVert \partial L / \partial z \right\rVert_{\infty} \le 2 \varepsilon \lVert g \rVert_{\infty}$。代入 §3.2 的初始化估算， $\varepsilon$ 在 0.06–0.2 量级，且 $d_k$、 $T$ 越大越饱和。极端情形 $\varepsilon \to 0$（精确 one-hot）时式 (9) 恒等于 0：one-hot 行是梯度的死胡同，无论上游信号多强，score 与上游的 Q/K 投影一概收不到更新。 $\varepsilon$ 不是固定常数：训练中权重幅度增长会继续拉大 logit 差距， $\varepsilon$ 向 0 滑，消失自我强化。
 
 缩放令 $\tilde{z} = z / \sqrt{d_k}$，则 $\mathrm{Var}(\tilde{z}) = 1$：softmax 落在敏感区（权重分散， $p_j$ 与 $1 - p_j$ 都是 $O(1)$），式 (9) 的梯度尺度健康。 $\sqrt{d_k}$ 就是 §1 温度问题的答案： $\tau = \sqrt{d_k}$ 是「让 score 方差与 head 维无关」的取法。
 
-**为什么幂次恰好是 $1/2$**。设缩放 $z / d_k^{\alpha}$： $\mathrm{Var} = d_k^{1 - 2\alpha}$。 $\alpha = 0$ 即不缩放，方差随 $d_k$ 涨、饱和； $\alpha = 1$ 时方差为 $1/d_k \to 0$，score 全部挤在 0 附近、softmax 恒均匀、检索信号消失——另一个死端。 $\alpha = 1/2$ 是唯一让方差与 $d_k$ 无关的幂次，前置常数取 1 是自然单位。两个死端之间只有一条线，这就是 $\sqrt{d_k}$ 的全部理由。
+**为什么幂次恰好是 $1/2$**。设缩放 $z / d_k^{\alpha}$： $\mathrm{Var} = d_k^{1 - 2\alpha}$。 $\alpha = 0$ 即不缩放，方差随 $d_k$ 涨、饱和。 $\alpha = 1$ 时方差为 $1/d_k \to 0$，score 全部挤在 0 附近，softmax 恒均匀，检索信号消失——另一个死端。 $\alpha = 1/2$ 是唯一让方差与 $d_k$ 无关的幂次，前置常数取 1 是自然单位。两个死端之间只有一条线，这就是 $\sqrt{d_k}$ 的全部理由。
 
-**假设（A1）何时失效**。三条：(a) 训练后 $q, k$ 是同一条 stream 的投影，分量彼此相关，且匹配对的 $\langle q_t, k_s \rangle$ 偏大正是 attention 要学出的结构——相关性是目的而非噪声（相关情形的方差推广留作练习 1）；(b) RoPE 按位置旋转 $q, k$（2.5），分量不再同分布；(c) 训练中 logit 幅度持续增长，超出初始化口径。所以本节推导管的是「训练能否启动」：不缩放则初始即饱和、梯度消失、结构无从学起；缩放把初始化钉在 $\mathrm{Var} = 1$ 的可训练区，之后饱不饱和由训练自由选择。对训练中 logit 失控增长的现代补救（OLMo 2 在 q/k 投影后各加一次 RMSNorm，见第 8 节代码走读）归 2.7 的 QK-Norm 一族。
+**假设（A1）何时失效**。三条：(a) 训练后 $q, k$ 是同一条 stream 的投影，分量彼此相关，且匹配对的 $\langle q_t, k_s \rangle$ 偏大正是 attention 要学出的结构——相关性是目的而非噪声（相关情形的方差推广留作练习 1）；(b) RoPE 按位置旋转 $q, k$（2.5），分量不再同分布；(c) 训练中 logit 幅度持续增长，超出初始化口径。所以本节推导管的是「训练能否启动」：不缩放则初始即饱和、梯度消失、结构无从学起；缩放把初始化固定在 $\mathrm{Var} = 1$ 的可训练区，之后饱不饱和由训练自由选择。对训练中 logit 失控增长的现代补救（OLMo 2 在 q/k 投影后各加一次 RMSNorm，见第 8 节代码走读）归 2.7 的 QK-Norm 一族。
 
 ## 4. softmax 的数值稳定：max 减法
 
@@ -139,7 +139,7 @@ $$
 \mathrm{softmax}(z - c)_i = \frac{e^{z_i - c}}{\sum_j e^{z_j - c}} = \frac{e^{-c} \thinspace e^{z_i}}{e^{-c} \sum_j e^{z_j}} = \mathrm{softmax}(z)_i \qquad (10)
 $$
 
-取 $c = \max_j z_j$：平移后最大 logit 为 0，全部 $e^{z_j - c} \le 1$ 不溢出，分母 $\ge 1$ 不除零。不减的代价是实打实的：fp32 与 bf16 的指数位同为 8 位、上限约 $3.4 \times 10^{38}$，而 $e^{88} \approx 1.7 \times 10^{38}$ 已经贴顶、 $e^{89}$ 溢出成 inf；fp16 上限 65504， $z \approx 11.1$ 即溢出——§3.2 中未缩放 score 的一个标准差（11.3）就够。inf 经归一化成 $\inf / \inf = \mathrm{NaN}$，一步毒化整个 batch。反方向（ $z_j - c$ 很负）只是下溢到 0、丢一个本就趋零的权重，无害。生产代码在数值上更进一步：OLMo 2 的 eager attention 把 score 升到 fp32 再过 softmax（第 8 节），融合 kernel 内部同法。
+取 $c = \max_j z_j$：平移后最大 logit 为 0，全部 $e^{z_j - c} \le 1$ 不溢出，分母 $\ge 1$ 不除零。不减的代价是实打实的：fp32 与 bf16 的指数位同为 8 位、上限约 $3.4 \times 10^{38}$，而 $e^{88} \approx 1.7 \times 10^{38}$ 已经贴顶， $e^{89}$ 溢出成 inf；fp16 上限 65504， $z \approx 11.1$ 即溢出——§3.2 中未缩放 score 的一个标准差（11.3）就够。inf 经归一化成 $\inf / \inf = \mathrm{NaN}$，一步毒化整个 batch。反方向（ $z_j - c$ 很负）只是下溢到 0、丢一个本就趋零的权重，无害。生产代码在数值上更进一步：OLMo 2 的 eager attention 把 score 升到 fp32 再过 softmax（第 8 节），融合 kernel 内部同法。
 
 ## 5. Multi-head attention：拆分、合并与参数账
 
@@ -168,7 +168,7 @@ Q, K, V [B, T, 4096] ──view──► [B, T, 32, 128] ──transpose──�
 
 **参数账**。MHA 标准形下四个拼块各为 $d \times d$：三个 QKV 块加 $W^O$，合计 $4d^{2}$，与 $H$ 无关—— $H$ 加倍、 $d_k$ 减半，投影总宽度 $H d_k = d$ 不变。这正是 2.1 式 (3) 中 attention 项 $4d^{2}$ 的出处：OLMo-2-7B 恰为此值（真 MHA），Llama-3.1-8B 的 $2.5d^{2}$（GQA 砍 K/V 宽度）是在此基准上的偏移。FLOPs 同理不随 $H$ 变（第 7 节）；唯一随 $H$ 变的账面量是 scores 内存（ $\propto H$，第 7 节）。
 
-**子空间解释**。每个头有自己的低秩透镜 $A_h = W_h^{Q} W_h^{K\top}$（rank ≤ 128）与自己的 value 读出 $W_h^{V}$： $H$ 个头并行地在 $H$ 组不同的 rank-128 截面上做检索，concat 把 $H$ 份 $d_k$ 维结果并排， $W^O$ 再把它们线性混回 stream。注意 multi-head 不是 ensemble：各头只在 $W^O$ 处汇合一次，头间无逐层交互；「不同头学不同模式」在机制层面的根据就是各头投影独立、透镜互不共享。 $d_k = d / H$ 是惯例而非铁律——DeepSeek-V3 的 qk head 维 = 128（nope）+ 64（rope）= 192 ≠ hidden/heads（[DeepSeek-V3 config](../references.md)，[A]），head 维与 stream 维解耦的完整讨论在 2.8。
+**子空间解释**。每个头有自己的低秩透镜 $A_h = W_h^{Q} W_h^{K\top}$（rank ≤ 128）与自己的 value 读出 $W_h^{V}$。 $H$ 个头并行地在 $H$ 组不同的 rank-128 截面上做检索；concat 把 $H$ 份 $d_k$ 维结果并排， $W^O$ 再把它们线性混回 stream。注意 multi-head 不是 ensemble：各头只在 $W^O$ 处汇合一次，头间无逐层交互。「不同头学不同模式」在机制层面的根据，就是各头投影独立、透镜互不共享。 $d_k = d / H$ 是惯例而非铁律——DeepSeek-V3 的 qk head 维 = 128（nope）+ 64（rope）= 192 ≠ hidden/heads（[DeepSeek-V3 config](../references.md)，[A]），head 维与 stream 维解耦的完整讨论在 2.8。
 
 ## 6. Permutation equivariance：attention 本身不知道顺序
 
@@ -200,9 +200,9 @@ $$
 
 **推论（整机层面）**。QKV 投影逐位置： $(P_\pi X) W^{Q} = P_\pi (X W^{Q})$； $W^O$、残差加、RMSNorm、FFN 同样逐位置（2.1 §1 的二分法）。于是无位置信息的完整 Transformer 是置换等变的： $\mathrm{TF}(P_\pi X) = P_\pi \thinspace \mathrm{TF}(X)$。
 
-**后果**。等变映射把序列当集合处理：token 内容与顺序的关联在计算中不可达——主谓宾重排后每个位置的输出只是原输出的重排。「语序改变语义」这类函数无法由等变映射逐位置表达。要让模型感知顺序，位置信息必须从外部注入；注入点（stream 加性 vs attention 内旋转）、注入形式（绝对 / 相对 / 线性偏置）与各自的外推行为就是 2.5 的全部内容，本节命题是那里一切论证的起点。
+**后果**。等变映射把序列当集合处理：token 内容与顺序的关联在计算中不可达——主谓宾重排后，每个位置的输出只是原输出的重排。「语序改变语义」这类函数无法由等变映射逐位置表达。要让模型感知顺序，位置信息必须从外部注入。注入点（stream 加性 vs attention 内旋转）、注入形式（绝对 / 相对 / 线性偏置）与各自的外推行为就是 2.5 的全部内容；本节命题是那里一切论证的起点。
 
-两个边界注记。其一，causal mask 把绝对位置锚进计算图（第 $t$ 行只见前 $t$ 列），命题对任意 $\pi$ 不再成立——这恰好说明顺序感是架构选择而非 attention 自带；mask 只提供「前面有几个 token」的计数级弱位置信息，它能撑多远是 2.5 中 NoPE 证据回答的问题。其二，等变性是「无位置信息」条件下的性质陈述，不是缺陷清单——它精确指出了位置编码必须补的是什么。
+两个边界注记。其一，causal mask 把绝对位置锚进计算图（第 $t$ 行只见前 $t$ 列），命题对任意 $\pi$ 不再成立——这恰好说明顺序感是架构选择而非 attention 自带。mask 只提供「前面有几个 token」的计数级弱位置信息；它能撑多远，是 2.5 中 NoPE 证据回答的问题。其二，等变性是「无位置信息」条件下的性质陈述，不是缺陷清单——它精确指出了位置编码必须补的是什么。
 
 ## 7. 复杂度账：FLOPs 两项与 $O(T^{2})$ 内存
 
@@ -219,7 +219,7 @@ $$
 
 **符号**： $c$：可见性系数，causal mask 使打分与加权和的有效工作量减半（1.2 式 (6) 的「causal 平均 $T/2$」）。
 
-两项的交叉点：causal 口径 $2T^{2}d = 8Td^{2}$ 得 $T = 4d$；full 口径得 $T = 2d$。 $d$ = 4096 时分别为 16384 与 8192——现代训练序列长度（数万）已越过交叉点：长序列 regime 下 attention 本体主导每层 FLOPs，且占比随 $T$ 增长。代入 Llama-3.1-8B 口径验证： $T$ = 4096 时本体 $1.4 \times 10^{11}$ vs 投影 $5.5 \times 10^{11}$（本体占 20%）； $T$ = 131072 时本体 $1.4 \times 10^{14}$ vs 投影 $1.8 \times 10^{13}$（本体 89%）。这是 Part 4 全部省算工作的瞄准点（4.1 精确加速、4.2 稀疏、4.3 线性化）。注意与 2.1 §5 的 $T = d$ 交叉点区分：那是 attention 与 recurrent 两种层型的对比，此处是 attention 内部两项的对比。
+两项的交叉点：causal 口径 $2T^{2}d = 8Td^{2}$ 得 $T = 4d$；full 口径得 $T = 2d$。 $d$ = 4096 时分别为 16384 与 8192。现代训练序列长度（数万）已越过交叉点：长序列 regime 下 attention 本体主导每层 FLOPs，且占比随 $T$ 增长。代入 Llama-3.1-8B 口径验证： $T$ = 4096 时本体 $1.4 \times 10^{11}$ vs 投影 $5.5 \times 10^{11}$（本体占 20%）； $T$ = 131072 时本体 $1.4 \times 10^{14}$ vs 投影 $1.8 \times 10^{13}$（本体 89%）。这是 Part 4 全部省算工作的瞄准点（4.1 精确加速、4.2 稀疏、4.3 线性化）。注意与 2.1 §5 的 $T = d$ 交叉点区分：那是 attention 与 recurrent 两种层型的对比，此处是 attention 内部两项的对比。
 
 softmax 自身的逐元素开销（exp、归一化）为每头 $O(T^{2})$，相对 matmul 项是低阶；但它的内存不是低阶：
 
@@ -231,7 +231,7 @@ softmax 自身的逐元素开销（exp、归一化）为每头 $O(T^{2})$，相�
 | 32768 | 64 GiB | 128 GiB | 4 TiB |
 | 131072 | 1 TiB | 2 TiB | 64 TiB |
 
-全是 2 的幂次： $131072 = 2^{17}$， $32 \times (2^{17})^{2} \times 2 = 2^{40}$ 字节 = 1 TiB。 $T$ = 131072 是 Llama-3.1-8B 的 max_position_embeddings：一条满窗序列单层就要物化 1 TiB，任何单卡装不下；32 层全部存下供反向更不可能。两条出路——反向时重算、分块且永不物化（online softmax）——是 4.1 FlashAttention 的全部动机；在此之前，教学实现（第 8 节）老老实实物化，小 $T$ 下完全够用。推理侧逐 token 生成时这层 $T^{2}$ 被 cache 结构改写，账在 2.4。
+全是 2 的幂次： $131072 = 2^{17}$， $32 \times (2^{17})^{2} \times 2 = 2^{40}$ 字节 = 1 TiB。 $T$ = 131072 是 Llama-3.1-8B 的 max_position_embeddings：一条满窗序列单层就要物化 1 TiB，任何单卡装不下；32 层全部存下供反向更不可能。两条出路——反向时重算、分块且永不物化（online softmax）——是 4.1 FlashAttention 的全部动机。在此之前，教学实现（第 8 节）老老实实物化，小 $T$ 下完全够用。推理侧逐 token 生成时这层 $T^{2}$ 被 cache 结构改写，账在 2.4。
 
 ## 8. 手写实现与 F.scaled_dot_product_attention 对照
 
@@ -289,7 +289,7 @@ assert torch.allclose(mha(x), o_ref, atol=1e-5, rtol=1e-5)  # 容差口径：CPU
 | 数值稳定 | `torch.softmax` 内部 max 减法（式 (10)） | kernel 内同法，且以 fp32 累加 |
 | 其他 | 无 dropout、无 GQA | `dropout_p`、`enable_gqa`（GQA 归 4.1） |
 
-真实模型代码把同一张公式图写成生产形态。OLMo 2 官方实现走读（huggingface/transformers repo，`src/transformers/models/olmo2/modeling_olmo2.py`，类 `Olmo2Attention` 与函数 `eager_attention_forward`，[HuggingFace, modeling_olmo2.py](../references.md)，[A]；论文 [Team OLMo et al., 2025](../references.md)，arXiv:2501.00656，[A]；config 同见 [OLMo-2-7B config](../references.md)，[A]）：投影为四个 `nn.Linear`（`q_proj / k_proj / v_proj / o_proj`，bias 由 config.attention_bias 控制、7B 为 false）；`self.scaling = self.head_dim**-0.5`——式 (4) 的 $1/\sqrt{d_k}$ 原样。eager 路径与式 (4) 逐行对应：`torch.matmul(query, key_states.transpose(2, 3)) * scaling` → 加 mask → `nn.functional.softmax(..., dim=-1, dtype=torch.float32)`（升 fp32 再 softmax，§4 数值议题的生产写法）→ `torch.matmul(attn_weights, value_states)`。与教学版两处实质差异：其一，`Olmo2Attention` 在 q/k 投影后各过一次 RMSNorm（`q_norm` / `k_norm`）——§3.4 末「训练中 logit 增长」问题的工程回答，归 2.7 的 QK-Norm 一族；其二，默认不跑 eager 路径，而经 `ALL_ATTENTION_FUNCTIONS` 派发到 SDPA / FlashAttention——算子融合归 4.1，数学内容与本章式 (4) 恒等。Llama 的同构实现（`LlamaAttention`，同 repo `src/transformers/models/llama/modeling_llama.py`，[HuggingFace, modeling_llama.py](../references.md)，[A]）结构相同、另含 GQA 的 K/V 复用，逐行走读归 2.8。
+真实模型代码把同一张公式图写成生产形态。OLMo 2 官方实现走读（huggingface/transformers repo，`src/transformers/models/olmo2/modeling_olmo2.py`，类 `Olmo2Attention` 与函数 `eager_attention_forward`，[HuggingFace, modeling_olmo2.py](../references.md)，[A]；论文 [Team OLMo et al., 2025](../references.md)，arXiv:2501.00656，[A]；config 同见 [OLMo-2-7B config](../references.md)，[A]）。投影是四个 `nn.Linear`（`q_proj / k_proj / v_proj / o_proj`，bias 由 config.attention_bias 控制、7B 为 false）。`self.scaling = self.head_dim**-0.5` ——式 (4) 的 $1/\sqrt{d_k}$ 原样。eager 路径与式 (4) 逐行对应：`torch.matmul(query, key_states.transpose(2, 3)) * scaling` → 加 mask → `nn.functional.softmax(..., dim=-1, dtype=torch.float32)`（升 fp32 再 softmax，§4 数值议题的生产写法）→ `torch.matmul(attn_weights, value_states)`。与教学版有两处实质差异。其一，`Olmo2Attention` 在 q/k 投影后各过一次 RMSNorm（`q_norm` / `k_norm`）——这是 §3.4 末「训练中 logit 增长」问题的工程回答，归 2.7 的 QK-Norm 一族。其二，默认不跑 eager 路径，而经 `ALL_ATTENTION_FUNCTIONS` 派发到 SDPA / FlashAttention——算子融合归 4.1，数学内容与本章式 (4) 恒等。Llama 的同构实现（`LlamaAttention`，同 repo `src/transformers/models/llama/modeling_llama.py`，[HuggingFace, modeling_llama.py](../references.md)，[A]）结构相同，另含 GQA 的 K/V 复用，逐行走读归 2.8。
 
 ## 总结
 

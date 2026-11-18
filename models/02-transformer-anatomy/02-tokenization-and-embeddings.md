@@ -1,10 +1,10 @@
 # 2.2 Tokenization 与 Embedding（Tokenization and Embeddings）
 
-> 本章拆开数据进模型的第一道关口与参数表里第一个、最后一个矩阵：BPE / WordPiece / Unigram 三套 tokenizer 训练算法（含手算例与 EM outline）、vocab size 的 T × V × d 三方账、embedding 查表的等价性与稀疏梯度、weight tying 的梯度耦合、softmax 瓶颈的完整推导，以及 tokenizer-free 的 BLT 对照 | 前置：1.1（token / vocab / bits per byte / softmax 瓶颈引入）、2.1（2Vd 参数口径）| 锚点：Qwen3-8B tokenizer 文件 [A]、Llama-3.1-8B config [A]、GPT-2 [W]；Sennrich et al.（BPE）[A]、Kudo（Unigram）[A]、Wu et al.（WordPiece）[B]、Press & Wolf（tying）[B]、Yang et al.（softmax bottleneck）[A]、Pagnoni et al.（BLT）[A]
+> 本章拆开数据进模型的第一道关口（tokenizer）与参数表里的第一个、最后一个矩阵（embedding 与输出头）。先讲三套 tokenizer 训练算法：BPE、WordPiece、Unigram（含手算例与 EM outline）；再算 vocab size 的 T × V × d 三方账；然后看 embedding 查表的等价性与稀疏梯度、weight tying 的梯度耦合；最后给 softmax 瓶颈的完整推导，并以 tokenizer-free 的 BLT 作对照 | 前置：1.1（token / vocab / bits per byte / softmax 瓶颈引入）、2.1（2Vd 参数口径）| 锚点：Qwen3-8B tokenizer 文件 [A]、Llama-3.1-8B config [A]、GPT-2 [W]；Sennrich et al.（BPE）[A]、Kudo（Unigram）[A]、Wu et al.（WordPiece）[B]、Press & Wolf（tying）[B]、Yang et al.（softmax bottleneck）[A]、Pagnoni et al.（BLT）[A]
 
 ## 1. tokenizer 在数据链路中的位置
 
-Qwen3-8B 的 config.json 写着 vocab_size = 151936，而同一 repo 里的 vocab.json 只有 151643 个条目。差值的去向：26 个 added special token（id 151643–151668，含 `<|endoftext|>` 、`<|im_start|>` 、`<|im_end|>` 、`<think>` 、`</think>` ），其余为向上对齐的 padding（[Qwen3-8B config](../references.md)，[A]）。config 的 $V$ 决定 embedding 矩阵的行数，vocab.json 决定文本能被切成什么——「词表」在这两个文件里不是同一个对象，本章两个含义都会用到。
+先看一对对不上的数字：Qwen3-8B 的 config.json 写着 vocab_size = 151936，而同一 repo 里的 vocab.json 只有 151643 个条目。差值的去向：26 个 added special token（id 151643–151668，含 `<|endoftext|>` 、`<|im_start|>` 、`<|im_end|>` 、`<think>` 、`</think>` ），其余为向上对齐的 padding（[Qwen3-8B config](../references.md)，[A]）。config 的 $V$ 决定 embedding 矩阵的行数，vocab.json 决定文本能被切成什么。「词表」在这两个文件里不是同一个对象，本章两个含义都会用到。
 
 从字符串到向量的一段链路：
 
@@ -21,11 +21,11 @@ token 序列   ["new", "est"]  →  id 序列          ← 1.1 样本空间的�
 embedding 向量序列  [T, d]  →  residual stream 起点（2.1 式 (1)）
 ```
 
-tokenizer 的训练是一次性的、先于 LM 训练的压缩问题求解；一旦冻结，训练与推理全程不再改变——这个决定的代价与收益就是 §7 的三方账。本章产出两个后续章节直接复用的结论：§7 的 vocab 账（P5 逐家对账时引用）与 §9 的 tied / untied 梯度分析（2.8 复用）。
+tokenizer 的训练是一次性的压缩问题求解，先于 LM 训练完成；一旦冻结，训练与推理全程不再改变。这个决定的代价与收益就是 §7 的三方账。本章产出两个后续章节直接复用的结论：§7 的 vocab 账（P5 逐家对账时引用）与 §9 的 tied / untied 梯度分析（2.8 复用）。
 
 ## 2. BPE：频率驱动的 merge
 
-BPE（byte-pair encoding）用于 NLP 分词的形式来自 Sennrich et al.（[Sennrich et al., 2016](../references.md)，arXiv:1508.07909，[A]）。输入是按词（或预切分单元）统计好频次的语料；初始切分把每个单元拆成基元符号（字符或 byte），然后循环 merge：统计相邻对频次，把最高频的一对焊成新符号加入词表，并重写语料。每轮的形式化：
+BPE（byte-pair encoding）用于 NLP 分词的形式来自 Sennrich et al.（[Sennrich et al., 2016](../references.md)，arXiv:1508.07909，[A]）。输入是按词（或预切分单元）统计好频次的语料。初始切分把每个单元拆成基元符号（字符或 byte），然后循环 merge：统计相邻对频次，把最高频的一对焊成新符号加入词表，并重写语料。每轮的形式化：
 
 $$
 n(a, b) = \sum_{w} n(w) \cdot \text{＃}_{w}(a, b), \qquad (a^{\ast }, b^{\ast }) = \mathrm{arg\thinspace max}_{(a, b)} \hspace{5mu} n(a, b) \qquad (1)
@@ -90,7 +90,7 @@ def encode(word, merges):
     return s
 ```
 
-**压缩视角**。定义语料的符号总长 $L_{\mathrm{corpus}} = \sum_w n(w) \thinspace |\mathrm{split}(w)|$ 。一次加权频次为 $c$ 的 merge 把 $c$ 处「两个符号」换成「一个符号」，总长恰好减 $c$ ——上表最后一列就是这样算出来的。BPE 的 argmax 频次规则因此就是对语料符号数的贪心压缩：tokenizer 训练是压缩问题，与 1.1 §5「LM 即压缩」同构——那边压的是概率模型下的码长，这边压的是码本下的符号数。两者在 bits per byte 处合流（§6）。
+**压缩视角**。定义语料的符号总长 $L_{\mathrm{corpus}} = \sum_w n(w) \thinspace |\mathrm{split}(w)|$ 。一次加权频次为 $c$ 的 merge 把 $c$ 处「两个符号」换成「一个符号」，总长恰好减 $c$ ——上表最后一列就是这样算出来的。所以 BPE 的 argmax 频次规则就是对语料符号数的贪心压缩，tokenizer 训练是压缩问题。这与 1.1 §5「LM 即压缩」同构：那边压的是概率模型下的码长，这边压的是码本下的符号数。两者在 bits per byte 处合流（§6）。
 
 ## 3. byte-level BPE：OOV 在机制上的消除
 
@@ -103,7 +103,7 @@ def encode(word, merges):
 
 ## 4. WordPiece：似然驱动的 merge
 
-WordPiece（[Wu et al., 2016](../references.md)，arXiv:1609.08144，[B]；出自 GNMT 论文，无独立开源实现，常见实现为社区重写）与 BPE 共享自底向上的 merge 骨架，差别在选对规则：不看原始频次，看**合并给语料似然带来的增益**。把当前切分当作 unigram 语言模型 $p(u) = n(u) / N$（ $N$ 为符号总数），merge $(a, b)$ 的得分取
+WordPiece（[Wu et al., 2016](../references.md)，arXiv:1609.08144，[B]；出自 GNMT 论文，无独立开源实现，常见实现为社区重写）与 BPE 共享同一副自底向上的 merge 骨架。差别在选对规则：不看原始频次，看**合并给语料似然带来的增益**。把当前切分当作 unigram 语言模型 $p(u) = n(u) / N$（ $N$ 为符号总数），merge $(a, b)$ 的得分取
 
 $$
 \mathrm{score}(a, b) = \frac{p(ab)}{p(a) \thinspace p(b)} = \frac{n(a, b) \cdot N}{n(a) \thinspace n(b)} \qquad (2)
@@ -111,13 +111,13 @@ $$
 
 **符号**： $p(ab)$ ：合并后新符号的经验概率；分母是 $a$ 、 $b$ 独立假设下的共现概率。式 (2) 是 WordPiece 选对准则的社区标准重述口径——GNMT 原文只描述「合并使训练语料似然增益最大」的准则，未给显式公式。
 
-逐轮选 score 最大的对。读法：式 (2) 是共现对独立性的偏离度——频次高但各自更高频的对（如 e+s）被压下去，「黏性强」的对优先合并。编码端是另一套规矩：从串首开始的贪心最长匹配，子词间的续写关系由实现侧的标记表达——这与 BPE 编码的 rank 序贪心不同，两套规矩不通用（§12 常见误解）。
+逐轮选 score 最大的对。式 (2) 的读法：它是共现对独立性的偏离度——频次高、但各自更高频的对（如 e+s）被压下去，「黏性强」的对优先合并。编码端是另一套规矩：从串首开始的贪心最长匹配，子词间的续写关系由实现侧的标记表达。这与 BPE 编码的 rank 序贪心不同，两套规矩不通用（§12 常见误解）。
 
 ## 5. Unigram LM：把切分建成概率模型
 
 Unigram 方案（[Kudo, 2018](../references.md)，arXiv:1804.10959，[A]；SentencePiece 为其官方实现）换方向：不构造 merge 规则，直接给「切分」一个概率模型，从一个远大于目标的种子词表出发自顶向下剪枝。
 
-模型假设：词表 $\mathcal{V}$ 上每个 token 有概率 $p(v)$ ， $\sum_{v \in \mathcal{V}} p(v) = 1$ ；字符串 $x$ 的合法切分全体记为 $S(x)$（切法数的上限为 $2^{n-1}$ ：每对相邻位置切或不切，词表约束再筛掉一批）；切分 $z = (z_1, \ldots, z_k)$ 的概率取独立乘积 $p(z) = \prod_{i=1}^{k} p(z_i)$ 。字符串的边缘似然是全部切分之和，训练目标为
+模型假设有三条。第一，词表 $\mathcal{V}$ 上每个 token 有概率 $p(v)$ ， $\sum_{v \in \mathcal{V}} p(v) = 1$ 。第二，字符串 $x$ 的合法切分全体记为 $S(x)$ ——切法数的上限是 $2^{n-1}$ （每对相邻位置切或不切），词表约束再筛掉一批。第三，切分 $z = (z_1, \ldots, z_k)$ 的概率取独立乘积 $p(z) = \prod_{i=1}^{k} p(z_i)$ 。字符串的边缘似然是全部切分之和，训练目标为
 
 $$
 \max_{\theta} \hspace{5mu} \sum_{x \in D} \log \sum_{z \in S(x)} p(z; \theta) \qquad (3)
@@ -168,7 +168,7 @@ $$
 
 **符号**：fertility：平均每词 token 数，应按语言分别统计； $r_{\mathrm{comp}}$ ：平均每 token 字节数（压缩率）； $T$ ：语料 token 总数； $n_{\mathrm{byte}}$ ：语料字节总数。
 
-fertility 低 = 切得粗 = 同一文本的 token 序列更短。但 per-token 指标跨 tokenizer 不可比（1.1 §6 的两个陷阱：token 数一变，per-token CE 的平均项数就变，PPL 刻度跟着变）。公平的模型间比较口径是 bits per byte：总 NLL 折 bits 除以字节数，tokenizer 从公式里消掉。工程侧 $T$ 本身就是成本：固定字节预算下 $T$ 决定训练序列预算与推理的串行 decode 步数（2.4）， $r_{\mathrm{comp}}$ 每提高一分，全链路的 token 成本同比例下降。
+fertility 低 = 切得粗 = 同一文本的 token 序列更短。但 per-token 指标跨 tokenizer 不可比（1.1 §6 的两个陷阱：token 数一变，per-token CE 的平均项数就变，PPL 刻度跟着变）。公平的模型间比较口径是 bits per byte：总 NLL 折 bits 除以字节数，tokenizer 从公式里消掉。工程侧 $T$ 本身就是成本：固定字节预算下， $T$ 决定训练序列预算与推理的串行 decode 步数（2.4）。 $r_{\mathrm{comp}}$ 每提高一分，全链路的 token 成本同比例下降。
 
 ## 7. vocab size 的三方权衡账
 
@@ -182,15 +182,15 @@ fertility 低 = 切得粗 = 同一文本的 token 序列更短。但 per-token �
 | Gemma 2 | 256128 | SentencePiece | 论文口径：[Gemma Team, 2024](../references.md)（arXiv:2408.00118，[A]）；HF 仓库 gated |
 | Gemma 3 | 262144 | SentencePiece | 论文口径：[Gemma Team, 2025](../references.md)（arXiv:2503.19786，[A]）；HF 仓库 gated |
 
-跨代对照的补充锚点在 Llama 3 论文里：其 128K 词表 tokenizer 的压缩率为 3.94 chars/token，论文同处给出前一代 Llama 2 tokenizer 的对照值 3.17 chars/token（[Grattafiori et al., 2024](../references.md)，arXiv:2407.21783，[A]）——换词表后每 token 平均多吞约 24% 的字符。Llama-2 词表的通行数值 32000 出自其 HF config（[W]：有 config 与权重、无独立论文条目，故不进对照表）。
+跨代对照的补充锚点在 Llama 3 论文里：其 128K 词表 tokenizer 的压缩率为 3.94 chars/token，论文同处给出前一代 Llama 2 tokenizer 的对照值 3.17 chars/token（[Grattafiori et al., 2024](../references.md)，arXiv:2407.21783，[A]）。换词表后，每 token 平均多吞约 24% 的字符。Llama-2 词表的通行数值 32000 出自其 HF config（[W]：有 config 与权重、无独立论文条目，故不进对照表）。
 
 $V$ 同时挤压三个方向，这就是 T × V × d 账：
 
 1. **$V$ 大 $\Rightarrow$ $T$ 小（序列账）**。merge 越多、压缩越高，同字节文本的 token 数越少：attention 的 $O(T^{2} d)$ 项（1.2 第 6 节）、推理的串行 decode 步数（2.4）都随 $T$ 省。这是把 $V$ 往大推的力。
-2. **$V$ 大 $\Rightarrow$ 参数与 softmax 账大**。untied 时输入 embedding 加输出头共 $2Vd$ 参数（2.1 式 (4)）：Llama-3.1-8B 为 $2 \times 128256 \times 4096 = 1.05 \times 10^{9}$ ，占全部 8.03B 参数的 13.1%；Qwen3-8B 为 $1.245 \times 10^{9}$ 。输出头的每 token 前向 FLOPs 同为 $2Vd$（Llama-3.1-8B 约 $1.05 \times 10^{9}$ FLOPs，对照层部分 $2N \approx 1.4 \times 10^{10}$ FLOPs，约占 7%），词表上的 softmax 归一化与采样每位置再花 $O(V)$ ，相对输出头 matmul 的 $O(Vd)$ 是低阶项。
-3. **$V$ 大 $\Rightarrow$ 学习难度高**。固定数据预算下词表越大长尾越长，低频 token 的 embedding 行被更新的次数越少（§8 的稀疏梯度）；分类类别数变多，uniform 基线 $\ln V$ 抬高（1.1 §6）。这是把 $V$ 往小压的力。
+2. **$V$ 大 $\Rightarrow$ 参数与 softmax 账大**。untied 时，输入 embedding 加输出头共 $2Vd$ 参数（2.1 式 (4)）：Llama-3.1-8B 为 $2 \times 128256 \times 4096 = 1.05 \times 10^{9}$ ，占全部 8.03B 参数的 13.1%；Qwen3-8B 为 $1.245 \times 10^{9}$ 。输出头的每 token 前向 FLOPs 同为 $2Vd$ ：Llama-3.1-8B 约 $1.05 \times 10^{9}$ FLOPs，对照层部分 $2N \approx 1.4 \times 10^{10}$ FLOPs，约占 7%。词表上的 softmax 归一化与采样每位置再花 $O(V)$ ，相对输出头 matmul 的 $O(Vd)$ 是低阶项。
+3. **$V$ 大 $\Rightarrow$ 学习难度高**。固定数据预算下，词表越大长尾越长，低频 token 的 embedding 行被更新的次数越少（§8 的稀疏梯度）；分类类别数变多，uniform 基线 $\ln V$ 抬高（1.1 §6）。这是把 $V$ 往小压的力。
 
-50257 / 128256 / 151936 / 256128 / 262144 这五档不是「越大越好」的爬坡，而是三笔账在不同数据配比（多语言与代码占比）下的不同最优解；P5 各章对具体模型的 vocab 选择对账时复用本表。
+50257 / 128256 / 151936 / 256128 / 262144 这五档不是「越大越好」的爬坡，而是三笔账在不同数据配比（多语言与代码占比）下的不同最优解。P5 各章对具体模型的 vocab 选择对账时复用本表。
 
 ## 8. embedding 层：one-hot 等价、稀疏梯度与初始化
 
@@ -202,7 +202,7 @@ $$
 
 **符号**： $E$ ：输入 embedding 矩阵（2.1 式 (1) 的同一对象）； $e_t \in \mathbb{R}^{d}$ ：token $x_t$ 的向量；批量后 shape 为 $[B, T, d]$ ，与 2.1 式 (1) 的 $x^{(0)}$ 对齐。
 
-one-hot 乘矩阵等于按行取——实现上是 gather（索引读），没有乘加：1.2 的 FLOPs 账把 embedding 排除在外，原因就是这个等价性，它不是 matmul 而是内存寻址。反向传播同样稀疏：
+one-hot 乘矩阵等于按行取：实现上是 gather（索引读），没有乘加。1.2 的 FLOPs 账把 embedding 排除在外，原因就是这个等价性——它不是 matmul，而是内存寻址。反向传播同样稀疏：
 
 $$
 \frac{\partial L}{\partial E} = \sum_{t} o_t^{\top} g_t, \qquad g_t = \frac{\partial L}{\partial e_t} \qquad (8)
@@ -225,7 +225,7 @@ ids = torch.tensor([2, 5, 2])
 assert torch.equal(F.one_hot(ids, V).float() @ E, F.embedding(ids, E))
 ```
 
-**初始化尺度的 0.02 惯例**。GPT-2 的 initializer_range = 0.02（[Radford et al., 2019](../references.md)，[W]，config 字段实测），Qwen3-8B 的 config 取同一数值（[Qwen3-8B config](../references.md)，[A]）。依据是一笔方差账：行向量按 $E_v \sim \mathcal{N}(0, \sigma^{2} I)$ 初始化时 $\mathbb{E}\Vert E_v\Vert^{2} = d \sigma^{2}$ ；输出头同样初始化时，若 final RMSNorm 后的 $h$ 分量方差约为 1，则 logit 方差 $\mathrm{Var}(z_v) = d \sigma^{2}$ ，即
+**初始化尺度的 0.02 惯例**。GPT-2 的 initializer_range = 0.02（[Radford et al., 2019](../references.md)，[W]，config 字段实测），Qwen3-8B 的 config 取同一数值（[Qwen3-8B config](../references.md)，[A]）。依据是一笔方差账。行向量按 $E_v \sim \mathcal{N}(0, \sigma^{2} I)$ 初始化时， $\mathbb{E}\Vert E_v\Vert^{2} = d \sigma^{2}$ 。输出头同样初始化时，若 final RMSNorm 后的 $h$ 分量方差约为 1，则 logit 方差 $\mathrm{Var}(z_v) = d \sigma^{2}$ ，即
 
 $$
 \mathrm{std}(z_v) = \sigma \sqrt{d} \qquad (9)
@@ -233,11 +233,11 @@ $$
 
 **符号**： $\sigma$ ：初始化标准差； $z_v$ ：token $v$ 的 logit。
 
-$d$ = 4096、 $\sigma$ = 0.02 时 $\mathrm{std}(z_v) \approx 1.28$ ：初始 logits 是 $O(1)$ 小量，初始 softmax 接近均匀，初始 loss $\approx \ln V$（Qwen3-8B： $\ln 151936 \approx 11.9$）。对照 Xavier 尺度 $1 / \sqrt{d} \approx 0.0156$（ $d$ = 4096），0.02 同量级。式 (9) 也给出惯例的失效方向：固定 $\sigma$ 而 $d$ 翻倍，初始 logit 方差跟着翻倍——0.02 不是普适常数，是 $d$ 在数百到数千区间的经验值。
+$d$ = 4096、 $\sigma$ = 0.02 时 $\mathrm{std}(z_v) \approx 1.28$ ：初始 logits 是 $O(1)$ 小量，初始 softmax 接近均匀，初始 loss $\approx \ln V$（Qwen3-8B： $\ln 151936 \approx 11.9$）。对照 Xavier 尺度 $1 / \sqrt{d} \approx 0.0156$（ $d$ = 4096），0.02 同量级。式 (9) 也给出惯例的失效方向：固定 $\sigma$ 而 $d$ 翻倍，初始 logit 方差跟着翻倍。所以 0.02 不是普适常数，而是 $d$ 在数百到数千区间的经验值。
 
 ## 9. weight tying：一份参数干两份活
 
-**权重绑定（weight tying）**：输出头与输入 embedding 共享同一矩阵， $W_U = E$ ，logits 由 $z_t = E h_t$ 给出，参数账从 $2Vd$ 降为 $Vd$（[Press & Wolf, 2017](../references.md)，arXiv:1608.05859，[B]）。GPT-2 是 tying 收益的标准算例：层参数 $12Ld^{2} = 12 \times 12 \times 768^{2} \approx 84.9 \times 10^{6}$ ，tied 词表矩阵 $Vd = 50257 \times 768 \approx 38.6 \times 10^{6}$ ，合计约 123.5M，与通行的 124M 口径一致（[Radford et al., 2019](../references.md)，[W]）——若 untie，这个量级的模型要多出约 31% 的参数。而 Llama-3.1-8B、Qwen3-8B、OLMo-2-7B 的 tie_word_embeddings 全为 false（各 config 条目，[A]）：8B 量级上 $2Vd$ 只占 13%–15%，买得起了。
+**权重绑定（weight tying）**：输出头与输入 embedding 共享同一矩阵， $W_U = E$ ，logits 由 $z_t = E h_t$ 给出，参数账从 $2Vd$ 降为 $Vd$（[Press & Wolf, 2017](../references.md)，arXiv:1608.05859，[B]）。GPT-2 是 tying 收益的标准算例：层参数 $12Ld^{2} = 12 \times 12 \times 768^{2} \approx 84.9 \times 10^{6}$ ，tied 词表矩阵 $Vd = 50257 \times 768 \approx 38.6 \times 10^{6}$ ，合计约 123.5M，与通行的 124M 口径一致（[Radford et al., 2019](../references.md)，[W]）。若 untie，这个量级的模型要多出约 31% 的参数。而 Llama-3.1-8B、Qwen3-8B、OLMo-2-7B 的 tie_word_embeddings 全为 false（各 config 条目，[A]）：8B 量级上 $2Vd$ 只占 13%–15%，买得起了。
 
 省参数之外，tying 改变的是梯度结构。记每位置 loss 对 logits 的梯度 $r_t = q_t - \delta_{x_{t+1}} \in \mathbb{R}^{V}$（1.1 §4 的 softmax-CE 复合导数），则共享矩阵 $E$ 收到两路梯度：
 
@@ -247,7 +247,7 @@ $$
 
 **符号**： $h_t$ ：位置 $t$ 的 final 隐状态（ $d$ 维）； $r_t$ ：softmax 概率减真值； $o_t$ 、 $g_t$ 同式 (7)(8)。输出侧 $r_t$ 、 $h_t$ 取列向量（ $z_t = E h_t$ ），输入侧 $o_t$ 、 $g_t$ 取行向量（式 (7)），两路都是 $[V, 1] \times [1, d]$ 的外积，和为 $[V, d]$ 。
 
-逐行看耦合：第 $v$ 行的更新是 $\sum_t r_{t,v} \thinspace h_t + \sum_{t : x_t = v} g_t$ 。第一路**每个位置更新每一行**（非目标行也有 $r_{t,v} = q_{t,v} > 0$ ），把行推向「正确分类器方向」；第二路只在 $v$ 出现在输入时更新该行，把行推向「有用的输入特征方向」。两个角色对同一向量提出不同需求：作为分类器， $E_v$ 要与「应当预测 $v$ 」的隐状态方向对齐；作为输入特征， $E_v$ 要编码「 $v$ 出现了」对后续预测有用的信息——高频功能词作为输入信息量低、作为目标出现频繁，两个方向一般不重合，tied 行被迫折中。untie 就是让两份几何各自收敛。与 §10 的衔接：tied 时输入映射与输出映射共用同一矩阵的 rank 预算，untie 把联合参数预算翻倍（单矩阵的 rank 上限仍为 $d$ ）——大模型倾向 untie 的容量侧理由就在这里。2.8 组装整机时复用本节的 tied / untied 判定口径。
+逐行看耦合。第 $v$ 行的更新是 $\sum_t r_{t,v} \thinspace h_t + \sum_{t : x_t = v} g_t$ 。第一路**每个位置更新每一行**（非目标行也有 $r_{t,v} = q_{t,v} > 0$ ），把行推向「正确分类器方向」。第二路只在 $v$ 出现在输入时更新该行，把行推向「有用的输入特征方向」。两个角色对同一个向量提出了不同需求。作为分类器， $E_v$ 要与「应当预测 $v$ 」的隐状态方向对齐；作为输入特征， $E_v$ 要编码「 $v$ 出现了」对后续预测有用的信息。高频功能词作为输入信息量低、作为目标出现频繁，两个方向一般不重合，tied 行被迫折中。untie 就是让两份几何各自收敛。与 §10 的衔接：tied 时输入映射与输出映射共用同一矩阵的 rank 预算；untie 把联合参数预算翻倍（单矩阵的 rank 上限仍为 $d$ ）。大模型倾向 untie 的容量侧理由就在这里。2.8 组装整机时复用本节的 tied / untied 判定口径。
 
 工程注记：共用一份矩阵时输入侧与输出侧的合理动态范围不同，老配方靠显式缩放调和——Transformer 原文在 tied 配方下把 embedding 乘 $\sqrt{d}$ 再进 stream（[Vaswani et al., 2017](../references.md)，arXiv:1706.03762，[A]，§3.4）；现代配方直接 untie，缩放问题随之一并消失。
 
@@ -271,7 +271,7 @@ $$
 
 **符号**： $\log P \in \mathbb{R}^{N \times V}$ ： $N$ 个上下文上的模型对数概率矩阵； $u \in \mathbb{R}^{N}$ ：逐行归一化常数； $1_V \in \mathbb{R}^{V}$ ：词表方向全 1 向量， $u \thinspace 1_V^{\top}$ 是 $[N, 1] \times [1, V]$ 的外积。无 bias 时第一步收紧为 $d$ ，结果为 $d + 1$ 。
 
-瓶颈的含义：真实语言在 $N$ 个上下文上的对数概率矩阵没有理由低秩——同一前缀之后的合理续写由语义、语法、语用等多组近似独立的因素决定，行与行之间接近满秩；原论文在上下文独立性假设下证明了真实矩阵满秩（[Yang et al., 2018](../references.md)，arXiv:1711.03953，[A]）。只要真实 rank 超过 $d + 2$ ，单 softmax 头就有拟合不了的残差，加深主干、加数据都无效——瓶颈在 $z = W_U h$ 这个线性结构上。代入锚点： $d$ = 4096、 $V$ = 151936，rank 上限 4098 不足满秩的 3%。
+瓶颈的含义：真实语言在 $N$ 个上下文上的对数概率矩阵没有理由低秩。同一前缀之后的合理续写由语义、语法、语用等多组近似独立的因素决定，行与行之间接近满秩；原论文在上下文独立性假设下证明了真实矩阵满秩（[Yang et al., 2018](../references.md)，arXiv:1711.03953，[A]）。只要真实 rank 超过 $d + 2$ ，单 softmax 头就有拟合不了的残差，加深主干、加数据都无效——瓶颈在 $z = W_U h$ 这个线性结构上。代入锚点： $d$ = 4096、 $V$ = 151936，rank 上限 4098 不足满秩的 3%。
 
 原论文给的解法是 **Mixture of Softmaxes（MoS）**： $K$ 个打分头的凸组合替代单 softmax，
 
@@ -299,13 +299,13 @@ patch   [b1 b2 b3] [b4 b5] [b6 b7 b8] ...    ← 长度随可预测性变化
     轻量 byte decoder 逐 byte 展开输出
 ```
 
-机制要点：patch 边界由熵驱动——可预测区段（常见词、固定模板）合并为长 patch、省计算；高不确定区段（专名、随机串）切成短 patch、把算力花在那里。固定 FLOP 预算下「算力按不确定性分配」是静态码本做不到的事。原论文做了 FLOP 对齐的 scaling 对照（至 8B 参数 / 4T bytes），报告在固定推理 FLOPs 下追平或超过 BPE tokenizer 的 Llama-3 式基线。代价侧同样明确：byte 序列长度约为 token 序列的 4 倍量级，byte 侧只能用轻量模块，主算力集中在 patch 级 transformer；同时 $2Vd$ 的词表矩阵整个消失（§7 第二笔账），换来 byte encoder / decoder 的小额固定开销。BLT 目前是研究对照而非主流配方，但它标出了 tokenizer 范式的边界：码本的静态性是工程选择，不是数学必需。
+机制要点：patch 边界由熵驱动。可预测区段（常见词、固定模板）合并为长 patch，省计算；高不确定区段（专名、随机串）切成短 patch，把算力花在那里。固定 FLOP 预算下，「算力按不确定性分配」是静态码本做不到的事。原论文做了 FLOP 对齐的 scaling 对照（至 8B 参数 / 4T bytes），报告在固定推理 FLOPs 下追平或超过 BPE tokenizer 的 Llama-3 式基线。代价侧同样明确：byte 序列长度约为 token 序列的 4 倍量级，byte 侧只能用轻量模块，主算力集中在 patch 级 transformer；同时 $2Vd$ 的词表矩阵整个消失（§7 第二笔账），换来 byte encoder / decoder 的小额固定开销。BLT 目前是研究对照而非主流配方，但它标出了 tokenizer 范式的边界：码本的静态性是工程选择，不是数学必需。
 
 ## 12. 真实 tokenizer 走读：Qwen3-8B 与 Llama-3.1
 
-**Qwen3-8B**（repo 文件实测，[Qwen3-8B config](../references.md)，[A]）：tokenizer_class = Qwen2Tokenizer，即 byte-level BPE，与 Qwen2 / 2.5 同一 tokenizer 家族。repo 内三件：vocab.json（token → id，151643 条）、merges.txt（merge 按 rank 排列）、tokenizer.json（HF tokenizers 的编译产物，加载走这条）。added_tokens_decoder 含 26 个特殊 token，占 id 151643–151668（`<|endoftext|>` 、`<|im_start|>` 、`<|im_end|>` 、`<think>` 、`</think>` 等）；config vocab_size 151936 = 151643 + 26 再向上对齐。bos_token_id = 151643，eos_token_id = 151645（聊天模板以 `<|im_end|>` 收尾）。两个长度字段不要混：config 的 max_position_embeddings = 40960 是模型原生窗口，tokenizer_config 的 model_max_length = 131072 是 tokenizer 侧上限（1.1 §1 已核对）。
+**Qwen3-8B**（repo 文件实测，[Qwen3-8B config](../references.md)，[A]）：tokenizer_class = Qwen2Tokenizer，即 byte-level BPE，与 Qwen2 / 2.5 同一 tokenizer 家族。repo 内三件：vocab.json（token → id，151643 条）、merges.txt（merge 按 rank 排列）、tokenizer.json（HF tokenizers 的编译产物，加载走这条）。added_tokens_decoder 含 26 个特殊 token，占 id 151643–151668（`<|endoftext|>` 、`<|im_start|>` 、`<|im_end|>` 、`<think>` 、`</think>` 等）；config vocab_size 151936 = 151643 + 26 再向上对齐。bos_token_id = 151643，eos_token_id = 151645（聊天模板以 `<|im_end|>` 收尾）。两个长度字段不要混：config 的 max_position_embeddings = 40960 是模型原生窗口；tokenizer_config 的 model_max_length = 131072 是 tokenizer 侧上限（1.1 §1 已核对）。
 
-**Llama-3.1**：config 侧 vocab_size = 128256（[Llama-3.1-8B config](../references.md)，[A]）；Llama 3 论文记录其 tokenizer 为 BPE 家族、128K 词表，并给出压缩率对照：3.94 chars/token 对前一代 Llama 2 tokenizer 的 3.17 chars/token（[Grattafiori et al., 2024](../references.md)，arXiv:2407.21783，[A]）。与 Qwen3 对照着读：同属 byte-level BPE 路线， $V$ 差约 1.18 倍；§7 的三方账（多语言覆盖、 $2Vd$ 、长尾冷启动）就是解读这两家取值的框架。
+**Llama-3.1**：config 侧 vocab_size = 128256（[Llama-3.1-8B config](../references.md)，[A]）；Llama 3 论文记录其 tokenizer 为 BPE 家族、128K 词表，并给出压缩率对照：3.94 chars/token 对前一代 Llama 2 tokenizer 的 3.17 chars/token（[Grattafiori et al., 2024](../references.md)，arXiv:2407.21783，[A]）。与 Qwen3 对照着读：同属 byte-level BPE 路线， $V$ 差约 1.18 倍。§7 的三方账（多语言覆盖、 $2Vd$ 、长尾冷启动）就是解读这两家取值的框架。
 
 动手核对入口：HF 侧 `AutoTokenizer.from_pretrained` 之后，`tokenizer.get_vocab()` 给词表，BPE 系的 merge 表看 merges.txt 或 `tokenizer.backend_tokenizer`；Unigram 系（SentencePiece 产物）的 token 概率存在 `.model` 文件里。
 

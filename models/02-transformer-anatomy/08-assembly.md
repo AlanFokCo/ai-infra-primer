@@ -1,6 +1,6 @@
 # 2.8 组装完整 Decoder Block（Assembling the Full Decoder Block）
 
-> 本章把 2.1–2.7 拆开的组件装回整机：现代标准配方的完整 block 公式（全下标，GQA + RoPE + SwiGLU）、Llama-3.1-8B config.json 逐字段 ↔ 公式映射表、约 150 行 minimal decoder-only PyTorch、transformers `modeling_llama.py` 官方实现走读、单层单 token FLOPs 全算与参数量精确到个位的对账、并行块（parallel block，PaLM / GPT-J / Falcon）的公式与梯度/吞吐含义、四条常见误解 | 前置：2.1–2.7 全部（公式编号沿用各章），1.1（ $q_\theta(\cdot | x_{\lt t})$），1.2（ $2N$ 口径与 $N$ 的两种口径约定）| 锚点：Llama-3.1-8B config [A]（主）、OLMo-2-7B config [A]（对照）、nanoGPT（教学参照）；Vaswani et al. [A]、Grattafiori et al. [A]、Team OLMo et al. [A]
+> 本章把 2.1–2.7 拆开的组件装回整机。先给现代标准配方的完整 block 公式（全下标，GQA + RoPE + SwiGLU），再给 Llama-3.1-8B config.json 的逐字段 ↔ 公式映射表。代码两侧都走一遍：约 150 行的 minimal decoder-only PyTorch 教学实现，以及 transformers `modeling_llama.py` 官方实现走读。账也算到底：单层单 token FLOPs 全算、参数量精确到个位的对账。最后讲并行块（parallel block，PaLM / GPT-J / Falcon）的公式与梯度/吞吐含义，以及四条常见误解 | 前置：2.1–2.7 全部（公式编号沿用各章），1.1（ $q_\theta(\cdot \mid x_{\lt t})$），1.2（ $2N$ 口径与 $N$ 的两种口径约定）| 锚点：Llama-3.1-8B config [A]（主）、OLMo-2-7B config [A]（对照）、nanoGPT（教学参照）；Vaswani et al. [A]、Grattafiori et al. [A]、Team OLMo et al. [A]
 
 ## 1. 整机公式：全下标的标准配方
 
@@ -108,7 +108,7 @@ Llama-3.1-8B 的 config.json 逐字段映射到式 (1)–(4) 的符号（数值�
 
 注：rms_norm_eps 的 Llama-3.1-8B 字段值本书未独立核实（HF gated repo，W1 research pass 口径）；已核实的对照值是 Qwen3-8B 与 OLMo-2-7B 的 $10^{-6}$（各 config 条目，[A]）。
 
-读表三条规矩。其一，**导出字段与显式字段分开**：head_dim 在该 config 中不出现、按 $d / H_q$ 导出；新版 modeling 代码允许它被显式覆盖（§8 误解一）。其二，**缺省字段按默认理解**：attention_dropout 等训练侧字段不进推理公式。其三，**每个结构字段都能在公式里点名位置**——反过来，读一个陌生模型的 config 时，把每个字段在这张表里对号入座，五个整数（ $L, d, H_q, H_{kv}, d_{\mathrm{ff}}$）加 $V$ 就钉死了参数量与 FLOPs 账（§5、§6），剩下的是 norm 摆放与 logit 稳定器两个不进 config 标准字段的配方差异（§1 末表）。这张字典表是 5.6「30 分钟拆解新模型」checklist 的字段级底稿。
+读表三条规矩。其一，**导出字段与显式字段分开**：head_dim 在该 config 中不出现、按 $d / H_q$ 导出；新版 modeling 代码允许它被显式覆盖（§8 误解一）。其二，**缺省字段按默认理解**：attention_dropout 等训练侧字段不进推理公式。其三，**每个结构字段都能在公式里找到对应位置**——反过来，读一个陌生模型的 config 时，把每个字段在这张表里对号入座，五个整数（ $L, d, H_q, H_{kv}, d_{\mathrm{ff}}$）加 $V$ 就锁定了参数量与 FLOPs 账（§5、§6），剩下的是 norm 摆放与 logit 稳定器两个不进 config 标准字段的配方差异（§1 末表）。这张字典表是 5.6「30 分钟拆解新模型」checklist 的字段级底稿。
 
 把同一张表套到对照锚点上走一遍，验证它的可迁移性。OLMo-2-7B（[OLMo-2-7B config](../references.md)，[A]）： $L = 32$、 $d = 4096$、 $H_q = H_{kv} = 32$、 $d_{\mathrm{ff}} = 11008$、 $V = 100352$、rope_theta = 500000、rms_norm_eps = $10^{-6}$、attention_bias = false、tie = false。式 (2) 里唯一的结构变化是 $g(h)$ 退化为恒等映射（ $H_q / H_{kv} = 1$，每头各配一对 K/V，MHA 标准形）；式 (3) 不变，只是 $d_{\mathrm{ff}}$ 收窄到 $2.69d$。这一步 mapping 能直接读出的是参数与 FLOPs 账的变化（§6 练习口径）；读不出的是两件事——norm 摆在子层输出侧（reordered）与 q/k 投影后的两次 RMSNorm——它们不写进 config 的任何标准字段，只能去 `modeling_olmo2.py`（[A]）里看 `Olmo2DecoderLayer.forward` 的接线顺序与 `Olmo2Attention` 的 `q_norm` / `k_norm`。这就是本表的能力边界，也是它的用法：config 管「形状与账」，modeling 代码管「接线与归一化位置」，两边各读一遍才算读完一个模型。
 
@@ -249,7 +249,7 @@ assert n == expect
 
 冒烟测试的最后一行断言就是 §6 参数量公式的可执行形式：把 config 五个整数代入式 (6)，与 `sum(p.numel())` 逐项相等——教学实现正确性的第一条检查不是输出对不对，是参数账平不平。
 
-这份实现刻意不含的东西同样值得点名：初始化方案（`nn.Linear` 默认初始化，未按 2.2 §8 的 0.02 惯例重设）、混合精度（全程 fp32 默认 dtype，无 fp32 归约）、KV cache（2.4 的 cache 版 forward 留作练习 3）、dropout 与训练循环、分布式钩子。它们每一条在官方实现里都对应一层工程代码（§4 末表），但都不是式 (1)–(4) 的内容——教学版的边界就是公式的边界。冒烟测试把 config 缩到 $d = 256$ 是为了在 CPU 上秒级跑完；把默认参数（Llama-3.1-8B 原尺寸）实例化出来需要约 32 GB 内存（fp32 权重），数学上同一台机器，工程上另是一笔内存账（1.2 式 (7) 的 4 字节版本）。
+这份实现刻意不含的东西同样值得逐一列出：初始化方案（`nn.Linear` 默认初始化，未按 2.2 §8 的 0.02 惯例重设）、混合精度（全程 fp32 默认 dtype，无 fp32 归约）、KV cache（2.4 的 cache 版 forward 留作练习 3）、dropout 与训练循环、分布式钩子。它们每一条在官方实现里都对应一层工程代码（§4 末表），但都不是式 (1)–(4) 的内容——教学版的边界就是公式的边界。冒烟测试把 config 缩到 $d = 256$ 是为了在 CPU 上秒级跑完；把默认参数（Llama-3.1-8B 原尺寸）实例化出来需要约 32 GB 内存（fp32 权重），数学上同一台机器，工程上另是一笔内存账（1.2 式 (7) 的 4 字节版本）。
 
 教学参照对照：nanoGPT（[Karpathy, nanoGPT](../references.md)，教学参照）是 GPT-2 配方（[Radford et al., 2019](../references.md)，[W]）的最小实现，其 `Block.forward` 与 §3 的 `DecoderBlock` 骨架相同（`x = x + attn(ln_1(x))`、`x = x + mlp(ln_2(x))`，外加 final `ln_f`）——式 (1) 的「归一化读、加法写」自 GPT-2 起就是这个形态（GPT-2 报告 §2.2：LN 移到每个子块输入侧、末块后再加一次 LN，即 Pre-LN + final norm）。两代配方的差异全部在组件层：
 
@@ -263,7 +263,7 @@ assert n == expect
 | FFN | 两矩阵 GELU， $d_{\mathrm{ff}} = 4d$（GPT-2 的 HF config 为 gelu_new = tanh 近似；nanoGPT 的 `nn.GELU()` 默认是精确 GELU） | 三矩阵 SwiGLU， $d_{\mathrm{ff}} = 3.5d$ |
 | attention | MHA（ $H_{kv} = H_q$） | GQA（ $H_{kv} = H_q / 4$） |
 
-读这张表的方式：左列到右列的每一行都对应 P2 某一章的一次推导（LayerNorm→RMSNorm 是 2.7 §3，learned abs→RoPE 是 2.5，bias 与 tying 是 §8 误解二三，GELU→SwiGLU 是 2.6，MHA→GQA 是 4.1 的预告）。骨架七年未动，动的是组件——这就是「现代标准配方」的精确含义：式 (1) 的接线 + 右列的组件选择。
+读这张表的方式：左列到右列的每一行都对应 P2 某一章的一次推导（LayerNorm→RMSNorm 是 2.7 §3，learned abs→RoPE 是 2.5，bias 与 tying 是 §8 误解二三，GELU→SwiGLU 是 2.6，MHA→GQA 是 4.1 的预告）。骨架未动，动的是组件——这就是「现代标准配方」的精确含义：式 (1) 的接线 + 右列的组件选择。
 
 ## 4. 官方实现走读：modeling_llama.py
 
@@ -342,7 +342,7 @@ hidden_states = self.mlp(hidden_states)
 hidden_states = residual + hidden_states
 ```
 
-**`LlamaModel` / `LlamaForCausalLM`**（式 (4)）：`embed_tokens` 查表后依次过 `self.layers`，`self.norm` 收尾，`lm_head` 出 logits；`tie_word_embeddings` 为 true 时 `lm_head.weight` 与 `embed_tokens.weight` 共享同一参数（Llama-3.1-8B 为 false）。`LlamaForCausalLM.forward` 的训练分支把 logits 与 labels 交给 loss 工具做移位对齐—— $z_{t-1}$ 对 $x_t$ 的逐位置错位监督（1.1 §4 的 teacher forcing 口径），这一步在 block 结构之外，式 (4) 末行的条件分布写法就是它的数学形态。位置编码的组装位置值得单独点名：模型级持有一个 `LlamaRotaryEmbedding`，每次 forward 以 `position_embeddings = self.rotary_emb(hidden_states, position_ids)` 现算一次 cos/sin、传给全部层共享（RoPE 只依赖位置与频率，与层无关）；其内部只有 `inv_freq` 是预存 buffer，cos/sin 由 `inv_freq` 与 `position_ids` 逐前向外积现算（fp32 下 `freqs = inv_freq @ position_ids`，再 `cat([freqs, freqs])` 后取 cos/sin）——与 2.5 §4.8 口径一致，不是「初始化时预建 $[T_{\max}, D]$ 大表」的旧式实现。decode 时 `position_ids` 携带全局绝对位置，与 2.5 §4.3 的接缝注记（q 必须按全局位置旋转）咬合。
+**`LlamaModel` / `LlamaForCausalLM`**（式 (4)）：`embed_tokens` 查表后依次过 `self.layers`，`self.norm` 收尾，`lm_head` 出 logits；`tie_word_embeddings` 为 true 时 `lm_head.weight` 与 `embed_tokens.weight` 共享同一参数（Llama-3.1-8B 为 false）。`LlamaForCausalLM.forward` 的训练分支把 logits 与 labels 交给 loss 工具做移位对齐—— $z_{t-1}$ 对 $x_t$ 的逐位置错位监督（1.1 §4 的 teacher forcing 口径），这一步在 block 结构之外，式 (4) 末行的条件分布写法就是它的数学形态。位置编码的组装位置值得单独说明：模型级持有一个 `LlamaRotaryEmbedding`，每次 forward 以 `position_embeddings = self.rotary_emb(hidden_states, position_ids)` 现算一次 cos/sin，传给全部层共享（RoPE 只依赖位置与频率，与层无关）。其内部只有 `inv_freq` 是预存 buffer；cos/sin 由 `inv_freq` 与 `position_ids` 逐前向外积现算（fp32 下 `freqs = inv_freq @ position_ids`，再 `cat([freqs, freqs])` 后取 cos/sin）。这与 2.5 §4.8 口径一致，不是「初始化时预建 $[T_{\max}, D]$ 大表」的旧式实现。decode 时 `position_ids` 携带全局绝对位置，与 2.5 §4.3 的接缝注记（q 必须按全局位置旋转）咬合。
 
 mask 的组装同样在模型级完成一次：`LlamaModel.forward` 依据 attention 实现类型生成一份加性 causal mask（下三角外为 $-\infty$，2.4 式 (3) 的加性形态），与 cos/sin 一起作为参数传给每层——每个 block 收到的「位置与可见性」输入因此完全相同，层间差异全部来自各自的权重矩阵。对照教学版：§3 把 mask 的构造放在了每个 attention 内部（逐层重复造同一张上三角），这是教学上的就近原则，不是语义差异。
 
@@ -433,7 +433,7 @@ $$
 | GEMM 形态 | 两批输入不同，天然先后 | QKV 与 gate/up 读同一输入，可拼成一个大 GEMM；out 与 down 同理（输出相加） |
 | 张量并行通信 | 每层两次行并行 all-reduce | 两分支输出求和后合并为一次 |
 
-梯度含义可以精确点名，不靠传闻。把式 (8) 按 2.1 §2 展开： $x^{(L)} = x^{(0)} + \sum_{\ell} a_{\ell} + \sum_{\ell} f_{\ell}$——与串行 Pre-LN 的展开式逐项同形（差别只在 $f_{\ell}$ 的输入是 $x^{(\ell-1)}$ 还是 $\tilde{x}^{(\ell)}$），于是 2.7 式 (8) 的恒等项逐字保留：上游梯度经恒等通道原样直达每一层，并行块没有引入任何打断可加结构的东西（norm 仍在分支输入侧，不在加法之后）。变的是分支梯度的通路数，可以写出来对照。串行形里第 $\ell$ 层 FFN 分支对 $x^{(\ell-1)}$ 的 Jacobian 是复合的：
+梯度含义可以精确写出，不靠传闻。把式 (8) 按 2.1 §2 展开： $x^{(L)} = x^{(0)} + \sum_{\ell} a_{\ell} + \sum_{\ell} f_{\ell}$——与串行 Pre-LN 的展开式逐项同形（差别只在 $f_{\ell}$ 的输入是 $x^{(\ell-1)}$ 还是 $\tilde{x}^{(\ell)}$），于是 2.7 式 (8) 的恒等项逐字保留：上游梯度经恒等通道原样直达每一层，并行块没有引入任何打断可加结构的东西（norm 仍在分支输入侧，不在加法之后）。变的是分支梯度的通路数，可以写出来对照。串行形里第 $\ell$ 层 FFN 分支对 $x^{(\ell-1)}$ 的 Jacobian 是复合的：
 
 $$
 \text{(serial)} \quad \frac{\partial f_{\ell}}{\partial x^{(\ell-1)}} = \frac{\partial f_{\ell}}{\partial \tilde{x}^{(\ell)}} \left( I + \frac{\partial a_{\ell}}{\partial x^{(\ell-1)}} \right) \hspace{5mu}; \qquad \text{(parallel)} \quad \frac{\partial f_{\ell}}{\partial x^{(\ell-1)}} = \frac{\partial f_{\ell}}{\partial \mathrm{Norm}(x^{(\ell-1)})} \thinspace J_{\mathrm{Norm}} \qquad (9)
@@ -441,7 +441,7 @@ $$
 
 **符号**： $a_{\ell} = \mathrm{Attn}^{(\ell)}(\mathrm{Norm}(x^{(\ell-1)}))$； $J_{\mathrm{Norm}}$：归一化的 Jacobian（2.7 式 (10) 一族）。串行形的第一式里 $\partial a_{\ell} / \partial x^{(\ell-1)}$ 就是那条「经 attention 输出的间接路径」：FFN 的梯度要过 attention 的 Jacobian 回流到层输入。并行形的第二式没有这一项——反向图上每层少一条跨分支边，两条分支的梯度各自只经自己的子层 Jacobian 与同一个 $J_{\mathrm{Norm}}$ 到达 $x^{(\ell-1)}$。表示侧的对称事实：串行的 FFN 加工的是「刚混完上下文」的 stream，并行的 FFN 只能读「本层 attention 动手之前」的快照；跨 block 的接力仍在（下一层的 norm 读到加和后的 stream），所以并行形损失的是层内接力，不是层间接力。
 
-吞吐含义全部来自「两分支读同一输入」。代入 Llama-3.1-8B 的形状走一遍：串行形里 attention 侧读 $`\mathrm{Norm}_1`$ 输出的是一个 $d \times 6144$ 的 QKV GEMM，FFN 侧读 $`\mathrm{Norm}_2`$ 输出的是一个 $d \times 28672$ 的 gate/up GEMM——两次发射、两个输入张量、中间隔着 attention 的全部计算；并行形里两者读同一份归一化输出，可以列拼成一个 $4096 \times 34816$ 的 GEMM 一次发射，输出侧的 out（ $4096 \times 4096$）与 down（ $14336 \times 4096$）同样可以行拼、结果相加。GEMM 变大变少，tensor core 利用率上升、kernel 发射与调度气泡减少；张量并行下每层两次行并行 all-reduce 合并为一次（两分支输出先求和再通信）；norm 归约每层两次变一次。式 (5) 的账一项不动——省的是墙钟时间里的非计算成分，不是 FLOPs。这与 2.4 §4.4 的 cache 账同构：两处都是「省墙钟 ≠ 省账」。
+吞吐含义全部来自「两分支读同一输入」。代入 Llama-3.1-8B 的形状走一遍：串行形里 attention 侧读 $`\mathrm{Norm}_1`$ 输出的是一个 $d \times 6144$ 的 QKV GEMM，FFN 侧读 $`\mathrm{Norm}_2`$ 输出的是一个 $d \times 28672$ 的 gate/up GEMM——两次发射、两个输入张量、中间隔着 attention 的全部计算；并行形里两者读同一份归一化输出，可以列拼成一个 $4096 \times 34816$ 的 GEMM 一次发射；输出侧的 out（ $4096 \times 4096$）与 down（ $14336 \times 4096$）同样可以行拼，结果相加。GEMM 变大变少，tensor core 利用率上升、kernel 发射与调度气泡减少；张量并行下每层两次行并行 all-reduce 合并为一次（两分支输出先求和再通信）；norm 归约每层两次变一次。式 (5) 的账一项不动——省的是墙钟时间里的非计算成分，不是 FLOPs。这与 2.4 §4.4 的 cache 账同构：两处都是「省墙钟 ≠ 省账」。
 
 推理侧同构：decode 每步是 $B \times 1$ 的小 GEMM，权重读取主导（2.4 §6 的算术强度分析），融合不减少权重字节数，但减少每步的 kernel 发射次数与调度间隙——在小 GEMM  regime 里这些非计算成分的占比更大，并行块的墙钟收益在 decode 端只会更明显。
 
@@ -461,7 +461,7 @@ $$
 | 概念 | 公式 / 数值 | 要点 |
 | --- | --- | --- |
 | 整机公式 | 式 (1)–(4)：Pre-LN 两子层 + GQA/RoPE/SwiGLU 全下标 | 接口是「归一化读、加法写」；组件可替换、骨架不动 |
-| config ↔ 公式 | §2 逐字段表 | 五个整数（ $L, d, H_q, H_{kv}, d_{\mathrm{ff}}$）+ $V$ 钉死全部账；5.6 checklist 底稿 |
+| config ↔ 公式 | §2 逐字段表 | 五个整数（ $L, d, H_q, H_{kv}, d_{\mathrm{ff}}$）+ $V$ 锁定全部账；5.6 checklist 底稿 |
 | minimal 实现 | §3 约 150 行 | 教学用，非优化实现；参数断言 = 式 (6) 可执行形式 |
 | 官方走读 | modeling_llama.py：`LlamaRMSNorm` / `LlamaAttention` / `LlamaMLP` / `LlamaDecoderLayer` | cos/sin 逐前向由 inv_freq × position_ids 现算、各层共享；fp32 归约；算子派发 |
 | FLOPs 全算 | 式 (5)；matmul 行 $4.36 \times 10^{8}$/层/ token | 低阶项占 0.09%（ $\sim d$ 因子）；整机 $2N + 2Vd \approx 1.50 \times 10^{10}$ |

@@ -1,10 +1,10 @@
 # 2.7 Normalization 与 Residual（Normalization and the Residual Stream）
 
-> 本章回答一组相互咬合的问题：LayerNorm 的公式与两个不变性；为什么 BatchNorm 在序列建模里数学上就不成立（三条原因）；RMSNorm 去掉 re-centering 丢了什么；推导主线是 Pre-LN vs Post-LN 的梯度分析——LN Jacobian 谱范数引理（ $\lVert J_{\mathrm{LN}}(x) \rVert = O(\sqrt{d}/\lVert x \rVert)$）→ Xiong et al. Theorem 1 精确表述（初始化时最后一层 FFN 参数梯度：Post-LN $O(d\sqrt{\ln d})$ 与深度 $L$ 无关、Pre-LN $O(d\sqrt{\ln d / L})$ 随深度衰减）→ warmup 的数学必然性；残差侧给出梯度流恒等式 $\partial L / \partial x_l = (\partial L / \partial x_L)(I + \partial \sum f_i / \partial x_l)$ 的 identity 项推导；组件侧收尾于 QK-Norm（attention logits 的结构性封顶）、DeepNorm 缩放系数、logit soft-capping（仅 Gemma 2：attn 50.0 / final 30.0，Gemma 3 已弃用）与 zero-centered 增益 | 前置：2.1（residual stream 式 (1)(2)）、2.3（ $\sqrt{d_k}$ 链与 softmax 饱和 §3.4）、2.6（FFN 结构） | 锚点：Gemma 2 [A]（soft-capping 出处）、Gemma 3 [A]（QK-norm、pre+post RMSNorm）、Llama-3.1-8B config [A]（RMSNorm + Pre-LN 标准配方）、OLMo-2-7B [A]（q/k norm 代码走读）；Ba et al. [B]、Zhang & Sennrich [B]、Xiong et al. [B]、Wang et al. [A]、Henry et al. [B]
+> 本章回答一组相互咬合的问题：LayerNorm 的公式与两个不变性；为什么 BatchNorm 在序列建模里数学上就不成立（三条原因）；RMSNorm 去掉 re-centering 丢了什么。推导主线是 Pre-LN vs Post-LN 的梯度分析，分三步走：先证 LN Jacobian 谱范数引理（ $\lVert J_{\mathrm{LN}}(x) \rVert = O(\sqrt{d}/\lVert x \rVert)$），再给出 Xiong et al. Theorem 1 的精确表述（初始化时最后一层 FFN 参数梯度：Post-LN $O(d\sqrt{\ln d})$ 与深度 $L$ 无关、Pre-LN $O(d\sqrt{\ln d / L})$ 随深度衰减），最后落到 warmup 的数学必然性。残差侧给出梯度流恒等式 $\partial L / \partial x_l = (\partial L / \partial x_L)(I + \partial \sum f_i / \partial x_l)$ 的 identity 项推导。组件侧收尾于 QK-Norm（attention logits 的结构性封顶）、DeepNorm 缩放系数、logit soft-capping（仅 Gemma 2：attn 50.0 / final 30.0，Gemma 3 已弃用）与 zero-centered 增益 | 前置：2.1（residual stream 式 (1)(2)）、2.3（ $\sqrt{d_k}$ 链与 softmax 饱和 §3.4）、2.6（FFN 结构） | 锚点：Gemma 2 [A]（soft-capping 出处）、Gemma 3 [A]（QK-norm、pre+post RMSNorm）、Llama-3.1-8B config [A]（RMSNorm + Pre-LN 标准配方）、OLMo-2-7B [A]（q/k norm 代码走读）；Ba et al. [B]、Zhang & Sennrich [B]、Xiong et al. [B]、Wang et al. [A]、Henry et al. [B]
 
 ## 1. LayerNorm：公式与两个不变性
 
-先登记「为什么必须有归一化」这个问题本身。2.1 式 (2) 说 stream 是 $2L+1$ 个向量之和：前向看，没有归一化时 stream 的二阶矩随层数漂移（§5.2 的随机游走口径给出 $\Theta(\sqrt{L})$ 增长），logits 的尺度跟着漂；反向看，本章 §5 的引理会证明归一化 Jacobian 的增益反比于输入范数——归一化器是 stream 上的自动增益控制（automatic gain control）：前向钉住输出二阶矩（ $\sqrt{d}$），反向按输入范数自动缩放梯度。本章全部结果都挂在这两条上。
+先登记「为什么必须有归一化」这个问题本身。2.1 式 (2) 说 stream 是 $2L+1$ 个向量之和。前向看，没有归一化时 stream 的二阶矩随层数漂移（§5.2 的随机游走口径给出 $\Theta(\sqrt{L})$ 增长），logits 的尺度跟着漂；反向看，本章 §5 的引理会证明归一化 Jacobian 的增益反比于输入范数。归一化器就是 stream 上的自动增益控制（automatic gain control）：前向把输出二阶矩固定在 $\sqrt{d}$，反向按输入范数自动缩放梯度。本章全部结果都挂在这两条上。
 
 层归一化（LayerNorm）对单个位置的特征向量做归一化（[Ba et al., 2016](../references.md)，arXiv:1607.06450，[B]）。取 $x \in \mathbb{R}^{d}$（residual stream 在某一位置上的切片，2.1 式 (1) 的逐位置口径）：
 
@@ -14,7 +14,7 @@ $$
 
 **符号**： $\mu, \sigma^{2}$：沿特征维 $d$ 的均值与方差（实现中加 $\epsilon$ 防除零）； $\gamma, \beta \in \mathbb{R}^{d}$：逐特征可学增益（gain）与偏置； $\odot$：逐分量乘； $\hat{x}$：归一化核，满足 $`\sum_i \hat{x}_i = 0`$、 $\lVert \hat{x} \rVert_{2} = \sqrt{d}$。
 
-LN 对上游表达施加两个精确的不变性（invariance），这是它对优化几何起塑形作用的结构来源。
+LN 对上游表达施加两个精确的不变性（invariance），它影响优化几何的结构来源就在这里。
 
 **不变性一（输入的 scale/shift）**。对任意标量 $\alpha > 0$ 与 $c \in \mathbb{R}$，把 $x$ 换成 $x' = \alpha x + c \cdot 1_d$（ $1_d \in \mathbb{R}^{d}$：特征维全 1 列向量，沿用 1.1 的 $1_V$ 记法）：
 
@@ -80,12 +80,12 @@ $$
 
 即 LN 的核 = RMSNorm 的核前面多一步减均值、且分母用修正后的 RMS；RMSNorm 对应 $\mu = 0$ 的特例。stream 的 DC 分量小时（ $|\mu| \ll \mathrm{RMS}(x)$）两者数值接近，差异随 $|\mu| / \mathrm{RMS}(x)$ 增长。
 
-与式 (1) 对照，丢掉的是减均值这一步（re-centering）。数学上丢掉的东西可以精确点名：
+与式 (1) 对照，丢掉的是减均值这一步（re-centering）。数学上丢掉的东西可以逐项列出：
 
 1. **加性常量不变性消失**。式 (2) 的平移半条不再成立： $\mathrm{RMS}(x + c \cdot 1_d) \neq \mathrm{RMS}(x)$，沿 $1_d$ 方向的分量（全部特征共享的 DC 分量）被保留并参与归一化。
 2. **$1_d$ 方向不再被投影清零**。LN 的 $\hat{x}$ 恒活在 $d-1$ 维零均值子空间；RMSNorm 的输出不在该子空间内，stream 的 DC 分量随训练自由漂移。
 
-为什么丢掉这两样仍够用——RMSNorm 论文的核心论证可以概括为 re-scaling only（[B]）：LN 起实质作用的部分是**尺度控制**而非中心化。§5 的 Jacobian 引理给出机制：梯度行为的旋钮是「归一化输出范数被钉在 $\sqrt{d}$」这一点，RMSNorm 完整保留；DC 分量只是一个固定方向上的内容，下游线性投影可以学着忽略它（把 $W$ 沿 $1_d$ 方向的响应调到近零即可），不需要归一化器代劳。实证上 RMSNorm 与原 LN 训练动态相当、在 Transformer 上无质量损失（[B]），同时省掉一次对 $d$ 的均值归约：LN 需要均值与方差两笔相互依赖的归约（或一遍 Welford 双累积），RMSNorm 只需平方和一笔——FLOPs 上相对 matmul 项可忽略，收益在访存趟数与 kernel 融合（少一个同步点，练习 3 把这笔账算出来）。Llama-3.1（RMSNorm + Pre-LN，[Grattafiori et al., 2024](../references.md)，arXiv:2407.21783，[A]）、OLMo-2（[A]）、Qwen3（[A]）当前全部默认 RMSNorm。
+为什么丢掉这两样仍够用？RMSNorm 论文的核心论证可以概括为 re-scaling only（[B]）：LN 起实质作用的部分是**尺度控制**而非中心化。§5 的 Jacobian 引理给出机制：梯度行为的旋钮是「归一化输出范数被固定在 $\sqrt{d}$」这一点，RMSNorm 完整保留。DC 分量只是一个固定方向上的内容，下游线性投影可以学着忽略它（把 $W$ 沿 $1_d$ 方向的响应调到近零即可），不需要归一化器代劳。实证上 RMSNorm 与原 LN 训练动态相当，在 Transformer 上无质量损失（[B]），同时省掉一次对 $d$ 的均值归约：LN 需要均值与方差两笔相互依赖的归约（或一遍 Welford 双累积），RMSNorm 只需平方和一笔。这笔节省在 FLOPs 上相对 matmul 项可忽略，收益在访存趟数与 kernel 融合（少一个同步点，练习 3 把这笔账算出来）。Llama-3.1（RMSNorm + Pre-LN，[Grattafiori et al., 2024](../references.md)，arXiv:2407.21783，[A]）、OLMo-2（[A]）、Qwen3（[A]）当前全部默认 RMSNorm。
 
 **zero-centered 增益变体**。Gemma 2/3 把增益参数化为「相对恒等映射的偏差」（[Gemma Team, 2024](../references.md)，arXiv:2408.00118，[A]；Qwen3-Next 同式，其 hybrid 结构归 4.4 / 5.3 展开）：
 
@@ -111,7 +111,7 @@ $$
 
 **符号**： $I$： $d \times d$ 单位阵； $\partial \sum f_i / \partial x_l$： $L - l$ 个子层复合 Jacobian 之和。
 
-式 (8) 是 residual 连接的全部魔法：上游梯度 $\partial L / \partial x_L$ 经 $I$ 项**原样**到达第 $l$ 层，子层 Jacobian 的贡献叠加在旁。「梯度不消失」的准确含义不是梯度不变小，而是**没有任何一层能把梯度乘成零**：即使每个子层的 Jacobian 都很小（病态初始化、饱和非线性），恒等通道不经过任何参数， $\partial L / \partial x_l$ 的恒等分量与深度无关。反向信号被拆成「直达项 + 修正项」，层数只改变修正项的个数，不动直达项。
+式 (8) 是 residual 连接的关键所在：上游梯度 $\partial L / \partial x_L$ 经 $I$ 项**原样**到达第 $l$ 层，子层 Jacobian 的贡献叠加在旁。「梯度不消失」的准确含义不是梯度不变小，而是**没有任何一层能把梯度乘成零**：即使每个子层的 Jacobian 都很小（病态初始化、饱和非线性），恒等通道不经过任何参数， $\partial L / \partial x_l$ 的恒等分量与深度无关。反向信号被拆成「直达项 + 修正项」，层数只改变修正项的个数，不动直达项。
 
 初始化时修正项的量级可以估：每个子层 Jacobian 的谱范数受 init scale 控制（2.2 §8 的 0.02 惯例），修正项是若干子层局部 Jacobian 乘积之和，量级远小于 1。训练初期 $\partial L / \partial x_l \approx \partial L / \partial x_L$ 几乎逐字成立——第 1 层与第 $L$ 层拿到几乎相同的上游信号；训练中修正项长大后，式 (8) 变成「直达 + 逐层修正」的混合。这正是 §5.3 末「Pre-LN 各层梯度大致均匀」的另一侧面。式 (8) 还是 2.1 §2 可加展开（式 (2)）的反向版本：前向的「只加不覆盖」让中间态可被直接读出（logit lens，4.7 的前提），反向的恒等项让梯度可被直接送达——同一条恒等通路的两头。
 
@@ -167,7 +167,7 @@ $$
 \left\lVert x^{(L)} \right\rVert^{2} \approx \left\lVert x^{(0)} \right\rVert^{2} + \sum_{i=1}^{2L} \left\lVert f_i \right\rVert^{2} = \Theta\left( L d \right) \qquad (12)
 $$
 
-即 $\lVert x^{(L)} \rVert = \Theta(\sqrt{Ld})$：Pre-LN 最终 LN 的输入范数随深度按 $\sqrt{L}$ 增长（ $2L$ 为子层总数，每层 attention + FFN 各一）。式 (12) 顺带解释了 final norm 为什么必须存在：没有它，末层 stream 范数 $\Theta(\sqrt{Ld})$ 直接乘进 logits，输出尺度随深度漂移；final RMSNorm 把输出头看到的范数钉回 $\sqrt{d}$。
+即 $\lVert x^{(L)} \rVert = \Theta(\sqrt{Ld})$：Pre-LN 最终 LN 的输入范数随深度按 $\sqrt{L}$ 增长（ $2L$ 为子层总数，每层 attention + FFN 各一）。式 (12) 顺带解释了 final norm 为什么必须存在：没有它，末层 stream 范数 $\Theta(\sqrt{Ld})$ 直接乘进 logits，输出尺度随深度漂移；final RMSNorm 把输出头看到的范数拉回 $\sqrt{d}$。
 
 两条行为合起来就是 §5.3 的分叉：Post-LN 的 LN 输入范数被锁在 $\Theta(\sqrt{d})$，引理 (11) 的增益因子为 $O(1)$；Pre-LN 的最终 LN 输入随 $\sqrt{L}$ 变粗，增益因子为 $O(1/\sqrt{L})$。同一引理、两个工作点。
 
@@ -198,9 +198,9 @@ $$
 式 (13) 把 Post-LN 初始化时的训练困难从传闻变成算术。两层后果：
 
 1. **绝对量级**。末层 FFN 梯度上界 $O(d\sqrt{\ln d})$ 不含任何 $1/\sqrt{L}$ 的自动衰减； $d = 4096$ 时这是个大数。训练第一步若直接吃全量学习率 $\eta$，输出侧若干层收到远超健康尺度的参数更新。
-2. **逐层不均**。梯度从输出端到输入端跨若干数量级，单一全局 $\eta$ 无法同时适配：迁就输出端则浅层几乎不学；迁就浅层则输出端第一步就把 LN 的输入统计（ $\mu, \sigma$）打飞，LN 输入分布剧变又反过来改写所有下游梯度——正反馈式发散。
+2. **逐层不均**。梯度从输出端到输入端跨若干数量级，单一全局 $\eta$ 无法同时适配：按输出端来定，浅层几乎不学；按浅层来定，输出端第一步就把 LN 的输入统计（ $\mu, \sigma$）打飞。LN 输入分布剧变又反过来改写所有下游梯度——正反馈式发散。
 
-学习率预热（warmup：前 $w$ 步把 $\eta$ 从 0 线性升至目标值）是对这两条的直接回应：把最初几百步的有效更新压到 LN 统计能适应的尺度内，前向分布稳定后再放开。换个角度说，初始化时逐层安全的学习率本该是 $\eta_l \propto 1 / \lVert \partial \tilde{L} / \partial \theta_l \rVert$——逐层不同、输出端最小；warmup 用一个时变全局 $\eta(t)$ 近似这个逐层条件，因为梯度范数的层间比例随训练推进趋于稳定，几百步之后单一 $\eta$ 重新变得可行。其必要性由式 (13) 的 $L$ 无关上界与逐层不均共同支撑——末层上界是定理、逐层剖面是扩展分析，合起来是结构性结论而非调参玄学：Post-LN 深堆叠不配 warmup 在初始化处即发散（Xiong et al. 实验：深 Post-LN 无 warmup 发散、配 warmup 可训、Pre-LN 无 warmup 直接可训，[B]）。Pre-LN 的 $1/\sqrt{L}$ 自带「越深越保守」的初始化梯度尺度，恒等通路又把各层梯度拉匀，warmup 由此可省——Llama-3.1、Qwen3 的 RMSNorm + Pre-LN 继承的正是这个结论。OLMo 2 走的是输出侧变体：reordered norm， $x \leftarrow x + \mathrm{RMSNorm}(f(x))$——norm 只作用于分支输出、不碰 stream（[Team OLMo et al., 2025](../references.md)，arXiv:2501.00656，[A]，Table 3 与 §3.3.2），恒等通路与式 (8) 对它保留，§5.3 的 Pre-LN 侧结论相应成立。式 (13) 与「近输出端大、向输入端衰减」的剖面是后续章节的公共引用点：P5 各家配方对照、4.4 hybrid 架构的 norm 摆放讨论都回到这里。
+学习率预热（warmup：前 $w$ 步把 $\eta$ 从 0 线性升至目标值）是对这两条的直接回应：把最初几百步的有效更新压到 LN 统计能适应的尺度内，前向分布稳定后再放开。换个角度说，初始化时逐层安全的学习率本该是 $\eta_l \propto 1 / \lVert \partial \tilde{L} / \partial \theta_l \rVert$——逐层不同、输出端最小。warmup 用一个时变全局 $\eta(t)$ 近似这个逐层条件；梯度范数的层间比例随训练推进趋于稳定，几百步之后单一 $\eta$ 重新变得可行。warmup 的必要性由式 (13) 的 $L$ 无关上界与逐层不均共同支撑——末层上界是定理、逐层剖面是扩展分析，合起来是结构性结论，不是调参技巧：Post-LN 深堆叠不配 warmup 在初始化处即发散（Xiong et al. 实验：深 Post-LN 无 warmup 发散、配 warmup 可训、Pre-LN 无 warmup 直接可训，[B]）。Pre-LN 的 $1/\sqrt{L}$ 自带「越深越保守」的初始化梯度尺度，恒等通路又把各层梯度拉匀，warmup 由此可省——Llama-3.1、Qwen3 的 RMSNorm + Pre-LN 继承的正是这个结论。OLMo 2 走的是输出侧变体：reordered norm， $x \leftarrow x + \mathrm{RMSNorm}(f(x))$，norm 只作用于分支输出、不碰 stream（[Team OLMo et al., 2025](../references.md)，arXiv:2501.00656，[A]，Table 3 与 §3.3.2）。恒等通路与式 (8) 对它保留，§5.3 的 Pre-LN 侧结论相应成立。式 (13) 与「近输出端大、向输入端衰减」的剖面是后续章节的公共引用点：P5 各家配方对照、4.4 hybrid 架构的 norm 摆放讨论都回到这里。
 
 ## 6. DeepNorm：把 Post-LN 修到 1000 层
 
@@ -218,7 +218,7 @@ $$
 \frac{2L\left( v^{2} + w^{2} \right)}{\alpha^{2}} = 1 \qquad (14\text{a})
 $$
 
-代入 $v = w = \beta$： $\alpha^{2} = 4L\beta^{2}$，即 $\alpha/\beta = 2\sqrt{L} = \Theta(\sqrt{L})$——残差主干的增益要随深度的平方根压过子层缩放的乘积。绝对尺度再由初始化范数匹配钉死成 $\alpha = (2L)^{1/4}$、 $\beta = (8L)^{-1/4}$；乘积 $\alpha\beta = (1/4)^{1/4} = 1/\sqrt{2}$ 是这组解的**后果**，不是独立的设计条件。效果：Post-LN 的逐层不均与末层大梯度被 $\alpha$（抬高主干、压低子层相对幅度）与 $\beta$（缩小子层初始输出）联手压平，模型更新幅度与深度解耦，无 warmup 稳定训练到 1000 层（[A]）。读法：DeepNorm 把 §5.4 的 warmup 需求从训练日程改写成了架构常数。
+代入 $v = w = \beta$： $\alpha^{2} = 4L\beta^{2}$，即 $\alpha/\beta = 2\sqrt{L} = \Theta(\sqrt{L})$——残差主干的增益要随深度的平方根压过子层缩放的乘积。绝对尺度再由初始化范数匹配确定为 $\alpha = (2L)^{1/4}$、 $\beta = (8L)^{-1/4}$；乘积 $\alpha\beta = (1/4)^{1/4} = 1/\sqrt{2}$ 是这组解的**后果**，不是独立的设计条件。效果：Post-LN 的逐层不均与末层大梯度被 $\alpha$（抬高主干、压低子层相对幅度）与 $\beta$（缩小子层初始输出）联手压平，模型更新幅度与深度解耦，无 warmup 稳定训练到 1000 层（[A]）。读法：DeepNorm 把 §5.4 的 warmup 需求从训练日程改写成了架构常数。
 
 两条路线的分工值得记清：Pre-LN 用恒等通路换梯度均匀，代价是 stream 范数随 $\sqrt{L}$ 增长、需要 final norm 收尾，且子层读到的始终是未重标定的 stream；DeepNorm 保留 Post-LN「每层输出过 LN」的逐层重标定，用 $(\alpha, \beta)$ 把更新压平，代价是两个随深度取的常数与更深的调参耦合。现代开源 LLM 主流选了 Pre-LN 或其输出侧变体（§9 表），DeepNorm 的价值在证明 1000 层量级上两条路都走得通。
 
@@ -246,7 +246,7 @@ $$
 |s| \le \frac{\lVert q \rVert \thinspace \lVert k \rVert}{\sqrt{d_k}} = \sqrt{d_k} \qquad (16)
 $$
 
-式 (16) 的硬封顶是现代变体的**逐 head 口径**（Gemma 3 的粒度；原文形式的上界是 $|g|$ 本身）： $d_k = 128$ 时 logit 幅度被钉死在 11.3 以内。全维变体（OLMo 2）下，拆分后每 head 范数只在平均意义上为 $\sqrt{d_k}$（ $\sum_h \lVert q_h \rVert^{2} = d$），逐 head 最坏界松到 $H\sqrt{d_k}$——封顶仍成立，但按典型值而非逐 head 硬界理解。可学增益会把上界乘上 $\gamma^{2}$，但**增长本身被关进了参数里**：logit 失控从「激活统计的自由漂移」变成「增益向量的学习问题」，尺度小、可监控。
+式 (16) 的硬封顶是现代变体的**逐 head 口径**（Gemma 3 的粒度；原文形式的上界是 $|g|$ 本身）： $d_k = 128$ 时 logit 幅度被锁定在 11.3 以内。全维变体（OLMo 2）下，拆分后每 head 范数只在平均意义上为 $\sqrt{d_k}$（ $\sum_h \lVert q_h \rVert^{2} = d$），逐 head 最坏界松到 $H\sqrt{d_k}$——封顶仍成立，但按典型值而非逐 head 硬界理解。可学增益会把上界乘上 $\gamma^{2}$，但**增长本身被关进了参数里**：logit 失控从「激活统计的自由漂移」变成「增益向量的学习问题」，尺度小、可监控。
 
 失控的速度可以量化：2.3 式 (7) 的口径下 logit 标准差正比于 $\lVert q \rVert \thinspace \lVert k \rVert / \sqrt{d_k}$， $q, k$ 范数同乘 $g$ 则 logit 幅度乘 $g^{2}$。初始化时 std $\approx 1$； $g^{2} \approx \sqrt{d_k} = 11.3$、即 $g \approx 3.4$ 时 std 回到 11 量级——即 2.3 §3.2 未缩放情形（ $\sigma_s \approx 11$、行内最大差距 $\Delta \approx 40$ nat、 $p_{\max} \approx 0.8\text{–}0.94$）的饱和区，梯度再被饱和亏空压制。式 (16) 把这个自由度从激活统计中拿走，饱和回归的唯一通道只剩增益 $\gamma$ 的学习。
 
@@ -274,7 +274,7 @@ Gemma 2 的两处取值：attention logits $c = 50.0$，最终输出 logits $c =
 | Gemma 3 | zero-centered RMSNorm | pre + post | QK-norm（取代 soft-capping） | [A] |
 | GPT-2（活化石对照） | LayerNorm | Pre-LN + 末尾 final LN（GPT-2 §2.2） | 无 | [W] |
 
-GPT-2 一行是老配方的活化石：LayerNorm（非 RMSNorm）+ Pre-LN + 末尾 final LN——GPT-2 §2.2 的原文表述即「LN 移到每个子块的输入端、末尾再加一层 LN」（[Radford et al., 2019](../references.md)，[W]；layer_norm_epsilon = $10^{-5}$，config 口径），结构上正是本章式 (9) 的 Pre-LN 行加 final norm 收尾，在结构上绕开了 Post-LN 路线的 warmup 困境（§5.4）。它与现代配方的差异在 norm 种类（LayerNorm vs RMSNorm）而非摆放；nanoGPT 的教学配方与其逐项对照见 2.8。Qwen3-Next 的 zero-centered norm 与其 hybrid 结构在 4.4 / 5.3 展开。实现锚点：transformers repo 的 `LlamaRMSNorm`（`src/transformers/models/llama/modeling_llama.py`，[HuggingFace, modeling_llama.py](../references.md)，[A]）是式 (5) 的逐行对应。教学版（教学用，非优化实现）与官方实现的对应关系：
+GPT-2 一行是老配方的活化石：LayerNorm（非 RMSNorm）+ Pre-LN + 末尾 final LN。GPT-2 §2.2 的原文表述即「LN 移到每个子块的输入端、末尾再加一层 LN」（[Radford et al., 2019](../references.md)，[W]；layer_norm_epsilon = $10^{-5}$，config 口径）——结构上正是本章式 (9) 的 Pre-LN 行加 final norm 收尾，在结构上绕开了 Post-LN 路线的 warmup 困境（§5.4）。它与现代配方的差异在 norm 种类（LayerNorm vs RMSNorm）而非摆放；nanoGPT 的教学配方与其逐项对照见 2.8。Qwen3-Next 的 zero-centered norm 与其 hybrid 结构在 4.4 / 5.3 展开。实现锚点：transformers repo 的 `LlamaRMSNorm`（`src/transformers/models/llama/modeling_llama.py`，[HuggingFace, modeling_llama.py](../references.md)，[A]）是式 (5) 的逐行对应。教学版（教学用，非优化实现）与官方实现的对应关系：
 
 ```python
 import torch

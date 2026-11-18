@@ -1,6 +1,6 @@
 # 2.6 FFN 与非线性（FFN and Nonlinearities）
 
-> 本章拆 2.1 式 (1) 里的第二个子层：两矩阵 FFN 的公式、逐位置性与 $d \to 4d \to d$ 参数账（ $8d^{2}$ / 层 ≈ 2/3 层参数）；激活函数的三个设计点——ReLU 硬门、GELU 的 $x\thinspace\Phi(x)$ 高斯 CDF 软门、GLU 族的门控乘积——以及 SwiGLU 把 $d_{\mathrm{ff}}$ 从 $4d$ 调到 $(8/3)d$ 的等参数推导；三家 $d = 4096$ 锚点的 intermediate_size 对账（OLMo-2-7B 11008 / Qwen3-8B 12288 / Llama-3.1-8B 14336，回答「为什么 Llama 不是 $4 \times 4096$」）；FFN-as-key-value-memory 分解（ $\mathrm{FFN}(x) = \sum_i v_i \thinspace \sigma(k_i \cdot x)$）与激活稀疏性证据；MoE 预告（→ 4.5）| 前置：1.2（ $2mnk$ FLOPs 口径、每层 FLOPs 分解表）、2.1（ $12Ld^{2}$ 账、逐位置二分法、residual stream 可加展开）、2.3（内积检索读法）| 锚点：Llama-3.1-8B config [A]、OLMo-2-7B config 与 modeling 代码 [A]、Qwen3-8B config [A]、Llama modeling 代码 [A]；Vaswani et al. [A]、Shazeer [B]、Hendrycks & Gimpel [B]、Geva et al. [B]、DeepSeek-V3 [A]
+> 本章拆 2.1 式 (1) 里的第二个子层。先讲两矩阵 FFN 的公式与逐位置性，记 $d \to 4d \to d$ 的参数账（ $8d^{2}$ / 层 ≈ 2/3 层参数）。再讲激活函数的三个设计点：ReLU 硬门、GELU 的 $x\thinspace\Phi(x)$ 高斯 CDF 软门、GLU 族的门控乘积，以及 SwiGLU 把 $d_{\mathrm{ff}}$ 从 $4d$ 调到 $(8/3)d$ 的等参数推导。然后是三家 $d = 4096$ 锚点的 intermediate_size 对账（OLMo-2-7B 11008 / Qwen3-8B 12288 / Llama-3.1-8B 14336），回答「为什么 Llama 不是 $4 \times 4096$」。最后是 FFN-as-key-value-memory 分解（ $\mathrm{FFN}(x) = \sum_i v_i \thinspace \sigma(k_i \cdot x)$）与激活稀疏性证据，外加 MoE 预告（→ 4.5）| 前置：1.2（ $2mnk$ FLOPs 口径、每层 FLOPs 分解表）、2.1（ $12Ld^{2}$ 账、逐位置二分法、residual stream 可加展开）、2.3（内积检索读法）| 锚点：Llama-3.1-8B config [A]、OLMo-2-7B config 与 modeling 代码 [A]、Qwen3-8B config [A]、Llama modeling 代码 [A]；Vaswani et al. [A]、Shazeer [B]、Hendrycks & Gimpel [B]、Geva et al. [B]、DeepSeek-V3 [A]
 
 ## 1. FFN 本体：逐位置两层 MLP
 
@@ -16,7 +16,7 @@ $$
 
 层内分工也在这里定型：attention 子层对 value 做的是凸组合（2.3 式 (2)），跨位置混合，但逐位置的产出只有加权平均一种形态；FFN 给每个位置一次独立的非线性变换，是层内逐 token 表达能力的来源。体量账 2.1 §4 已算过： $W_1$、 $W_2$ 合计 $2\thinspace d\thinspace d_{\mathrm{ff}}$，取 $d_{\mathrm{ff}} = 4d$ 即每层 $8d^{2}$，占标准形层参数 $12d^{2}$ 的 $2/3$——整机参数的大头不在 attention 而在 FFN。这 $2/3$ 买了什么，§4 的记忆视角给出一个有证据的回答。
 
-计算与内存侧的体量同样由 $d_{\mathrm{ff}}$ 决定：per-token FFN FLOPs $= 4\thinspace d\thinspace d_{\mathrm{ff}}$（标准形下 $16d^{2}$；SwiGLU 三矩阵为 $6\thinspace d\thinspace d_{\mathrm{ff}}$，见 1.2 §7）；激活账上 SwiGLU 每层每 token 要存门路、值路、乘积三份 $d_{\mathrm{ff}}$ 维向量（ $3\thinspace d_{\mathrm{ff}}$ 个元素，Llama-3.1-8B 即 43008 个，见 1.2 §8）——FFN 中间量是反向传播前显存里的大头之一，也是激活检查点（training 维度）要重的账。
+计算与内存侧的体量同样由 $d_{\mathrm{ff}}$ 决定：per-token FFN FLOPs $= 4\thinspace d\thinspace d_{\mathrm{ff}}$（标准形下 $16d^{2}$；SwiGLU 三矩阵为 $6\thinspace d\thinspace d_{\mathrm{ff}}$，见 1.2 §7）；激活账上 SwiGLU 每层每 token 要存门路、值路、乘积三份 $d_{\mathrm{ff}}$ 维向量（ $3\thinspace d_{\mathrm{ff}}$ 个元素，Llama-3.1-8B 即 43008 个，见 1.2 §8）。FFN 中间量是反向传播前显存里的大头之一，也是激活检查点（training 维度）要权衡的那笔账。
 
 shape 走读（标准形）：
 
@@ -88,7 +88,7 @@ $$
 \mathrm{FFN}_{\mathrm{GLU}}(x) = \big(\mathrm{act}(xW) \odot xV\big)\thinspace W_2 \qquad (5)
 $$
 
-**符号**： $W, V \in \mathbb{R}^{d \times d_{\mathrm{ff}}'}$：门路与值路投影； $\odot$：逐元素乘； $\mathrm{act}$：门函数，论文逐变体对照 sigmoid（GLU 原形）、ReLU（ReGLU）、GELU（GEGLU）、 $`\mathrm{Swish}_1`$（SwiGLU）； $W_2 \in \mathbb{R}^{d_{\mathrm{ff}}' \times d}$； $d_{\mathrm{ff}}'$：三矩阵结构的中间维，与两矩阵 $d_{\mathrm{ff}}$ 的关系由式 (8) 钉死。矩阵从两个变三个。
+**符号**： $W, V \in \mathbb{R}^{d \times d_{\mathrm{ff}}'}$：门路与值路投影； $\odot$：逐元素乘； $\mathrm{act}$：门函数，论文逐变体对照 sigmoid（GLU 原形）、ReLU（ReGLU）、GELU（GEGLU）、 $`\mathrm{Swish}_1`$（SwiGLU）； $W_2 \in \mathbb{R}^{d_{\mathrm{ff}}' \times d}$； $d_{\mathrm{ff}}'$：三矩阵结构的中间维，与两矩阵 $d_{\mathrm{ff}}$ 的关系由式 (8) 确定。矩阵从两个变三个。
 
 数据流：
 
@@ -121,7 +121,7 @@ $$
 
 代数字走一遍式 (7)： $g_i = 2$、 $v_i = 3$ 时 $\sigma(g_i) \approx 0.88$，值路梯度系数 0.88（近乎放行），门路梯度系数 $\sigma'(2) \times 3 \approx 0.105 \times 3 \approx 0.31$； $g_i = -2$、 $v_i = 3$ 时门近乎关闭（ $\sigma(-2) \approx 0.12$），值路梯度被压到 0.12，门路梯度仍是 $\sigma'(-2) \times 3 \approx 0.31$——门关着，门自己照样学。ReLU-FFN 在同样的负预激活处唯一的一路全黑。
 
-**rank-1 二次型**。取 $\mathrm{act}$ 为恒等的极限：隐单元 $i$ 的输出是 $(k_i \cdot x)(u_i \cdot x) = x^{\top} (k_i u_i^{\top})\thinspace x$—— $x$ 的一个 rank-1 二次型。GLU 隐单元就是带软门的二次型；两矩阵 FFN 的隐单元 $\sigma(k \cdot x)$ 只是单方向的 ridge 函数。门控把逐层的逐位置函数类从「ridge 之和」扩到「带门二次型之和」，不靠加深度。
+**rank-1 二次型**。取 $\mathrm{act}$ 为恒等的极限：隐单元 $i$ 的输出是 $(k_i \cdot x)(u_i \cdot x) = x^{\top} (k_i u_i^{\top})\thinspace x$—— $x$ 的一个 rank-1 二次型。GLU 隐单元就是带软门的二次型；两矩阵 FFN 的隐单元 $\sigma(k \cdot x)$ 只是一个 ridge 函数（ridge function，输出只随输入在 key 方向上的投影变化）。门控把逐层的逐位置函数类从「ridge 之和」扩到「带门二次型之和」，不靠加深度。
 
 ### 3.2 等参数推导： $d_{\mathrm{ff}}$ 从 $4d$ 到 $(8/3)d$
 
@@ -132,7 +132,7 @@ $$
 | 两矩阵，中间维 $d_{\mathrm{ff}}$ | $2\thinspace d\thinspace d_{\mathrm{ff}}$ | $4\thinspace d\thinspace d_{\mathrm{ff}}$ |
 | 三矩阵，中间维 $d_{\mathrm{ff}}'$ | $3\thinspace d\thinspace d_{\mathrm{ff}}'$ | $6\thinspace d\thinspace d_{\mathrm{ff}}'$ |
 
-参数与 FLOPs 同为矩阵元素数的线性函数，一个等式同时钉死两笔账：
+参数与 FLOPs 同为矩阵元素数的线性函数，一个等式同时确定两笔账：
 
 $$
 3\thinspace d\thinspace d_{\mathrm{ff}}' = 2\thinspace d\thinspace d_{\mathrm{ff}} \hspace{5mu}\Longrightarrow\hspace{5mu} d_{\mathrm{ff}}' = \frac{2}{3}\thinspace d_{\mathrm{ff}}, \qquad d_{\mathrm{ff}} = 4d \hspace{5mu}\Longrightarrow\hspace{5mu} d_{\mathrm{ff}}' = \frac{8}{3}\thinspace d \qquad (8)
@@ -159,7 +159,7 @@ $d = 4096$ 家族的真实 intermediate_size（config 条目均 [A]）：
 
 **OLMo-2-7B 就是等参数规则的落地**。 $11008 = 43 \times 256$ 恰是 $\ge 10922.67$ 的最小 256 倍数，FFN 占比回到标准形的 $2/3$（论文 [Team OLMo et al., 2025](../references.md)，arXiv:2501.00656，[A]；config [A]）。
 
-**Llama-3.1-8B 的 14336 = 3.5d，比等参数值宽 31.25%**（ $14336 = (8/3)d \times 1.3125$）。「为什么更宽」不写在任何 config 里，但预算账可以直接读：GQA 4:1 把 attention 从 $4d^{2}$ 省到 $2.5d^{2}$，FFN 从 $8d^{2}$ 加到 $10.5d^{2}$——省下的 $1.5d^{2}$ 全部补贴 FFN 还倒贴 $1d^{2}$，净 $+1d^{2}$ / 层，层参数 $13Ld^{2}$（2.1 §4 的账）。而 $4 \times 4096 = 16384$ 被三家共同否决：它是把两矩阵时代的宽度原样搬进三矩阵结构——若 Llama 取 $d_{\mathrm{ff}} = 16384$，FFN 将是 $3 \times d \times 4d = 12d^{2}$ / 层，在现状上再加 $1.5d^{2}$。等参数规则是起点不是铁律：它回答「换三矩阵后中间维收窄到多少」，不回答「总预算该给 FFN 多少」——后一个问题各家取值不同（2.69d / 3d / 3.5d），但表达形式一致：全部 256 倍数，全部在 $8/3$ 基线之上。这条 $8/3$ 规则是后续章节的复用接口：4.5 的 MoE expert 尺寸与 Part 5 的逐家对账都以它为基准。
+**Llama-3.1-8B 的 14336 = 3.5d，比等参数值宽 31.25%**（ $14336 = (8/3)d \times 1.3125$）。「为什么更宽」不写在任何 config 里，但预算账可以直接读：GQA 4:1 把 attention 从 $4d^{2}$ 省到 $2.5d^{2}$，FFN 从 $8d^{2}$ 加到 $10.5d^{2}$。省下的 $1.5d^{2}$ 全部补贴 FFN 还倒贴 $1d^{2}$，净 $+1d^{2}$ / 层，层参数 $13Ld^{2}$（2.1 §4 的账）。而 $4 \times 4096 = 16384$ 被三家共同否决：它是把两矩阵时代的宽度原样搬进三矩阵结构。若 Llama 取 $d_{\mathrm{ff}} = 16384$，FFN 将是 $3 \times d \times 4d = 12d^{2}$ / 层，在现状上再加 $1.5d^{2}$。等参数规则是起点不是铁律：它回答「换三矩阵后中间维收窄到多少」，不回答「总预算该给 FFN 多少」。后一个问题各家取值不同（2.69d / 3d / 3.5d），但表达形式一致：全部 256 倍数，全部在 $8/3$ 基线之上。这条 $8/3$ 规则是后续章节的复用接口：4.5 的 MoE expert 尺寸与 Part 5 的逐家对账都以它为基准。
 
 整机口径再放大一层：Llama-3.1-8B 全模型 FFN 参数 $= 32 \times 176160768 \approx 5.64 \times 10^{9}$，占总参数 $8.03 \times 10^{9}$ 的 70.2%；OLMo-2-7B 为 $32 \times 135266304 \approx 4.33 \times 10^{9}$，占 $7.30 \times 10^{9}$ 的 59.3%（两家总参数见 2.1 §4 表）——标准形的「2/3」在 Llama 这类宽 FFN 配方上实际更接近 70%，在贴 $8/3$ 规则、MHA 不打折的 OLMo 上反而低于 $2/3$。
 
@@ -230,7 +230,7 @@ $$
 
 ## 5. 从稀疏激活到 MoE：预告（→ 4.5）
 
-§4.2 第一条证据有一个直接的工程读法：若每位置只有一小撮条目被取出，dense FFN「每 token 为全表 $d_{\mathrm{ff}}$ 付 FLOPs」就是把算力花在没点火的条目上。MoE（Mixture-of-Experts）把这个观察做成架构：单层 FFN 复制成 $n$ 份（expert），每位置由 router 选 top-$`k`$ 个激活——总记忆容量乘 $n$，per-token FLOPs 只乘 $k$。1.3 已在 scaling 曲线上登记过这笔 $N_{\mathrm{act}}$ / $N_{\mathrm{tot}}$ 分离的账；实现端的极端值是 DeepSeek-V3：每层 256 个 routed expert + 1 个共享 expert、每 token 激活 8 个、前 3 层仍为 dense FFN，671B 总参数 / 37B 激活（[DeepSeek-V3 config](../references.md)，[A]；[DeepSeek-AI, 2024](../references.md)，arXiv:2412.19437，[A]）。对照式 (8) 的「等参数换结构」，MoE 是同一思想在 FFN 维度上的稀疏化升级：等 FLOPs 换容量。本章交给 4.5 的接口有两件：式 (8) 的等参数口径（单个 expert 的尺寸按 $8/3$ 规则起算），与式 (10) 的系数视角（router 的 top-$`k`$ 选择相当于把 $c_i(x)$ 的软稀疏改成条目粒度的硬稀疏）。路由公式、负载均衡与细粒度 expert 的推导见 4.5。
+§4.2 第一条证据有一个直接的工程读法：若每位置只有一小撮条目被取出，dense FFN「每 token 为全表 $d_{\mathrm{ff}}$ 付 FLOPs」就是把算力花在没点火的条目上。MoE（Mixture-of-Experts）把这个观察做成架构：单层 FFN 复制成 $n$ 份（expert），每位置由 router 选 top-$`k`$ 个激活——总记忆容量乘 $n$，per-token FLOPs 只乘 $k$。1.3 已在 scaling 曲线上登记过这笔 $N_{\mathrm{act}}$ / $N_{\mathrm{tot}}$ 分离的账；实现端的极端值是 DeepSeek-V3：每层 256 个 routed expert + 1 个共享 expert、每 token 激活 8 个、前 3 层仍为 dense FFN，671B 总参数 / 37B 激活（[DeepSeek-V3 config](../references.md)，[A]；[DeepSeek-AI, 2024](../references.md)，arXiv:2412.19437，[A]）。对照式 (8) 的「等参数换结构」，MoE 是同一思想在 FFN 维度上的稀疏化升级：等 FLOPs 换容量。本章交给 4.5 的接口有两件：一是式 (8) 的等参数口径（单个 expert 的尺寸按 $8/3$ 规则起算），二是式 (10) 的系数视角（router 的 top-$`k`$ 选择相当于把 $c_i(x)$ 的软稀疏改成条目粒度的硬稀疏）。路由公式、负载均衡与细粒度 expert 的推导见 4.5。
 
 ## 总结
 
@@ -239,7 +239,7 @@ $$
 | 两矩阵 FFN | $\mathrm{FFN}(x) = \sigma(xW_1)W_2$，式 (1) | 逐位置； $d_{\mathrm{ff}} = 4d$ → $8d^{2}$/层 ≈ 2/3 层参数；现代配方无 bias |
 | GELU | $x\thinspace\Phi(x)$，式 (2)(3) | $\mathrm{Bernoulli}(\Phi(x))$ 随机门的期望；唯一驻点 $`x^{*} \approx -0.75`$； $`\approx \mathrm{Swish}_{1.702}`$；GPT-2 gelu_new = tanh 近似 [W] |
 | SwiGLU | $`(\mathrm{Swish}_1(xW) \odot xV)W_2`$，式 (5)(6) | 门控三作用：数据依赖开关、双路梯度（式 (7)）、rank-1 二次型；同参同算力优于 ReLU / GELU 基线 [B] |
-| 等参数规则 | $3d\thinspace d_{\mathrm{ff}}' = 2d\thinspace d_{\mathrm{ff}}$ ⟹ $d_{\mathrm{ff}}' = 8d/3$，式 (8) | $d = 4096$ → 10922.67；参数与 FLOPs 同一条件钉死；4.5 / Part 5 复用 |
+| 等参数规则 | $3d\thinspace d_{\mathrm{ff}}' = 2d\thinspace d_{\mathrm{ff}}$ ⟹ $d_{\mathrm{ff}}' = 8d/3$，式 (8) | $d = 4096$ → 10922.67；参数与 FLOPs 同一条件确定；4.5 / Part 5 复用 |
 | 三家对账 | OLMo-2 11008（≈2.69d，43×256）/ Qwen3 12288（3d）/ Llama-3.1 14336（3.5d） | FFN 占层 67% / 78% / 81%；规则是起点非铁律；16384 = 两矩阵宽度直搬，被共同否决 |
 | FFN = KV 记忆 | $\mathrm{FFN}(x) = \sum_i \sigma(k_i \cdot x)\thinspace v_i$，式 (9)(10) | $d_{\mathrm{ff}} \times L$ 条参数化记忆（Llama-3.1-8B 458752 条）；稀疏激活、模式分层、value→词表分布 [B] |
 | MoE 预告 | $n$ expert、top-$`k`$ 路由 | 等 FLOPs 换容量；DeepSeek-V3：256+1、top-8、671B/37B [A] → 4.5 |
