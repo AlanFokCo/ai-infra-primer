@@ -1,6 +1,6 @@
 # 3.2 Encoder-only 与 Encoder-Decoder（Encoder-only and Encoder-Decoder Architectures）
 
-> 本章回答两个问题：双向 attention 堆出的 encoder 形态能做什么、不能做什么（不能自回归生成——给完整证明）；把「读」与「写」拆成两个栈的 encoder-decoder 形态靠什么结构接起来（cross-attention），以及这个分工在什么任务上占优 | 前置：1.1（ $(x', M, \ell)$ 三元组、链式分解）、2.2（weight tying）、2.3（attention 公式）、2.4（mask 数学、KV cache 账）、3.1（objective 与 corruption 方案） | 锚点：ModernBERT-base/large config [A]、ELECTRA 官方 repo [A]、openai/whisper repo [A]；BERT [A]、RoBERTa [A]、ALBERT [A]、ELECTRA [A]、T5 [A]、Whisper [A]
+> 本章回答两个问题。第一，双向 attention 堆出的 encoder 形态能做什么、不能做什么——它不能自回归生成，本章给完整证明。第二，把「读」与「写」拆成两个栈的 encoder-decoder 形态靠什么结构接起来（cross-attention），这个分工又在什么任务上占优 | 前置：1.1（ $(x', M, \ell)$ 三元组、链式分解）、2.2（weight tying）、2.3（attention 公式）、2.4（mask 数学、KV cache 账）、3.1（objective 与 corruption 方案） | 锚点：ModernBERT-base/large config [A]、ELECTRA 官方 repo [A]、openai/whisper repo [A]；BERT [A]、RoBERTa [A]、ALBERT [A]、ELECTRA [A]、T5 [A]、Whisper [A]
 
 ## 1. Encoder-only：M ≡ 0 的形态定义
 
@@ -12,7 +12,7 @@ $$
 
 **符号**： $M \in \lbrace0, -\infty\rbrace^{T \times T}$：attention mask，加在 softmax 前的 score 上（2.4 式 (1)）； $V(i)$：位置 $i$ 的可见集。式 (1) 是 2.4 §2 对照表里 MLM 那一行的架构侧读法。
 
-每个位置看见全序列，attention 是唯一跨位置混合信息的算子（2.1 §1），其余组件（RMSNorm/LayerNorm、FFN、残差加）与 decoder 栈逐字同构——**encoder-only 与 decoder-only 的架构差异只在 $M$ 这一个对象上**。差异的后果却很大：这个形态的产品不是「下一 token 的分布」，而是整序列表征矩阵
+每个位置看见全序列，attention 是唯一跨位置混合信息的算子（2.1 §1），其余组件（RMSNorm/LayerNorm、FFN、残差加）与 decoder 栈逐字同构。**encoder-only 与 decoder-only 的架构差异只在 $M$ 这一个对象上**。后果却很大：这个形态的产品不是「下一 token 的分布」，而是整序列表征矩阵
 
 $$
 H^{(L)} = \mathrm{Enc}_\theta(x') \in \mathbb{R}^{T \times d} \qquad (2)
@@ -20,7 +20,7 @@ $$
 
 **符号**： $x'$：实际输入序列（可能经腐蚀，3.1）； $L$：层数； $d$：隐藏维。每一行 $h_t^{(L)}$ 都是全序列的函数——这个依赖方向是 §2 的全部麻烦的来源，也是 §3 全部接口的资产。
 
-输入格式上还有两个沿用至今的约定：序列前置特殊 token [CLS]、句对之间与末尾插 [SEP]（BERT 的输入模板，词表为 30522 的 WordPiece）。这两个特殊 token 不携带词汇内容，其作用分别是序列级读出位（§3）与句对边界标记（§4）。
+输入格式上还有两个沿用至今的约定：序列前置特殊 token [CLS]，句对之间与末尾插 [SEP]（BERT 的输入模板，词表为 30522 的 WordPiece）。这两个特殊 token 不携带词汇内容，作用分别是序列级读出位（§3）与句对边界标记（§4）。
 
 ## 2. 能力边界：无法自回归生成的证明
 
@@ -62,7 +62,7 @@ $$
 \bar{h} = \frac{1}{|\mathcal{I}|} \sum_{t \in \mathcal{I}} h_t^{(L)} \qquad (5)
 $$
 
-**符号**： $\mathcal{I}$：有效 token 下标集（剔除 padding 与特殊 token）。检索/句向量的默认读出；与 [CLS] 的差别是没有专属训练信号，表示质量全由 MLM 间接塑形。
+**符号**： $\mathcal{I}$：有效 token 下标集（剔除 padding 与特殊 token）。检索/句向量的默认读出；与 [CLS] 的差别是没有专属训练信号，表示质量全由 MLM 间接塑造。
 
 **token-level head（逐位置）**。每个位置独立分类：
 
@@ -84,11 +84,11 @@ $$
 
 **符号**： $P(c | \cdot)$：式 (4) 的二分类特例（ $C$ = 2）。BERT 总 loss 为 $L_{\mathrm{MLM}} + L_{\mathrm{NSP}}$ 等权相加。
 
-失败机制是任务混淆：IsNext/NotNext 的分类面上纠缠着两个信号——主题相关性（topic）与连贯性（coherence）。随机负样本几乎必然主题跳变，于是「主题是否匹配」单独就够把分类准确率推高：模型走低阻路径， $h_{[\mathrm{CLS}]}$ 学成主题检测器，连贯性信号几乎不进梯度。代理任务过易，目标信号被替代信号吸干。
+失败机制是任务混淆：IsNext/NotNext 的分类面上纠缠着两个信号——主题相关性（topic）与连贯性（coherence）。随机负样本几乎必然主题跳变，于是「主题是否匹配」单独就够把分类准确率推高。模型走低阻路径： $h_{[\mathrm{CLS}]}$ 学成主题检测器，连贯性信号几乎不进梯度。代理任务过易，目标信号被替代信号吸干。
 
-证据是消融而不是论证：RoBERTa（[Liu et al., 2019](../references.md)，arXiv:1907.11692，[A]）把输入格式与 NSP 分四档对照——SEGMENT-PAIR 与 SENTENCE-PAIR 保留 NSP，FULL-SENTENCES（可跨文档边界的长序列块）与 DOC-SENTENCES（单文档内的完整句子块，不跨文档）去掉 NSP——论文结论口径为去掉 NSP 后下游整体持平或略升；逐指标看并非单调，例如 SEGMENT-PAIR 换到 SENTENCE-PAIR 时 SQuAD1.1 从 90.4 降到 88.7（这两档都保留 NSP），账面提升主要来自输入格式的更换而非 NSP 的移除本身。结论：NSP 的净贡献为零或负，BERT 预训练的收益全部在 MLM 一侧，RoBERTa 因此只训 MLM。
+证据是消融而不是论证。RoBERTa（[Liu et al., 2019](../references.md)，arXiv:1907.11692，[A]）把输入格式与 NSP 分四档对照：SEGMENT-PAIR 与 SENTENCE-PAIR 保留 NSP；FULL-SENTENCES（可跨文档边界的长序列块）与 DOC-SENTENCES（单文档内的完整句子块，不跨文档）去掉 NSP。论文的结论口径：去掉 NSP 后下游整体持平或略升。逐指标看并非单调——例如 SEGMENT-PAIR 换到 SENTENCE-PAIR 时 SQuAD1.1 从 90.4 降到 88.7（这两档都保留 NSP），账面提升主要来自输入格式的更换而非 NSP 的移除本身。结论：NSP 的净贡献为零或负，BERT 预训练的收益全部在 MLM 一侧，RoBERTa 因此只训 MLM。
 
-机制修正的反面构造来自 ALBERT：把负样本换成「同一文档中连续两句交换顺序」（sentence-order prediction, SOP）——主题一致性由构造保证，分类面上只剩连贯性信号（[Lan et al., 2019](../references.md)，arXiv:1909.11942，[A]）。SOP 的存在本身就是对「任务混淆」诊断的确认：把易信号从负样本里剔除，任务才迫使模型学目标信号。在 3.1 的 $(x', M, \ell)$ 框架里 NSP 是第四个对象——它不动三元组中的任何一个，是挂在读出接口上的辅助 loss；RoBERTa 的消融说明辅助 loss 不是免费的，设计错了会污染表示。
+机制修正的反面构造来自 ALBERT：把负样本换成「同一文档中连续两句交换顺序」（sentence-order prediction, SOP）。主题一致性由构造保证，分类面上只剩连贯性信号（[Lan et al., 2019](../references.md)，arXiv:1909.11942，[A]）。SOP 的存在本身就是对「任务混淆」诊断的确认：把易信号从负样本里剔除，任务才迫使模型学目标信号。在 3.1 的 $(x', M, \ell)$ 框架里，NSP 是第四个对象：它不动三元组中的任何一个，是挂在读出接口上的辅助 loss。RoBERTa 的消融说明辅助 loss 不是免费的，设计错了会污染表示。
 
 ## 5. ALBERT：参数效率的两个杠杆
 
@@ -102,7 +102,7 @@ $$
 
 **符号**： $E$：完整 embedding 矩阵； $E_1$：词表到瓶颈维的投影； $E_2$：瓶颈维到隐藏维的投影； $e$：瓶颈维（ $e \ll d$）；查表变为 $h_t^{(0)} = (E_1[x_t]) E_2$。
 
-参数量从 $Vd$ 变 $Ve + ed$。代入 $e$ = 128： $Vd \approx 23.4 \times 10^{6}$， $Ve + ed \approx 3.91 \times 10^{6} + 0.098 \times 10^{6} \approx 4.0 \times 10^{6}$——单项削减约 83%。机制理由：one-hot 查表是「身份 $\to$ 词义」的一次映射，中间没有上下文混合，rank 需求远低于 $d$（对照 1.1 §9 的 rank 视角）；分解把「上下文无关的词义空间」（ $e$ 维）与「上下文混合的表示空间」（ $d$ 维）解耦，各定各的容量。
+参数量从 $Vd$ 变 $Ve + ed$。代入 $e$ = 128： $Vd \approx 23.4 \times 10^{6}$， $Ve + ed \approx 3.91 \times 10^{6} + 0.098 \times 10^{6} \approx 4.0 \times 10^{6}$——单项削减约 83%。机制理由有两层。第一，one-hot 查表是「身份 $\to$ 词义」的一次映射，中间没有上下文混合，rank 需求远低于 $d$（对照 1.1 §9 的 rank 视角）。第二，分解把「上下文无关的词义空间」（ $e$ 维）与「上下文混合的表示空间」（ $d$ 维）解耦，各定各的容量。
 
 **杠杆二：跨层参数共享（cross-layer parameter sharing）。** $L$ 层共享同一份参数，同一算子迭代 $L$ 次：
 
@@ -114,7 +114,7 @@ $$
 
 层参数从 $L \cdot n_{\mathrm{layer}}$ 降到 $n_{\mathrm{layer}}$。代入字段：每层 attention 四矩阵 $4d^{2}$ 加 FFN $2 d \thinspace d_{\mathrm{ff}}$ 共 $12 d^{2} \approx 7.1 \times 10^{6}$（忽略 LN 与 bias），12 层不共享为 $84.9 \times 10^{6}$、共享后 $7.1 \times 10^{6}$。两杠杆叠加，同构型总参数从约 $1.1 \times 10^{8}$（BERT-base 公开口径 110M）压到约 $1.2 \times 10^{7}$ 量级。
 
-代价写在数学里：迭代同一算子 $L$ 次是不动点式的受限函数族——第 3 层与第 9 层被迫是同一个变换，逐层特化（不同深度分工）被牺牲。ALBERT 的取舍是把省下的参数预算换更大的 $d$：论文的结论方向是参数效率（同下游性能下参数少约一个量级），不是同参数下的表达力提升。这个机制换个方向看也熟悉——共享参数沿深度迭代，与 RNN 沿时间共享参数是同一种参数复用，只是复用轴换了。
+代价写在数学里：迭代同一算子 $L$ 次是不动点式的受限函数族——第 3 层与第 9 层被迫是同一个变换，逐层特化（不同深度分工）被牺牲。ALBERT 的取舍是把省下的参数预算换更大的 $d$。论文的结论方向是参数效率（同下游性能下参数少约一个量级），不是同参数下的表达力提升。这个机制换个方向看也熟悉：共享参数沿深度迭代，与 RNN 沿时间共享参数是同一种参数复用，只是复用轴换了。
 
 ## 6. ELECTRA：把监督铺满全序列
 
@@ -128,7 +128,7 @@ $$
 
 **符号**： $\mathcal{M}$：被腐蚀的位置集； $\tilde{x}$：腐蚀输入； $q_G$：generator 的 MLM 分布； $`x^{c}_t \sim q_G(\cdot | \tilde{x})`$（ $t \in \mathcal{M}$）； $y_t$：替换指示， $`x^{c}_t \neq x_t`$ 时为 1、否则为 0； $D(h_t) = \mathrm{sigmoid}(w^{\top} h_t)$：判别器输出「被替换」的概率。总 loss 为 $L_G + \lambda L_D$，论文取 $\lambda$ = 50——最终交付的模型是 $D$，训练信号以它为主， $G$ 只是供负例的脚手架。
 
-与 GAN 的界线要划清：式 (10) 里的采样 $`x^{c}_t \sim q_G`$ 不可微， $L_D$ 的梯度到不了 $G$； $G$ 只被自己的 MLM loss 训练，两个网络各训各的——这不是 min-max 对抗，而是「用一个会进步的噪声源给判别器供负例」。收益恰好来自 $G$ 会进步：训练早期负例离谱（ $D$ 轻松学会粗边界），随 $G$ 变好负例越来越微妙， $D$ 的决策边界被迫贴近真实数据分布的细结构——负例难度自适应，且不需要对抗训练的任何稳定性技巧。 $G$ 刻意做小（ELECTRA-base 口径 $G$ 宽 256、 $D$ 宽 768）并与 $D$ 共享 token embedding： $G$ 太准会让 $y$ 几乎全 0、 $D$ 没信号，太弱则负例过易学不到细表示。
+与 GAN 的界线要划清。式 (10) 里的采样 $`x^{c}_t \sim q_G`$ 不可微， $L_D$ 的梯度到不了 $G$； $G$ 只被自己的 MLM loss 训练。两个网络各训各的——这不是 min-max 对抗，而是「用一个会进步的噪声源给判别器供负例」。收益恰好来自 $G$ 会进步：训练早期负例离谱（ $D$ 轻松学会粗边界）；随 $G$ 变好，负例越来越微妙， $D$ 的决策边界被迫贴近真实数据分布的细结构。负例难度自适应，且不需要对抗训练的任何稳定性技巧。 $G$ 刻意做小（ELECTRA-base 口径 $G$ 宽 256、 $D$ 宽 768）并与 $D$ 共享 token embedding： $G$ 太准会让 $y$ 几乎全 0、 $D$ 没信号，太弱则负例过易学不到细表示。
 
 样本效率的账在一行里： $L_D$ 的支撑集是全部 $T$ 个位置， $L_{\mathrm{MLM}}$ 是 $0.15 T$——同等 token 吞吐下，直接受训的位置数多 $1 / 0.15 \approx 6.7$ 倍。单看一个位置，二分类的监督（约 1 bit 级）远弱于 $V$ 类分类；密度的 6.7 倍把总量扳回。论文的同算力对照（固定 FLOPs 比下游分）显示 ELECTRA 一致高于同规模 MLM 系——监督铺满全序列是该收益的机制解释。
 
@@ -192,13 +192,13 @@ T5（[Raffel et al., 2019](../references.md)，arXiv:1910.10683，[A]）是这�
 - 摘要：文档固定，输出短、decode 步少，编码质量主导质量上限——双向栈的信息密度直接兑现。
 - 语音识别（ASR）：输入是声学特征帧序列、输出是文本——「读」与「写」连模态都不同，分工无法合并进一个栈。
 
-Whisper（[Radford et al., 2022](../references.md)，arXiv:2212.04356，[A]；官方 repo [openai/whisper](../references.md)，[A]）是活例：encoder 双向吃 mel 频谱帧（定长 30 秒窗），decoder 因果地吐文本 token 与任务控制 token（语言标记、转写/翻译、时间戳）。cross-attention 在这里承担显式的模态桥接：每个文本位置的 query 向全部声学帧的 $K^{\mathrm{enc}}, V^{\mathrm{enc}}$ 取证——式 (12)(13) 一字不改，只是 $H^{\mathrm{enc}}$ 的每一行来自声学帧而非文本 token。前端、多任务格式与 CTC 路线的对照走读在 10.2；本章只取结构例证：ASR 把「输入固定、输出变化」推到极致（输入连续、输出离散、长度对齐事先未知），enc-dec 仍是标准答案——这是该形态没有随 decoder-only 浪潮消失的机制原因。
+Whisper（[Radford et al., 2022](../references.md)，arXiv:2212.04356，[A]；官方 repo [openai/whisper](../references.md)，[A]）是活例：encoder 双向吃 mel 频谱帧（定长 30 秒窗），decoder 因果地吐文本 token 与任务控制 token（语言标记、转写/翻译、时间戳）。cross-attention 在这里承担显式的模态桥接：每个文本位置的 query 向全部声学帧的 $K^{\mathrm{enc}}, V^{\mathrm{enc}}$ 取证。式 (12)(13) 一字不改，只是 $H^{\mathrm{enc}}$ 的每一行来自声学帧而非文本 token。前端、多任务格式与 CTC 路线的对照走读在 10.2，本章只取结构例证。ASR 把「输入固定、输出变化」推到极致：输入连续、输出离散、长度对齐事先未知。enc-dec 仍是标准答案——这是该形态没有随 decoder-only 浪潮消失的机制原因。
 
 ## 10. ModernBERT：encoder 的现代化形态
 
 BERT 的架构字段停在 2018 年的零件上（可学绝对位置 embedding、每层全 global attention、padding 批处理）。ModernBERT（[Warner et al., 2024](../references.md)，arXiv:2412.13663，[A]）保持 encoder-only 形态与 MLM objective 不变，把零件全部换成 Part 2 的现代件。以下字段取自 config（[ModernBERT-base/large config 与官方 repo](../references.md)，[A]，hf-mirror 实测 2026-11-11）：base 为 22 层、hidden 768、12 heads、intermediate 1152、vocab 50368、ctx 8192、`tie_word_embeddings=true`、`attention_bias=false`；large 为 28 层、hidden 1024、16 heads、intermediate 2624。三个机制逐一看。
 
-**(1) RoPE 双 base。** config 里 `position_embedding_type="absolute"` 是残留字段——实际位置编码是 RoPE（`rope_theta` 字段为证），读 config 勿被误导。且 global 层与 local 层配不同 base：`global_rope_theta=160000`、`local_rope_theta=10000`。按 2.5 的波长账：base 越大、低频分量的波长越长、远程相对位置的相位差越缓——要服务 8192 全程依赖的 global 层配大 base，总窗宽 128（每侧 64）的 local 层用小 base 保高频分辨。同一模型内位置编码按层职责分配，这是 2.5 的零件在 encoder 侧的精细化用法。
+**(1) RoPE 双 base。** config 里 `position_embedding_type="absolute"` 是残留字段，实际位置编码是 RoPE（`rope_theta` 字段为证）——读 config 勿被误导。global 层与 local 层配不同 base：`global_rope_theta=160000`、`local_rope_theta=10000`。按 2.5 的波长账：base 越大，低频分量的波长越长，远程相对位置的相位差越缓。要服务 8192 全程依赖的 global 层，配大 base；总窗宽 128（每侧 64）的 local 层用小 base 保高频分辨。同一模型内位置编码按层职责分配，这是 2.5 的零件在 encoder 侧的精细化用法。
 
 **(2) local/global 交替。** `global_attn_every_n_layers=3`：每 3 层一个 full attention（式 (1) 全可见），其余层为滑窗 local（`local_attention=128`，口径为总窗宽 128 token——论文原文 "a 128 token, local sliding window attention"；HF `modeling_modernbert.py` 中 `sliding_window = local_attention // 2`，即每位置见左右各 64）。BERT 时代每层都付 $O(T^{2})$ 的 global 账；ctx 拉到 8192 后 attention 项 $2LT^{2}d$（1.2 式 (6)）不再可忽略。交替结构是 sparse attention 谱系（4.2）在 encoder 侧的实例——SWA 堆叠感受野 $L \cdot w$ 的推导同样适用，global 层周期性把局部信息混回全局；与 decoder 侧 Gemma 3 的 5:1 local:global（4.2）同族，比例不同。
 
