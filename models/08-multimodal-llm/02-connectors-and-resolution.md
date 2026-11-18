@@ -1,10 +1,10 @@
 # 8.2 Connector 与分辨率处理（Connectors and Resolution）
 
-> connector 的全部问题压成三个自由度——维度对齐 $d_v \to d_{llm}$、token 数变换 $N \to M$、表征翻译；本章按 token 数的组织方式展开四族 connector（等长 MLP / 定长瓶颈 Q-Former 与 Perceiver resampler / 规则压缩 pixel shuffle / 软查表），随后把分辨率问题算成账：固定 336 的信息损失（小字识别）、AnyRes tiling 的网格选择公式、Qwen2-VL naive dynamic resolution 的动态 token 数、**M-RoPE $(t,h,w)$ 三元组完整推导**（本章核心：文本三值同值、图像 $t$ 恒定 + $(h,w)$ 网格、视频 $t$ 递增，rotary 频段按 [16,24,24] 切三段）、Pixtral 免 tiling，收口于 connector 选型决策表 | 前置：2.5（RoPE 主命题式 (13)、频率 schedule 式 (16)、两实现约定）、6.1（patchify $N = HW/p^{2}$、RoPE-2D 式 (7)(8)、NaViT packing）、8.1（组件链记号 $z_{img}/\phi/v/M$、token 预算账） | 锚点：transformers Qwen2.5-VL modeling（`get_rope_index`、`mrope_section [16,24,24]`）[A]、OpenGVLab/InternVL（`pixel_shuffle` 实测）[A]、salesforce/LAVIS（`blip2_qformer.py`）[A]；BLIP-2 [A]、LLaVA-1.5 [A]、Qwen2-VL [A]、Qwen2.5-VL [A]、LLaVA-OneVision [A]、Pixtral [A]、InternVL [A]、Ovis [A]、MiniCPM-V [A]、Flamingo [B]
+> connector 的全部问题可以压成三个自由度：维度对齐 $d_v \to d_{llm}$、token 数变换 $N \to M$、表征翻译。本章按 token 数的组织方式展开四族 connector（等长 MLP / 定长瓶颈 Q-Former 与 Perceiver resampler / 规则压缩 pixel shuffle / 软查表），随后把分辨率问题算成账：固定 336 会丢多少信息（小字识别）、AnyRes tiling 怎么选网格、Qwen2-VL naive dynamic resolution 怎么让 token 数随分辨率变动。本章的核心是 **M-RoPE $(t,h,w)$ 三元组的完整推导**（文本三值同值、图像 $t$ 恒定 + $(h,w)$ 网格、视频 $t$ 递增，rotary 频段按 [16,24,24] 切三段），外加 Pixtral 的免 tiling 路线，最后落到 connector 选型决策表 | 前置：2.5（RoPE 主命题式 (13)、频率 schedule 式 (16)、两实现约定）、6.1（patchify $N = HW/p^{2}$、RoPE-2D 式 (7)(8)、NaViT packing）、8.1（组件链记号 $z_{img}/\phi/v/M$、token 预算账） | 锚点：transformers Qwen2.5-VL modeling（`get_rope_index`、`mrope_section [16,24,24]`）[A]、OpenGVLab/InternVL（`pixel_shuffle` 实测）[A]、salesforce/LAVIS（`blip2_qformer.py`）[A]；BLIP-2 [A]、LLaVA-1.5 [A]、Qwen2-VL [A]、Qwen2.5-VL [A]、LLaVA-OneVision [A]、Pixtral [A]、InternVL [A]、Ovis [A]、MiniCPM-V [A]、Flamingo [B]
 
 ## 1. 问题与契约：connector 的三个自由度
 
-8.1 的 token 账在结尾处埋着本章的全部问题：一张 336×336 的图经 CLIP ViT-L/14 出来是 576 个 token，AnyRes 切图后涨到 2880，一分钟视频按 256 token/帧算是 15K 级——LLM 的 context 是硬预算（Qwen2.5-VL-7B 给到 128000 已是旗舰口径，[Qwen2.5-VL-7B config](../references.md)，[A]），视觉 token 的「数量、形态、坐标」三件事必须在进 LLM 之前解决。解决场所就是 connector $\phi$。契约（8.1 记号，本章严格执行）：
+8.1 的 token 账在结尾处埋着本章的全部问题。一张 336×336 的图经 CLIP ViT-L/14 出来是 576 个 token，AnyRes 切图后涨到 2880，一分钟视频按 256 token/帧算是 15K 级。LLM 的 context 是硬预算（Qwen2.5-VL-7B 给到 128000 已是旗舰口径，[Qwen2.5-VL-7B config](../references.md)，[A]），所以视觉 token 的「数量、形态、坐标」三件事必须在进 LLM 之前解决。解决场所就是 connector $\phi$。契约（8.1 记号，本章严格执行）：
 
 $$
 v = \phi(z_{img}), \qquad z_{img} \in \mathbb{R}^{N \times d_v}, \qquad v \in \mathbb{R}^{M \times d_{llm}} \qquad (1)
@@ -12,7 +12,7 @@ $$
 
 **符号**： $z_{img}$：vision encoder 输出的 patch 特征序列（进 LLM 的一般只取 patch tokens，[CLS] 逐家标注）； $N = HW/p^{2}$：视觉 token 数（P6 约定沿用）； $d_v$：视觉塔宽度； $v$：拼进 LLM 输入序列的视觉段； $M$：每图视觉 token 数； $d_{llm}$：LLM stream 宽度。
 
-式 (1) 拆开的三个自由度：(i) **维度对齐** $d_v \to d_{llm}$——任何 connector 都要做，哪怕只是一个线性层；(ii) **token 数变换** $N \to M$—— $M$ 可以等于 $N$（等长映射）、被规则压缩（ $M = N \cdot r^{2}$）、被压成定长（ $M = B$ 与 $N$ 无关）；(iii) **表征翻译**——视觉特征分布与 LLM embedding 空间的对齐，这一步没有显式公式，由训练目标完成（8.3 展开）。本章谱系按自由度 (ii) 的组织方式分四族，这也是读全部 VLM connector 的统一坐标：
+式 (1) 拆开是三个自由度。第一，**维度对齐** $d_v \to d_{llm}$：任何 connector 都要做，哪怕只是一个线性层。第二，**token 数变换** $N \to M$： $M$ 可以等于 $N$（等长映射），可以被规则压缩（ $M = N \cdot r^{2}$），也可以被压成定长（ $M = B$，与 $N$ 无关）。第三，**表征翻译**：视觉特征分布与 LLM embedding 空间的对齐，这一步没有显式公式，由训练目标完成（8.3 展开）。本章的谱系按第二个自由度的组织方式分成四族，这也是读全部 VLM connector 的统一坐标：
 
 | 族 | $M$ 的形态 | 代表系统 | 详节 |
 | --- | --- | --- | --- |
@@ -33,15 +33,15 @@ $$
 
 **符号**： $z_i$： $z_{img}$ 第 $i$ 行（单个 patch 的 $d_v$ 维特征）； $v_i \in \mathbb{R}^{d_{llm}}$：进 LLM 的第 $i$ 个视觉 token；GELU 为逐元素非线性（2.6）。线性 projector 是式 (2) 砍掉第一层： $v_i = W z_i + b$。
 
-参数账直接读：式 (2) 共 $d_v d_{llm} + d_{llm}^{2}$ 个参数——注意现代组合里 $d_{llm} > d_v$， $d_{llm}^{2}$ 项占大头，简写 $2\thinspace d_v d_{llm}$ 只在 $d_{llm} \approx d_v$ 时成立。代一档真实宽度—— $d_v$ = 1024（ViT-L/14）、 $d_{llm}$ = 4096—— $1024 \times 4096 + 4096^{2} \approx 21$ M，相对 7B 级 LLM 本体仍是千分位级。等长映射 $M = N$：CLIP-336 网格的 576 个 token 原数进 LLM。
+参数账可以直接读出来：式 (2) 共 $d_v d_{llm} + d_{llm}^{2}$ 个参数。注意现代组合里 $d_{llm} > d_v$， $d_{llm}^{2}$ 项占大头，简写 $2\thinspace d_v d_{llm}$ 只在 $d_{llm} \approx d_v$ 时成立。代一档真实宽度： $d_v$ = 1024（ViT-L/14）、 $d_{llm}$ = 4096，得 $1024 \times 4096 + 4096^{2} \approx 21$ M，相对 7B 级 LLM 本体仍是千分位级。等长映射 $M = N$：CLIP-336 网格的 576 个 token 原数进 LLM。
 
-LLaVA-1.5 论文给了两点此后成为默认口径的陈述（[Liu et al., 2023](../references.md)，[A]）：(a) 线性 projector 换成 2 层 MLP 是 improved baseline 的有效组成（正文陈述，非消融表）；(b) Q-Former 类 resampler 方案的训练语料在数亿级，在其约 1.2M 的数据规模（caption 预训练 558K 条 + 指令微调 665K 条）下两层 MLP 已够（limitations 讨论口径，非表内消融行）。结论 (b) 的机制论证放到 §3.4：Q-Former 的 32-token 瓶颈要求先把「从 576 个 patch 里选哪些信息」这个选择函数学进约 1.9 亿参数，而 BLIP-2 把这个函数训出来用了 129M 图文对——与 1.2M 差两个数量级。容量与数据不匹配时，瓶颈不是压缩而是纯损失。**小数据下 MLP 够、Q-Former 不划算**，其反面同样成立：数据到 1 亿级、且要求冻结双塔不动预训练资产时，Q-Former 的账翻正（§3.4）。
+LLaVA-1.5 论文给了两点此后成为默认口径的陈述（[Liu et al., 2023](../references.md)，[A]）。第一，线性 projector 换成 2 层 MLP 是 improved baseline 的有效组成（正文陈述，非消融表）。第二，Q-Former 类 resampler 方案的训练语料在数亿级，在其约 1.2M 的数据规模（caption 预训练 558K 条 + 指令微调 665K 条）下，两层 MLP 已够（limitations 讨论口径，非表内消融行）。第二点的机制论证放到 §3.4：Q-Former 的 32-token 瓶颈要求先把「从 576 个 patch 里选哪些信息」这个选择函数学进约 1.9 亿参数，而 BLIP-2 把这个函数训出来用了 129M 图文对，与 1.2M 差两个数量级。容量与数据不匹配时，瓶颈不是压缩而是纯损失。**小数据下 MLP 够、Q-Former 不划算**；其反面同样成立——数据到 1 亿级、且要求冻结双塔不动预训练资产时，Q-Former 的账翻正（§3.4）。
 
-等长族的一个变体是软查表。Ovis 把 connector 做成一张 visual embedding table：连续 patch 特征先经 visual tokenizer 映成「视觉词表」上的概率分布，再按分布对可学 embedding 表取期望——与文本侧的查表对齐在结构层完成，故称 structural embedding alignment（[Lu et al., 2024](../references.md)，arXiv:2405.20797，[A]；官方 repo 现为 ATH-MaaS/Ovis，[Ovis repo](../references.md)，[A]）。token 数仍是 $M = N$，变的是对齐机制：从「线性层学映射」换成「分布匹配一张可学表」。
+等长族还有一个变体：软查表。Ovis 把 connector 做成一张 visual embedding table：连续 patch 特征先经 visual tokenizer 映成「视觉词表」上的概率分布，再按分布对可学 embedding 表取期望。这样一来，与文本侧查表的对齐在结构层就完成了，故称 structural embedding alignment（[Lu et al., 2024](../references.md)，arXiv:2405.20797，[A]；官方 repo 现为 ATH-MaaS/Ovis，[Ovis repo](../references.md)，[A]）。token 数仍是 $M = N$，变的是对齐机制：从「线性层学映射」换成「分布匹配一张可学表」。
 
 ## 3. Q-Former（BLIP-2）： $B$ 个可学 query 的瓶颈与三目标
 
-Q-Former 是定长瓶颈族的标准件（[Li et al., 2023](../references.md)，arXiv:2301.12597，[A]）：无论输入网格多少 token，输出恒为 $B$ 个（论文主档 $B$ = 32，各 768 维）。32 ≪ 576 意味着它不是映射而是**取舍**——取舍函数从哪来、靠什么目标训出来，是本节的推导主线。代码走读锚点：salesforce/LAVIS 的 `lavis/models/blip2_models/blip2_qformer.py`（[LAVIS repo](../references.md)，[A]）。
+Q-Former 是定长瓶颈族的标准件（[Li et al., 2023](../references.md)，arXiv:2301.12597，[A]）：无论输入网格多少 token，输出恒为 $B$ 个（论文主档 $B$ = 32，各 768 维）。32 ≪ 576 意味着它不是映射而是**取舍**：取舍函数从哪来、靠什么目标训出来，是本节的推导主线。代码走读锚点：salesforce/LAVIS 的 `lavis/models/blip2_models/blip2_qformer.py`（[LAVIS repo](../references.md)，[A]）。
 
 ### 3.1 结构：共享 self-attention 的双子模块
 
@@ -63,7 +63,7 @@ z_img [N × d_v]（冻结 ViT，N = 576）        U [T × 768]（文本 token）
    Q_out [32 × 768] ──（stage 2）线性投影──► [32 × d_llm] 拼进 LLM 前缀
 ```
 
-「文本永远看不到图像特征」是结构事实：图像信息进入文本侧的唯一通道是 queries 这个 32×768 的瓶颈——这就是 Q-Former 作为接入点 (c)（8.1 三接入点）的形态：Q-Former 输出 tokens 走 input-level 拼接，但瓶颈在 connector 内部已经完成。
+「文本永远看不到图像特征」是结构事实：图像信息进入文本侧的唯一通道是 queries 这个 32×768 的瓶颈。这也是 Q-Former 作为接入点 (c)（8.1 三接入点）的形态：Q-Former 的输出 token 走 input-level 拼接，但瓶颈在 connector 内部已经完成。
 
 ### 3.2 三目标的注意力 mask
 
@@ -103,7 +103,7 @@ $$
 \ell_i^{(k)} = \mathrm{Linear}\negthinspace\left( z_{q,i}^{(k)} \right), \qquad p_i = \sigma\negthinspace\left( \frac{1}{B} \sum_{k=1}^{B} \ell_i^{(k)} \right), \qquad L_{ITM} = -\frac{1}{E} \sum_{i=1}^{E} \Big[ y_i \log p_i + (1 - y_i) \log (1 - p_i) \Big] \qquad (6)
 $$
 
-**符号**： $y_i \in \lbrace0, 1\rbrace$：配对标签； $\sigma(u) = 1/(1+e^{-u})$。ITM 是逐对二分类（与 6.1 式 (14) 的 sigmoid 读法同族），负样本按 ITC 相似度做 hard negative 挖掘（论文口径）：难负例迫使 queries 编码细节而非全局 gist——这是对瓶颈的「防偷懒」约束。
+**符号**： $y_i \in \lbrace0, 1\rbrace$：配对标签； $\sigma(u) = 1/(1+e^{-u})$。ITM 是逐对二分类（与 6.1 式 (14) 的 sigmoid 读法同族），负样本按 ITC 相似度做 hard negative 挖掘（论文口径）。难负例迫使 queries 编码细节而非全局 gist——没有这一层压力，瓶颈只靠粗粒度特征就能应付匹配。
 
 **ITG（image-grounded text generation）**。mask 换生成档（queries 互见、不见文本；文本见全部 queries、文本内部 causal），文本侧按 LM 目标生成 caption：
 
@@ -122,11 +122,11 @@ $$
 
 两阶段的分工对应 §1 的自由度：stage 1 学自由度 (ii)——把 $N$ 选成 $B$ 的取舍函数；stage 2 学自由度 (i)(iii)——把这 $B$ 个表征翻译进冻结 LLM 的 embedding 空间。LLM 全程冻结：BLIP-2 的设计目标是「不动预训练资产」，代价就是取舍函数必须由 connector 独力承担。
 
-现在把 §2 的两点口径收回到机制上。Q-Former 的可训容量约 1.9 亿参数（queries + 12 层共享 self-attn + 隔层 cross-attn + FFN，论文口径），要学到的函数是「从 576 个 patch 表征里提取哪 32 个」——这个选择函数没有任何结构先验，queries 的初值对输入内容无感知，全部靠 ITC/ITM/ITG 的梯度从 129M 对里塑造。对照 MLP（式 (2)）：约 $10^{7}$ 参数、逐 token 结构固定、学的只是空间对齐——自由度 (ii) 干脆不做（ $M = N$），把取舍问题推给下游 LLM 用 attention 自行解决。LLaVA-1.5 的 1.2M 条数据训不动前者、足够训后者，其 discussion 口径（Q-Former 类方案训练语料在数亿级、1.2M 规模下两层 MLP 已够，[Liu et al., 2023](../references.md)，[A]）就是这条容量-数据匹配账的论文侧印证。**两族没有绝对优劣，只有「数据规模 × 是否允许动 LLM」坐标系下的相对划算**——这条坐标系会原样出现在 §11 的决策表里。
+现在把 §2 的两点口径收回到机制上。Q-Former 的可训容量约 1.9 亿参数（queries + 12 层共享 self-attn + 隔层 cross-attn + FFN，论文口径），要学的函数是「从 576 个 patch 表征里提取哪 32 个」。这个选择函数没有任何结构先验：queries 的初值对输入内容无感知，全部靠 ITC/ITM/ITG 的梯度从 129M 对里塑造。对照 MLP（式 (2)）：约 $10^{7}$ 参数、逐 token 结构固定，学的只是空间对齐；自由度 (ii) 干脆不做（ $M = N$），把取舍问题推给下游 LLM 用 attention 自行解决。LLaVA-1.5 的 1.2M 条数据训不动前者，但足够训后者；其 discussion 口径（Q-Former 类方案训练语料在数亿级、1.2M 规模下两层 MLP 已够，[Liu et al., 2023](../references.md)，[A]）就是这条容量-数据匹配账的论文侧印证。**两族没有绝对优劣，只有「数据规模 × 是否允许动 LLM」坐标系下的相对划算**——这条坐标系会原样出现在 §11 的决策表里。
 
 ## 4. Perceiver resampler（Flamingo）：变长进、定长出
 
-Flamingo 的 resampler 与 Q-Former 同属定长瓶颈族，差别在结构更简：没有文本子模块、没有三目标，只有一组可学 latent $X \in \mathbb{R}^{B \times d}$ 对视觉特征做 cross-attention（[Alayrac et al., 2022](../references.md)，arXiv:2204.14198，[B]——DeepMind 未开源，公式引论文，代码对照开放复现 open_flamingo，[open_flamingo repo](../references.md)，[A]）：
+Flamingo 的 resampler 与 Q-Former 同属定长瓶颈族，差别在结构更简：没有文本子模块、没有三目标，只有一组可学 latent $X \in \mathbb{R}^{B \times d}$ 对视觉特征做 cross-attention。出处是 Flamingo 论文（[Alayrac et al., 2022](../references.md)，arXiv:2204.14198，[B]）；DeepMind 未开源，公式引论文，代码对照开放复现 open_flamingo（[open_flamingo repo](../references.md)，[A]）：
 
 $$
 V = \mathrm{softmax}\negthinspace\left( \frac{(X W^{Q})\thinspace (z_{img} W^{K})^{\top}}{\sqrt{d_k}} \right) (z_{img} W^{V}) \in \mathbb{R}^{B \times d} \qquad (8)
@@ -166,13 +166,13 @@ z_img: 24×24 × d_v  （N = 576）
 v: 144 × d_llm      （M = 576/4 = 144）
 ```
 
-两条性质把 pixel shuffle 与瓶颈族分开。**其一，拼接步无损**：式 (9) 只是指标重排，信息没有任何丢弃；取舍全部集中在投影 $W$ 上——当 $d_{llm} \ge 4 d_v$ 时存在满秩 $W$ 使整步无损，实际配置 $d_{llm} < 4 d_v$（如 3584 < 4096）时 $W$ 是一个学出来的低维瓶颈。**其二，合并谁由结构写死**：2×2 邻域是固定先验，不像 Q-Former 的 32 个 query 要从数据里学选择函数——这就是它在 academic 预算下好训的原因，参数与 MLP 同量级（ $4 d_v d_{llm}$，约 $10^{7}$ 级）。成本收益记在 LLM 端：视觉段 token 数 ×1/4，attention 二次项 ×1/16，逐 token 线性项 ×1/4。
+两条性质把 pixel shuffle 与瓶颈族分开。**其一，拼接步无损**：式 (9) 只是指标重排，信息没有任何丢弃；取舍全部集中在投影 $W$ 上——当 $d_{llm} \ge 4 d_v$ 时存在满秩 $W$ 使整步无损，实际配置 $d_{llm} < 4 d_v$（如 3584 < 4096）时 $W$ 是一个学出来的低维瓶颈。**其二，合并谁由结构写死**：2×2 邻域是固定先验，不像 Q-Former 的 32 个 query 要从数据里学选择函数。这就是它在 academic 预算下好训的原因：参数与 MLP 同量级（ $4 d_v d_{llm}$，约 $10^{7}$ 级）。成本收益记在 LLM 端：视觉段 token 数 ×1/4，attention 二次项 ×1/16，逐 token 线性项 ×1/4。
 
-用法实测两家：InternVL 官方代码即 `pixel_shuffle(scale_factor = downsample_ratio = 0.5)`、`num_image_token = (H/p)^{2} · r^{2}`（`internvl_chat` 的 modeling 文件，[InternVL repo](../references.md)，[A]；论文 [Chen et al., 2023](../references.md)，arXiv:2312.14238，[A]）；Qwen 系同一族操作叫 spatial merge——`spatial_merge_size = 2`，等效 patch 从 14 变 28（[Qwen2.5-VL-7B config](../references.md)，[A]）。Qwen 把这个压缩与动态分辨率绑在一起用，见 §8。
+用法实测两家。InternVL 官方代码就是 `pixel_shuffle(scale_factor = downsample_ratio = 0.5)`、`num_image_token = (H/p)^{2} · r^{2}`（`internvl_chat` 的 modeling 文件，[InternVL repo](../references.md)，[A]；论文 [Chen et al., 2023](../references.md)，arXiv:2312.14238，[A]）。Qwen 系的同一族操作叫 spatial merge：`spatial_merge_size = 2`，等效 patch 从 14 变 28（[Qwen2.5-VL-7B config](../references.md)，[A]）。Qwen 把这个压缩与动态分辨率绑在一起用，见 §8。
 
 ### 5.2 token merging（相似度合并）：机制 outline
 
-规则重排之外是内容自适应路线：按特征相似度把冗余 token 两两合并（典型做法：把 token 分两组、按 key 的余弦相似度做二部配对、合并最相似的若干对、特征取平均），压缩率可以逐层调节。两点机制注记：(a) 合并是内容决定的——信息量低的区域（天空、空白背景）被并得多，规则重排做不到这一点；(b) 代价是网格规则性被破坏——合并后 token 不再有整齐的 $(h, w)$ 坐标，与 2D RoPE / M-RoPE 这类按网格坐标旋转的位置编码相性最差。本条无收录条目，只给机制 outline；当代主流 VLM 的实际选择（InternVL、Qwen 系、LLaVA 系）全部落在规则重排一侧，与 (b) 的兼容性账一致。
+规则重排之外是内容自适应路线：按特征相似度把冗余 token 两两合并（典型做法：把 token 分两组、按 key 的余弦相似度做二部配对、合并最相似的若干对、特征取平均），压缩率可以逐层调节。两点机制注记。第一，合并是内容决定的：信息量低的区域（天空、空白背景）被并得多，规则重排做不到这一点。第二，代价是网格规则性被破坏：合并后的 token 不再有整齐的 $(h, w)$ 坐标，与 2D RoPE / M-RoPE 这类按网格坐标旋转的位置编码兼容性最差。本条无收录条目，只给机制 outline；当代主流 VLM 的实际选择（InternVL、Qwen 系、LLaVA 系）全部落在规则重排一侧，与第二点的兼容性账一致。
 
 ## 6. 固定分辨率的信息损失账
 
@@ -215,7 +215,7 @@ k 块局部 tokens（raster 序拼接，行间可学 newline 向量分隔）+ �
 共 (k+1)·576 tokens 进 LLM
 ```
 
-**位置编码处理**。每块内部用视觉塔原生的 24×24 位置嵌入——同一张表对全部块复用，坐标是块内局部坐标，ViT 侧不需要任何改造；**跨块布局不进 ViT 的位置系统**：块 token 在 LLM 序列里按 raster 序排布，行间以可学的 image-newline 向量分隔（LLaVA-NeXT 实现口径，[LLaVA-NeXT repo](../references.md)，[A]），块间相对位置由 LLM 自己的 1D 位置编码按序列序承载。全局上下文由缩略图那份 576 tokens 携带。一句话：2D 结构在 ViT 内局部承载、全局布局交给 LLM 的 1D 序——这套工程答案的软肋是 LLM 侧的 1D RoPE 对「第 600 个 token 属于右上块第 3 行」这类 2D 事实毫无显式先验，全靠学。§9 的 M-RoPE 正是把 2D（乃至 3D）坐标系统一收进 LLM 侧位置编码的正式解。
+**位置编码处理**。每块内部用视觉塔原生的 24×24 位置嵌入：同一张表对全部块复用，坐标是块内局部坐标，ViT 侧不需要任何改造。**跨块布局不进 ViT 的位置系统**：块 token 在 LLM 序列里按 raster 序排布，行间以可学的 image-newline 向量分隔（LLaVA-NeXT 实现口径，[LLaVA-NeXT repo](../references.md)，[A]），块间相对位置由 LLM 自己的 1D 位置编码按序列序承载。全局上下文由缩略图那份 576 tokens 携带。一句话：2D 结构在 ViT 内局部承载，全局布局交给 LLM 的 1D 序。这套工程答案的软肋是：LLM 侧的 1D RoPE 对「第 600 个 token 属于右上块第 3 行」这类 2D 事实毫无显式先验，全靠学。§9 的 M-RoPE 正是把 2D（乃至 3D）坐标系统一收进 LLM 侧位置编码的正式解。
 
 成本账两笔：视觉塔前向 × $(k+1)$；LLM prefill 的视觉段长度 $(k+1) \cdot 576$，attention 二次项随之平方放大。AnyRes 的分辨率增益是用 token 预算买的——这是 §11 决策表里「灵活性」一列的价格。
 
@@ -229,7 +229,7 @@ $$
 
 **符号**： $p$ = 14：patch 边长；三步依次为 patchify、变长 ViT（2D RoPE）、spatial merge 2×2——末步即 §5.1 的 $r$ = 0.5 档，等效 patch 28，故 $M = (H/28) \cdot (W/28)$。最终进 LLM 的视觉 token 数 $M$ 与像素数成正比——分辨率就是算力旋钮，预算由实现侧的 min/max pixel 上下界夹住（超出界先等比缩放到界内）。
 
-这个方案成立依赖三个配套：(a) **视觉塔必须吃变长序列**——Qwen2-VL 的 ViT 用 2D RoPE（6.1 式 (7)(8) 的轴向旋转）替换 learned 位置表，任意网格坐标直接代入，不需要 6.1 §3.1 那种表插值；(b) **视觉塔的 $O(N^{2})$ 要有对策**——Qwen2.5-VL 的视觉塔 32 层里大部分是 window attention（窗口 112 px，即 8×8 patch），只在第 [7, 15, 23, 31] 层做全局 attention（[Qwen2.5-VL-7B config](../references.md)，[A]）；(c) **LLM 侧要有一个能同时装下「文本位置、图像 2D 网格、视频时间」的位置编码**——这就是 §9 的 M-RoPE，也是整条管线的落点。
+这个方案成立依赖三个配套。第一，**视觉塔必须吃变长序列**：Qwen2-VL 的 ViT 用 2D RoPE（6.1 式 (7)(8) 的轴向旋转）替换 learned 位置表，任意网格坐标直接代入，不需要 6.1 §3.1 那种表插值。第二，**视觉塔的 $O(N^{2})$ 要有对策**：Qwen2.5-VL 的视觉塔 32 层里大部分是 window attention（窗口 112 px，即 8×8 patch），只在第 [7, 15, 23, 31] 层做全局 attention（[Qwen2.5-VL-7B config](../references.md)，[A]）。第三，**LLM 侧要有一个能同时装下「文本位置、图像 2D 网格、视频时间」的位置编码**——这就是 §9 的 M-RoPE，也是整条管线的落点。
 
 三方案账面对照（同一张 1344×672 图，宽高比 2:1）：
 
@@ -242,7 +242,7 @@ $$
 
 ## 9. M-RoPE： $(t, h, w)$ 三元组分解（本章核心）
 
-2.5 式 (13) 的 RoPE 把相对位置钉在 score 上，但 position id 是一个标量——一维。§7 末指出了 1D 序承载 2D 布局的先天缺陷；Qwen2-VL 的答法是把 position id 扩成三元组 $(t, h, w)$，把时间、行、列三个轴各自挂到 rotary 频段的一段上（[Wang et al., 2024](../references.md)，arXiv:2409.12191，[A]；Qwen2.5-VL 沿用并扩展，[Bai et al., 2025](../references.md)，arXiv:2502.13923，[A]）。走读锚点：transformers 的 `modeling_qwen2_5_vl.py`——`get_rope_index` 的三元组构造与 `mrope_section` 的频段切分（[transformers Qwen2.5-VL modeling](../references.md)，[A]）。
+2.5 式 (13) 的 RoPE 把相对位置固定在 score 上，但 position id 是一个标量，只有一维。§7 末指出了 1D 序承载 2D 布局的先天缺陷；Qwen2-VL 的答法是把 position id 扩成三元组 $(t, h, w)$，把时间、行、列三个轴各自挂到 rotary 频段的一段上（[Wang et al., 2024](../references.md)，arXiv:2409.12191，[A]；Qwen2.5-VL 沿用并扩展，[Bai et al., 2025](../references.md)，arXiv:2502.13923，[A]）。走读锚点：transformers 的 `modeling_qwen2_5_vl.py`，具体是 `get_rope_index` 的三元组构造与 `mrope_section` 的频段切分（[transformers Qwen2.5-VL modeling](../references.md)，[A]）。
 
 ### 9.1 三元组构造规则
 
@@ -335,17 +335,17 @@ def get_rope_index(segments):
 
 ## 10. Pixtral：native resolution——2D RoPE 进塔、免 tiling
 
-Pixtral 把 Qwen2-VL 的思路再推一步：连 spatial merge 都不要，视觉塔原生吃任意分辨率（[Agrawal et al., 2024](../references.md)，arXiv:2410.07073，[A]；HF 权重 mistralai/Pixtral-12B-2409）。机制两件套：(a) 视觉塔内用 2D RoPE（6.1 式 (7)(8) 的轴向分解原样落在 ViT block 里），任意 $(h, w)$ 网格坐标直接代入，无表可查也就没有表要插值；(b) 免 tiling——不切块、不拼缩略图， $p$ = 16 直接 patchify：
+Pixtral 把 Qwen2-VL 的思路再推一步：连 spatial merge 都不要，视觉塔原生吃任意分辨率（[Agrawal et al., 2024](../references.md)，arXiv:2410.07073，[A]；HF 权重 mistralai/Pixtral-12B-2409）。机制两件套。第一，视觉塔内用 2D RoPE（6.1 式 (7)(8) 的轴向分解原样落在 ViT block 里），任意 $(h, w)$ 网格坐标直接代入——无表可查，也就没有表要插值。第二，免 tiling：不切块、不拼缩略图， $p$ = 16 直接 patchify：
 
 $$
 M = \frac{HW}{p^{2}} = \frac{HW}{256} \qquad (18)
 $$
 
-§8 的对照表里 Pixtral 是 3528 tokens——三方案中最贵，但每一笔都花在原生分辨率细节上，没有 AnyRes 缩略图与切块之间的信息重叠冗余。变长序列的批量工程沿 6.1 §6 的 NaViT packing 路线（分块对角 mask，式 (11) 的构造）。与 Qwen2-VL 的对照构成一个干净的轴：两者都要「任意 $H \times W$ 进塔」，差别只在 token 汇率——Pixtral 不合并（ $p^{2}$ = 256/token），Qwen 系 merge 后 784/token，后者把 LLM 端预算压到前者的约 1/3（1152 / 3528），代价是 28 px 等效 patch 内的高频先得在视觉塔里被读出来。端侧坐标：MiniCPM-V 面向端侧预算，走「高分辨率切片 + resampler 定长压缩」的组合路线把 $M$ 压到最小档（[Yao et al., 2024](../references.md)，arXiv:2408.01800，[A]；[MiniCPM-V repo](../references.md)，[A]）——同一个决策问题在端侧预算下的取点。
+§8 的对照表里 Pixtral 是 3528 tokens——三方案中最贵，但每一笔都花在原生分辨率细节上，没有 AnyRes 缩略图与切块之间的信息重叠冗余。变长序列的批量工程沿 6.1 §6 的 NaViT packing 路线（分块对角 mask，式 (11) 的构造）。与 Qwen2-VL 的对照构成一个干净的轴：两者都要「任意 $H \times W$ 进塔」，差别只在 token 汇率。Pixtral 不合并（ $p^{2}$ = 256/token），Qwen 系 merge 后 784/token，后者把 LLM 端预算压到前者的约 1/3（1152 / 3528），代价是 28 px 等效 patch 内的高频先得在视觉塔里被读出来。端侧坐标：MiniCPM-V 面向端侧预算，走「高分辨率切片 + resampler 定长压缩」的组合路线把 $M$ 压到最小档（[Yao et al., 2024](../references.md)，arXiv:2408.01800，[A]；[MiniCPM-V repo](../references.md)，[A]）——这是同一个决策问题在端侧预算下的取点。
 
 ## 11. connector 选型决策表
 
-全章收口成一张表。三列判据对应三条账： $M$ 决定 LLM 端 token 预算；灵活性决定分辨率/视频输入的支持方式；训练成本决定需要的图文数据量级。
+全章的内容收进一张表。三列判据对应三条账： $M$ 决定 LLM 端 token 预算；灵活性决定分辨率/视频输入的支持方式；训练成本决定需要的图文数据量级。
 
 | connector | $M$（每图） | 分辨率灵活性 | 参数量级 | 数据需求 | 代表系统 |
 | --- | --- | --- | --- | --- | --- |
