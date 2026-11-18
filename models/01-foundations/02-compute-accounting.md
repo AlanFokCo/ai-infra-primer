@@ -1,6 +1,6 @@
 # 1.2 参数、计算、内存的账（Accounting for Parameters, Compute, and Memory）
 
-> 本章把 config.json 里的几个整数变成训练与推理的 FLOPs 账和字节账：每 token 前向 ≈ 2N、训练总量 C ≈ 6ND、参数 bf16 = 2N bytes，外加激活与 KV cache 两笔随序列长度涨的账 | 前置：1.1（ $f_\theta$ 、 $d$ 、 $V$ 、 $T$ 记号） | 锚点：Llama-3.1-8B config [A]、DeepSeek-V3 config [A]、Kaplan et al. [B]、DeepSeek-V3 技术报告 [A]
+> 本章教你把 config.json 里的几个整数变成两本账：训练与推理各要多少 FLOPs、多少字节。骨干是三个公式——每 token 前向 ≈ 2N、训练总量 C ≈ 6ND、参数 bf16 = 2N bytes；外加激活与 KV cache 两笔随序列长度涨的账 | 前置：1.1（ $f_\theta$ 、 $d$ 、 $V$ 、 $T$ 记号） | 锚点：Llama-3.1-8B config [A]、DeepSeek-V3 config [A]、Kaplan et al. [B]、DeepSeek-V3 技术报告 [A]
 
 ## 1. 一笔真实账单：2.788M H800-hours 从哪来
 
@@ -78,7 +78,7 @@ $$
 
 **符号**： $C$ ：训练总计算量（FLOPs）； $D$ ：训练处理的 token 总数，重复数据按通过次数计。这个框架与逐运算的 per-token 分解出自 [Kaplan et al., 2020](../references.md)（arXiv:2001.08361，[B]）的附录。
 
-式 (5) 是本书复用最多的账式：1.3 的 compute-optimal 推导以它为约束条件，4.5 用它换算 MoE 训练成本，Part 5 的案例章用它对账各家技术报告。它也反向使用：给定算力预算 $C$ ，式 (5) 圈定 $ND = C/6$ 的可行集合， $N$ 与 $D$ 怎么分是 1.3 的 compute-optimal 问题。量级直觉：Llama-3.1-8B 规模（ $N = 6.98 \times 10^{9}$ ，第 9 节）每训 1T token 要 $4.2 \times 10^{22}$ FLOPs。再反过来：一个 1024 卡集群、每卡持续 $3.4 \times 10^{14}$ FLOPS（第 9 节从 DeepSeek-V3 报告推出的量级），跑 30 天提供 $9.0 \times 10^{23}$ FLOPs——够 8B 规模训约 22T token，或 70B 规模训约 2.1T token；预算固定时「模型大一档」与「数据多一档」不可兼得，这就是 scaling law 要回答的分配问题（1.3）。
+式 (5) 是本书复用最多的账式：1.3 的 compute-optimal 推导以它为约束条件，4.5 用它换算 MoE 训练成本，Part 5 的案例章用它对账各家技术报告。它也反向使用：给定算力预算 $C$ ，式 (5) 圈定 $ND = C/6$ 的可行集合， $N$ 与 $D$ 怎么分是 1.3 的 compute-optimal 问题。先给量级直觉：Llama-3.1-8B 规模（ $N = 6.98 \times 10^{9}$ ，第 9 节）每训 1T token 要 $4.2 \times 10^{22}$ FLOPs。再反过来算一次：一个 1024 卡集群、每卡持续 $3.4 \times 10^{14}$ FLOPS（第 9 节从 DeepSeek-V3 报告推出的量级），跑 30 天提供 $9.0 \times 10^{23}$ FLOPs。这笔预算够 8B 规模训约 22T token，或 70B 规模训约 2.1T token——预算固定时「模型大一档」与「数据多一档」不可兼得，这就是 scaling law 要回答的分配问题（1.3）。
 
 复用前先看清五条适用条件，每条对应一个被忽略的项：
 
@@ -238,11 +238,11 @@ $$
 
 ## 10. 两笔账的会合：算术强度
 
-把式 (2) 与式 (7) 放在一起，除一下，得到推理 decode 阶段的关键比率：每生成一个 token，要算约 $2N$ FLOPs（长上下文时外加随 $t$ 线性增长的 attention 项，见本节末），同时至少把全部权重从显存读一遍，即 $2N$ bytes——算术强度（arithmetic intensity，FLOPs 与访存字节之比）约等于 1 FLOP/byte。任何实际 GPU 的「峰值 FLOPS ÷ 显存带宽」都比 1 高两个数量级以上（具体数值属 gpu 维度），所以 decode 吞吐的上限由带宽决定、算力大量闲置：这就是「decode 是访存瓶颈」的精确含义。
+把式 (2) 与式 (7) 放在一起相除，得到推理 decode 阶段的关键比率。每生成一个 token，要算约 $2N$ FLOPs（长上下文时外加随 $t$ 线性增长的 attention 项，见本节末），同时至少把全部权重从显存读一遍，即 $2N$ bytes。两者的比值叫算术强度（arithmetic intensity，FLOPs 与访存字节之比），decode 下约等于 1 FLOP/byte。任何实际 GPU 的「峰值 FLOPS ÷ 显存带宽」都比 1 高两个数量级以上（具体数值属 gpu 维度），所以 decode 吞吐的上限由带宽决定、算力大量闲置——这就是「decode 是访存瓶颈」的精确含义。
 
-prefill 相反：一次前向处理 $T$ 个 prompt token，算 $2NT$ FLOPs 而权重只读一遍，算术强度 $\approx T$ 。 $T$ 上千时进入计算瓶颈区。decode 侧的补救也是同一公式：把 $B$ 条序列的请求合成一个 batch，每步算 $2NB$ FLOPs、权重仍只读一遍，算术强度升到 $\approx B$ ——只要 KV cache 放得下，batch 越大每卡吞吐越高，这是推理服务拼命凑 batch 的算术根源。同一个模型、同一份权重，不同阶段的瓶颈不同——推理系统把 prefill 与 decode 分开调度、分开定价，根源就是这几个数（系统展开属 inference 维度）。训练侧同理：一个 step 里 $B \cdot T$ 个 token 摊一份权重读取与更新，算术强度 $\propto B \cdot T$ ，这就是训练追求大 batch 的硬件原因，也是激活账（随 $B \cdot T$ 线性）必须被重计算压住的硬件原因。
+prefill 相反：一次前向处理 $T$ 个 prompt token，算 $2NT$ FLOPs 而权重只读一遍，算术强度 $\approx T$ ， $T$ 上千时进入计算瓶颈区。decode 侧的补救也写在同一公式里：把 $B$ 条序列的请求合成一个 batch，每步算 $2NB$ FLOPs、权重仍只读一遍，算术强度升到 $\approx B$ 。只要 KV cache 放得下，batch 越大每卡吞吐越高——这就是推理服务拼命凑 batch 的算术根源。同一个模型、同一份权重，不同阶段瓶颈不同，推理系统因此把 prefill 与 decode 分开调度、分开定价（系统展开属 inference 维度）。训练侧同理：一个 step 里 $B \cdot T$ 个 token 摊一份权重读取与更新，算术强度 $\propto B \cdot T$ 。这就是训练追求大 batch 的硬件原因，也是激活账（随 $B \cdot T$ 线性）必须被重计算压住的硬件原因。
 
-KV cache 的存在性也写在这个框架里：decode 生成第 $t$ 个 token 时若无 cache，要对长度 $t$ 的前缀重跑整条前向，单 attention 一项就是 $2Lt^{2}d$ （式 (6) 代入 $T=t$ ），且随 $t$ 平方累积；有 cache 时该步只算当前 query 对 $t$ 个缓存 key 的打分与加权和，每层 $4td$ 、共 $4Ltd$ ——从二次降到线性。代价是第 8 节账三的字节数。可缓存性的推导（为什么 K、V 足够、为什么不需要缓存 Q）在 2.4。
+KV cache 的存在性也写在这个框架里。decode 生成第 $t$ 个 token 时，若无 cache，要对长度 $t$ 的前缀重跑整条前向：单 attention 一项就是 $2Lt^{2}d$ （式 (6) 代入 $T=t$ ），且随 $t$ 平方累积。有 cache 时，该步只算当前 query 对 $t$ 个缓存 key 的打分与加权和，每层 $4td$ 、共 $4Ltd$ ——从二次降到线性。代价是第 8 节账三的字节数。可缓存性的推导（为什么 K、V 足够、为什么不需要缓存 Q）在 2.4。
 
 ## 总结
 

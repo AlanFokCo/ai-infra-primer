@@ -1,12 +1,14 @@
 # 1.1 语言建模的数学形式化（The Mathematical Formulation of Language Modeling）
 
-> 本章把「语言模型」压成一个可计算的数学对象：token 序列上的概率分布、它的分解方式、训练目标与评价指标，以及采样生成与输出头表示能力的两个边界 | 前置：线性代数（矩阵乘法、rank）、概率论（条件分布、期望、KL 散度） | 锚点：Llama-3.1-8B config [A]、Qwen3-8B config [A]、GPT-2 技术报告 [W]；Kaplan et al. [B]、GPT-3 [B]、softmax bottleneck [A]
+> 本章把「语言模型」写成一个可计算的数学对象：token 序列上的一个概率分布。然后依次回答五个问题——这个分布怎么分解、训练目标是什么、评价指标怎么读、文本怎么采样生成、输出头的表示能力有没有边界 | 前置：线性代数（矩阵乘法、rank）、概率论（条件分布、期望、KL 散度） | 锚点：Llama-3.1-8B config [A]、Qwen3-8B config [A]、GPT-2 技术报告 [W]；Kaplan et al. [B]、GPT-3 [B]、softmax bottleneck [A]
 
 ## 1. 样本空间：token 序列
 
 Qwen3-8B 的 config.json 写着 vocab_size = 151936（[Qwen3-8B config](../references.md)，[A]）。这个整数是本章全部数学的基本单元数：模型处理的「文字」不是字符，而是这个集合里的下标。
 
-**词表（vocabulary）** 是有限集合 $V = \lbrace0, 1, ..., V-1\rbrace$ ，其大小也记为 $V$ （集合与基数复用同一符号，按上下文区分）。**token** 是词表中的一个元素，工程上就是一个整数 id。**分词器（tokenizer）** 是从底层字符串到 token 序列的确定映射 $`\mathrm{tok}: \Sigma^{*} \to V^{T}`$ ，其中 $\Sigma$ 是字节或字符集，$`\Sigma^{*}`$ 是其上全部有限字符串，输出长度 $T$ 随输入文本变化。Qwen3-8B 的 $\mathrm{tok}$ 是 byte-level BPE（Qwen2Tokenizer 家族）：vocab.json 含 151643 个 merge 后的基础 token，added_tokens_decoder 再加 26 个特殊 token（id 151643–151668，含 `<|endoftext|>` 、`<|im_start|>` 、`<|im_end|>`），config 中的 151936 = 151643 + 26 再向上 padding 对齐（[Qwen3-8B config](../references.md)，[A]）。tokenizer 算法细节（BPE / Unigram / WordPiece）在 2.2 展开，本章只需要 $\mathrm{tok}$ 存在且确定。
+**词表（vocabulary）** 是有限集合 $V = \lbrace0, 1, ..., V-1\rbrace$ ，其大小也记为 $V$ （集合与基数复用同一符号，按上下文区分）。**token** 是词表中的一个元素，工程上就是一个整数 id。**分词器（tokenizer）** 负责把原始字符串切成 token 序列：数学上它是一个确定映射 $`\mathrm{tok}: \Sigma^{*} \to V^{T}`$ ，其中 $\Sigma$ 是字节或字符集，$`\Sigma^{*}`$ 是其上全部有限字符串，输出长度 $T$ 随输入文本变化。「确定」的意思是同一个字符串永远切成同一个序列——这是后面一切概率定义的底座。
+
+Qwen3-8B 的 $\mathrm{tok}$ 是 byte-level BPE（Qwen2Tokenizer 家族）：从字节出发，反复合并最高频的相邻对来构造词表。它的 vocab.json 含 151643 个 merge 后的基础 token，added_tokens_decoder 再加 26 个特殊 token（id 151643–151668，含 `<|endoftext|>` 、`<|im_start|>` 、`<|im_end|>`），config 中的 151936 = 151643 + 26 再向上 padding 对齐（[Qwen3-8B config](../references.md)，[A]）。tokenizer 的算法细节（BPE / Unigram / WordPiece）在 2.2 展开，本章只需要 $\mathrm{tok}$ 存在且确定。
 
 三个真实词表大小，本章反复用作算例：
 
@@ -30,7 +32,7 @@ Qwen3-8B 的 config.json 写着 vocab_size = 151936（[Qwen3-8B config](../refer
 
 ## 2. 模型定义：从上下文到概率单纯形
 
-一个 decoder-only 语言模型是一个带参函数
+模型读进一段上文，吐出来的到底是什么？答案是一个概率分布。形式化地说，一个 decoder-only 语言模型是一个带参函数
 
 $$
 f_\theta: V^{t-1} \to \Delta^{V-1}, \qquad \Delta^{V-1} = \lbrace q \in \mathbb{R}^{V} : q_i \ge 0, \sum_{i=1}^{V} q_i = 1 \rbrace \qquad (1)
@@ -163,7 +165,7 @@ def nll_per_token(logits, targets):
 
 ## 5. 信息论视角：CE = H(p) + KL(p‖q)
 
-把 CE 按 KL 散度展开，一行看清训练到底在优化什么。KL 散度定义并展开：
+训练到底在优化什么？把 CE 按 KL 散度展开，一行就能看清。先定义 KL 散度并展开：
 
 $$
 \mathrm{KL}(p \Vert q_\theta) = \sum_{v=1}^{V} p(v) \log \frac{p(v)}{q_\theta(v)} = \sum_{v=1}^{V} p(v) \log p(v) - \sum_{v=1}^{V} p(v) \log q_\theta(v) = - H(p) + \mathrm{CE}(p, q_\theta)
@@ -183,7 +185,7 @@ $$
 2. **loss 有数据决定的地板**。 $\mathrm{CE} \ge H(p)$ ，等号仅在 $q_\theta = p$ 时成立。loss 降不到 0，残差是语言本身的不可压缩性。
 3. **超出部分就是浪费的码长**。 $\mathrm{CE} - H(p) = \mathrm{KL}$ 是用 $q_\theta$ 给来自 $p$ 的数据编码时、每 token 比最优码多花的比特数——LM 训练等价于学一个算术编码器，这是「LM 即压缩」的精确版本。
 
-KL 散度不对称，方向不是细节：MLE 优化的是 $\mathrm{KL}(p_{\mathrm{data}} \Vert q_\theta)$ ——期望在 $p_{\mathrm{data}}$ 下取， $q_\theta$ 必须给数据出现的每个 mode 分配足够概率，否则 $\log q_\theta \to -\infty$ 的惩罚极大，行为是「全覆盖」（mean-seeking）。反过来 $\mathrm{KL}(q_\theta \Vert p_{\mathrm{data}})$ 期望在模型分布下取，允许 $q_\theta$ 收缩到 $p_{\mathrm{data}}$ 的少数 mode 上（mode-seeking），是部分蒸馏与生成后训练场景的对象。本章式 (6) 固定用前一个方向，因为训练 loss 的期望就是对数据分布取的。
+KL 散度不对称，方向不是细节。MLE 优化的是 $\mathrm{KL}(p_{\mathrm{data}} \Vert q_\theta)$ ，期望在 $p_{\mathrm{data}}$ 下取。这个方向要求 $q_\theta$ 给数据出现的每个 mode 都分配足够概率——否则 $\log q_\theta \to -\infty$ 的惩罚极大，所以它的行为是「全覆盖」（mean-seeking）。反方向 $\mathrm{KL}(q_\theta \Vert p_{\mathrm{data}})$ 的期望在模型分布下取，允许 $q_\theta$ 收缩到 $p_{\mathrm{data}}$ 的少数 mode 上（mode-seeking），那是部分蒸馏与生成后训练场景的对象。本章式 (6) 固定用前一个方向，因为训练 loss 的期望就是对数据分布取的。
 
 单位换算：CE 以 nats 计时，**bits/token** = $\mathrm{CE} / \ln 2$ 。两个模型在同一测试集上差 0.1 nats/token，就是每 token 差约 0.144 bits。
 
@@ -213,7 +215,7 @@ $$
 
 ## 7. CLM / MLM / prefix-LM：attention mask + loss mask 的统一形式
 
-三类训练目标不需要三套定义。统一成三个对象：**attention mask** $M \in \lbrace0, -\infty\rbrace^{T \times T}$ 决定位置 $i$ 能看见谁（进入 attention 的 softmax，细节在 2.3），**loss mask** $\ell \in \lbrace0, 1\rbrace^{T}$ 决定哪些位置计入损失，**输入序列** $x'$ 是实际送入模型的 token 序列（可能被腐蚀）：
+CLM、MLM、prefix-LM 是三类训练目标，但它们不需要三套定义。统一成三个对象就够：**attention mask** $M \in \lbrace0, -\infty\rbrace^{T \times T}$ 决定位置 $i$ 能看见谁（进入 attention 的 softmax，细节在 2.3），**loss mask** $\ell \in \lbrace0, 1\rbrace^{T}$ 决定哪些位置计入损失，**输入序列** $x'$ 是实际送入模型的 token 序列（可能被腐蚀）：
 
 $$
 \alpha_{ij} = \frac{\exp(s_{ij} + M_{ij})}{\sum_{l=1}^{T} \exp(s_{il} + M_{il})}, \qquad L(\theta) = - \sum_{t=1}^{T} \ell_t \log q_\theta(x_t | x'; M) \qquad (8)
@@ -239,7 +241,7 @@ $$
 
 ## 8. 采样生成：temperature 与 top-p
 
-训练好的 $f_\theta$ 生成文本就是把式 (3) 反过来用：从 $x_0$ = bos 出发，逐位置从 $q_\theta(\cdot | x_{\lt t})$ 中采样 $x_t$ ，拼回上下文继续，直到采出 eos 或达到 $T_{\max}$ 。由链式法则，这样得到的序列恰好是模型分布的精确样本，即祖先采样（ancestral sampling）。两个最常用的分布整形手段：
+训好的 $f_\theta$ 怎么写出文本？把式 (3) 反过来用：从 $x_0$ = bos 出发，逐位置从 $q_\theta(\cdot | x_{\lt t})$ 中采样 $x_t$ ，拼回上下文继续，直到采出 eos 或达到 $T_{\max}$ 。由链式法则，这样得到的序列恰好是模型分布的精确样本——这叫祖先采样（ancestral sampling）。直接照原分布采样常常不够用，两个最常用的分布整形手段：
 
 **温度（temperature）**：对 logits 做缩放再 softmax，
 
@@ -257,11 +259,11 @@ $$
 
 **符号**： $p \in (0, 1]$ ：累积质量阈值； $Z$ ：保留集合的概率总质量。温度与 top-p 可叠加：先按式 (9) 整形，再按式 (10) 截断。
 
-两个极端各自的失效模式说明为什么需要整形：argmax（ $\tau \to 0$ 的极限）逐步取 mode，而逐位置 mode 的串联不保证整句高概率——局部最优的贪心链，实际行为是退化成重复循环； $\tau = 1$ 的纯采样保留了分布尾部，长尾里低质量 token 积少成多。top-p 的机制正好对症：集合大小随分布形状自适应——分布尖锐时 $S$ 只有一两个元素，分布平坦时 $S$ 放大，尾部噪声被按质量而不是按个数切掉。生成阶段的系统工程——KV cache、批处理、投机采样——属于 [inference 维度](../../inference/README.md)，本章只保证采样侧的分布语义清楚。
+两个极端各自的失效模式说明为什么需要整形。argmax（ $\tau \to 0$ 的极限）逐步取 mode：逐位置 mode 的串联不保证整句高概率，局部最优的贪心链在实际中退化成重复循环。 $\tau = 1$ 的纯采样保留了分布尾部，长尾里低质量 token 积少成多。top-p 的机制正好对症：集合大小随分布形状自适应——分布尖锐时 $S$ 只有一两个元素，分布平坦时 $S$ 放大，尾部噪声被按质量而不是按个数切掉。生成阶段的系统工程（KV cache、批处理、投机采样）属于 [inference 维度](../../inference/README.md)，本章只保证采样侧的分布语义清楚。
 
 ## 9. Softmax 瓶颈（softmax bottleneck）：输出头的 rank 上限
 
-式 (2) 藏着一个与数据无关的表示上限。把 $N$ 个不同上下文的隐状态堆成 $H \in \mathbb{R}^{N \times d}$ ，对应的 logits 矩阵为
+输出头能表达任意复杂的条件分布吗？不能——式 (2) 藏着一个与数据无关的表示上限。把 $N$ 个不同上下文的隐状态堆成 $H \in \mathbb{R}^{N \times d}$ ，对应的 logits 矩阵为
 
 $$
 Z = H W^{\top} + e_N b^{\top} \in \mathbb{R}^{N \times V}
@@ -277,7 +279,7 @@ $$
 
 **符号**： $\log P \in \mathbb{R}^{N \times V}$ ：模型在 $N$ 个上下文上的对数概率矩阵； $u \in \mathbb{R}^{N}$ ：逐行归一化常数； $1_V \in \mathbb{R}^{V}$ ：词表维的全 1 列向量， $u 1_V^{\top} \in \mathbb{R}^{N \times V}$ 是 rank 1（第 $c$ 行是常向量 $u_c \cdot 1_V^{\top}$ ）。不含 bias 时上界收紧为 $d + 1$ 。
 
-结论：无论 softmax 怎么训练，模型能表达的对数概率矩阵 rank 以 $d$ 为上界，与 $V$ 无关。真实语言的条件分布矩阵没有理由落在这个低秩子空间里：同一上下文后面接哪些 token，由语义、语法、语用多组近似独立的因素决定，互斥但各自合理的续写集合很大，对应的 $\log P$ 矩阵行与行之间的线性关系接近满秩。只要真实矩阵的 rank 超过 $d + 2$ ，就存在模型永远拟合不了的残差——增加数据、加深主干都无效，因为瓶颈在输出头的线性结构上，这就是 **softmax 瓶颈（softmax bottleneck）**（[Yang et al., 2018](../references.md)，arXiv:1711.03953，[A]）。代入锚点： $d$ = 4096、 $V$ = 151936（Qwen3-8B），rank 上限 4098 对满秩 151936，不到词表大小的 3%。原论文的解法是 Mixture of Softmaxes（MoS）：用多个低秩头的凸组合把 rank 抬上去，公式拆解连同它与 weight tying 的关系放在 2.2。
+结论：无论 softmax 怎么训练，模型能表达的对数概率矩阵 rank 以 $d$ 为上界，与 $V$ 无关。真实语言的条件分布矩阵没有理由落在这个低秩子空间里。同一上下文后面接哪些 token，由语义、语法、语用多组近似独立的因素决定；互斥但各自合理的续写集合很大，对应的 $\log P$ 矩阵行与行之间的线性关系接近满秩。只要真实矩阵的 rank 超过 $d + 2$ ，就存在模型永远拟合不了的残差。增加数据、加深主干都无效，因为瓶颈在输出头的线性结构上——这就是 **softmax 瓶颈（softmax bottleneck）**（[Yang et al., 2018](../references.md)，arXiv:1711.03953，[A]）。代入锚点： $d$ = 4096、 $V$ = 151936（Qwen3-8B），rank 上限 4098 对满秩 151936，不到词表大小的 3%。原论文的解法是 Mixture of Softmaxes（MoS）：用多个低秩头的凸组合把 rank 抬上去，公式拆解连同它与 weight tying 的关系放在 2.2。
 
 ## 总结
 

@@ -1,6 +1,6 @@
 # 1.3 Scaling Laws 作为理论（Scaling Laws as a Theory）
 
-> 本章回答一个分配问题：给定算力预算 $C$ ，1.2 的账式 $C = 6ND$ 只圈定了可行集合，把预算分给参数 $N$ 还是数据 $D$ 要靠 loss 的幂律形式；核心结果是 compute-optimal 分配律 $N_{\mathrm{opt}} \propto C^{a}$ 的完整推导，以及能力涌现（emergence）的测量学分析 | 前置：1.1（CE、PPL），1.2（ $C = 6ND$ 与 $N$ 的口径、推理 $2N$ /token） | 锚点：Pythia（16 个模型 × 每模型 154 个 checkpoints）[A]、OLMo 2（权重 / 数据 / 日志全开放）[A]；Kaplan [B]、Chinchilla [B]、Wei [B]、Schaeffer [B]、DeepSeekMoE [A]
+> 本章回答一个分配问题：给定算力预算 $C$ ，该多分给参数 $N$ 还是数据 $D$ ？1.2 的账式 $C = 6ND$ 只圈定可行集合，回答分配要靠 loss 的幂律形式。核心结果是 compute-optimal 分配律 $N_{\mathrm{opt}} \propto C^{a}$ 的完整推导，外加能力涌现（emergence）的测量学分析 | 前置：1.1（CE、PPL），1.2（ $C = 6ND$ 与 $N$ 的口径、推理 $2N$ /token） | 锚点：Pythia（16 个模型 × 每模型 154 个 checkpoints）[A]、OLMo 2（权重 / 数据 / 日志全开放）[A]；Kaplan [B]、Chinchilla [B]、Wei [B]、Schaeffer [B]、DeepSeekMoE [A]
 
 ## 1. 幂律形式与 log-log 线性
 
@@ -116,7 +116,7 @@ $$
 
 **推导注**：第二步提取公因子 $N^{-\alpha-1}$ ，括号内两项的幂次合并为 $N^{(\beta-1)-(-\alpha-1)} = N^{\alpha+\beta}$ 。
 
-方括号内是 $N$ 的严格增函数（ $\alpha + \beta > 0$ ），在 $N \to 0^{+}$ 时为 $-\alpha A < 0$ 、 $N \to \infty$ 时趋于 $+\infty$ ，恰有一个零点，即式 (5) 的驻点； $g'$ 由负变正，驻点是唯一全局最小。注意 $g''$ 并不恒正—— $\beta < 1$ 时数据项 $B(6N/C)^{\beta}$ 的二阶导为负， $g$ 不是全局凸函数，所以这里不能用「凸函数驻点即最小」的捷径，「提取公因子看 $g'$ 符号」的论证不受此影响，比 Hessian 判据干净（练习 2 展开）。
+方括号内是 $N$ 的严格增函数（ $\alpha + \beta > 0$ ）： $N \to 0^{+}$ 时它为 $-\alpha A < 0$ ， $N \to \infty$ 时趋于 $+\infty$ ，恰有一个零点，即式 (5) 的驻点。 $g'$ 由负变正，驻点是唯一全局最小。注意 $g''$ 并不恒正： $\beta < 1$ 时数据项 $B(6N/C)^{\beta}$ 的二阶导为负， $g$ 不是全局凸函数。所以这里不能走「凸函数驻点即最小」的捷径；「提取公因子看 $g'$ 符号」的论证不依赖凸性，比 Hessian 判据干净（练习 2 展开）。
 
 代入数值： $\alpha = 0.34$ 、 $\beta = 0.28$ 得
 
@@ -147,11 +147,11 @@ $$
 1. **学习率 schedule 未按训练长度退火**。Kaplan 的各规模模型用固定形状的 schedule，cosine 衰减不随实际训练的 $D$ 调整到零；训练在 schedule 中途停止的点上，loss 系统性高于充分退火后的值。Chinchilla 的 Approach 1/2 对每条曲线、每个 $(N, D)$ 点都把 schedule 调到匹配长度。小模型、多数据的点被旧 protocol 高估得最多，拟合出的前沿就被推向「大模型」一侧。
 2. **单变量律拼不出联合优化**。Kaplan 的 $L(N)$ 在数据充足下测得、 $L(D)$ 在模型充足下测得，两者的测量条件互斥；从它们组装固定 $C$ 的最优点，与在 $(N, D)$ 网格上直接测联合曲面不是一回事。事实上把 Kaplan 自己的联合形式代入第 3 节的推导，得到的指数是 $\alpha_D / (\alpha_N + \alpha_D) \approx 0.56$ 而非 0.73（练习 1）——论文内部的单变量系数与其分配结论之间存在张力。
 
-后果用一对真实配置看：Gopher 的 280B 参数 × 300B token（ $D/N \approx 1.1$ ）接近 Kaplan 律的选型；同一预算按 Chinchilla 三法预测的最优模型只有其约四分之一到七分之一大——Approach 1 在论文 Table 3（1 个 Gopher 预算行）给出 67B（280B 的约 1/4），Approach 3 参数拟合在 §3.3 正文给出 40B（约 1/7），区间即 40B–67B；实际训练取 70B × 1.4T token（ $D/N = 20$ ）并报告了更低的 loss（[Hoffmann et al., 2022](../references.md)，[B]）。「同等算力、更小模型、更多数据」从拟合方法修正变成了可执行的工程结论。
+后果用一对真实配置看。Gopher 的 280B 参数 × 300B token（ $D/N \approx 1.1$ ）接近 Kaplan 律的选型。同一预算按 Chinchilla 三法预测，最优模型只有它的约四分之一到七分之一大：Approach 1 在论文 Table 3（1 个 Gopher 预算行）给出 67B（280B 的约 1/4），Approach 3 参数拟合在 §3.3 正文给出 40B（约 1/7），区间即 40B–67B。实际训练取 70B × 1.4T token（ $D/N = 20$ ）并报告了更低的 loss（[Hoffmann et al., 2022](../references.md)，[B]）。「同等算力、更小模型、更多数据」从拟合方法修正变成了可执行的工程结论。
 
 ## 5. inference-aware 的修正：训练最优 ≠ 部署最优
 
-式 (3) 的目标函数只有训练一侧。模型部署后每服务一个 token 还要付 $2N$ FLOPs（1.2 式 (2)，decode 口径），其中 $N$ 按 1.2 第 9 节的全量口径 $N_{\mathrm{full}}$ 取——含输出头、输入 embedding 查表不计；随上下文长度线性增长的 attention 项在长上下文下逐渐追平权重项（交叉点 $`T^{*}`$ 见 1.2 第 6 节），本章服务账按常规上下文取 $2N$ 主导口径。设模型终身推理总量为 $Q$ token，全生命周期的账是
+式 (3) 的目标函数只有训练一侧。模型部署后，每服务一个 token 还要付 $2N$ FLOPs（1.2 式 (2)，decode 口径）。这里的 $N$ 按 1.2 第 9 节的全量口径 $N_{\mathrm{full}}$ 取：含输出头，输入 embedding 查表不计。随上下文长度线性增长的 attention 项在长上下文下会逐渐追平权重项（交叉点 $`T^{*}`$ 见 1.2 第 6 节）；本章的服务账按常规上下文取 $2N$ 主导口径。设模型终身推理总量为 $Q$ token，全生命周期的账是
 
 $$
 \mathrm{TC}(N, D) = \underbrace{6ND}_{\text{train}} + \underbrace{2NQ}_{\text{inference}} \qquad (8)
@@ -159,7 +159,7 @@ $$
 
 **符号**： $\mathrm{TC}$ ：训练加推理的总 FLOPs； $Q$ ：服务期处理的总 token 数（prompt + 生成）。
 
-目标函数一换，最优解就换： $Q$ 小（研究模型，跑完评测即弃）时式 (8) 退回式 (3)； $Q$ 大时 $N$ 在目标里出现两次，最优解向「小模型、多数据」偏移——哪怕训练更贵，推理侧每次省 $2\Delta N$ 总会赚回来。这是**过度训练（over-training）**：有意把模型训到远超 compute-optimal 的 $D$ 。边际视角看同一件事：在式 (8) 下减小一单位 $N$ 的边际收益是每 token 省 $2$ FLOPs、全生命周期共省 $2Q$ FLOPs 推理费，边际代价是为保住 loss 必须追加数据（ $D$ 沿式 (2) 的等 loss 线上移），训练费增加； $Q$ 越大，省的一侧越重，最优点越偏向小模型—— $Q \to \infty$ 的极限是「把数据加到 loss 地板 $E + A/N^{\alpha}$ 可接受为止」。
+目标函数一换，最优解就换。 $Q$ 小（研究模型，跑完评测即弃）时，式 (8) 退回式 (3)。 $Q$ 大时， $N$ 在目标里出现两次，最优解向「小模型、多数据」偏移——哪怕训练更贵，推理侧每次省 $2\Delta N$ 总会赚回来。这是**过度训练（over-training）**：有意把模型训到远超 compute-optimal 的 $D$ 。同一件事从边际视角看：在式 (8) 下减小一单位 $N$ ，边际收益是每 token 省 $2$ FLOPs、全生命周期共省 $2Q$ FLOPs 推理费；边际代价是为保住 loss 必须追加数据（ $D$ 沿式 (2) 的等 loss 线上移），训练费增加。 $Q$ 越大，省的一侧越重，最优点越偏向小模型； $Q \to \infty$ 的极限是「把数据加到 loss 地板 $E + A/N^{\alpha}$ 可接受为止」。
 
 用 Llama-3.1-8B 做实账：它预训练 15T token（[Grattafiori et al., 2024](../references.md)，arXiv:2407.21783，[A]），按 1.2 第 9 节的口径（训练每 token $\approx 45$ G FLOPs，含输出头）总预算 $C \approx 6.8 \times 10^{23}$ FLOPs。三笔账并排：
 
@@ -179,13 +179,13 @@ $$
 
 **符号**：$`Q^{*}`$ ：两种方案总账相等的推理量。
 
-$`Q^{*}`$ 只有训练数据量的 2 倍——对开放权重、下载量以亿次计的模型，实际 $Q$ 远超此数，过度训练在全生命周期口径下反而是省钱的选择。compute-optimal 律的正确读法由此明确：它是**训练预算的**最优分配，不是部署成本的最优；推理量 $Q$ 进入目标函数后，最优 $N$ 单调向小偏移（练习 3）。第 8 节的局限清单会说明这个框架还差哪些项。
+$`Q^{*}`$ 只有训练数据量的 2 倍。对开放权重、下载量以亿次计的模型，实际 $Q$ 远超此数，过度训练在全生命周期口径下反而是省钱的选择。compute-optimal 律的正确读法由此明确：它是**训练预算的**最优分配，不是部署成本的最优。推理量 $Q$ 进入目标函数后，最优 $N$ 单调向小偏移（练习 3）。第 8 节的局限清单会说明这个框架还差哪些项。
 
 ## 6. MoE 的 scaling： $N$ 的角色由激活参数继承
 
 MoE 模型每 token 只激活部分参数，1.2 式 (9) 已建立对应口径： $C \approx 6 N_{\mathrm{act}} D$ 。代入本章框架，scaling law 中 $N$ 的两个角色被拆开——进 FLOPs 账的是激活参数 $N_{\mathrm{act}}$ ，进容量（知识存储）的是总参数 $N_{\mathrm{tot}}$ 。经验结果：同等 FLOPs 预算下 MoE 的 loss 曲线整体低于 dense，且细粒度切分再压一截（[Dai et al., 2024](../references.md)，arXiv:2401.06066，[A]，DeepSeekMoE 的 IsoFLOPs 对照曲线）；论文摘要的锚点数字：DeepSeekMoE 16B（2.8B 激活）以约 40% 的计算量达到 LLaMA2-7B 的下游性能。
 
-机制上与式 (2) 对应：固定 $C$ 时 MoE 等价于一个 $N_{\mathrm{act}}$ 量级的 dense 模型在付 FLOPs，但容量项由 $N_{\mathrm{tot}} \gg N_{\mathrm{act}}$ 摊薄——式 (2) 的 $A / N^{\alpha}$ 项在 MoE 上系统性更小。代价不进 FLOPs 账而进别的账：总参数的内存（1.2 式 (7)）、路由与负载均衡、expert 并行通信（4.5 展开路由机制，集群侧属 cluster 维度）。fine-grained expert（把 FFN 中间维切成 $m$ 倍细、expert 数与每 token 激活数同乘 $m$ ，保持 $N_{\mathrm{act}}$ 不变；再隔离若干共享 expert 常驻激活，DeepSeekMoE 的两项核心设计）提高的是专家组合的自由度： $m$ 倍细后可选的 expert 子集数从 $\binom{n}{k}$ 涨到 $\binom{mn}{mk}$ ，同一 token 可以被更细粒度的知识单元组合表达，scaling 曲线上体现为同一 $N_{\mathrm{act}}$ 下更低的 loss——4.5 给出路由公式后再回到这条曲线。
+机制上与式 (2) 对应：固定 $C$ 时，MoE 等价于一个 $N_{\mathrm{act}}$ 量级的 dense 模型在付 FLOPs，但容量项由 $N_{\mathrm{tot}} \gg N_{\mathrm{act}}$ 摊薄——式 (2) 的 $A / N^{\alpha}$ 项在 MoE 上系统性更小。代价不进 FLOPs 账，进的是别的账：总参数的内存（1.2 式 (7)）、路由与负载均衡、expert 并行通信（4.5 展开路由机制，集群侧属 cluster 维度）。DeepSeekMoE 的两项核心设计在这里起作用：一是 fine-grained expert——把 FFN 中间维切成 $m$ 倍细，expert 数与每 token 激活数同乘 $m$ ，保持 $N_{\mathrm{act}}$ 不变；二是隔离若干共享 expert 常驻激活。它们提高的是专家组合的自由度： $m$ 倍细后，可选的 expert 子集数从 $\binom{n}{k}$ 涨到 $\binom{mn}{mk}$ ，同一 token 可以被更细粒度的知识单元组合表达，scaling 曲线上体现为同一 $N_{\mathrm{act}}$ 下更低的 loss。4.5 给出路由公式后再回到这条曲线。
 
 对分配问题的推论：MoE 的 compute-optimal 推导形式上仍是式 (3)–(5)，只是 $N$ 换成 $N_{\mathrm{act}}$ 、系数 $(A, \alpha)$ 换成 MoE 家族的拟合值；总参数 $N_{\mathrm{tot}}$ 成为近似免费的容量维度，其上限由内存与通信账决定，不由式 (5) 决定。
 
@@ -208,9 +208,9 @@ $$
 
 式 (9) 的过渡中心在 $L c N^{-k} \approx 1$ 处，即 $`N^{*} \approx (cL)^{1/k}`$ ——**「涌现点」位置是题目长度 $L$ 的函数**，同一模型在短任务上「已有能力」、在长任务上「尚未涌现」。过渡区（EM 从 0.1 到 0.9）在 $\log N$ 轴上宽约 $(1/k) \log_{10}(\ln 10 / 0.105) \approx 1.34 / k$ 个数量级，与 $L$ 无关； $L$ 增大只把整条曲线右移并压扁可见区间。数值感： $p$ 从 0.80 平滑升到 0.95（ $+0.15$ ）， $L = 8$ 时 EM 从 $0.168$ 跳到 $0.663$（ $+0.50$ ）——metric 把输入变化放大了 3 倍多。
 
-**机制二：地板与阈值。** 评测集只有 $n$ 道题时，分数低于约 $1/n$ 的模型与「全错」统计上不可区分，绘图时整段贴在基线上—— $p$ 在地板区内的平滑增长全部不可见，跳变的「平地」部分是测量分辨率制造的。Multiple-Choice Grade 则是显式阈值化：当且仅当正确选项的 logit 为候选中最高时记 1、否则记 0——对连续的 logit 差取指示函数。设 logit 差的均值随 $N$ 平滑增长、噪声水平为 $\sigma$ ，任务分数是 $\Pr\lbrace z_{\mathrm{correct}} > \max_{i \in \mathrm{wrong}} z_i\rbrace$ 这类 probit 形曲线：均值穿过零点附近约 $2\sigma$ 宽的一段时，分数从接近 0 走完到接近 1 的全程；评测若只报 0/1 聚合，这段过渡在多宽的 $\log N$ 区间上完成，取决于 logit 差的增长率与 $\sigma$ ，与模型内部是否发生质变无关。两机制叠加：长地板 + 陡段，视觉上就是相变。
+**机制二：地板与阈值。** 评测集只有 $n$ 道题时，分数低于约 $1/n$ 的模型与「全错」在统计上不可区分，绘图时整段贴在基线上。 $p$ 在地板区内的平滑增长全部不可见——跳变的「平地」部分是测量分辨率制造的。Multiple-Choice Grade 则是显式阈值化：当且仅当正确选项的 logit 为候选中最高时记 1，否则记 0，即对连续的 logit 差取指示函数。设 logit 差的均值随 $N$ 平滑增长、噪声水平为 $\sigma$ ，任务分数就是 $\Pr\lbrace z_{\mathrm{correct}} > \max_{i \in \mathrm{wrong}} z_i\rbrace$ 这类 probit 形曲线。均值穿过零点附近约 $2\sigma$ 宽的一段时，分数从接近 0 走完到接近 1 的全程；评测若只报 0/1 聚合，这段过渡在多宽的 $\log N$ 区间上完成，取决于 logit 差的增长率与 $\sigma$ ，与模型内部是否发生质变无关。两个机制叠加——长地板加陡段，视觉上就是相变。
 
-证据侧的关键对照有两个。其一，同一批模型输出（GPT-3 家族的多位算术）换用连续 metric（per-token edit distance）重画，跳变消失、呈平滑幂律；其二，反向构造：在训练动态已知完全平滑的 vision autoencoder 上，对重建质量套用阈值化 metric，同样能画出「涌现」曲线——artifact 的充分性被正面制造出来（[Schaeffer et al., 2023](../references.md)，[B]）。诚实的双方立场：Schaeffer 的分析证明了「metric artifact 足以产生已报告的大多数跳变」，并未证明真实相变不存在；Wei 的定义本身依赖「与随机基线不可区分」这一测量学概念，地板长度由评测预算 $n$ 决定而非模型性质。检验这类问题需要的是 checkpoint 密度：Pythia 的 16 个模型（70M–12B）每个开放 154 个中间 checkpoint、数据与训练顺序完全一致（[Biderman et al., 2023](../references.md)，arXiv:2304.01373，[A]）——对照多数公开工作每模型只放最终权重的做法，154 个沿训练轨迹的采样点让「平滑还是跳变」可以在训练动态维度上直接分辨；OLMo 2 进一步开放数据与训练日志（[Team OLMo et al., 2025](../references.md)，arXiv:2501.00656，[A]），使这类复核可以端到端重做。
+证据侧的关键对照有两个。其一，同一批模型输出（GPT-3 家族的多位算术）换用连续 metric（per-token edit distance）重画，跳变消失、呈平滑幂律。其二，反向构造：在训练动态已知完全平滑的 vision autoencoder 上，对重建质量套用阈值化 metric，同样能画出「涌现」曲线——artifact 的充分性被正面制造出来（[Schaeffer et al., 2023](../references.md)，[B]）。诚实的双方立场是这样的：Schaeffer 的分析证明了「metric artifact 足以产生已报告的大多数跳变」，并未证明真实相变不存在；Wei 的定义本身依赖「与随机基线不可区分」这一测量学概念，地板长度由评测预算 $n$ 决定而非模型性质。检验这类问题需要的是 checkpoint 密度。Pythia 的 16 个模型（70M–12B）每个开放 154 个中间 checkpoint，数据与训练顺序完全一致（[Biderman et al., 2023](../references.md)，arXiv:2304.01373，[A]）——对照多数公开工作每模型只放最终权重的做法，154 个沿训练轨迹的采样点让「平滑还是跳变」可以在训练动态维度上直接分辨。OLMo 2 进一步开放数据与训练日志（[Team OLMo et al., 2025](../references.md)，arXiv:2501.00656，[A]），使这类复核可以端到端重做。
 
 ## 8. 局限
 
