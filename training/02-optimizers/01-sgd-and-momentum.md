@@ -1,6 +1,6 @@
 # 2.1 SGD 与 Momentum 完整推导（SGD and Momentum: The Complete Derivations）
 
-> 本章把随机梯度下降拆成可推导的对象：mini-batch 梯度的无偏性与 $\Sigma / B$ 噪声缩放、步长-噪声联合账给出的最优步长与 linear scaling 的适用区、momentum 速度形式与 EMA 形式的等价证明、Nesterov 的外推点差异、二次碗上 GD 每步收缩 $(\kappa-1)/(\kappa+1)$ 与 heavy ball 的 $(\sqrt\kappa-1)/(\sqrt\kappa+1)$ 、momentum 与梯度噪声的相互作用账 | 前置：1.5（等效 batch 的 tokens 口径与噪声缩放的前置引用）、models 1.1（loss 记号）、models 1.2（账的口径） | 锚点：`torch.optim.SGD`（pytorch/pytorch repo `torch/optim/sgd.py`，教学参照 + 官方实现）；[Polyak, 1964](../references.md)（无 arXiv，[B]）；[Sutskever et al., 2013](../references.md)（ICML，无 arXiv，[B]）；[McCandlish et al., 2018](../references.md)，arXiv:1812.06162，[B]；[Goyal et al., 2017](../references.md)，arXiv:1706.02677，[B]
+> 本章回答一个问题：随机梯度下降为什么这样工作，能不能一步一步推出来。先从 mini-batch 梯度的统计性质入手——无偏性，以及噪声按 $\Sigma / B$ 缩放——推出最优步长与 batch 的关系，看清 linear scaling 的适用区。再证明 momentum 两种写法（速度形式与 EMA 形式）的等价，说清 Nesterov 的外推点差异。然后在二次碗上算出精确收敛速率：GD 每步收缩 $(\kappa-1)/(\kappa+1)$ ，heavy ball 收缩 $(\sqrt\kappa-1)/(\sqrt\kappa+1)$ 。最后把 momentum 与梯度噪声的相互作用算成一笔账 | 前置：1.5（等效 batch 的 tokens 口径与噪声缩放的前置引用）、models 1.1（loss 记号）、models 1.2（账的口径） | 锚点：`torch.optim.SGD`（pytorch/pytorch repo `torch/optim/sgd.py`，教学参照 + 官方实现）；[Polyak, 1964](../references.md)（无 arXiv，[B]）；[Sutskever et al., 2013](../references.md)（ICML，无 arXiv，[B]）；[McCandlish et al., 2018](../references.md)，arXiv:1812.06162，[B]；[Goyal et al., 2017](../references.md)，arXiv:1706.02677，[B]
 
 ## 1. 全批 GD 到 mini-batch SGD：无偏性与噪声缩放
 
@@ -18,7 +18,7 @@ $$
 \hat g_B(\theta) = \frac{1}{B} \sum_{i=1}^{B} \nabla \ell_{x_i}(\theta), \qquad x_1, \ldots, x_B \stackrel{\mathrm{iid}}{\sim} \rho \qquad (2)
 $$
 
-这个替代的两条统计性质决定了后面所有的账（[McCandlish et al., 2018](../references.md)，arXiv:1812.06162，[B]，§2 式 (2.2) 同式）。**无偏性**：期望的线性性逐项给出 $\mathbb{E}[\nabla \ell_{x_i}] = g$ ，故 $\mathbb{E}[\hat g_B] = g$ ——mini-batch 估计的系统误差为零，全部误差在方差里。**协方差的 $1/B$ 缩放**：
+这个替代有两条统计性质，后面所有的账都由它们决定（[McCandlish et al., 2018](../references.md)，arXiv:1812.06162，[B]，§2 式 (2.2) 同式）。**无偏性**：期望的线性性逐项给出 $\mathbb{E}[\nabla \ell_{x_i}] = g$ ，故 $\mathbb{E}[\hat g_B] = g$ ：mini-batch 估计的系统误差为零，全部误差在方差里。**协方差按 $1/B$ 缩放**：
 
 $$
 \mathrm{Cov}(\hat g_B) = \frac{1}{B} \Sigma(\theta), \qquad \Sigma(\theta) \equiv \mathbb{E}_{x \sim \rho}\left[(\nabla \ell_x - g)(\nabla \ell_x - g)^{\top}\right] \qquad (3)
@@ -32,11 +32,11 @@ $$
 \mathbb{E}\left\lVert \hat g_B \right\rVert^{2} = \lVert g \rVert^{2} + \frac{1}{B} \mathrm{tr}\thinspace \Sigma \qquad (4)
 $$
 
-把 $\mathbb{E}\lVert \hat g - g \rVert^{2} = \mathrm{tr}\thinspace \mathrm{Cov}(\hat g)$ 展开即得。两项的比值定义梯度噪声尺度（gradient noise scale），本章取简化形式 $`\mathcal{B}_{\mathrm{simple}} = \mathrm{tr}\thinspace \Sigma / \lVert g \rVert^{2}`$ 。McCandlish 原文另定义带 Hessian 的 $`\mathcal{B}_{\mathrm{noise}} = \mathrm{tr}(H\Sigma) / (g^{\top} H g)`$ ，两者差一个小常数倍（其式 (2.8)/(2.9)）；本章的 L-光滑口径对应的正是 simple 版，完整区分归 2.3。 $`B \ll \mathcal{B}_{\mathrm{simple}}`$ 时噪声项主导、估计的模长主要成分是噪声； $`B \gg \mathcal{B}_{\mathrm{simple}}`$ 时 $\mathbb{E}\lVert \hat g \rVert^{2} \approx \lVert g \rVert^{2}$ 、再加 batch 几乎不改变估计。McCandlish et al. 的实证结论：这个纯统计量在数量级精度上预测「最大有用 batch」（critical batch size），且随训练漂移（loss 下降、 $\lVert g \rVert$ 缩小 ⇒ 噪声尺度上升）。噪声尺度的估计器、critical batch 的定义与测量归 2.3；本章只用式 (3)(4) 两个恒等式。
+把 $\mathbb{E}\lVert \hat g - g \rVert^{2} = \mathrm{tr}\thinspace \mathrm{Cov}(\hat g)$ 展开即得。两项的比值定义梯度噪声尺度（gradient noise scale），本章取简化形式 $`\mathcal{B}_{\mathrm{simple}} = \mathrm{tr}\thinspace \Sigma / \lVert g \rVert^{2}`$ 。McCandlish 原文另定义带 Hessian 的 $`\mathcal{B}_{\mathrm{noise}} = \mathrm{tr}(H\Sigma) / (g^{\top} H g)`$ ，两者差一个小常数倍（其式 (2.8)/(2.9)）；本章的 L-光滑口径对应的正是 simple 版，完整区分归 2.3。 $`B \ll \mathcal{B}_{\mathrm{simple}}`$ 时噪声项主导，估计的模长主要成分是噪声； $`B \gg \mathcal{B}_{\mathrm{simple}}`$ 时 $\mathbb{E}\lVert \hat g \rVert^{2} \approx \lVert g \rVert^{2}$ ，再加 batch 几乎不改变估计。McCandlish et al. 的实证结论：这个纯统计量在数量级精度上预测「最大有用 batch」（critical batch size），且随训练漂移——loss 下降、 $\lVert g \rVert$ 缩小，噪声尺度上升。噪声尺度的估计器、critical batch 的定义与测量归 2.3；本章只用式 (3)(4) 两个恒等式。
 
 ## 2. 步长与噪声的联合账：最优步长的两个 regime
 
-式 (3)(4) 要接到训练进程上，需要损失的几何。取局部二次模型（§5 的完整分析对象）： $`\mathcal{L}(\theta) = \frac{1}{2} (\theta - \theta^{\ast})^{\top} H (\theta - \theta^{\ast})`$ ， $H \succ 0$ 为 Hessian，最大特征值 $L$ 即光滑常数。对精确二次做一步 $\theta \leftarrow \theta - \eta \hat g$ ：
+式 (3)(4) 还只是静态性质；要把它们接到训练进程上，需要损失的几何。取局部二次模型（§5 的完整分析对象）： $`\mathcal{L}(\theta) = \frac{1}{2} (\theta - \theta^{\ast})^{\top} H (\theta - \theta^{\ast})`$ ， $H \succ 0$ 为 Hessian，最大特征值 $L$ 即光滑常数。对精确二次做一步 $\theta \leftarrow \theta - \eta \hat g$ ：
 
 $$
 \mathcal{L}(\theta - \eta \hat g) = \mathcal{L}(\theta) - \eta \langle g, \hat g \rangle + \frac{\eta^{2}}{2} \hat g^{\top} H \hat g \le \mathcal{L}(\theta) - \eta \langle g, \hat g \rangle + \frac{\eta^{2} L}{2} \lVert \hat g \rVert^{2} \qquad (5)
@@ -56,8 +56,8 @@ $$
 
 **符号**： $`\eta^{\ast}(B)`$ ：该 batch 下最大化单步期望进展的步长。式 (7) 把整个 batch-步长关系压缩成一条曲线，两个 regime 直接读出：
 
-- **小 batch 区**（ $`B \ll \mathcal{B}_{\mathrm{simple}}`$ ）： $`\eta^{\ast} \approx \dfrac{B}{L \thinspace \mathcal{B}_{\mathrm{simple}}}`$ ——最优步长**正比于** batch。这就是 [Goyal et al., 2017](../references.md)（arXiv:1706.02677，[B]）linear scaling rule 的经验形式「batch 乘 $k$ 、步长乘 $k$ 、其余超参不动」在小噪声区的一阶行为；该文用它在 ImageNet 上把 batch 推到 8192 且精度不掉。式 (7) 给出了规则的适用区与比例系数：它是噪声主导区的近似，不是普适规律。
-- **大 batch 区**（ $`B \gg \mathcal{B}_{\mathrm{simple}}`$ ）： $`\eta^{\ast} \to 1/L`$ 饱和。代回式 (6)，最大单步期望进展 $\to \lVert g \rVert^{2} / (2L)$ 同样饱和——batch 再大也换不来更多每步进展，拐点量级就是 $`\mathcal{B}_{\mathrm{simple}}`$ 。这是 critical batch size 的一阶定义，精确口径（对训练全程积分、随训练漂移）归 2.3。
+- **小 batch 区**（ $`B \ll \mathcal{B}_{\mathrm{simple}}`$ ）： $`\eta^{\ast} \approx \dfrac{B}{L \thinspace \mathcal{B}_{\mathrm{simple}}}`$ ——最优步长**正比于** batch。[Goyal et al., 2017](../references.md)（arXiv:1706.02677，[B]）的 linear scaling rule「batch 乘 $k$ 、步长乘 $k$ 、其余超参不动」，正是这个 regime 的经验形式；该文用它在 ImageNet 上把 batch 推到 8192 且精度不掉。式 (7) 给出这条经验的适用区与比例系数：它是噪声主导区的近似，不是普适规律。
+- **大 batch 区**（ $`B \gg \mathcal{B}_{\mathrm{simple}}`$ ）： $`\eta^{\ast} \to 1/L`$ 饱和。代回式 (6)，最大单步期望进展 $\to \lVert g \rVert^{2} / (2L)$ 同样饱和：batch 再大也换不来更多每步进展，拐点量级就是 $`\mathcal{B}_{\mathrm{simple}}`$ 。这是 critical batch size 的一阶定义；精确口径（对训练全程积分、随训练漂移）归 2.3。
 
 这条曲线同时解释了为什么「batch 大一倍、step 数减半」只在噪声区近似成立：饱和区里加 batch 几乎不减少所需步数，只是白烧数据与算力。
 
@@ -79,13 +79,13 @@ $$
 
 **符号**： $v_t$ ：速度（velocity，未归一的梯度加权和）； $m_t$ ：梯度的 EMA（权重和为 1 量级）； $\beta \in [0, 1)$ ：动量系数； $\hat g_t$ ：第 $t$ 步的 mini-batch 梯度。
 
-**等价证明（变量代换）**。令 $m_t = (1-\beta) \thinspace v_t$ ：式 (8) 第一式两边乘 $(1-\beta)$ 得 $(1-\beta) v_{t+1} = \beta (1-\beta) v_t + (1-\beta) \hat g_t$ ，即 $m_{t+1} = \beta m_t + (1-\beta) \hat g_t$ ——正是式 (9) 第一式，初值同为 0，归纳成立。更新侧：式 (8) 第二式 $= \theta_t - \dfrac{\eta}{1-\beta} m_{t+1}$ ，与式 (9) 第二式恒等当且仅当
+**等价证明（变量代换）**。令 $m_t = (1-\beta) \thinspace v_t$ 。式 (8) 第一式两边乘 $(1-\beta)$ ，得 $(1-\beta) v_{t+1} = \beta (1-\beta) v_t + (1-\beta) \hat g_t$ ，即 $m_{t+1} = \beta m_t + (1-\beta) \hat g_t$ ——正是式 (9) 第一式。初值同为 0，归纳成立。更新侧：式 (8) 第二式 $= \theta_t - \dfrac{\eta}{1-\beta} m_{t+1}$ ，与式 (9) 第二式恒等当且仅当
 
 $$
 \eta' = \frac{\eta}{1-\beta} \qquad (10)
 $$
 
-故两形式是同一算法的两种参数化，换算只隔一个因子 $1-\beta$ 。读文献或改代码时先问「 $\eta$ 乘在归一化前还是后」，混用两形式的超参是最常见的复现错误。
+故两形式是同一算法的两种参数化，换算只隔一个因子 $1-\beta$ 。读文献或改代码时先问一句： $\eta$ 乘在归一化之前还是之后？混用两形式的超参，复现就悄悄偏了。
 
 把式 (8) 展开看结构：
 
@@ -106,7 +106,7 @@ $$
 ĝ_t ──► m ← β·m + (1−β)·ĝ （EMA 平滑器）──► θ ← θ − η′·m   式 (9)
 ```
 
-EMA 形式还有一个开局细节： $m_0 = 0$ 意味着前若干步的 $m_t$ 系统性偏小—— $t$ 步后权重和只有 $1 - \beta^{t}$ ，前期估计带着 $1 - \beta^{t}$ 的衰减偏差。SGD-momentum 实践通常不处理（PyTorch 首步直接以 $\hat g_1$ 初始化 buffer，见下）；Adam 把这个偏差显式除掉（bias correction，2.2 推导），两处对照着看就知道后者在修正什么。
+EMA 形式还有一个开局细节： $m_0 = 0$ 意味着前若干步的 $m_t$ 系统性偏小—— $t$ 步后权重和只有 $1 - \beta^{t}$ ，前期估计带着 $1 - \beta^{t}$ 的衰减偏差。SGD-momentum 实践通常不处理（PyTorch 首步直接以 $\hat g_1$ 初始化 buffer，见下）；Adam 把这个偏差显式除掉（bias correction，2.2 推导）。两处对照着看，就知道后者在修正什么。
 
 **第三种约定：步长在速度内部**。[Sutskever et al., 2013](../references.md)（ICML 2013，PMLR 28(3):1139-1147，无 arXiv，[B]）原文的 classical momentum（CM）：
 
@@ -114,9 +114,9 @@ $$
 v_{t+1} = \mu \thinspace v_t - \varepsilon \thinspace \hat g_t, \qquad \theta_{t+1} = \theta_t + v_{t+1} \qquad (12)
 $$
 
-代换 $u_t = -v_t / \varepsilon$ 立即化为式 (8)（ $\eta = \varepsilon$ ），定常步长下两约定等价。**但步长随时间变化时不再等价**：式 (12) 的历史项里固化的是旧步长，切换到新步长需把历史乘 $\eta_{t+1} / \eta_t$ ——[Goyal et al., 2017](../references.md)（[B]，§3 式 (9)–(10)）把这个修正称为 momentum correction，并指出 warmup 期步长快速上升时缺了它会不稳定（历史项相对新梯度过小）。PyTorch 的式 (8) 约定（步长在速度外）天然免修正——这是 warmup 普及后更稳的写法。
+代换 $u_t = -v_t / \varepsilon$ 立即化为式 (8)（ $\eta = \varepsilon$ ）：定常步长下，两约定等价。**但步长随时间变化时不再等价**。式 (12) 的历史项里固化的是旧步长；切换到新步长，需把历史乘 $\eta_{t+1} / \eta_t$ 。[Goyal et al., 2017](../references.md)（[B]，§3 式 (9)–(10)）把这个修正称为 momentum correction，并指出 warmup 期步长快速上升时缺了它会不稳定（历史项相对新梯度过小）。PyTorch 的式 (8) 约定把步长放在速度外，天然免修正——这是 warmup 普及后更稳的写法。
 
-**PyTorch 实现核对**（pytorch/pytorch repo `torch/optim/sgd.py`，教学参照 + 官方实现；`_single_tensor_sgd` 逐行）。核心两行：`buf.mul_(momentum).add_(grad, alpha=1-dampening)` 即式 (8) 第一式——dampening $\tau$ 把新梯度乘 $(1-\tau)$ ，等价于有效步长乘 $(1-\tau)$ ，默认 0；`param.add_(grad, alpha=-lr)` 即第二式。三个附带事实：首步 `buf` 直接克隆首个梯度而非从零加——恰对应 $v_0 = 0$ 下 $v_1 = \hat g_1$ ；`weight_decay` 参数把 $\lambda \theta$ **加进梯度**再进 buffer（L2 与 momentum 耦合进同一 EMA，2.2 证明这在自适应优化器下不等价于 weight decay，正是 AdamW 的动机）；`foreach` / `fused` 分支是同一数学的算子融合变体，逐行语义相同。momentum buffer 本身是一份与参数同形的常驻内存——优化器状态内存账从这里开始，2.2 会再加两份。
+**PyTorch 实现核对**（pytorch/pytorch repo `torch/optim/sgd.py`，教学参照 + 官方实现；`_single_tensor_sgd` 逐行）。核心两行对应式 (8)：`buf.mul_(momentum).add_(grad, alpha=1-dampening)` 是第一式，`param.add_(grad, alpha=-lr)` 是第二式。还有三个附带事实。第一，dampening $\tau$ 把新梯度乘 $(1-\tau)$ ，等价于有效步长乘 $(1-\tau)$ ，默认 0。第二，首步 `buf` 直接克隆首个梯度而非从零加，恰对应 $v_0 = 0$ 下 $v_1 = \hat g_1$ 。第三，`weight_decay` 参数把 $\lambda \theta$ **加进梯度**再进 buffer——L2 与 momentum 耦合进同一 EMA；2.2 会证明这在自适应优化器下不等价于 weight decay，正是 AdamW 的动机。`foreach` / `fused` 分支是同一数学的算子融合变体，逐行语义相同。momentum buffer 本身是一份与参数同形的常驻内存——优化器状态内存账从这里开始，2.2 会再加两份。
 
 ## 4. Nesterov：先外推，再求梯
 
@@ -126,7 +126,7 @@ $$
 v_{t+1} = \mu \thinspace v_t - \varepsilon \thinspace \nabla \mathcal{L}(\theta_t + \mu \thinspace v_t), \qquad \theta_{t+1} = \theta_t + v_{t+1} \qquad (13)
 $$
 
-与 CM 的唯一差别：梯度的自变量是 $\theta_t + \mu v_t$ ——先走到动量即将带你去的位置，再在那里看梯度。机制含义：若动量方向继续对，外推点梯度与当前点渐近一致，两者无差；若即将冲过头（高曲率方向、碗壁反弹前夜），外推点的梯度已经反向，更新被提前刹车。Nesterov 比 CM 多一次「向前看」的修正，在 $\kappa$ 大的问题上这种修正正对着 §5 的病根。
+与 CM 的唯一差别是梯度的自变量： $\theta_t + \mu v_t$ 。先走到动量即将带你去的位置，再在那里看梯度。机制含义分两种情形。若动量方向继续对，外推点梯度与当前点渐近一致，两者无差。若即将冲过头——高曲率方向、碗壁反弹前夜——外推点的梯度已经反向，更新被提前刹车。Nesterov 比 CM 多一次「向前看」的修正；在 $\kappa$ 大的问题上，这种修正正对着 §5 的病根。
 
 这个差别可以写成精确代数。令 $\tilde\theta_t = \theta_t + \mu v_t$ （外推点），则 $\theta_t = \tilde\theta_t - \mu v_t$ ，代入式 (13) 第二式：
 
@@ -140,9 +140,9 @@ $$
 \tilde\theta_{t+1} = \tilde\theta_t + \mu^{2} v_t - (1+\mu) \thinspace \varepsilon \thinspace \nabla \mathcal{L}(\tilde\theta_t) \qquad (14)
 $$
 
-对照 CM 在同一点的更新 $\tilde\theta_{t+1} = \tilde\theta_t + \mu v_t - \varepsilon \nabla\mathcal{L}(\tilde\theta_t)$ ：NAG 把动量项系数从 $\mu$ 压到 $\mu^{2}$ 、把当前梯度项系数从 1 抬到 $1+\mu$ ——弱化了历史、强化了即时修正。PyTorch `nesterov=True` 实现的就是这个重排：先 `buf.mul_(momentum).add_(grad)` ，再令有效梯度 $= \hat g_t + \beta \cdot \mathrm{buf}$ ，展开为 $(1+\beta) \thinspace \hat g_t + \beta^{2} \thinspace v_{t-1}$ ——与式 (14) 逐项对应（PyTorch 参数序列对应式 (13) 的外推点序列，速度的符号约定差一个负号）。该文件 docstring 明言实现与 Sutskever 约定的这层关系。
+对照 CM 在同一点的更新 $\tilde\theta_{t+1} = \tilde\theta_t + \mu v_t - \varepsilon \nabla\mathcal{L}(\tilde\theta_t)$ ：NAG 把动量项系数从 $\mu$ 压到 $\mu^{2}$ ，把当前梯度项系数从 1 抬到 $1+\mu$ 。弱化了历史，强化了即时修正。PyTorch `nesterov=True` 实现的就是这个重排：先 `buf.mul_(momentum).add_(grad)` ，再令有效梯度 $= \hat g_t + \beta \cdot \mathrm{buf}$ ，展开为 $(1+\beta) \thinspace \hat g_t + \beta^{2} \thinspace v_{t-1}$ ，与式 (14) 逐项对应（PyTorch 参数序列对应式 (13) 的外推点序列，速度的符号约定差一个负号）。该文件 docstring 明言实现与 Sutskever 约定的这层关系。
 
-实践上 NAG 与 CM 的差距是二阶小量，多数报告里两者互换不改变结论；Nesterov 名字的分量在理论侧——凸优化中把速率推进到 $\sqrt\kappa$ 量级的加速法族（§5 的 heavy ball 在二次碗上已达同阶，Nesterov 加速把同类速率推广到一般强凸函数，本书不展开该族）。
+实践上，NAG 与 CM 的差距是二阶小量，多数报告里两者互换不改变结论。Nesterov 名字的分量在理论侧：凸优化中把速率推进到 $\sqrt\kappa$ 量级的加速法族。§5 的 heavy ball 在二次碗上已达同阶；Nesterov 加速把同类速率推广到一般强凸函数。本书不展开该族。
 
 ## 5. 二次碗上的收敛分析： $\kappa$ 对 $\sqrt\kappa$
 
@@ -154,13 +154,13 @@ $$
 
 **符号**：最优点平移到原点； $\mu, L$ ： $H$ 的最小、最大特征值； $\kappa$ ：条件数（condition number），碗的「扁」的程度。
 
-**GD 的速率**。 $\theta_{t+1} = (I - \eta H) \thinspace \theta_t$ ；按 $H$ 的特征基分解，第 $i$ 个坐标独立收缩 $e_{t+1}^{(i)} = (1 - \eta \lambda_i) \thinspace e_t^{(i)}$ ，最坏方向决定整体速率： $\rho_{\mathrm{GD}}(\eta) = \max_i |1 - \eta \lambda_i| = \max(|1 - \eta\mu|, |1 - \eta L|)$ —— $|1 - \eta\lambda|$ 关于 $\lambda$ 的极值必在端点。端点平衡 $1 - \eta\mu = -(1 - \eta L)$ 给出最优定步长与收缩因子：
+**GD 的速率**。 $\theta_{t+1} = (I - \eta H) \thinspace \theta_t$ 。按 $H$ 的特征基分解，第 $i$ 个坐标独立收缩： $e_{t+1}^{(i)} = (1 - \eta \lambda_i) \thinspace e_t^{(i)}$ 。最坏方向决定整体速率，即 $\rho_{\mathrm{GD}}(\eta) = \max_i |1 - \eta \lambda_i| = \max(|1 - \eta\mu|, |1 - \eta L|)$ —— $|1 - \eta\lambda|$ 关于 $\lambda$ 的极值必在端点。端点平衡 $1 - \eta\mu = -(1 - \eta L)$ 给出最优定步长与收缩因子：
 
 $$
 \eta^{\ast} = \frac{2}{L + \mu}, \qquad \rho_{\mathrm{GD}} = \frac{L - \mu}{L + \mu} = \frac{\kappa - 1}{\kappa + 1} \qquad (16)
 $$
 
-大 $\kappa$ 下 $\rho_{\mathrm{GD}} \approx 1 - 2/\kappa$ ：每步只消掉最慢方向误差的一丁点。机制读法：步长被最陡方向压住（ $\eta \le 2/L$ 才不发散），于是最平方向的收缩系数 $1 - \eta\mu \approx 1 - 2/\kappa$ 动不了——快方向来回弹跳（zigzag）、慢方向爬不动，这就是「峡谷里的 GD」。
+大 $\kappa$ 下 $\rho_{\mathrm{GD}} \approx 1 - 2/\kappa$ ：每步只消掉最慢方向误差的一丁点。机制读法：步长被最陡方向压住（ $\eta \le 2/L$ 才不发散），最平方向的收缩系数 $1 - \eta\mu \approx 1 - 2/\kappa$ 几乎不动。这就是「峡谷里的 GD」：快方向来回弹跳（zigzag），慢方向前进极慢。
 
 **Heavy ball 的速率**（[Polyak, 1964](../references.md)，USSR Computational Mathematics and Mathematical Physics 4(5):1-17，无 arXiv，[B]）。在式 (1) 上加历史项（即式 (8) 的非随机版重排）：
 
@@ -180,7 +180,7 @@ $$
 r^{2} - (1 + \beta - \eta\lambda) \thinspace r + \beta = 0 \qquad (18)
 $$
 
-该坐标的收缩速率 = $M$ 的谱半径 $\max(|r_1|, |r_2|)$ 。关键观察：判别式 $(1 + \beta - \eta\lambda)^{2} - 4\beta \lt 0$ 时两根共轭复、模长 $\sqrt{r_1 r_2} = \sqrt\beta$ （根之积 = $\beta$ ）——复根区内速率与 $\lambda$ **无关**、统一为 $\sqrt\beta$ 。最优调参把整段 $[\mu, L]$ 罩进复根区、并让两个端点恰好压在边界上：
+该坐标的收缩速率 = $M$ 的谱半径 $\max(|r_1|, |r_2|)$ 。关键观察：当判别式 $(1 + \beta - \eta\lambda)^{2} - 4\beta \lt 0$ 时，两根共轭复，模长 $\sqrt{r_1 r_2} = \sqrt\beta$ （根之积 = $\beta$ ）。也就是说，复根区内速率与 $\lambda$ **无关**，统一为 $\sqrt\beta$ 。最优调参的思路随之明确：把整段 $[\mu, L]$ 罩进复根区，并让两个端点恰好压在边界上：
 
 $$
 1 + \beta - \eta\mu = 2\sqrt\beta, \qquad 1 + \beta - \eta L = -2\sqrt\beta \qquad (19)
@@ -211,7 +211,7 @@ $$
                             以 (√κ−1)/(√κ+1) 收缩
 ```
 
-三条边界说明。其一，式 (20) 是**渐近最坏方向**口径：heavy ball 的误差曲线振荡下行、不单调，谱半径只控制包络。其二，分析依赖精确二次与定常 $\eta, \beta$ ；随机梯度情形归 §6。其三，深度网络非凸，二次碗只是局部模型——[Sutskever et al., 2013](../references.md)（[B]）的实证贡献正在于展示：配好初始化与递增的 $\mu$ schedule 后，该局部模型的定性预测在深网与长程 RNN 上成立，一阶动量法训出了此前只有 Hessian-Free 二阶方法能到的解。
+三条边界说明。其一，式 (20) 是**渐近最坏方向**口径：heavy ball 的误差曲线振荡下行、不单调，谱半径只控制包络。其二，分析依赖精确二次与定常 $\eta, \beta$ ；随机梯度情形归 §6。其三，深度网络非凸，二次碗只是局部模型。[Sutskever et al., 2013](../references.md)（[B]）的实证贡献正在于展示这个局部模型的适用范围：配好初始化与递增的 $\mu$ schedule 后，其定性预测在深网与长程 RNN 上成立，一阶动量法训出了此前只有 Hessian-Free 二阶方法能到的解。
 
 ## 6. Momentum × 梯度噪声：平均降噪与噪声累积的对账
 
@@ -223,23 +223,23 @@ $$
 
 缓冲区的噪声被**放大** $1/(1-\beta^{2})$ 倍： $\beta = 0.9$ 为 5.26 倍、0.99 为 50 倍。只看这一面，momentum 是噪声的蓄水池。
 
-但账要按有效步长对。每步注入参数的噪声方差为 $\eta^{2} \thinspace \mathrm{tr}\thinspace \mathrm{Cov}(v_{\infty})$ ，换有效步长 $\eta_{\mathrm{eff}} = \eta/(1-\beta)$ （式 (10)(11) 的口径）表示：
+但这只是存量。流量账要按有效步长来对：每步注入参数的噪声方差为 $\eta^{2} \thinspace \mathrm{tr}\thinspace \mathrm{Cov}(v_{\infty})$ ，换成有效步长 $\eta_{\mathrm{eff}} = \eta/(1-\beta)$ （式 (10)(11) 的口径）表示：
 
 $$
 \eta^{2} \cdot \frac{\mathrm{tr}\thinspace \Sigma}{B (1-\beta^{2})} = \eta_{\mathrm{eff}}^{2} \cdot \frac{(1-\beta)^{2}}{1-\beta^{2}} \cdot \frac{\mathrm{tr}\thinspace \Sigma}{B} = \eta_{\mathrm{eff}}^{2} \cdot \frac{1-\beta}{1+\beta} \cdot \frac{\mathrm{tr}\thinspace \Sigma}{B} \qquad (22)
 $$
 
-与裸 SGD 在同一 $\eta_{\mathrm{eff}}$ 下的注入 $\eta_{\mathrm{eff}}^{2} \thinspace \mathrm{tr}\thinspace \Sigma / B$ 相比，momentum 的噪声注入只剩 $(1-\beta)/(1+\beta)$ ： $\beta$ = 0.9 / 0.95 / 0.99 对应 1/19 / 1/39 / 1/199。直觉一句话：权重和（ $\approx 1/(1-\beta)$ ）以平方进入有效步长，权重平方和（ $1/(1-\beta^{2})$ ）进入噪声——前者长得更快，平均视野越长信噪比越高。「降噪」与「累积」两面对账完毕：放大的是缓冲区的存量，压缩的是单位有效步长的流量。
+与裸 SGD 在同一 $\eta_{\mathrm{eff}}$ 下的注入 $\eta_{\mathrm{eff}}^{2} \thinspace \mathrm{tr}\thinspace \Sigma / B$ 相比，momentum 的噪声注入只剩 $(1-\beta)/(1+\beta)$ ： $\beta$ = 0.9 / 0.95 / 0.99 对应 1/19 / 1/39 / 1/199。直觉一句话：权重和（ $\approx 1/(1-\beta)$ ）以平方进入有效步长，权重平方和（ $1/(1-\beta^{2})$ ）进入噪声；前者长得更快，平均视野越长，信噪比越高。两面对账完毕：「累积」放大的是缓冲区的存量，「降噪」压缩的是单位有效步长的流量。
 
-代价在偏差侧：EMA 里的梯度信息有平均滞后——几何权重的平均年龄 $\sum_k k \beta^{k} / \sum_k \beta^{k} = \beta/(1-\beta)$ 步（ $\beta = 0.9$ 为 9 步、0.95 为 19 步）。方向快速转弯的阶段（warmup 结束、schedule 切换点、loss landscape 的鞍部出口），滞后直接拖慢响应。 $\beta$ 的全部含义绑在一行上：视野 $1/(1-\beta)$ 步、噪声注入 $(1-\beta)/(1+\beta)$ 、滞后 $\beta/(1-\beta)$ 步——三者同一旋钮。
+代价在偏差侧：EMA 里的梯度信息有平均滞后，几何权重的平均年龄是 $\sum_k k \beta^{k} / \sum_k \beta^{k} = \beta/(1-\beta)$ 步（ $\beta = 0.9$ 为 9 步、0.95 为 19 步）。方向快速转弯的阶段——warmup 结束、schedule 切换点、loss landscape 的鞍部出口——滞后直接拖慢响应。至此 $\beta$ 的全部含义可以绑在一行：视野 $1/(1-\beta)$ 步、噪声注入 $(1-\beta)/(1+\beta)$ 、滞后 $\beta/(1-\beta)$ 步，三者是同一个旋钮。
 
 与 2.3 的接口：McCandlish et al. 的稳态「温度」口径（SGD 稳态分布的尺度 ~ $\eta/B$ ）在 momentum 下把 $\eta$ 换成 $\eta/(1-\beta)$ ——与本节有效步长账是同一事实的两种说法；温度、noise scale 与 critical batch 的完整联动归 2.3。
 
 ## 7. 实践惯例与边界： $\beta$ 的读数与 LLM 为什么不是 SGD-momentum
 
-$\beta = 0.9$ 是深度学习的事实默认值：PyTorch 官方 docstring 的示例写作 `SGD(..., lr=0.1, momentum=0.9)` ；[Goyal et al., 2017](../references.md)（[B]）的 8192-batch ImageNet 配方用 Nesterov $m = 0.9$ 、weight decay $10^{-4}$ 、 $\eta = 0.1 \cdot B/256$ 。更大 $\beta$ 的出处是更难优化的问题：[Sutskever et al., 2013](../references.md)（[B]）对深 autoencoder 用递增 schedule $\mu_t = \min\left(1 - 2^{-1-\log_2(\lfloor t/250 \rfloor + 1)}, \mu_{\max}\right)$ 、 $\mu_{\max}$ 取自 $\lbrace 0.999, 0.995, 0.99, 0.9, 0 \rbrace$ ；长程 RNN 实验用前 1000 步 $\mu = 0.9$ 、随后切 $\mu_0 \in \lbrace 0, 0.9, 0.98, 0.995 \rbrace$ 。规律：问题越病态（曲率 $\kappa$ 越大、时间依赖越长），视野 $1/(1-\beta)$ 要越长；schedule 递增的原因是训练初期方向尚未对准、长记忆只会固化错误方向。
+$\beta = 0.9$ 是深度学习的事实默认值。PyTorch 官方 docstring 的示例写作 `SGD(..., lr=0.1, momentum=0.9)` ；[Goyal et al., 2017](../references.md)（[B]）的 8192-batch ImageNet 配方用 Nesterov $m = 0.9$ 、weight decay $10^{-4}$ 、 $\eta = 0.1 \cdot B/256$ 。更大 $\beta$ 的出处是更难优化的问题。[Sutskever et al., 2013](../references.md)（[B]）对深 autoencoder 用递增 schedule $\mu_t = \min\left(1 - 2^{-1-\log_2(\lfloor t/250 \rfloor + 1)}, \mu_{\max}\right)$ ， $\mu_{\max}$ 取自 $\lbrace 0.999, 0.995, 0.99, 0.9, 0 \rbrace$ ；长程 RNN 实验用前 1000 步 $\mu = 0.9$ ，随后切 $\mu_0 \in \lbrace 0, 0.9, 0.98, 0.995 \rbrace$ 。规律：问题越病态——曲率 $\kappa$ 越大、时间依赖越长——视野 $1/(1-\beta)$ 要越长。schedule 递增的原因也直观：训练初期方向尚未对准，长记忆只会固化错误方向。
 
-LLM 预训练的主流却不是 SGD-momentum：各家公开配方的 optimizer 列几乎一律 Adam/AdamW（全字段对照表归 7.2，数学推导归 2.2）。机制层面的动机一句话版：LLM 各参数块的梯度幅度跨数量级——embedding 行的更新稀疏而猛烈、dense 矩阵的更新稠密而平缓、logit 尺度随训练漂移——单一标量步长配 momentum 只能按全局几何折中，逐坐标自适应（每坐标独立有效步长）是对这个结构的直接回应，这就是 2.2 的起点；另一条回应路线是按矩阵结构的谱方法（2.5）。口径提醒：LLM 文献里成对出现的「0.9 / 0.95」是 Adam 的 $(\beta_1, \beta_2)$ 两阶矩系数（归 2.2 的超参表），与本章 momentum 的 $\beta$ 不是同一对象——尽管 $\beta_1$ 的机制正是式 (9) 的 EMA，其「0.9」的读数（视野约 10 步）与本章一致。SGD-momentum 留下的基准不会过时：式 (16)(20) 的二次碗速率是全部加速分析的参照系，linear scaling 与 critical batch 的账（2.3）以本章的噪声模型为底层。
+LLM 预训练的主流却不是 SGD-momentum：各家公开配方的 optimizer 列几乎一律 Adam/AdamW（全字段对照表归 7.2，数学推导归 2.2）。机制层面的动机是什么？LLM 各参数块的梯度幅度跨数量级。embedding 行的更新稀疏而猛烈，dense 矩阵的更新稠密而平缓，logit 尺度随训练漂移。单一标量步长配 momentum 只能按全局几何折中；逐坐标自适应——每坐标独立有效步长——是对这个结构的直接回应，这就是 2.2 的起点。另一条回应路线是按矩阵结构的谱方法（2.5）。口径提醒：LLM 文献里成对出现的「0.9 / 0.95」是 Adam 的 $(\beta_1, \beta_2)$ 两阶矩系数（归 2.2 的超参表），与本章 momentum 的 $\beta$ 不是同一对象；尽管 $\beta_1$ 的机制正是式 (9) 的 EMA，其「0.9」的读数（视野约 10 步）与本章一致。SGD-momentum 留下的基准不会过时：式 (16)(20) 的二次碗速率是全部加速分析的参照系，linear scaling 与 critical batch 的账（2.3）以本章的噪声模型为底层。
 
 ## 总结
 
