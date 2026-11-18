@@ -1,48 +1,64 @@
 # 7.3 训练稳定性：Loss Spike、监控与干预（Training Stability: Loss Spikes, Monitoring, and Intervention）
 
-> 本章把「训练为什么会炸」拆成三层可操作的内容：loss spike 的四类触发机制（数据 / 优化器 / 数值 / 硬件——2.4 §5 预告的 taxonomy 在此兑现）、以 grad norm 与 update ratio 为核心的监控指标体系（含 spike 检测判据与正常区间的推导）、带适用判据的四档干预手册；各家记录全部回原文核实：GLM-130B 的 spike 日志与 EGS、OLMo 2 的八项干预与 spike score、DeepSeek-V3 的零不可恢复 spike 口径、Llama-3 的 466 次中断统计、Kimi K2 的 MuonClip | 前置：2.4（梯度裁剪、稳定原语 placement 总图、GLM-130B 案例）、2.5 §7（MuonClip）、2.2（AdamW 的 $m$ / $v$ 动力学与 $\epsilon$ regime）、2.3（warmup 论证）、3.1 §5（z-loss 梯度与 injection point 对照表）| 锚点：GLM-130B [A]（arXiv:2210.02414 §3）、OLMo 2 [A]（arXiv:2501.00656 §3）、DeepSeek-V3 [A]（arXiv:2412.19437）、Llama-3 herd [A]（arXiv:2407.21783 §3.3.4）、Kimi K2 [A]（arXiv:2507.20534 §2.1）
+> 训练为什么会炸、怎么提前看见、炸了怎么办——本章依次回答这三个问题：loss spike 的四类触发机制（数据 / 优化器 / 数值 / 硬件，即 2.4 §5 预告的分类学）、以 grad norm 与 update ratio 为核心的监控指标（含 spike 检测判据与正常区间的推导）、带适用判据的四档干预手册。各家记录全部回原文核实：GLM-130B 的 spike 日志与 EGS、OLMo 2 的八项干预与 spike score、DeepSeek-V3 的零不可恢复 spike 口径、Llama-3 的 466 次中断统计、Kimi K2 的 MuonClip | 前置：2.4（梯度裁剪、稳定原语 placement 总图、GLM-130B 案例）、2.5 §7（MuonClip）、2.2（AdamW 的 $m$ / $v$ 动力学与 $\epsilon$ regime）、2.3（warmup 论证）、3.1 §5（z-loss 梯度与 injection point 对照表）| 锚点：GLM-130B [A]（arXiv:2210.02414 §3）、OLMo 2 [A]（arXiv:2501.00656 §3）、DeepSeek-V3 [A]（arXiv:2412.19437）、Llama-3 herd [A]（arXiv:2407.21783 §3.3.4）、Kimi K2 [A]（arXiv:2507.20534 §2.1）
 
 ## 1. spike 的可观测形态：grad norm 先行，loss 后到
 
-GLM-130B 的训练日志留下了公开文献里少见的带逐步记录的稳定性实证：「a training collapse usually lags behind a 'spike' in gradient norm by a few training steps」——训练崩溃通常**滞后**于梯度范数突刺数步，grad norm 突刺是先行指标而非同时现象（[Zeng et al., 2022](../references.md)，arXiv:2210.02414，[A]，§3）。OLMo 2 在其基线 OLMo-0424 上独立记录了同构的形态：突发 loss spike 之前往往先出现更剧烈的 grad norm 突刺；模型越大突刺越频繁；grad norm 的慢速爬升与突刺频率正相关，两者合流后训练走向发散（[Team OLMo et al., 2025](../references.md)，arXiv:2501.00656，[A]，§3 开头的问题清单）。
+训练崩溃之前，机器先发出了警告。GLM-130B 的训练日志里有一条少见的带逐步记录的实证：「a training collapse usually lags behind a 'spike' in gradient norm by a few training steps」（[Zeng et al., 2022](../references.md)，arXiv:2210.02414，[A]，§3）。翻译过来：梯度范数先突刺，数步之后 loss 才崩溃。grad norm 突刺是先行指标，不是崩溃的同义词。
 
-先行性把「检测」从 loss 端提前到梯度端，判据形式化为一行滚动统计检测。设被监控序列为 $x_t$（grad norm、loss 或其他标量指标），取最近 $W$ 步的滚动均值 $`\bar{x}_t^{(W)}`$ 与滚动标准差 $`\sigma_t^{(W)}`$，定义标准化偏离
+OLMo 2 在自己的基线 OLMo-0424 上独立看到了同一形态（[Team OLMo et al., 2025](../references.md)，arXiv:2501.00656，[A]，§3 开头的问题清单）：loss 突刺之前，往往先有更剧烈的 grad norm 突刺；模型越大，突刺越频繁；grad norm 的慢速爬升与突刺频率正相关。两条曲线合流之后，训练走向发散。
+
+先行性直接决定检测器架在哪里：架在梯度端，比架在 loss 端早数步。判据本身只需要一行滚动统计。设被监控序列为 $x_t$（grad norm、loss 或其他标量指标），取最近 $W$ 步的滚动均值 $`\bar{x}_t^{(W)}`$ 与滚动标准差 $`\sigma_t^{(W)}`$，标准化偏离定义为
 
 $$
 s_t = \frac{x_t - \bar{x}_t^{(W)}}{\sigma_t^{(W)}}, \qquad \text{spike 判据：} \quad s_t \gt k \qquad (1)
 $$
 
-**符号**： $W$：基线窗口； $k$：阈值倍数。OLMo 2 的 spike score 就是式 (1) 的触发率口径：「时间序列中与最近 1000 个值的滚动均值相距至少 7 个标准差的点所占百分比」（其 §3.2 的 Spike score 段落，[A]）——即 $W = 1000$、 $k = 7$ 下式 (1) 的经验触发频率，主要用于 loss 与 grad L2 norm 两条序列。
+**符号**： $W$：基线窗口； $k$：阈值倍数。OLMo 2 的 spike score 就是式 (1) 的触发率版本：「时间序列中与最近 1000 个值的滚动均值相距至少 7 个标准差的点所占百分比」（其 §3.2 的 Spike score 段落，[A]）。换句话说，取 $W = 1000$、 $k = 7$，统计式 (1) 在序列上的触发频率——这就是 spike score，主要用于 loss 与 grad L2 norm 两条曲线。
 
-$k = 7$ 的误报账可以先算：标准正态的右尾 $`\Pr(s \gt 7) \approx 1.3 \times 10^{-12}`$， $10^{4}$ 步的期望误报约 $10^{-8}$ 次——高斯假设下这个判据几乎永不误报。真实梯度序列是重尾的， $k = 7$ 仍然把日常抖动与 spike 分得足够开；OLMo 2 全章的消融收益（ §6 的 0.40 → 0.03 等数字）都用这个口径报告。窗口的选择有一个权衡： $W$ 大则基线稳、但跟不上 phase 切换（warmup 结束、schedule 拐点会把系统性漂移误报成 spike）； $W$ 小则 $\sigma_t^{(W)}$ 估计噪声大。 $W = 1000$ 是 OLMo 2 在 7B/13B 全量训练上跑通的工作点而非定理；换 schedule 形态（如 WSD 的 decay 拐点，2.3）时基线窗要跨过拐点重估（本书工程口径）。
+$k = 7$ 的误报账可以先算。标准正态的右尾 $`\Pr(s \gt 7) \approx 1.3 \times 10^{-12}`$，一万步里期望误报约 $10^{-8}$ 次——高斯假设下几乎永不误报。真实梯度序列是重尾的，但 $k = 7$ 仍把日常抖动与 spike 分得足够开。OLMo 2 全章的消融收益（ §6 的 0.40 → 0.03 等数字）都用这个口径报告。
 
-本节的两条记录还给出一个结构判断：spike 不是单点事件而是**过程**——先行（grad norm）、爆发（loss spike）、收尾（自行恢复或崩溃）三段。监控要抓第一段，干预要在第二段之前，这正是 §4 流水线与 §5 手册的组织方式。
+窗口 $W$ 怎么选？两边都有代价。 $W$ 大，基线稳，但跟不上 phase 切换——warmup 结束、schedule 拐点这类系统性漂移会被误报成 spike。 $W$ 小， $\sigma_t^{(W)}$ 的估计噪声大。OLMo 2 的 $W = 1000$ 是在 7B/13B 全量训练上跑通的工作点，不是定理。换 schedule 形态（如 WSD 的 decay 拐点，2.3）时，基线窗要跨过拐点重估（本书工程口径）。
+
+本节的两条记录还说明一件事：spike 不是单点事件，而是一个**过程**——先行（grad norm）、爆发（loss spike）、收尾（自行恢复或崩溃）三段。监控要抓第一段，干预要在第二段之前。 §4 的流水线与 §5 的手册就按这个顺序组织。
 
 ## 2. 机制分类学：四类触发通道
 
-2.4 §5 立的四类框架，本节逐类给机制、实证与对策的完整账。
+2.4 §5 预告的四类框架，本节逐类兑现：每类给机制、实证与对策。
 
 ### 2.1 数据触发：坏 batch
 
-OLMo 2 的数据侧证据是最干净的一组（§3.1，[A]）：回查发生突刺的 batch，含长重复 n-gram 的序列高频出现（论文给出具体 token 流实例，如数十次重复的字符串段）。但因果关系是统计性的而非决定论的，论文自列三条反例形态：同一段重复序列在大模型上触发突刺、小模型上未必；同一序列换一种 shuffle 后可能不再触发；同样的序列也出现在没有突刺的 batch 里。结论只能落在频率上：滤掉这类序列**平均而言**降低突刺频率。OLMo 2 的对策是两层过滤——数据清洗侧删除一切含「32 个及以上重复」的 n-gram（n 取 1 到 13 个 token）的文档；训练侧在 trainer 里再检测一遍、命中则在计算 loss 时 mask 掉对应序列（[A]，§3.1 与 §2.1 数据管线口径）。
+OLMo 2 的数据侧证据是最干净的一组（§3.1，[A]）。回查发生突刺的 batch，含长重复 n-gram 的序列高频出现——论文给出具体实例，比如同一段字符串重复数十次的 token 流。
 
-机制读法（本书分析）：坏 batch 把单步梯度 $g_t$ 推出其历史分布，等价于把参数朝一个曲率未知的方向迈了一步 $\eta \cdot u$；LR 处于高位时这一步足以离开当前盆地边缘，后续几步在坏地形上继续放大偏差。shuffle 依赖（同一序列换个顺序就不触发）说明触发取决于「坏样本出现的时机 × 当时的优化器状态」的联合条件，而不是样本的固有属性——这条性质在 §5.2 的 rewind 手段里会被正面利用。
+但因果是统计性的，不是决定论的。论文自己列了三条反例形态：同一段重复序列在大模型上触发突刺，在小模型上未必；同一序列换一种 shuffle 后可能不再触发；同样的序列也出现在没有突刺的 batch 里。所以结论只能落在频率上：滤掉这类序列，平均而言突刺变少。
+
+OLMo 2 的对策是两层过滤。第一层在数据清洗时做：删除一切含「32 个及以上重复」的 n-gram（n 取 1 到 13 个 token）的文档。第二层在 trainer 里做：加载时再检测一遍，命中就在计算 loss 时 mask 掉对应序列（[A]，§3.1 与 §2.1 数据管线口径）。
+
+机制上怎么理解（本书分析）？坏 batch 把单步梯度 $g_t$ 推出它的历史分布，等价于把参数朝一个曲率未知的方向迈了一步 $\eta \cdot u$。LR 处于高位时，这一步足以把参数带出当前盆地边缘，后续几步在坏地形上继续放大偏差。shuffle 依赖（同一序列换个顺序就不触发）说明触发取决于「坏样本出现的时机 × 当时的优化器状态」，而不是样本本身的固有属性。这条性质在 §5.2 的 rewind 手段里会被正面利用。
 
 ### 2.2 优化器触发：二阶矩的宿醉与失配
 
-Adam 的二阶矩是 spike 的受害者兼放大器。2.4 §4 的账此处直接用：典型量级下 $\hat{v}$ 稳定在 $v_0$，一个 $k$ 倍幅度的 spike 把该坐标 $v$ 瞬时抬高约 $(1-\beta_2) \thinspace k^{2} \thinspace v_0$（ $\beta_2 = 0.95$、 $k = 100$ 时约 500 倍），随后以时间常数 $1/(1-\beta_2) \approx 20$ 步指数回落——spike 过后约 20 步里更新幅度被持续压缩（宿醉），spike 方向在 $m$ 里驻留约 $1/(1-\beta_1) \approx 10$ 步。两层后果：若 spike 已把参数推坏，宿醉期的小步长拖慢恢复；若 spike 是数值性的（ §2.3），优化器状态把一次性污染固化成数十步的统计偏差。这条账也是干预纪律的来源——rewind 必须连优化器状态一起回滚（ §5.2），而干净的故障恢复可以不动它（7.4 §5）。
+Adam 的二阶矩是 spike 的受害者兼放大器。2.4 §4 的账这里直接用：典型量级下 $\hat{v}$ 稳定在 $v_0$；一个 $k$ 倍幅度的 spike 把该坐标 $v$ 瞬时抬高约 $(1-\beta_2) \thinspace k^{2} \thinspace v_0$（ $\beta_2 = 0.95$、 $k = 100$ 时约 500 倍），随后以时间常数 $1/(1-\beta_2) \approx 20$ 步指数回落。也就是说，spike 过后约 20 步里更新幅度被持续压缩——形象一点叫「宿醉」；spike 方向在 $m$ 里还要驻留约 $1/(1-\beta_1) \approx 10$ 步。
 
-$\epsilon$ 是优化器侧另一个被实证过的旋钮：OLMo 2 把 AdamW 的 $\epsilon$ 从 $10^{-5}$ 降到 $10^{-8}$，早期更新幅度放开，grad norm 更快收敛且此后**永久更低**（其 §3.4.1，[A]；机制解释为 2.2 §4 的两个 regime——早期 $\hat{v}$ 普遍偏小， $\epsilon = 10^{-5}$ 会把大批坐标压在线性 regime）。Muon 侧有另一种优化器触发表型：Moonlight 训练日志记录 max attention logit 在特定层持续爬升突破 100 而 loss 与 grad norm 全程平稳（AdamW 对照更健康），K2 的中规模实验里裸 Muon 下该指标迅速破 1000 并伴随 loss spike 乃至偶发发散（完整口径与 MuonClip 对策归 2.5 §7）。注意纪律：「为什么 Muon 下 logit 更易漂移」在公开文献里只有现象学记录、没有机制定论（2.5 §9 第 5 条），本书不补推测。
+宿醉有两层后果。第一，若 spike 已把参数推坏，宿醉期的小步长会拖慢恢复。第二，若 spike 是数值性的（ §2.3），优化器状态把一次性污染固化成数十步的统计偏差。这条账也是干预纪律的来源：rewind 必须连优化器状态一起回滚（ §5.2），而干净的故障恢复可以不动它（7.4 §5）。
+
+$\epsilon$ 是优化器侧另一个被实证过的旋钮。OLMo 2 把 AdamW 的 $\epsilon$ 从 $10^{-5}$ 降到 $10^{-8}$，早期更新幅度放开，grad norm 更快收敛，且此后**永久更低**（其 §3.4.1，[A]）。机制解释在 2.2 §4 的两个 regime：早期 $\hat{v}$ 普遍偏小， $\epsilon = 10^{-5}$ 会把大批坐标压在线性 regime，更新被钳小。
+
+Muon 侧有另一种优化器触发的表型。Moonlight 的训练日志记录：max attention logit 在特定层持续爬升、突破 100，而 loss 与 grad norm 全程平稳（AdamW 对照更健康）。K2 的中规模实验里，裸 Muon 下该指标迅速破 1000，并伴随 loss spike 乃至偶发发散（完整口径与 MuonClip 对策归 2.5 §7）。注意纪律：「为什么 Muon 下 logit 更易漂移」在公开文献里只有现象学记录，没有机制定论（2.5 §9 第 5 条），本书不补推测。
 
 ### 2.3 数值触发：溢出与 logit 爆炸
 
-GLM-130B 的数值侧记录（§3，[A]）是 fp16 混合精度训练中公开记录最完整的一份：混合精度方案为 FP16 前向反向 + FP32 优化器态与主权重（Apex O2 口径），训练早期即频繁 loss spike 且「随训练推进越来越频繁」；spike 分两种形态——部分无明确原因、自行恢复，部分以 grad norm 骤升为前兆、数步后 loss spike 甚至 NaN。论文把两个随规模放大的数值问题点名为：(i) Pre-LN 下主支数值在深层可以极大（对策换成 DeepNorm 型 Post-LN，其 §2.1；LN 变体的梯度分析归 models 2.7）；(ii) attention score 大到超出 FP16 动态范围（fp16 的 softmax 溢出账见 models 2.3 §4：logit 约 11 即溢出）。被排除的选项同样有信息量：CogView 的 PB-Relax（去 bias 加极值扣除）在 GLM-130B 上不能避免发散；BLOOM-176B 的 BF16 方案在其平台上因梯度累加转 FP32 多耗约 $15\text{％}$ 显存、且不支持 V100；BLOOM 的 embedding norm 被其作者报告损害 zero-shot 能力（以上均为 GLM-130B §3 的转述口径）。
+GLM-130B 的数值侧记录（§3，[A]）是 fp16 混合精度训练中公开记录最完整的一份。它的混合精度方案是 FP16 前向反向 + FP32 优化器态与主权重（Apex O2 口径）。训练早期就频繁 loss spike，且「随训练推进越来越频繁」。spike 分两种形态：一部分没有明确原因、自行恢复；另一部分以 grad norm 骤升为前兆，数步后 loss spike 甚至 NaN。
 
-attention logit 爆炸的稳定原语全部在模型侧，本章只登记指针：QK-norm（结构性封顶）与 soft-capping（tanh 软钳）的公式走读归 models 2.7 §7-8；z-loss 的两个作用点——router 侧（models 4.5 式 (12)，ST-MoE 谱系）与输出侧（models 8.5 式 (7)，Chameleon）；训练侧的梯度推导与三者 injection point 对照表已在 3.1 §5 交付。这类手段的分类学位置：把数值触发通道在**前向内部**封死，让 §1 的检测器根本看不到 spike。OLMo 2 给了一条同层的实证：把 RMSNorm 移到子层输出侧（reordered norm）并叠加 QK-norm，梯度 spike score 从 0.108 降到 0.069（其 §3.3.2，[A]）——架构摆放本身就是稳定性手段。
+论文点名了两个随规模放大的数值问题。第一，Pre-LN 下主支数值在深层可以极大——对策是换成 DeepNorm 型 Post-LN（其 §2.1；LN 变体的梯度分析归 models 2.7）。第二，attention score 大到超出 FP16 动态范围（fp16 的 softmax 溢出账见 models 2.3 §4：logit 约 11 即溢出）。
+
+被排除的选项同样有信息量：CogView 的 PB-Relax（去 bias 加极值扣除）在 GLM-130B 上不能避免发散；BLOOM-176B 的 BF16 方案在 GLM 的平台上要多耗约 $15\text{％}$ 显存（梯度累加转 FP32），且不支持 V100；BLOOM 的 embedding norm 被其作者报告损害 zero-shot 能力（以上均为 GLM-130B §3 的转述口径）。
+
+attention logit 爆炸的稳定原语全部在模型侧，本章只登记指针：QK-norm（结构性封顶）与 soft-capping（tanh 软钳）的公式走读归 models 2.7 §7-8；z-loss 有两个作用点——router 侧（models 4.5 式 (12)，ST-MoE 谱系）与输出侧（models 8.5 式 (7)，Chameleon）；训练侧的梯度推导与三者 injection point 对照表已在 3.1 §5 交付。这类手段在分类学里的位置：把数值触发通道在**前向内部**封死，让 §1 的检测器根本看不到 spike。OLMo 2 给了一条同层的实证：把 RMSNorm 移到子层输出侧（reordered norm）并叠加 QK-norm，梯度 spike score 从 0.108 降到 0.069（其 §3.3.2，[A]）——架构摆放本身就是稳定性手段。
 
 ### 2.4 硬件触发：SDC 与故障统计口径
 
-Llama-3 405B 的 54 天预训练窗口给出大规模训练故障的唯一公开逐类统计（[Grattafiori et al., 2024](../references.md)，arXiv:2407.21783，[A]，§3.3.4 及 Table 5）：466 次作业中断，其中 47 次计划内（固件升级等自动维护与运维操作）、419 次意外；意外中断里约 $78\text{％}$ 归因于确认或疑似的硬件问题（含静默数据损坏与计划外主机维护）；GPU 类是最大类别（正文口径：占全部意外中断的 $58.7\text{％}$ ）；整个窗口只需 3 次显著人工干预，其余由自动化处理，有效训练时间保持在 $90\text{％}$ 以上。Table 5 行项摘录（次数与 % 均为原表口径）：
+大规模训练里硬件故障有多频繁？Llama-3 405B 的 54 天预训练窗口给出了唯一公开的逐类统计（[Grattafiori et al., 2024](../references.md)，arXiv:2407.21783，[A]，§3.3.4 及 Table 5）：466 次作业中断，其中 47 次计划内（固件升级等自动维护与运维操作），419 次意外。意外中断里约 $78\text{％}$ 归因于确认或疑似的硬件问题（含静默数据损坏与计划外主机维护），GPU 类是最大类别（正文口径：占全部意外中断的 $58.7\text{％}$ ）。整个窗口只需 3 次显著人工干预，其余由自动化处理，有效训练时间保持在 $90\text{％}$ 以上。Table 5 行项摘录（次数与 % 均为原表口径）：
 
 | 组件 | 类别 | 次数 | 原表占比 |
 | --- | --- | --- | --- |
@@ -58,7 +74,7 @@ Llama-3 405B 的 54 天预训练窗口给出大规模训练故障的唯一公开
 
 口径注记（本书核对）：正文「GPU 类占 $58.7\text{％}$ 」与 Table 5 GPU 类逐行合计（268 次 / 419 次 $\approx 64\text{％}$ ）存在小差异。根源可定位：原表 % 列的 GPU 六行相加恰为 $58.7\text{％}$ ——正文数字是 % 列之和；而 % 列首行自身口径异常（148 次对 419 分母应为 $35.3\text{％}$ 而非 $30.1\text{％}$ ，其余行与 419 分母相容）——原文的 % 列与次数列不自洽，表文差异源于此。本书按原文各自照录、不做调和。
 
-SDC（silent data corruption，静默数据损坏）单独立类的理由是它不报错：计算结果错而硬件状态正常，loss 曲线表现为无数据规律、无先行预警的偏移。6 次 / 54 天听着少，但它是四类触发里唯一无法从日志提前检出的通道（本书分析）；检出只能走间接路径—— §1 的统计判据先报警，再对疑似 rank 做定点硬件测试定位。规模感的另一组数字：同步训练下单个 GPU 故障可能需要重启整个作业（ §3.3.4 原文）；checkpoint 与自动恢复如何把这类中断的代价压小，归 7.4。
+SDC（silent data corruption，静默数据损坏）单独立类的理由是它不报错：计算结果错，硬件状态却正常，loss 曲线上表现为无数据规律、无先行预警的偏移。6 次 / 54 天听着少，但它是四类触发里唯一无法从日志提前检出的通道（本书分析）。检出只能走间接路径： §1 的统计判据先报警，再对疑似 rank 做定点硬件测试定位。另有一组数字给出规模感：同步训练下，单个 GPU 故障就可能需要重启整个作业（ §3.3.4 原文）。checkpoint 与自动恢复如何把这类中断的代价压小，归 7.4。
 
 四类通道的汇总（检测信号 → 一手对策）：
 
@@ -71,7 +87,7 @@ SDC（silent data corruption，静默数据损坏）单独立类的理由是它�
 
 ## 3. 监控指标体系：六个量与两条推导
 
-指标设计的第一原则已在 2.4 §3 立住：不存在跨模型通用的正常区间，每个指标按本模型自身历史（warmup 结束后的分位数）定基线。本节把全书用到的六个监控量登记成表，再给两条推导把「正常区间」从经验变成可算的数。
+指标设计的第一原则已在 2.4 §3 立住：不存在跨模型通用的正常区间，每个指标按本模型自身历史（warmup 结束后的分位数）定基线。本节做两件事：先把全书用到的六个监控量登记成表，再用两条推导把「正常区间」从经验变成可算的数。
 
 | 指标 | 定义 | 正常形态 | 异常形态（指向） |
 | --- | --- | --- | --- |
@@ -82,7 +98,7 @@ SDC（silent data corruption，静默数据损坏）单独立类的理由是它�
 | attention entropy | 各行注意力分布的熵（本书工程口径） | 稳定带 | 塌缩向 one-hot（饱和）或摊平向均匀（注意力失焦） |
 | LR | schedule 当值 | 与 recipe 逐点一致 | 任何偏离 = 实现 bug 的最快检出 |
 
-**推导一：update ratio 的定义与正常区间。** 定义逐层（或逐张量）的更新比
+**推导一：update ratio 的定义与正常区间。** 先给定义：逐层（或逐张量）的更新比
 
 $$
 r_\ell = \frac{\lVert \Delta\theta_\ell \rVert}{\lVert \theta_\ell \rVert} \qquad (2)
@@ -94,25 +110,27 @@ $$
 r_\ell \approx \eta \thinspace \sqrt{\left( \frac{\mathrm{RMS}(u_\ell)}{\mathrm{RMS}(\theta_\ell)} \right)^{2} + \lambda^{2}} \qquad (3)
 $$
 
-三角不等式另给出逐项对齐的最坏上界 $\eta \thinspace \mathrm{RMS}(u_\ell) / \mathrm{RMS}(\theta_\ell) + \eta \lambda$。 $\mathrm{RMS}(u)$ 的实证区间为 $0.2\text{–}0.4$（Moonlight §2.2 正文口径，2.5 §4 已核）。代入 Llama-3 405B 峰值 LR $\eta = 8 \times 10^{-5}$（herd Table 3）与初始化口径 $\mathrm{RMS}(\theta) \approx 0.02$：主项比值 $10$ 到 $20$， $r \approx 8 \times 10^{-5} \times (10 \text{–} 20)$，即约 $8 \times 10^{-4}$ 到 $1.6 \times 10^{-3}$ 每步；wd 项进根号的份额为 $\lambda^{2} / 15^{2} \approx 4 \times 10^{-5}$，对 $r$ 的贡献可忽略——**正常区间的结构是 $10^{-3}$ 每步量级、逐层同档、形状跟随 LR schedule**（本书推算，输入假设如上）。三种异常各有指向： $r$ 无 LR 变化而跳升，分子出 spike（梯度端病灶）； $r$ 趋零，分母爆炸或 $u$ 被压死（宿醉或 $\epsilon$ regime 错配）；某层 $r$ 系统性偏离全场，该层即病灶（GLM-130B 的 embedding 异常就是这种指纹）。
+三角不等式另给出逐项对齐的最坏上界 $\eta \thinspace \mathrm{RMS}(u_\ell) / \mathrm{RMS}(\theta_\ell) + \eta \lambda$。 $\mathrm{RMS}(u)$ 的实证区间为 $0.2\text{–}0.4$（Moonlight §2.2 正文口径，2.5 §4 已核）。代入具体数字：Llama-3 405B 的峰值 LR 是 $\eta = 8 \times 10^{-5}$（herd Table 3），初始化口径下 $\mathrm{RMS}(\theta) \approx 0.02$，主项比值 $10$ 到 $20$，于是 $r \approx 8 \times 10^{-5} \times (10 \text{–} 20)$，即约 $8 \times 10^{-4}$ 到 $1.6 \times 10^{-3}$ 每步；wd 项进根号的份额为 $\lambda^{2} / 15^{2} \approx 4 \times 10^{-5}$，对 $r$ 的贡献可忽略。
 
-**推导二：wd 平衡下的 param norm 准稳态。** 带解耦 wd 的更新 $\theta_t = (1 - \eta\lambda) \thinspace \theta_{t-1} - \eta \thinspace u_t$。设 $u$ 统计平稳（ $\mathrm{RMS}(u)$ 恒定）且与 $\theta$ 不相关，逐坐标取平方期望：
+**正常区间的结构由此而来**（本书推算，输入假设如上）：量级 $10^{-3}$ 每步，逐层同档，形状跟随 LR schedule。三种异常各有指向： $r$ 无 LR 变化而跳升，分子出 spike（梯度端病灶）； $r$ 趋零，分母爆炸或 $u$ 被压死（宿醉或 $\epsilon$ regime 错配）；某层 $r$ 系统性偏离全场，该层即病灶（GLM-130B 的 embedding 异常就是这种指纹）。
+
+**推导二：wd 平衡下的 param norm 准稳态。** 带解耦 wd 的更新是 $\theta_t = (1 - \eta\lambda) \thinspace \theta_{t-1} - \eta \thinspace u_t$。设 $u$ 统计平稳（ $\mathrm{RMS}(u)$ 恒定）且与 $\theta$ 不相关，逐坐标取平方期望：
 
 $$
 \mathbb{E}[\theta_t^{2}] = (1 - \eta\lambda)^{2} \thinspace \mathbb{E}[\theta_{t-1}^{2}] + \eta^{2} \thinspace \mathbb{E}[u^{2}]
 $$
 
-稳态时令两端相等，并用 $(1 - \eta\lambda)^{2} \approx 1 - 2\eta\lambda$（ $\eta\lambda \ll 1$ ）：
+稳态时令两端相等，并用 $(1 - \eta\lambda)^{2} \approx 1 - 2\eta\lambda$（ $\eta\lambda \ll 1$ ），解出
 
 $$
 \mathrm{RMS}(\theta^{\ast}) \approx \sqrt{\frac{\eta}{2\lambda}} \cdot \mathrm{RMS}(u) \qquad (4)
 $$
 
-代入 $\eta = 8 \times 10^{-5}$、 $\lambda = 0.1$、 $\mathrm{RMS}(u) = 0.3$： $\mathrm{RMS}(\theta^{\ast}) \approx \sqrt{4 \times 10^{-4}} \times 0.3 \approx 6 \times 10^{-3}$——与 $0.02$ 的初始化同量级：wd 把参数幅度钉在 $\sqrt{\eta / \lambda}$ 决定的尺度上，而不是放任漂移。监控含义：param norm 持续爬升意味着 $\mathrm{RMS}(u)$ 在涨（梯度尺度漂移）或 wd 等效变弱，它是对「LR / wd 是否被悄悄改动」的独立校验。诚实边界：式 (4) 依赖不相关假设与平稳性，属本书推导的工程近似（文献中有同类平衡关系的独立研究，本书 references 未收录，不引为出处）；练习 1 讨论假设放松后的修正方向。
+代入 $\eta = 8 \times 10^{-5}$、 $\lambda = 0.1$、 $\mathrm{RMS}(u) = 0.3$： $\mathrm{RMS}(\theta^{\ast}) \approx \sqrt{4 \times 10^{-4}} \times 0.3 \approx 6 \times 10^{-3}$，与 $0.02$ 的初始化同量级。结论：wd 把参数幅度固定在 $\sqrt{\eta / \lambda}$ 决定的尺度上，而不是放任漂移。监控含义：param norm 持续爬升，意味着 $\mathrm{RMS}(u)$ 在涨（梯度尺度漂移）或 wd 等效变弱——它是对「LR / wd 是否被悄悄改动」的独立校验。诚实边界：式 (4) 依赖不相关假设与平稳性，属本书推导的工程近似（文献中有同类平衡关系的独立研究，本书 references 未收录，不引为出处）；练习 1 讨论假设放松后的修正方向。
 
 ## 4. 检测流水线：从判据到动作
 
-式 (1) 落地为逐指标的分层流水线（硬层零延迟、软层带基线）：
+式 (1) 落地为逐指标的分层流水线：硬层零延迟，软层带基线。
 
 ```
 逐步信号            检测层                            动作层（§5）
@@ -128,38 +146,42 @@ logit max       S_max > τ（Muon 栈，τ=100）       MuonClip 自动收缩（
 跨 phase 比较稳定性回归
 ```
 
-两个设计点。其一，**grad norm 是主检测面**： §1 的先行性（GLM-130B：崩溃滞后 grad norm 突刺数步）给出数步干预窗口，loss 端判据只是确认。其二，**非有限检查是唯一硬判据**：它不依赖基线、零误报，实现上就在 clip 的范数计算里（2.4 §1 的 `error_if_nonfinite=True` 把 NaN/Inf 从静默缩放变成显式异常）——检测层的最低成本项应该最先架。
+两个设计点值得单说。其一，**grad norm 是主检测面**： §1 的先行性（GLM-130B：崩溃滞后 grad norm 突刺数步）给出数步干预窗口，loss 端判据只是确认。其二，**非有限检查是唯一硬判据**：它不依赖基线、零误报，实现上就在 clip 的范数计算里（2.4 §1 的 `error_if_nonfinite=True` 把 NaN/Inf 从静默缩放变成显式异常）——检测层的最低成本项应该最先架。
 
 ## 5. 干预手册：四档手段与适用判据
 
-干预按代价升序排列；每一档给触发判据、机制语义与先例。
+干预按代价升序排列。每一档给三样东西：触发判据、机制语义、先例。
 
 ### 5.1 skip batch（步级，代价约零）
 
-**判据**：当步 loss 或 grad 非有限；或式 (1) 触发且幅度超硬阈（如 $s_t \gt 2k$，本书口径）。**动作**：该 batch 不反传不更新（等价于从数据流剔除），schedule 照常前进。**先例**：OPT-175B 的处理就是手动跳过数据加调超参（GLM-130B §3 转述，[A]）；OLMo 2 的 trainer 侧 n-gram mask 是同一思想的自动化，粒度从「整个 batch」细化到「坏序列」（ §2.1）。**代价账**：一个 batch 约 $10^{7}\text{–}10^{8}$ token（各家末值 batch 口径：Llama-3 的 16M 到 GLM-4.5 的 64M，详表归 7.2），相对 $10^{13}$ 量级的总预算可忽略；但连续触发说明触发源未被隔离，升级到 §5.2。
+**判据**：当步 loss 或 grad 非有限；或式 (1) 触发且幅度超硬阈（如 $s_t \gt 2k$，本书口径）。**动作**：该 batch 不反传、不更新（等价于从数据流剔除），schedule 照常前进。**先例**：OPT-175B 的处理就是手动跳过数据加调超参（GLM-130B §3 转述，[A]）；OLMo 2 的 trainer 侧 n-gram mask 是同一思想的自动化，粒度从「整个 batch」细化到「坏序列」（ §2.1）。**代价账**：一个 batch 约 $10^{7}\text{–}10^{8}$ token（各家末值 batch 口径：Llama-3 的 16M 到 GLM-4.5 的 64M，详表归 7.2），相对 $10^{13}$ 量级的总预算可忽略。但连续触发说明触发源未被隔离——升级到 §5.2。
 
 ### 5.2 rewind + 换数据（段级，代价 = 回滚段重算）
 
-**判据**：spike 反复发生且模式定位到数据段，或 loss 在宿醉窗口内不自行恢复。**动作**：回到 spike 前最近的健康 checkpoint（完整内容语义归 7.4 §1），跳过或重排触发段数据后重训。**合法性**来自 §2.1 的顺序依赖：同一序列是否触发 spike 依赖数据顺序（OLMo 2 §3.1），回滚后换 shuffle 即换触发面，不必精确复现原顺序——**rewind 必须连优化器状态一起回滚**（ §2.2 的宿醉账），否则旧 $\hat{v}$ 会把污染带进新轨迹。**代价账**：回滚 $K$ 步即损失 $K$ 步算力；以 16K 卡集群每步约 6 s 的量级（7.4 §2 的账）， $K = 1000$ 约 1.7 小时墙钟，占 54 天窗口总步数的约千分之一。GLM-130B 全程仅 3 次晚期发散且进一步收缩 embedding 梯度即可稳定（ §6），说明定点处理之后的 rewind 跨度可以很短。
+**判据**：spike 反复发生且模式定位到数据段，或 loss 在宿醉窗口内不自行恢复。**动作**：回到 spike 前最近的健康 checkpoint（完整内容语义归 7.4 §1），跳过或重排触发段数据后重训。
+
+**合法性**来自 §2.1 的顺序依赖：同一序列是否触发 spike 依赖数据顺序（OLMo 2 §3.1），回滚后换 shuffle 即换触发面，不必精确复现原顺序。注意一条纪律：**rewind 必须连优化器状态一起回滚**（ §2.2 的宿醉账），否则旧 $\hat{v}$ 会把污染带进新轨迹。
+
+**代价账**：回滚 $K$ 步即损失 $K$ 步算力。以 16K 卡集群每步约 6 s 的量级（7.4 §2 的账）， $K = 1000$ 约 1.7 小时墙钟，占 54 天窗口总步数的约千分之一。GLM-130B 全程仅 3 次晚期发散，且进一步收缩 embedding 梯度即可稳定（ §6）——定点处理之后，rewind 的跨度可以很短。
 
 ### 5.3 重新 warmup（段级，配合 §5.2）
 
-**判据**：回滚跨度大、或更换了任何稳定性相关超参（ $\epsilon$、clip 阈值、wd 名单）后重启。**动作**：从回滚点把 LR 重新线性爬升到 schedule 当值，窗口远短于初始 warmup（数百步量级，本书工程口径）。**语义**：初始 warmup 针对的是冷优化器状态与未稳的梯度统计（2.3 的双重论证）；rewind 后的优化器状态虽来自 checkpoint，但若回滚点本身处于不稳区段，重爬 LR 等价于把 §2.2 的宿醉窗口让过去。**对照**：干净故障的例行恢复续训不需要重新 warmup——论证归 7.4 §5。
+**判据**：回滚跨度大，或更换了任何稳定性相关超参（ $\epsilon$、clip 阈值、wd 名单）后重启。**动作**：从回滚点把 LR 重新线性爬升到 schedule 当值，窗口远短于初始 warmup（数百步量级，本书工程口径）。**语义**：初始 warmup 针对的是冷优化器状态与未稳的梯度统计（2.3 的双重论证）；rewind 后的优化器状态虽来自 checkpoint，但若回滚点本身处于不稳区段，重爬 LR 等价于把 §2.2 的宿醉窗口让过去。**对照**：干净故障的例行恢复续训不需要重新 warmup——论证归 7.4 §5。
 
 ### 5.4 局部降 LR / 延长 decay（段级到 phase 级）
 
-**判据**：不稳定与 LR 相位相关（峰值平台期反复 spike），且前三档无效或代价过高。**动作**：降峰值、延长 decay、或把当前 phase 的 LR 曲线整体下移。**先例**：OLMo 2 的 §3.5 即 LR 专项研究（7B 峰值 $3 \times 10^{-4}$ 的选取过程，[A]）。**语义**： §2.2 的账里 LR 是所有触发通道后果的统一乘子——降 LR 不治病根、只降当量，适合作为冲到 schedule 末段前的保底；若 spike 源在数据或硬件，降 LR 只是推迟复发。
+**判据**：不稳定与 LR 相位相关（峰值平台期反复 spike），且前三档无效或代价过高。**动作**：降峰值、延长 decay，或把当前 phase 的 LR 曲线整体下移。**先例**：OLMo 2 的 §3.5 即 LR 专项研究（7B 峰值 $3 \times 10^{-4}$ 的选取过程，[A]）。**语义**： §2.2 的账里，LR 是所有触发通道后果的统一乘子——降 LR 不治病根、只降当量，适合作为冲到 schedule 末段前的保底；若 spike 源在数据或硬件，降 LR 只是推迟复发。
 
 四档的决策序一句话版：步级异常先 skip；段级反复则 rewind + 换数据 + 重 warmup；phase 级顽固才动 LR；任何一档落地后， §3 各指标的基线带都要重估。
 
 ## 6. 各家稳定性记录：四份一手口径
 
-- **GLM-130B**（[Zeng et al., 2022](../references.md)，arXiv:2210.02414，[A]，§2-3）：FP16 Apex O2；早期频繁 spike 且随训练加剧；spike 两类形态（无因自恢复 / grad norm 先行后崩溃至 NaN）；根因定位到 embedding 异常梯度（早期比其他层高几个数量级）+ Pre-LN 深层无界 + attention score 超 FP16 范围；对策 = DeepNorm 型 Post-LN + EGS（收缩因子 $\alpha = 0.1$ 「wipes out most spikes」，公式与逐层对照归 2.4 §5）。最终完整训练只经历 3 次晚期发散，而硬件故障失败更多——「稳定性工程收敛后，硬件成为主要中断源」的最早公开实例。
-- **OLMo 2**（[Team OLMo et al., 2025](../references.md)，arXiv:2501.00656，[A]，§3）：八项干预逐项带消融——n-gram 过滤（§3.1）；统一 $\mathcal{N}(0, 0.02^{2})$ 初始化替换逐层缩放初始化（§3.2，测试设置下旧初始化快速失稳，新初始化无 loss spike、grad spike score 0.40 → 0.03）；回归 RMSNorm（§3.3.1）；reordered norm + QK-norm（§3.3.2，梯度 spike score 0.108 → 0.069）；z-loss 系数 $10^{-4}$ 的 $(\log Z)^{2}$（§3.3.3）； $\epsilon$ 从 $10^{-5}$ 到 $10^{-8}$（§3.4.1）；embedding 免 wd（§3.4.2，spike score 0.16 vs 0.092）；LR 专项（§3.5）。这是公开文献里唯一逐项带消融数字的稳定性工程清单。
-- **DeepSeek-V3**（[DeepSeek-AI, 2024](../references.md)，arXiv:2412.19437，[A]，摘要与 §1）：「整个训练过程未遭遇任何不可恢复的 loss spike，也未执行任何回滚」——14.8T token 全程、2.788M H800 GPU 小时。口径注记：这是**结果声明**（零不可恢复 spike），不等于零 spike 事件；其数值与架构侧的可点名设计（FP8 方案、aux-loss-free 路由）分归 1.3 与 models 4.5。
-- **Kimi K2**（[Kimi Team, 2025](../references.md)，arXiv:2507.20534，[A]，§2.1）：MuonClip（Muon + wd + RMS 匹配 + QK-Clip，其 Algorithm 1 的组合体）+ WSD schedule 下 15.5T token 零 loss spike；QK-Clip 把 max logit 封顶 $\tau = 100$，约 $30\text{％}$ 步数后 logit 自行回落、 $\tau$ 全程不调。机制、公式与 MLA 分量规则归 2.5 §7——它是 §2 分类学中「优化器触发」类目前唯一有完整工程闭环的公开案例：监控量 $S_{\max}$ 逐 head、执行器是 post-update 权重缩放、不进计算图因而不污染梯度统计。
+- **GLM-130B**（[Zeng et al., 2022](../references.md)，arXiv:2210.02414，[A]，§2-3）：FP16 Apex O2，早期频繁 spike 且随训练加剧。spike 分两类形态：无因自恢复、grad norm 先行后崩溃至 NaN。根因定位到三处：embedding 异常梯度（早期比其他层高几个数量级）、Pre-LN 深层无界、attention score 超 FP16 范围。对策是 DeepNorm 型 Post-LN 加 EGS（收缩因子 $\alpha = 0.1$ ，「wipes out most spikes」；公式与逐层对照归 2.4 §5）。最终完整训练只经历 3 次晚期发散，硬件故障造成的失败反而更多——这是「稳定性工程收敛后，硬件成为主要中断源」的最早公开实例。
+- **OLMo 2**（[Team OLMo et al., 2025](../references.md)，arXiv:2501.00656，[A]，§3）：八项干预逐项带消融：n-gram 过滤（§3.1）；统一 $\mathcal{N}(0, 0.02^{2})$ 初始化替换逐层缩放初始化（§3.2，测试设置下旧初始化快速失稳，新初始化无 loss spike、grad spike score 0.40 → 0.03）；回归 RMSNorm（§3.3.1）；reordered norm + QK-norm（§3.3.2，梯度 spike score 0.108 → 0.069）；z-loss 系数 $10^{-4}$ 的 $(\log Z)^{2}$（§3.3.3）； $\epsilon$ 从 $10^{-5}$ 到 $10^{-8}$（§3.4.1）；embedding 免 wd（§3.4.2，spike score 0.16 vs 0.092）；LR 专项（§3.5）。这是公开文献里唯一逐项带消融数字的稳定性工程清单。
+- **DeepSeek-V3**（[DeepSeek-AI, 2024](../references.md)，arXiv:2412.19437，[A]，摘要与 §1）：「整个训练过程未遭遇任何不可恢复的 loss spike，也未执行任何回滚」——14.8T token 全程、2.788M H800 GPU 小时。口径注记：这是**结果声明**（零不可恢复 spike），不等于零 spike 事件。它的数值与架构侧设计（FP8 方案、aux-loss-free 路由）分归 1.3 与 models 4.5。
+- **Kimi K2**（[Kimi Team, 2025](../references.md)，arXiv:2507.20534，[A]，§2.1）：MuonClip（Muon + wd + RMS 匹配 + QK-Clip，其 Algorithm 1 的组合体）加 WSD schedule，15.5T token 零 loss spike。QK-Clip 把 max logit 封顶 $\tau = 100$；约 $30\text{％}$ 步数后 logit 自行回落， $\tau$ 全程不调。机制、公式与 MLA 分量规则归 2.5 §7。它是 §2 分类学中「优化器触发」类目前唯一有完整工程闭环的公开案例：监控量 $S_{\max}$ 逐 head，执行器是 post-update 权重缩放，不进计算图、不污染梯度统计。
 
-横向读法：四份记录横跨 130B dense、7B-13B、671B MoE、1T MoE 四个量级，对策收敛到同构的三层——**架构层**（norm 摆放、QK-norm、DeepNorm）、**优化器层**（ $\epsilon$、wd 名单、EGS、MuonClip）、**数据层**（n-gram 过滤），每一层对应 §2 的一个触发通道；硬件层的中断则靠 7.4 的容错链路兜底。「没有单一银弹」与「不可恢复 spike 可声明为零」两份记录之间的差异不在某一个手段，而在三层手段的叠加与 §3-4 的监控闭环。
+横向读法：四份记录横跨 130B dense、7B-13B、671B MoE、1T MoE 四个量级，对策收敛到同构的三层：**架构层**（norm 摆放、QK-norm、DeepNorm）、**优化器层**（ $\epsilon$、wd 名单、EGS、MuonClip）、**数据层**（n-gram 过滤）。每一层对应 §2 的一个触发通道；硬件层的中断由 7.4 的容错链路承接。「没有单一银弹」与「不可恢复 spike 可声明为零」两份记录之间，差异不在某一个手段，而在三层手段的叠加与 §3-4 的监控闭环。
 
 ## 总结
 
