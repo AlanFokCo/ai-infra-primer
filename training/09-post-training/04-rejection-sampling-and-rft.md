@@ -1,10 +1,10 @@
 # 9.4 拒绝采样与 RFT：采样-筛选-回灌（Rejection Sampling and RFT）
 
-> 本章把「当前模型采 $n$ 个 → 验证器 / RM 打分 → 选 best → SFT 回灌」这条循环推到底：RFT 的流程定义与截断采样分布的形式化（截断-再归一化视角）、软加权版本与 9.3 闭式解的对接、RFT 与 RL 的分界（无梯度回传、只改数据分布）、STaR 的 self-improvement 循环与「解不出新题 ⇒ 无训练信号 ⇒ 停滞」的原文诊断及 rationalization 修正、Llama-3 的 RFT 工程口径、verifiable 任务向 9.5 RLVR 的过渡、在线 / 离线分界判据表（3.2 §5 定义的兑现） | 前置：9.1（SFT）、9.2（RM 与 RLHF 管线）、9.3（DPO 与闭式解式 (3)）、3.2（在线 / 离线分界定义）、8.3-8.4（PPO / GRPO） | 锚点：STaR（[Zelikman et al., 2022](../references.md)，arXiv:2203.14465，[B]）、Llama-3 herd（[Grattafiori et al., 2024](../references.md)，arXiv:2407.21783，[A]）、Christiano et al.（[B]，偏好 RL 源头）、huggingface/trl（教学参照 + 官方实现，main 分支 2026-11-18 核实）
+> 本章讲「当前模型采 $n$ 个 → 验证器或 RM 打分 → 选 best → SFT 回灌」这条循环。先给 RFT 的流程定义，再把筛选后的数据写成截断-再归一化的分布（本章的关键形式化），软加权版本正好对接 9.3 的闭式解。随后划清 RFT 与 RL 的分界（无梯度回传、只改数据分布），讲 STaR 的 self-improvement 循环——原文诊断的问题是「解不出新题 ⇒ 无训练信号 ⇒ 停滞」，修正是 rationalization——以及 Llama-3 的 RFT 工程口径。最后从 verifiable 任务过渡到 9.5 的 RLVR，并给出在线 / 离线分界判据表（3.2 §5 定义的兑现） | 前置：9.1（SFT）、9.2（RM 与 RLHF 管线）、9.3（DPO 与闭式解式 (3)）、3.2（在线 / 离线分界定义）、8.3-8.4（PPO / GRPO） | 锚点：STaR（[Zelikman et al., 2022](../references.md)，arXiv:2203.14465，[B]）、Llama-3 herd（[Grattafiori et al., 2024](../references.md)，arXiv:2407.21783，[A]）、Christiano et al.（[B]，偏好 RL 源头）、huggingface/trl（教学参照 + 官方实现，main 分支 2026-11-18 核实）
 
 ## 1. RFT 的流程定义
 
-拒绝采样微调（rejection sampling fine-tuning, RFT）的单轮流程四步：
+拒绝采样微调（rejection sampling fine-tuning, RFT）的单轮流程分四步：
 
 1. **采样**：对每个 prompt $x$，从当前策略 $\pi_\theta(\cdot \mid x)$ 独立采 $n$ 条回答 $y_1, \ldots, y_n$；
 2. **打分**：验证器（verifier，规则判对错）或 reward model 给每条回答打标量分 $s_i$；
@@ -21,7 +21,7 @@
         数据在采样后冻结；训练阶段不再访问 π_θ 的采样分布
 ```
 
-两个结构性事实先在图上钉死：其一，训练阶段（第 4 步）的输入是**冻结数据集** $D^{+}$，与 9.1 的 SFT 无任何形式差别——RFT 的全部特异性都在数据生产侧；其二，跨轮看， $D^{+}$ 的分布随策略漂移（第 $t+1$ 轮采自 $\pi_\theta^{(t+1)}$），所以 RFT 是「离线目标 + 滚动数据源」的复合体——这条性质在 §3 与 §7 分别兑现。TRL 稳定分支没有专用 RFT trainer（main 分支 trainer 目录的主要 trainer 族：dpo / grpo / kto / sft / reward / rloo / distillation，2026-11-18 核实）——RFT 由「推理栈采样 + 筛选脚本 + `sft_trainer.py`」拼装而成，这正是它「数据侧算法」身份的工程证据。
+两个结构性事实先从这张图里读出。第一，训练阶段（第 4 步）的输入是**冻结数据集** $D^{+}$，与 9.1 的 SFT 没有任何形式差别——RFT 的全部特异性都在数据生产侧。第二，跨轮看， $D^{+}$ 的分布随策略漂移（第 $t+1$ 轮采自 $\pi_\theta^{(t+1)}$），所以 RFT 是「离线目标 + 滚动数据源」的复合体；这条性质在 §3 与 §7 分别展开。TRL 稳定分支没有专用 RFT trainer（main 分支 trainer 目录的主要 trainer 族：dpo / grpo / kto / sft / reward / rloo / distillation，2026-11-18 核实）——RFT 由「推理栈采样 + 筛选脚本 + `sft_trainer.py`」拼装而成，这正是它「数据侧算法」身份的工程证据。
 
 ## 2. 形式化：截断-再归一化的采样分布
 
@@ -42,38 +42,38 @@ $$
 （第二等号： $\hat{\pi}$ 固定， $`-\mathbb{E}_{\hat{\pi}}[\log \pi] = D_{\mathrm{KL}}(\hat{\pi} \Vert \pi) + H(\hat{\pi})`$，熵项与 $\pi$ 无关。）**所以一轮 RFT = 把新策略交叉熵投影到当前策略的截断分布上**。这个视角立刻给出三条可检验的推论：
 
 - **支撑集只缩不涨**： $\hat{\pi}$ 的支撑 ⊆ $\pi_\theta$ 的支撑——RFT 不可能发明当前策略采不出来的行为，它只重排已有行为的概率质量。「探索」被整个外包给第 1 步的 $n$ 次采样。
-- **截断比加权更硬**：式 (1) 对被丢弃区域一刀切归零。若把硬示性换成软权重 $w(x, y) \propto \exp(s(x, y) / \alpha)$（按得分指数倾斜保留概率），截断分布变为
+- **截断比加权更硬**：式 (1) 对被丢弃区域直接归零。若把硬示性换成软权重 $w(x, y) \propto \exp(s(x, y) / \alpha)$（按得分指数倾斜保留概率），截断分布变为
 
 $$
 \widetilde{\pi}(y \mid x) \propto \pi_\theta(y \mid x) \exp\left( s(x, y) / \alpha \right) \qquad (3)
 $$
 
 这正是 9.3 式 (3) 的闭式最优解形态——以当前策略自身为 $\pi_{\mathrm{ref}}$、以 $s$ 为 reward、以 $\alpha$ 为 $\beta$ 的 KL 约束目标最优解。RFT 一族（含其软加权变体，文献中的 reward-weighted regression 形态）与 KL 约束 RL 目标由此对接：硬截断是 $\alpha \to 0^{+}$ 侧的极限近似（只留峰区），软加权是有限温度的显式形式。9.3 的推导链在这里被第二次消费——同一个指数倾斜结构，一处用来消掉 RM（DPO），一处用来解释 RFT 的数据倾斜。
-- **$p_A(x)$ 是难度的仪表盘**：保留质量 $p_A(x)$ 低 = 当前策略在 $x$ 上几乎采不出合格回答；对这类 $x$，截断分布集中在极少数偶然成功的样本上，SFT 信号由侥幸样本主导。这是 §4 停滞问题的形式化入口。
+- **$p_A(x)$ 是难度的仪表盘**：保留质量 $p_A(x)$ 低，意味着当前策略在 $x$ 上几乎采不出合格回答；对这类 $x$，截断分布集中在极少数偶然成功的样本上，SFT 信号由侥幸样本主导。这是 §4 停滞问题的形式化入口。
 
 ## 3. 与 RL 的分界：梯度回传的有无
 
 RFT 与 RL 优化的是同一类东西（提高高分回答的概率），分界不在目标而在机制。三条判据逐条对账。
 
-**梯度路径**。RL（PPO / GRPO，8.3 / 8.4）把标量得分 $s_i$ 折成 advantage、乘 $\nabla_\theta \log \pi_\theta(y_t \mid \cdot)$ 回传——**低分样本也贡献梯度**（负 advantage 往下压）。RFT 的第 4 步是纯 SFT： $-\log \pi_\theta(y^{+} \mid x)$ 只作用于保留样本，被丢弃的 $n-1$ 条回答在目标函数里不存在——它们的信息在筛选那一步就被示性函数抹掉了。STaR 原文把这个关系说得更具体：把「生成 rationale 再作答」看成潜变量模型 $p_M(y \mid x) = \sum_r p(r \mid x) \thinspace p(y \mid x, r)$、以答案正确性为示性 reward，则总期望奖励与策略梯度为
+**梯度路径**。RL（PPO / GRPO，8.3 / 8.4）把标量得分 $s_i$ 折成 advantage，乘 $\nabla_\theta \log \pi_\theta(y_t \mid \cdot)$ 回传——**低分样本也贡献梯度**（负 advantage 往下压）。RFT 的第 4 步是纯 SFT： $-\log \pi_\theta(y^{+} \mid x)$ 只作用于保留样本，被丢弃的 $n-1$ 条回答在目标函数里根本不存在，它们的信息在筛选那一步就被示性函数抹掉了。STaR 原文把这个关系说得更具体：把「生成 rationale 再作答」看成潜变量模型 $p_M(y \mid x) = \sum_r p(r \mid x) \thinspace p(y \mid x, r)$，以答案正确性为示性 reward，则总期望奖励与策略梯度为
 
 $$
 J = \sum_{i}\hspace{4mu} \mathbb{E}_{(\hat{r}_i, \hat{y}_i) \sim p_M(\cdot \mid x_i)}\left[ \mathbb{1}\left( \hat{y}_i = y_i \right) \right], \qquad \nabla J = \sum_{i}\hspace{4mu} \mathbb{E}_{(\hat{r}_i, \hat{y}_i) \sim p_M}\left[ \mathbb{1}\left( \hat{y}_i = y_i \right) \cdot \nabla \log p_M(\hat{y}_i, \hat{r}_i \mid x_i) \right] \qquad (4)
 $$
 
-**符号**： $p_M$：策略的 rationale-answer 联合分布； $y_i$：标准答案。式 (4) 的示性函数把答错样本的梯度整个丢弃——「这正是 STaR 的筛选步」（原文口径：the indicator function discards the gradient for all sampled rationales that do not lead to the correct answer: this is the filtering process）。换言之，RFT/STaR 是 REINFORCE 式目标的一个**截断采样近似**：用贪心解码降方差（代价是探索有偏）、对同一批数据走多个梯度步（同若干 policy gradient 算法的做法）——原文明确定位为「近似」，不主张等价。
+**符号**： $p_M$：策略的 rationale-answer 联合分布； $y_i$：标准答案。式 (4) 的示性函数把答错样本的梯度整个丢弃——「这正是 STaR 的筛选步」（原文口径：the indicator function discards the gradient for all sampled rationales that do not lead to the correct answer: this is the filtering process）。换言之，RFT/STaR 是 REINFORCE 式目标的一个**截断采样近似**：用贪心解码降方差（代价是探索有偏），对同一批数据走多个梯度步（同若干 policy gradient 算法的做法）。原文明确定位为「近似」，不主张等价。
 
-**数据分布的角色**。RFT 改变的是**数据分布**（把 SFT 的输入分布从人工语料换成当前策略的截断尾部），模型参数的全部更新仍由 CE 驱动；RL 改变的是**目标函数**（在采样分布上加 advantage 加权）。前者把「学得对」外包给筛选器，后者把「学得对」编码进梯度符号。
+**数据分布的角色**。RFT 改变的是**数据分布**：把 SFT 的输入分布从人工语料换成当前策略的截断尾部，模型参数的全部更新仍由 CE 驱动。RL 改变的是**目标函数**：在采样分布上加 advantage 加权。前者把「学得对」外包给筛选器，后者把「学得对」编码进梯度符号。
 
 **部署形态**。RFT 的训练栈与 SFT 完全同构（单模型、无 rollout 引擎、无参考模型），采样阶段可以是任意推理服务——8.5 的四模型驻留、权重同步、staleness 管理的整本账都不存在。代价是 §2 的支撑集上限与 §4 的停滞。
 
 ## 4. STaR 循环：停滞问题与 rationalization
 
-STaR（[Zelikman et al., 2022](../references.md)，arXiv:2203.14465，[B]）是 RFT 在推理任务上的原型：数据集只有问题与答案 $D = \lbrace (x_i, y_i) \rbrace$、没有中间推理；用少量带 rationale 的 few-shot 例子（约 10 个， $P \ll D$ ） prompting 当前模型对每道题生成 rationale + 答案；只保留答案正确的（rationale, answer）对；用保留集微调，再采下一轮。两个原文设计决定值得逐字登记：其一，**每轮从原始预训练模型重新微调**，而非在上一轮模型上续训——原文理由是避免过拟合（"once we collect a new dataset, we train from the original pre-trained model instead of continually training one model to avoid overfitting"）；其二，循环终止条件是性能 plateau。
+STaR（[Zelikman et al., 2022](../references.md)，arXiv:2203.14465，[B]）是 RFT 在推理任务上的原型。它的数据集只有问题与答案 $D = \lbrace (x_i, y_i) \rbrace$，没有中间推理。做法是：用少量带 rationale 的 few-shot 例子（约 10 个， $P \ll D$ ） prompting 当前模型，对每道题生成 rationale + 答案；只保留答案正确的（rationale, answer）对；用保留集微调，再采下一轮。两个原文设计决定值得逐字登记。其一，**每轮从原始预训练模型重新微调**，而非在上一轮模型上续训——原文理由是避免过拟合（"once we collect a new dataset, we train from the original pre-trained model instead of continually training one model to avoid overfitting"）。其二，循环终止条件是性能 plateau。
 
-**停滞的诊断（原文 §3.2 口径，逐字引用其逻辑）**：「模型只在它答对的样本上训练，所以当模型无法解出训练集中的新题时，改进就终止了——根本原因是算法从失败样本里拿不到任何训练信号。」（"improvement ends when the model fails to solve new problems in the training set. This is fundamentally due to the fact that the algorithm cannot obtain any training signal from failed examples."）用 §2 的语言复述：难度超过当前策略的 $x$ 上 $p_A(x) \approx 0$，截断分布为空，式 (2) 对这些 $x$ 零贡献——self-improvement 的信号供给被当前能力上限钳死。
+**停滞的诊断（原文 §3.2 口径，逐字引用其逻辑）**：「模型只在它答对的样本上训练，所以当模型无法解出训练集中的新题时，改进就终止了——根本原因是算法从失败样本里拿不到任何训练信号。」（"improvement ends when the model fails to solve new problems in the training set. This is fundamentally due to the fact that the algorithm cannot obtain any training signal from failed examples."）用 §2 的语言复述：对难度超过当前策略的 $x$， $p_A(x) \approx 0$，截断分布为空，式 (2) 对这些 $x$ 零贡献——self-improvement 的信号供给被当前能力上限钳住了。
 
-**rationalization 修正**：对解不出的题，把标准答案作为提示（hint）喂给模型、让它反向生成通往该答案的 rationale，再把**去掉 hint 的**（问题, rationale, 答案）加入训练集（原文 Figure 2 的 hint 模板与「as if the model had come up with the rationale without the hint」的拼接口径）。机制读法：hint 把搜索问题从「在整个 rationale 空间里找一条通往正确答案的链」降为「解释一条已知存在的链」——保留质量从 $p_A(x) \approx 0$ 被人为拉高，信号供给恢复。代价同样可定位：rationalization 样本的 rationale 质量没有正确性背书（hint 保证结论对、不保证推理对），它是用信号量换信号质。
+**rationalization 修正**：对解不出的题，把标准答案作为提示（hint）喂给模型，让它反向生成通往该答案的 rationale，再把**去掉 hint 的**（问题, rationale, 答案）加入训练集（原文 Figure 2 的 hint 模板与「as if the model had come up with the rationale without the hint」的拼接口径）。机制读法：hint 把搜索问题从「在整个 rationale 空间里找一条通往正确答案的链」降为「解释一条已知存在的链」——保留质量从 $p_A(x) \approx 0$ 被人为拉高，信号供给恢复。代价同样可以定位：rationalization 样本的 rationale 质量没有正确性背书（hint 保证结论对、不保证推理对），它是用信号量换信号质。
 
 实证锚点（原文摘要口径）：CommonsenseQA 上 STaR（GPT-J 6B 基座）达 72.5%，比直接答案微调（direct fine-tuning，60.0%）高 12.5 个百分点，比 few-shot 基线高 35.9 个百分点，与 30 倍大的微调 GPT-3（73.0%）持平。
 
@@ -85,14 +85,14 @@ Llama-3 把 RFT 做成后训练的标准组件之一（[Grattafiori et al., 2024
 - **筛选器**：用 reward model 选最佳候选（原文标注 consistent with Bai et al. 2022）——Llama-3 的 RS 是 RM 打分路线，不是规则验证器路线。
 - **系统提示引导**：后期轮次在 RS 采样时注入 system prompt，把回答的语气、风格、格式导向各能力的期望形态（代码场景有专门例子：system prompt 引导出带注释、变量名更好的代码）。
 - **推理栈**：RS 的吞吐用 PagedAttention 支撑（预定义最大输出长度以消除 swap-out、同 prompt 的 $K$ 条输出共享 KV cache 页），合计吞吐提升超过 2 倍。
-- **质检**：RS 产出的数据仍有质量问题（论文举例代码块含 bug），且 RS 数据的判定比合成代码数据更难（原文：RS 回答通常混杂自然语言与代码，代码未必可执行）——对 RS 数据用 model-as-judge 过滤（早期 Llama 3 版本按代码正确性与代码风格双判据打 0/1 分，只保留满分 2 的样本）；执行信号过滤归合成代码数据产线。这条过滤还有一个记录在案的反噬：满分标准过度剔除了难题 prompt 的样本、下游基准回退，对策是把最难一档编码数据的回答改写到能通过 judge 为止——质量与难度的平衡是筛出来的，不是过滤阈值一劳永逸定的。「采样-筛选」的筛选不止 RM 一层。
+- **质检**：RS 产出的数据仍有质量问题（论文举例代码块含 bug），且 RS 数据的判定比合成代码数据更难（原文：RS 回答通常混杂自然语言与代码，代码未必可执行）。因此对 RS 数据用 model-as-judge 过滤：早期 Llama 3 版本按代码正确性与代码风格双判据打 0/1 分，只保留满分 2 的样本。执行信号过滤归合成代码数据产线。这条过滤还有一个记录在案的反噬：满分标准过度剔除了难题 prompt 的样本，下游基准回退；对策是把最难一档编码数据的回答改写到能通过 judge 为止。质量与难度的平衡是筛出来的，不是过滤阈值一劳永逸定的。「采样-筛选」的筛选不止 RM 一层。
 - **位置**：RS 数据与合成数据、少量人工精调数据共同构成 SFT 混合；每轮后训练重新收集偏好标注与 SFT 数据、从最新模型采样合成数据（§4.1.6 与 §4.2.2 口径）。
 
-与 STaR 的对照读法：STaR 的筛选器是规则（答案对/错），Llama-3 的筛选器是 RM；STaR 每轮从基座重训，Llama-3 的轮次间是能力滚动累积的六轮 pipeline；两者共享同一个截断-回灌骨架，差异全在筛选器与迭代结构上。
+与 STaR 的对照读法：STaR 的筛选器是规则（答案对/错），Llama-3 的筛选器是 RM；STaR 每轮从基座重训，Llama-3 的轮次间是能力滚动累积的六轮 pipeline。两者共享同一个截断-回灌骨架，差异全在筛选器与迭代结构上。
 
 ## 6. 向 verifiable 任务的过渡
 
-把 §2 的筛选器换成「数学答案判等对 / 代码过单测」这类规则验证器，截断分布式 (1) 的保留事件变成 $A(x) = \lbrace y : \mathrm{verify}(y) = 1 \rbrace$——reward 是二值的、无 RM 可 hack、信号与真值同源。STaR 已经是这个形态（示性 reward）。沿着这条轴再往前走一步：不再丢弃失败样本、把二值 reward 通过策略梯度回传给全部采样（式 (4) 的完整形态而非其截断近似），就是 RLVR——9.5 的主题。RFT 与 RLVR 的分界由此清晰：同一筛选器，一个只准它决定数据分布（offline 回灌），一个让它进梯度（on-policy 回传）。
+把 §2 的筛选器换成「数学答案判等对 / 代码过单测」这类规则验证器，截断分布式 (1) 的保留事件就变成 $A(x) = \lbrace y : \mathrm{verify}(y) = 1 \rbrace$——reward 是二值的、无 RM 可 hack、信号与真值同源。STaR 已经是这个形态（示性 reward）。沿着这条轴再往前走一步：不再丢弃失败样本，把二值 reward 通过策略梯度回传给全部采样（式 (4) 的完整形态而非其截断近似），就是 RLVR——9.5 的主题。RFT 与 RLVR 的分界由此清晰：同一筛选器，一个只准它决定数据分布（offline 回灌），一个让它进梯度（on-policy 回传）。
 
 ## 7. 在线 / 离线判据表
 
