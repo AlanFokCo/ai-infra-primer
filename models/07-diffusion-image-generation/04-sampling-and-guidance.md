@@ -1,6 +1,6 @@
 # 7.4 采样器与 Guidance（Samplers and Guidance）
 
-> 本章回答两笔账：一是 7.2 留下的 1000 次 NFE 怎么砍——DDIM 的非马尔可夫前向族推导、DDIM σ=0 = PF-ODE 指数积分的精确证明、DPM-Solver 的高阶展开 outline；二是采样预算固定时质量怎么换——classifier guidance 的 Bayes 展开、CFG 的完整推导（隐式分类器与 log-likelihood tilt）、失效机制（score norm 膨胀）与缓解（dynamic thresholding / rescaled CFG），最后是把「步数」与「引导强度」双双蒸进单模型的蒸馏族（progressive distillation / consistency / LCM / reflow / DMD）| 前置：7.2（ε-参数化、 $L_{simple}$、后验 $\tilde\beta_t$、ancestral 采样）、7.3（PF-ODE 式 (20)(21)、score↔ε 换算式 (9)、Tweedie 式 (10)、EDM Heun）、7.5（rectified flow 线性路径——reflow 一节） | 锚点：DDIM [A]、classifier guidance [A]、CFG [A]、consistency models [A]、LCM [A]、DMD/DMD2 [A]、DPM-Solver [A]、progressive distillation [A]、rectified flow [A]、common-diffusion [B]、Imagen [B]；ermongroup/ddim [A]、openai/consistency_models [A]、tianweiy/DMD2 [A]
+> 本章回答两笔账。第一笔：7.2 留下的 1000 次 NFE 怎么砍——DDIM 的非马尔可夫前向族推导、DDIM σ=0 = PF-ODE 指数积分的精确证明、DPM-Solver 的高阶展开 outline。第二笔：采样预算固定时质量怎么换——classifier guidance 的 Bayes 展开、CFG 的完整推导（隐式分类器与 log-likelihood tilt）、失效机制（score norm 膨胀）与缓解（dynamic thresholding / rescaled CFG）。最后是蒸馏族：把「步数」与「引导强度」双双蒸进单模型（progressive distillation / consistency / LCM / reflow / DMD） | 前置：7.2（ε-参数化、 $L_{simple}$、后验 $\tilde\beta_t$、ancestral 采样）、7.3（PF-ODE 式 (20)(21)、score↔ε 换算式 (9)、Tweedie 式 (10)、EDM Heun）、7.5（rectified flow 线性路径——reflow 一节） | 锚点：DDIM [A]、classifier guidance [A]、CFG [A]、consistency models [A]、LCM [A]、DMD/DMD2 [A]、DPM-Solver [A]、progressive distillation [A]、rectified flow [A]、common-diffusion [B]、Imagen [B]；ermongroup/ddim [A]、openai/consistency_models [A]、tianweiy/DMD2 [A]
 
 ## 1. 两条战线与一个共同接口
 
@@ -41,7 +41,7 @@ return x_0
 
 DDIM（[Song et al., 2021](../references.md)，arXiv:2010.02502，[A]）的出发点是一个计数论证。 $L_{simple}$ 对每个 $t$ 分别回归，只见到边缘 $q(x_t \mid x_0)$； $T$ 个边缘分布完全不能决定 $T$ 步链的联合分布 $q(x_{1:T} \mid x_0)$——联合的自由度远大于边缘。DDPM 选的马尔可夫链（7.2 式 (1)）只是满足边缘约束的无穷多联合分布之一。**换一个联合族，只要边缘不变，训练好的 $\varepsilon_\theta$ 就照样有效**——而它诱导出的反向采样过程可以完全不同，包括确定性的。
 
-把这个观察落成构造：不再先给前向转移再推边缘，而是反过来——先钦定全部边缘（7.2 式 (5)），再设计一族以 $(x_t, x_0)$ 为条件的「反向转移」，让整个联合分布自洽。反向转移取高斯、均值对 $x_t$ 与 $x_0$ 线性、方差自由：
+把这个观察落成构造：不再先给前向转移再推边缘，而是反过来——先固定全部边缘（7.2 式 (5)），再设计一族以 $(x_t, x_0)$ 为条件的「反向转移」，让整个联合分布自洽。反向转移取高斯、均值对 $x_t$ 与 $x_0$ 线性、方差自由：
 
 $$
 q_\sigma(x_{t-1} \mid x_t, x_0) = \mathcal{N}\left( \sqrt{\bar\alpha_{t-1}}\thinspace x_0 + \sqrt{1 - \bar\alpha_{t-1} - \sigma_t^2}\cdot \frac{x_t - \sqrt{\bar\alpha_t}\thinspace x_0}{\sqrt{1 - \bar\alpha_t}},\ \sigma_t^2 I \right) \qquad (1)
@@ -103,7 +103,7 @@ $$
 
 **符号**： $\hat x_0$ 由 $(x_{\tau_i}, \tau_i)$ 处的预测给出；一跳跨过任意多个训练步。
 
-合法性来自 §2.1 的观察：网络是在全部 $t$ 的边缘上分别训练的，任何格点上的 $\varepsilon_\theta$ 都是那个噪声水平下的合法 score（经 7.3 式 (9) 换算）——跳步不是近似调用一个「本来只在相邻步有效」的算子，而是同一场在稀疏格点上的采样。1000 步训练出的模型直接以 $S = 50$ 或 $S = 100$ 采样，NFE 同比例下降，无需任何重训（[Song et al., 2021](../references.md)，arXiv:2010.02502，[A]；官方实现 [ermongroup/ddim](../references.md)，[A]）。代价是每跳跨距大、式 (5) 的离散误差按跨距累积——误差账的定量形态在 §2.4 与 §3。
+合法性来自 §2.1 的观察：网络是在全部 $t$ 的边缘上分别训练的，任何格点上的 $\varepsilon_\theta$ 都是那个噪声水平下的合法 score（经 7.3 式 (9) 换算）。换句话说，跳步不是近似调用一个「本来只在相邻步有效」的算子，而是同一个场在稀疏格点上的采样。1000 步训练出的模型直接以 $S = 50$ 或 $S = 100$ 采样，NFE 同比例下降，无需任何重训（[Song et al., 2021](../references.md)，arXiv:2010.02502，[A]；官方实现 [ermongroup/ddim](../references.md)，[A]）。代价是每跳跨距大，式 (5) 的离散误差按跨距累积；误差账的定量形态在 §2.4 与 §3。
 
 ### 2.4 DDIM $\sigma = 0$ = PF-ODE 的一阶离散化（精确证明）
 
@@ -159,7 +159,7 @@ $$
 
 **符号**：末步把括号认出 $\sqrt{\bar\alpha_t}\thinspace \hat x_0$。
 
-式 (11) 与 DDIM 更新式 (6) **逐项相同**——不是「到一阶一致」，而是恒等：DDIM $\sigma = 0$ 更新 = PF-ODE 经指数积分、网络场取 0 阶（左端点常数）逼近的步进。线性传播子是精确的，误差整块来自「一步之内把 $\varepsilon_\theta$ 当常数」，阶为 $O\big( (\lambda_s - \lambda_t)^2 \big)$ 局部 / 全局一阶。这就是「DDIM = PF-ODE 一阶离散化」的精确含义，也把 DDIM 直接钉死在数值分析框架里：**要降误差，不必换模型，只需对网络场做更高阶的展开**——§3 的全部内容。
+式 (11) 与 DDIM 更新式 (6) **逐项相同**——不是「到一阶一致」，而是恒等：DDIM $\sigma = 0$ 更新 = PF-ODE 经指数积分、网络场取 0 阶（左端点常数）逼近的步进。线性传播子是精确的，误差整块来自「一步之内把 $\varepsilon_\theta$ 当常数」，阶为 $O\big( (\lambda_s - \lambda_t)^2 \big)$ 局部 / 全局一阶。这就是「DDIM = PF-ODE 一阶离散化」的精确含义，也把 DDIM 直接锚定在数值分析框架里：**要降误差，不必换模型，只需对网络场做更高阶的展开**——这是 §3 的全部内容。
 
 顺带一个统一视角的注记：7.3 §7 已证 DDPM ancestral = 逆时 SDE 的一阶随机离散；本节证 DDIM = PF-ODE 的一阶确定离散。同一个 $\varepsilon_\theta$、同一族边缘、两种动力学的各一阶离散——7.3 的统一表在本章落到了可执行的算法上。
 
@@ -183,9 +183,9 @@ $$
 
 **符号**：求和是「 $k$ 阶导数 $\times$ 闭式标量矩」的线性组合——高阶信息全部进入系数，不打乱更新结构。
 
-剩下的问题是怎么拿到 $\varepsilon_\theta^{(k)}$。两条路，DPM-Solver 都用了：**(i) 多步法（multistep）**：前若干步的网络评估值缓存下来，用有限差分组合出各阶导数的估计——历史评估免费复用，不增加 NFE，这是实际部署的主力形式（每步仍 1 次网络前向）；**(ii) 单步多阶段法**：在当前步内补采中间点（类似 Runge-Kutta 的级），每步 2-3 次 NFE 换更高的阶。 $K = 1$ 时式 (13) 退化为式 (11)——DDIM 是 DPM-Solver 的第 1 阶； $K = 2, 3$ 时每步误差降到 $O(\Delta\lambda^3)$、 $O(\Delta\lambda^4)$ 量级。
+剩下的问题是怎么拿到 $\varepsilon_\theta^{(k)}$。有两条路，DPM-Solver 都用了。**(i) 多步法（multistep）**：把前若干步的网络评估值缓存下来，用有限差分组合出各阶导数的估计。历史评估免费复用，不增加 NFE——这是实际部署的主力形式（每步仍 1 次网络前向）。**(ii) 单步多阶段法**：在当前步内补采中间点（类似 Runge-Kutta 的级），每步 2-3 次 NFE 换更高的阶。 $K = 1$ 时式 (13) 退化为式 (11)，即 DDIM 是 DPM-Solver 的第 1 阶； $K = 2, 3$ 时每步误差降到 $O(\Delta\lambda^3)$、 $O(\Delta\lambda^4)$ 量级。
 
-结论性的账（出处即论文标题与摘要口径）：在 $K = 2$ 或 $3$、配合格点在 $\lambda$ 坐标下均匀或按经验规则放置时，CIFAR-10 / ImageNet 规模上 **10 次上下 NFE 即可逼近数百步 DDPM ancestral 的样本质量**，同预算下优于 1 阶 DDIM 跳步（[Lu et al., 2022](../references.md)，[A]，具体 FID 数字以原表为准——口径随数据集与评估协议而变，本章不跨表转录）。对照 7.3 §8 的 EDM Heun（预测-校正、每步 2 NFE、二阶）：Heun 是把同样的二阶精度买在通用 ODE 框架里，DPM-Solver 则利用扩散 ODE 的半线性结构把线性项精确积分掉、只对网络场展开——同样阶数下后者的有效精度更高，因为误差只作用于网络项而非整个向量场。
+结论性的账（出处即论文标题与摘要口径）：在 $K = 2$ 或 $3$、配合格点在 $\lambda$ 坐标下均匀或按经验规则放置时，CIFAR-10 / ImageNet 规模上 **10 次上下 NFE 即可逼近数百步 DDPM ancestral 的样本质量**，同预算下优于 1 阶 DDIM 跳步（[Lu et al., 2022](../references.md)，[A]，具体 FID 数字以原表为准——口径随数据集与评估协议而变，本章不跨表转录）。对照 7.3 §8 的 EDM Heun（预测-校正、每步 2 NFE、二阶）：Heun 把同样的二阶精度买在通用 ODE 框架里；DPM-Solver 则利用扩散 ODE 的半线性结构，把线性项精确积分掉、只对网络场展开。同样阶数下后者的有效精度更高，因为误差只作用于网络项而非整个向量场。
 
 ### 3.2 步数-质量曲线的形状与读法
 
@@ -207,7 +207,11 @@ $$
 
 **符号**：示意形状，非实测描点；各曲线交点的定量位置见各论文原表。
 
-三个读法要点：(i) **随机性在低步数是负债**：ancestral 的每步注噪设计假设了「多步平均」，步数一砍这个假设先崩——所以低 NFE 区间清一色是确定性或近确定性方法（DDIM η 调小、solver、蒸馏）；(ii) **阶数的边际收益递减**：1→2 阶的收益远大于 2→3 阶，且高阶对网络场的光滑性更敏感（ $\varepsilon_\theta^{(k)}$ 的有限差分估计在极少步数下本身有噪声），10-20 NFE 是这类方法的甜区；(iii) **再往下是另一道题**：4 步以下，任何「对同一条 ODE 做更细积分」的思路都救不回来——轨迹本身的曲率成了墙，必须换轨迹（拉直，§5.4）或换模型（蒸馏，§5.1-§5.5）。这条分界就是 §3 与 §5 的分工。
+三个读法要点：
+
+- **随机性在低步数是负债**：ancestral 的每步注噪设计假设了「多步平均」，步数一砍这个假设先崩。所以低 NFE 区间清一色是确定性或近确定性方法（DDIM η 调小、solver、蒸馏）。
+- **阶数的边际收益递减**：1→2 阶的收益远大于 2→3 阶，且高阶对网络场的光滑性更敏感（ $\varepsilon_\theta^{(k)}$ 的有限差分估计在极少步数下本身有噪声）。10-20 NFE 是这类方法的主用区间。
+- **再往下是另一道题**：4 步以下，任何「对同一条 ODE 做更细积分」的思路都救不回来——轨迹本身的曲率成了墙，必须换轨迹（拉直，§5.4）或换模型（蒸馏，§5.1-§5.5）。这条分界就是 §3 与 §5 的分工。
 
 ## 4. Guidance：把条件压进 score
 
@@ -229,9 +233,13 @@ $$
 
 **符号**：负号是换算的自然产物（score 与 ε 反向）； $\sqrt{1-\bar\alpha_t}$：score 与 ε 之间的尺度桥。
 
-用 $\tilde\varepsilon$ 替换 ancestral 或 DDIM 更新里的 $\varepsilon_\theta$ 即得引导采样。这条路线是 Dhariwal & Nichol 的 ADM/ADM-G 的技术核心（[Dhariwal & Nichol, 2021](../references.md)，arXiv:2105.05233，[A]；注意该文标题是 *Diffusion Models Beat GANs on Image Synthesis*，classifier guidance 是其实现这一目标的技术贡献——标题与贡献勿张冠李戴）：论文在类别条件 ImageNet 上以足够大的 $w$ 把类别条件生成质量推过同期 GAN。 $w > 1$ 才有效这件事本身是一条信息——真实的 $p(x \mid y)$（ $w = 1$）不够好，采样器需要的是**比真后验更尖**的分布，§4.3 给它的分布语义。
+用 $\tilde\varepsilon$ 替换 ancestral 或 DDIM 更新里的 $\varepsilon_\theta$ 即得引导采样。这条路线是 Dhariwal & Nichol 的 ADM/ADM-G 的技术核心（[Dhariwal & Nichol, 2021](../references.md)，arXiv:2105.05233，[A]；注意该文标题是 *Diffusion Models Beat GANs on Image Synthesis*，classifier guidance 是其实现这一目标的技术贡献——标题与贡献勿张冠李戴）：论文在类别条件 ImageNet 上以足够大的 $w$ 把类别条件生成质量推过同期 GAN。 $w > 1$ 才有效这件事本身是一条信息：真实的 $p(x \mid y)$（ $w = 1$）不够好，采样器需要的是**比真后验更尖**的分布。§4.3 给它的分布语义。
 
-成本与隐患记三笔：(i) 要多训一个吃噪声图的分类器，且它的梯度每步进采样环——pipeline 多一个模型；(ii) 分类器梯度不保证指向数据流形：它学的是「什么特征让 $y$ 好分」，不是「什么图自然」，大 $w$ 下样本会被推向分类器决策边界的偏好方向——一种温和的 adversarial 效应；(iii) 分类器信号随 $t$ 衰减（噪声大时 $x_t$ 几乎不可分），引导力在高噪声端最弱，而那里恰恰是构图定型处。
+成本与隐患记三笔：
+
+- 要多训一个吃噪声图的分类器，且它的梯度每步进采样环——pipeline 多一个模型。
+- 分类器梯度不保证指向数据流形：它学的是「什么特征让 $y$ 好分」，不是「什么图自然」。大 $w$ 下样本会被推向分类器决策边界的偏好方向，一种温和的 adversarial 效应。
+- 分类器信号随 $t$ 衰减（噪声大时 $x_t$ 几乎不可分），引导力在高噪声端最弱，而那里恰恰是构图定型处。
 
 ### 4.2 CFG：隐式分类器的完整推导
 
@@ -259,7 +267,7 @@ $$
 
 **符号**： $w$：引导强度（guidance scale）； $\tilde\varepsilon$：替换采样更新里的 $\varepsilon_\theta$。
 
-式 (18) 是当前 T2I 采样环的标准组件。三个端点读法： $w = 0$ 退回无条件采样；**$w = 1$ 退回纯条件采样**（ $\tilde\varepsilon = \varepsilon_\theta(x_t, t, c)$）——注意 classifier guidance 里 $w = 1$ 对应真后验，CFG 继承了同一标定； $w > 1$ 沿「条件方向」外推。工业典型区间 $w \in [2, 15]$（经验注记，约定页口径），远超 1——条件采样在实践中从来不是采真后验，而是采一个刻意加尖的分布。
+式 (18) 是当前 T2I 采样环的标准组件。三个端点读法： $w = 0$ 退回无条件采样；**$w = 1$ 退回纯条件采样**（ $\tilde\varepsilon = \varepsilon_\theta(x_t, t, c)$），注意 classifier guidance 里 $w = 1$ 对应真后验，CFG 继承了同一标定； $w > 1$ 沿「条件方向」外推。工业典型区间 $w \in [2, 15]$（经验注记，约定页口径），远超 1。条件采样在实践中从来不是采真后验，而是采一个刻意加尖的分布。
 
 等价的差分写法把机制看得更清： $\tilde\varepsilon = (1 - w)\thinspace \varepsilon_\theta(\varnothing) + w\thinspace \varepsilon_\theta(c)$——两个 score 的仿射组合，系数和为 1 但一正一负（ $w > 1$ 时无条件项系数为负），不是凸组合。成本账：每步两次网络前向（条件与无条件各一），可拼成一个 batch 维翻倍的批——**NFE 计 2**，墙钟时间通常远小于 2 倍（GPU 并行吃掉一部分）。
 
@@ -275,7 +283,7 @@ $$
 
 的 score。所以 $w$ 的精确语义是**对分类器对数似然的指数倾斜（log-likelihood tilt）**：在无条件分布上把 $p(y \mid x)$ 高的区域密度乘上 $p(y \mid x)^{w-1}$ 的放大因子。 $w = 1$ 复原 Bayes 后验 $p(x \mid y)$； $w > 1$ 是「比后验更自信」的分布——等价于把分类器项降到温度 $1/w$。text-to-image 里 $p(y \mid x)$ 极不平滑（大多数图完全不匹配 prompt），tilt 把质量集中到高度匹配的尖锐区域——这正是 $w$ 买 fidelity/对齐的机制，也是它付多样性账的同一个机制。
 
-失效模式的机制拆解（过饱和与多样性下降不是玄学，是范数账）。记 $\Delta = \varepsilon_\theta(c) - \varepsilon_\theta(\varnothing)$，则 $\tilde\varepsilon = \varepsilon_\theta(\varnothing) + w \Delta$，其范数
+失效模式的机制拆解逐项看：过饱和与多样性下降不是感觉层面的印象，而是一笔范数账。记 $\Delta = \varepsilon_\theta(c) - \varepsilon_\theta(\varnothing)$，则 $\tilde\varepsilon = \varepsilon_\theta(\varnothing) + w \Delta$，其范数
 
 $$
 \Vert \tilde\varepsilon \Vert^2 = \Vert \varepsilon_\theta(\varnothing) \Vert^2 + 2w\thinspace \langle \varepsilon_\theta(\varnothing), \Delta \rangle + w^2 \Vert \Delta \Vert^2 \qquad (20)
@@ -283,7 +291,7 @@ $$
 
 **符号**：右端随 $w$ 二次增长，主导增长项是 $w^2 \Vert\Delta\Vert^2$——**score norm 随 $w$ 近似线性膨胀**。
 
-后果分两路。(i) **过饱和/出界**： $\hat x_0 = (x_t - \sqrt{1-\bar\alpha_t}\thinspace \tilde\varepsilon)/\sqrt{\bar\alpha_t}$ 被膨胀的 $\tilde\varepsilon$ 推出数据范围 $[-1, 1]$，像素挤到边界，画面出现大面积饱和色块与过锐对比。(ii) **分布失配累积**：网络只在 $q(x_t \mid x_0)$ 的样本上训练过；膨胀的 $\tilde\varepsilon$ 产生的 $x_{t-1}$ 落在训练分布之外，下一步的 $\varepsilon_\theta$ 在未见输入上评估，误差沿链复合——步数越少（跳步越大）复合越快，这就是为什么大 $w$ 必须与低 NFE 一起调。(iii) **多样性塌缩**：式 (19) 的 tilt 按构造压低 $p(y \mid x)$ 非峰值区的密度——同一 prompt 的多次采样彼此趋同。
+后果逐项看。(i) **过饱和/出界**： $\hat x_0 = (x_t - \sqrt{1-\bar\alpha_t}\thinspace \tilde\varepsilon)/\sqrt{\bar\alpha_t}$ 被膨胀的 $\tilde\varepsilon$ 推出数据范围 $[-1, 1]$，像素挤到边界，画面出现大面积饱和色块与过锐对比。(ii) **分布失配累积**：网络只在 $q(x_t \mid x_0)$ 的样本上训练过；膨胀的 $\tilde\varepsilon$ 产生的 $x_{t-1}$ 落在训练分布之外，下一步的 $\varepsilon_\theta$ 在未见输入上评估，误差沿链复合——步数越少（跳步越大）复合越快，这就是为什么大 $w$ 必须与低 NFE 一起调。(iii) **多样性塌缩**：式 (19) 的 tilt 按构造压低 $p(y \mid x)$ 非峰值区的密度——同一 prompt 的多次采样彼此趋同。
 
 ### 4.4 缓解：thresholding 与 rescale
 
@@ -319,7 +327,7 @@ $$
 
 **符号**： $\varepsilon_\theta$：冻结的条件教师； $w$ 在每样本上从一个区间采样，作为学生的额外条件输入——推理时 $w$ 仍是自由旋钮，但每步只付 1 次前向。
 
-这能把 CFG 的边际成本降回无条件模型水平，是当前 T2I 部署的常见做法之一（工程惯例，无单一出处）；它同时是 §5 各蒸馏路线的标准组件——LCM 的 latent 一致性蒸馏里，教师侧就是带 CFG 的增广 PF-ODE， $w$ 同样作为学生输入蒸入（[Luo et al., 2023](../references.md)，arXiv:2310.04378，[A]）。注意式 (23) 的教师输出按定义在数据流形的「tilt 后」位置上——学生直接学习 tilt 分布的 score，§4.3 的范数膨胀随之内化，thresholding/rescale 在蒸馏后仍然常用。
+这能把 CFG 的边际成本降回无条件模型水平，是当前 T2I 部署的常见做法之一（工程惯例，无单一出处）。它同时是 §5 各蒸馏路线的标准组件：LCM 的 latent 一致性蒸馏里，教师侧就是带 CFG 的增广 PF-ODE， $w$ 同样作为学生输入蒸入（[Luo et al., 2023](../references.md)，arXiv:2310.04378，[A]）。注意式 (23) 的教师输出按定义在数据流形的「tilt 后」位置上：学生直接学习 tilt 分布的 score，§4.3 的范数膨胀随之内化，thresholding/rescale 在蒸馏后仍然常用。
 
 ## 5. 蒸馏族：把步数压进权重
 
@@ -345,7 +353,7 @@ $$
 
 **符号**： $k$：减半轮数，每轮一次完整蒸馏训练；从 $T = 1024$ 到 4 步需 $k = 8$ 轮。
 
-机制读法：每一轮学生只需学「教师的二步合成」——目标始终来自同一个高质量教师链，误差不在轮次间爆炸（论文报告 CIFAR-10 上一直减半到 4 步、样本质量接近全步教师，再往下开始掉；具体 FID 见原表）。代价同样清楚：**每轮一次完整训练**， $k$ 轮的累计训练成本远超单次教师训练；且学生绑死一个特定教师与 schedule。这是「蒸馏换 NFE」路线的总账本原型——后面三个家族都在压缩这笔训练账或把目标换得更直接。
+机制读法：每一轮学生只需学「教师的二步合成」。目标始终来自同一个高质量教师链，误差不在轮次间爆炸（论文报告 CIFAR-10 上一直减半到 4 步、样本质量接近全步教师，再往下开始掉；具体 FID 见原表）。代价同样清楚：**每轮一次完整训练**， $k$ 轮的累计训练成本远超单次教师训练，且学生绑死一个特定教师与 schedule。这是「蒸馏换 NFE」路线的总账本原型：后面三个家族都在压缩这笔训练账，或把目标换得更直接。
 
 ### 5.2 consistency models：ODE 轨迹的自一致性
 
@@ -375,17 +383,17 @@ $$
 
 **符号**： $\psi^{-}$：学生参数的 EMA（指数滑动平均，6.3 术语）版本——目标端用 stop-gradient 的慢拷贝，防塌缩； $d$：距离度量（论文用 L2 与 LPIPS 两档）； $\lambda(t_n)$：步加权。
 
-- **CT（consistency training，免教师）**：训练时本来就持有 $(x_0, \varepsilon)$ 对，教师那一步的「沿 ODE 走一格」可用已知噪声直接构造估计（把教师 score 换成该样本的已知条件方向），不需要任何预训练扩散模型。论文证明该替代的梯度在步长极限下与 CD 一致——免教师的代价是起步质量受限于估计偏差，CD 一般质量更高。
+- **CT（consistency training，免教师）**：训练时本来就持有 $(x_0, \varepsilon)$ 对，教师那一步的「沿 ODE 走一格」可用已知噪声直接构造估计（把教师 score 换成该样本的已知条件方向），不需要任何预训练扩散模型。论文证明该替代的梯度在步长极限下与 CD 一致。免教师的代价是起步质量受限于估计偏差，CD 一般质量更高。
 
-采样：1 步即 $x_0 = f_\psi(x_1, 1)$；要更好就**中途重启**：积到某个 $t' > 0$ 的 $f$ 输出重新加噪到 $t'$ 再映射一次——2 步、4 步档位免费获得，步数-质量权衡在推理时滑动，不需要重训。与 progressive distillation 的本质区别：PD 的学生只承诺「在这一对格点间等于教师」，CM 承诺「在整条轨迹上自洽」——后者一次性把全部时间格织进一个性质里，跳步的自由度（任意 $t' \to 0$）由此而来。
+采样：1 步即 $x_0 = f_\psi(x_1, 1)$；要更好就**中途重启**：积到某个 $t' > 0$，把 $f$ 的输出重新加噪到 $t'$ 再映射一次。2 步、4 步档位免费获得，步数-质量权衡在推理时滑动，不需要重训。与 progressive distillation 的本质区别：PD 的学生只承诺「在这一对格点间等于教师」，CM 承诺「在整条轨迹上自洽」。后者一次性把全部时间格织进一个性质里，跳步的自由度（任意 $t' \to 0$）由此而来。
 
 ### 5.3 LCM：latent 空间 + CFG 的同步蒸馏
 
-LCM（latent consistency model，[Luo et al., 2023](../references.md)，arXiv:2310.04378，[A]）把 CD 搬到 latent 扩散（7.6）的空间： $x$ 换成 VAE latent $z$，教师换成带 CFG 的增广 PF-ODE——§4.5 的 guidance 蒸馏在此与一致性蒸馏合流：学生 $f_\psi(z_t, t, c, w)$ 以 $w$ 为输入，回归目标是教师「CFG 双前向 + 求解器步」的合成输出。一次蒸馏同时蒸掉两样东西：步数（1000 → 2-4）与引导的双倍 NFE。标题口径即「高分辨率 few-step」：Stable Diffusion 规模的文生图在 2-4 步内出图。工程含义：一次蒸馏同时去掉「步数」与「引导」两份串行成本——这是实时 T2I 部署把一致性模型接在基础扩散模型下游的直接机制原因。
+LCM（latent consistency model，[Luo et al., 2023](../references.md)，arXiv:2310.04378，[A]）把 CD 搬到 latent 扩散（7.6）的空间： $x$ 换成 VAE latent $z$，教师换成带 CFG 的增广 PF-ODE。§4.5 的 guidance 蒸馏在此与一致性蒸馏合流：学生 $f_\psi(z_t, t, c, w)$ 以 $w$ 为输入，回归目标是教师「CFG 双前向 + 求解器步」的合成输出。一次蒸馏同时蒸掉两样东西：步数（1000 → 2-4）与引导的双倍 NFE。标题口径即「高分辨率 few-step」：Stable Diffusion 规模的文生图在 2-4 步内出图。工程含义很直接：一次蒸馏同时去掉「步数」与「引导」两份串行成本，这是实时 T2I 部署把一致性模型接在基础扩散模型下游的直接机制原因。
 
 ### 5.4 reflow：先把轨迹拉直，再谈少步
 
-7.5 §10 的曲率账在这里兑现：rectified flow（[Liu et al., 2022](../references.md)，arXiv:2209.03003，[A]）的线性路径 $x_t = (1-t) x_0 + t\varepsilon$、目标速度 $\varepsilon - x_0$ 是**条件**直线；不同端点对的直线相交，学到的边际场在交点处平均——ODE 轨迹仍弯。**reflow** 用模型自身修这个耦合：用当前模型的确定性 ODE 生成配对 $(\hat x_0, \varepsilon)$（从 $\varepsilon$ 积到数据端），再以这批配对重新训练——新一轮的条件路径连接的是「真实会被映射到一起」的端点对，交叉减少，轨迹变直；迭代执行即 $k$-rectified flow：
+7.5 §10 的曲率账在这里兑现：rectified flow（[Liu et al., 2022](../references.md)，arXiv:2209.03003，[A]）的线性路径 $x_t = (1-t) x_0 + t\varepsilon$、目标速度 $\varepsilon - x_0$ 是**条件**直线；不同端点对的直线相交，学到的边际场在交点处平均，ODE 轨迹仍弯。**reflow** 用模型自身修这个耦合：用当前模型的确定性 ODE 生成配对 $(\hat x_0, \varepsilon)$（从 $\varepsilon$ 积到数据端），再以这批配对重新训练。新一轮的条件路径连接的是「真实会被映射到一起」的端点对，交叉减少，轨迹变直。迭代执行即 $k$-rectified flow：
 
 $$
 \varepsilon \sim \mathcal{N}(0, I), \qquad \hat x_0 = \mathrm{ODEFlow}^{(k)}(\varepsilon); \qquad L_{\mathrm{reflow}} = \mathbb{E}_{t, \varepsilon} \left\Vert v_\theta^{(k+1)}\left( (1-t)\thinspace \hat x_0 + t\thinspace \varepsilon,\ t \right) - \left( \varepsilon - \hat x_0 \right) \right\Vert^2 \qquad (29)
@@ -423,7 +431,7 @@ $$
 
 机制读法：在 $x$ 处 $s_{\mathrm{fake}} > s_{\mathrm{real}}$（fake 密度坡度更陡）意味着该处 fake 质量过剩，梯度把生成器输出往反方向推——质量从过密区迁往欠密区，直到两 score 处处相等（即 $p_\psi = p_{\mathrm{real}}$，KL 的唯一不动点）。
 
-两个 score 的来源不对称，这是 DMD 的结构要点：**$s_{\mathrm{real}}$ 免费**——冻结的预训练教师经 score↔ε 换算（7.3 式 (9)）直接给出（把 fake 样本加噪到某 $t$、读教师 $\varepsilon_\theta$ 即得该噪声水平下的 real score）；**$s_{\mathrm{fake}}$ 要在线养**—— $p_\psi$ 随训练时刻在变，没有现成 score，于是并行训一个小 score 网络，用标准 DSM（7.3 §3）在生成器当前输出上回归——生成器每更新一步，fake 分布变一点，fake score 网络跟着追。主循环是两者的交替优化。论文另配一项回归损失（在教师预生成的 $(z, x_0)$ ODE 配对上做 L2）作初始化与稳定器。成果口径：1 步生成、质量逼近多步教师（具体 FID 见原表）。
+两个 score 的来源不对称，这是 DMD 的结构要点。**$s_{\mathrm{real}}$ 免费**：冻结的预训练教师经 score↔ε 换算（7.3 式 (9)）直接给出（把 fake 样本加噪到某 $t$、读教师 $\varepsilon_\theta$ 即得该噪声水平下的 real score）。**$s_{\mathrm{fake}}$ 要在线养**： $p_\psi$ 随训练时刻在变，没有现成 score，于是并行训一个小 score 网络，用标准 DSM（7.3 §3）在生成器当前输出上回归。生成器每更新一步，fake 分布变一点，fake score 网络跟着追。主循环是两者的交替优化。论文另配一项回归损失（在教师预生成的 $(z, x_0)$ ODE 配对上做 L2）作初始化与稳定器。成果口径：1 步生成、质量逼近多步教师（具体 FID 见原表）。
 
 **DMD2 注记**（[Yin et al., 2024](../references.md)，arXiv:2405.14867，[A]；官方实现 [tianweiy/DMD2](../references.md)，[A]）：改进两点——(i) 去掉对教师生成数据配对的回归依赖（免教师数据）；(ii) **在分布匹配梯度之外加 GAN 分支**（判别器分真伪、生成器梯度与之叠加）补偿大步数压缩下的细节损失。防张冠李戴：**GAN 分量属 DMD2，不属 DMD**（与约定页口径一致）。
 
@@ -442,7 +450,11 @@ $$
 | DMD2 | DMD 免教师数据 + GAN 分支 | 否 | 是（冻结 score） | 1 | [Yin et al., 2024](../references.md)（dmd2） |
 | reflow（rectified flow） | 轨迹拉直（前置工序） | 否（可多轮） | 自蒸馏 | few-step（与上面组合使用） | [Liu et al., 2022](../references.md)（rectified-flow） |
 
-读表要点：(i) 「免重训」一列是部署决策的第一分叉——求解器路线当天可换，蒸馏路线要付训练账；(ii) 1 步档目前由分布匹配路线（DMD 族）占据，自一致性路线的主力在 2-4 步，求解器在 ~10 步，跳步在 ~50 步——步数每下一档，训练账上一个量级；(iii) guidance 与该表正交：CFG 使所有行的 NFE ×2，guidance 蒸馏（§4.5）再把这个因子收回来，LCM 是两者合流的现存实例。
+读表要点：
+
+- 「免重训」一列是部署决策的第一分叉：求解器路线当天可换，蒸馏路线要付训练账。
+- 1 步档目前由分布匹配路线（DMD 族）占据；自一致性路线的主力在 2-4 步，求解器在 ~10 步，跳步在 ~50 步。步数每下一档，训练账上一个量级。
+- guidance 与该表正交：CFG 使所有行的 NFE ×2，guidance 蒸馏（§4.5）再把这个因子收回来，LCM 是两者合流的现存实例。
 
 ## 总结
 

@@ -1,6 +1,6 @@
 # 7.3 Score-Based 视角与 SDE/ODE（The Score-Based View: SDE and Probability-Flow ODE）
 
-> 本章把 7.2 的离散加噪链连续化成随机微分方程（SDE）：先证明 denoising score matching（DSM）与真 score 回归同梯度（Vincent 定理），给出「不知道数据分布也能学 score」的机制；再由 Anderson 逆时定理与 Fokker-Planck 方程推出共享同一边缘密度族的三条采样动力学——逆时 SDE、probability-flow ODE（PF-ODE）与它们的离散化——把 DDPM / DDIM / ODE solver 收进同一张表 | 前置：7.2（前向闭式解、 $\varepsilon$-参数化、 $L_{simple}$、SNR 权重；本章式号独立编号）、6.3（ELBO）、1.1（KL） | 锚点：score-SDE [A]、EDM [A]、Vincent 2011 [A]；yang-song/score_sde_pytorch [A]
+> 本章把 7.2 的离散加噪链连续化成随机微分方程（SDE）。先证明 denoising score matching（DSM）与真 score 回归同梯度（Vincent 定理）——这就是「不知道数据分布也能学 score」的机制。再由 Anderson 逆时定理与 Fokker-Planck 方程推出三条共享同一边缘密度族的采样动力学：逆时 SDE、probability-flow ODE（PF-ODE）与它们的离散化。DDPM / DDIM / ODE solver 由此收进同一张表 | 前置：7.2（前向闭式解、 $\varepsilon$-参数化、 $L_{simple}$、SNR 权重；本章式号独立编号）、6.3（ELBO）、1.1（KL） | 锚点：score-SDE [A]、EDM [A]、Vincent 2011 [A]；yang-song/score_sde_pytorch [A]
 
 ## 1. score：密度景观的坡度，也是采样的接口
 
@@ -123,7 +123,7 @@ $$
 
 两项都不含 $\theta$（第一项是未知但固定的 Fisher 信息量，第二项对高斯核闭式可算）。式 (6) 成立。 $\square$
 
-定理的两个直接推论值得单独点出。**(i) 最优解一致**： $J_{\mathrm{DSM},t}$ 的最小值点同样是 $s_\theta = \nabla \log q_t$（回归目标为条件期望——最小二乘回归的最优解是对输入的条件均值，此处即式 (7) 右端）；DSM 不是近似目标，是同一目标的随机实现，每个样本的回归靶是「给定 $x_0$ 时确定的那个箭头」， $x_0$ 的随机性在期望里平均成真 score。**(ii) 样本可采**：式 (5) 的期望只需采 $(x_0, x_t)$ 对——训练循环与 7.2 §4.4 完全同构，每个样本一次前向一次回归，没有式 (3) 的 $d$ 次 backward。
+定理有两个直接推论值得单独点出。**(i) 最优解一致**： $J_{\mathrm{DSM},t}$ 的最小值点同样是 $s_\theta = \nabla \log q_t$。原因是回归目标即条件期望：最小二乘回归的最优解是对输入的条件均值，此处即式 (7) 右端。所以 DSM 不是近似目标，而是同一目标的随机实现——每个样本的回归靶是「给定 $x_0$ 时确定的那个箭头」， $x_0$ 的随机性在期望里平均成真 score。**(ii) 样本可采**：式 (5) 的期望只需采 $(x_0, x_t)$ 对。训练循环与 7.2 §4.4 完全同构：每个样本一次前向一次回归，没有式 (3) 的 $d$ 次 backward。
 
 把高斯核代入，回归靶显形。由 7.2 §2.2 的闭式解， $q(x_t \mid x_0) = \mathcal{N}(\sqrt{\bar\alpha_t}\thinspace x_0, (1 - \bar\alpha_t) I)$，对 $x_t$ 取梯度：
 
@@ -159,7 +159,7 @@ $$
 
 **符号**： $C_t'$：与 $\theta$ 无关项；权重 $1 / (1 - \bar\alpha_t)$ 在低噪声端（ $\bar\alpha_t \to 1$）发散。
 
-三种目标于是排成一行： $L_{simple}$ 权重恒 1（7.2 §4.3）；裸 DSM（对 $t$ 均匀、不另加权）权重 $1/(1-\bar\alpha_t)$，死命压小噪声端；严格 ELBO 权重 $\approx \frac{1}{2} \Delta_t \log \mathrm{SNR}$（7.2 §4.3 的推导），压大噪声端。**损失权重从来不是定理强制的，是设计自由度**——score-SDE 论文取连续权重 $\lambda(t) = g(t)^2$（ $g$ 为扩散系数，§4）使 DSM 目标与似然的变分界对齐（[Song et al., 2021](../references.md)，arXiv:2011.13456，[A]）；EDM 把这条自由度系统化（§8）。
+三种目标于是排成一行： $L_{simple}$ 权重恒 1（7.2 §4.3）；裸 DSM（对 $t$ 均匀、不另加权）权重 $1/(1-\bar\alpha_t)$，重压小噪声端；严格 ELBO 权重 $\approx \frac{1}{2} \Delta_t \log \mathrm{SNR}$（7.2 §4.3 的推导），压大噪声端。**损失权重从来不是定理强制的，是设计自由度**——score-SDE 论文取连续权重 $\lambda(t) = g(t)^2$（ $g$ 为扩散系数，§4）使 DSM 目标与似然的变分界对齐（[Song et al., 2021](../references.md)，arXiv:2011.13456，[A]）；EDM 把这条自由度系统化（§8）。
 
 ## 4. 连续化：从加噪链到 SDE
 
@@ -195,7 +195,7 @@ $$
 
 **符号**： $\bar\alpha(t)$：累计信号保留率的连续版本；离散 $\bar\alpha_t = \prod (1 - \beta_s)$ 在 $\beta_i \to 0$ 下由 $1 - u \approx e^{-u}$ 收敛到它。
 
-与 7.2 §2.2 的闭式解逐项对照：同一个高斯、同一个 $\bar\alpha$ 语义。VP 之名同时落地： $t$ 全过程中 $\mathrm{Var}(x_t) \approx 1$（单位方差数据下），与 7.2 §2.1 的离散论证互为镜像。schedule 的连续读法也随之而来：linear schedule（7.2 §2.3）对应 $\beta(t)$ 从 $0.1$ 到 $20$ 线性增长（ $\beta(t) = T\beta_i$ 的换算），cosine schedule 对应一条 S 形 $\bar\alpha(t)$——7.2 §2.3 的 SNR 表原样适用。
+与 7.2 §2.2 的闭式解逐项对照：同一个高斯、同一个 $\bar\alpha$ 语义。VP 之名同时落地： $t$ 全过程中 $\mathrm{Var}(x_t) \approx 1$（单位方差数据下），与 7.2 §2.1 的离散论证互为镜像。schedule 的连续读法也随之而来：linear schedule（7.2 §2.3）对应 $\beta(t)$ 从 $0.1$ 到 $20$ 线性增长（ $\beta(t) = T\beta_i$ 的换算）；cosine schedule 对应一条 S 形 $\bar\alpha(t)$。7.2 §2.3 的 SNR 表原样适用。
 
 ### 4.2 VE-SDE：只注噪、不收缩的另一族
 
@@ -207,7 +207,7 @@ $$
 
 **符号**： $\sigma(t)$：单调递增的噪声尺度序列的连续化；漂移 $f = 0$，扩散系数 $g(t) = \sqrt{d\sigma^2/dt}$。
 
-直接积分得边缘 $q(x_t \mid x_0) = \mathcal{N}(x_0, \sigma^2(t) I)$：信号原封不动，噪声方差随 $t$ 膨胀到掩盖一切——VE 之名由此。两族的分工在端点行为：VP 把信号指数压向零、端点趋于标准高斯（先验匹配干净， $p(x_1) = \mathcal{N}(0, I)$ 无失配）；VE 保留全部信号均值、用大噪声淹没，端点方差远大于 1。score-SDE 框架把二者收进同一套方程——区别只在 $(f, g)$ 的选取，本章 §5-§7 的所有结论对任意 $(f, g)$ 成立。
+直接积分得边缘 $q(x_t \mid x_0) = \mathcal{N}(x_0, \sigma^2(t) I)$：信号原封不动，噪声方差随 $t$ 膨胀到掩盖一切——VE 之名由此。两族的分工在端点行为：VP 把信号指数压向零，端点趋于标准高斯（先验匹配干净， $p(x_1) = \mathcal{N}(0, I)$ 无失配）；VE 保留全部信号均值，用大噪声淹没，端点方差远大于 1。score-SDE 框架把二者收进同一套方程：区别只在 $(f, g)$ 的选取，本章 §5-§7 的所有结论对任意 $(f, g)$ 成立。
 
 ### 4.3 Fokker-Planck：密度如何随时间流（结论级）
 
@@ -239,7 +239,7 @@ $$
 
 定理里唯一的未知量是 $\nabla \log p_t$——而 §3 的 DSM 恰好交付它（ $s_\theta$）。训练与采样在此合龙：**整个框架只需要一个网络 $s_\theta(x, t)$，其余全是闭式动力学**。式 (17) 用 $s_\theta$ 替换真 score 即得可执行的采样 SDE；§7 将看到它的 Euler 离散化就是 7.2 的 ancestral 采样。
 
-score 项的系数 $g^2$（而不是别的什么倍数）可以从无穷小 Bayes 读出直觉：前向一小步 $x \to x + f\Delta t + g\sqrt{\Delta t}\thinspace z$ 是高斯转移，其逆转移按 Bayes 正比于「前向转移概率 $\times$ 密度比 $p_t(x) / p_{t + \Delta t}(x + \Delta x)$」；密度比的 $\log$ 对 $\Delta x$ 展开，一阶项正是 $-g^2 \nabla \log p_t\thinspace \Delta t$——逆时漂移比「单纯倒放 $-f$」多出的一份，就是在补偿前向扩散造成的密度涂抹。 $\Delta t \to 0$ 时高阶项消失，剩下式 (17) 的精确形式。这也解释了为什么扩散项系数原样保留：随机性本身是各向同性的，时间反演不改变它的强度，只改变漂移该往哪儿拉。
+score 项的系数 $g^2$（而不是别的什么倍数）可以从无穷小 Bayes 读出直觉：前向一小步 $x \to x + f\Delta t + g\sqrt{\Delta t}\thinspace z$ 是高斯转移，其逆转移按 Bayes 正比于「前向转移概率 $\times$ 密度比 $p_t(x) / p_{t + \Delta t}(x + \Delta x)$」。把密度比的 $\log$ 对 $\Delta x$ 展开，一阶项正是 $-g^2 \nabla \log p_t\thinspace \Delta t$。逆时漂移比「单纯倒放 $-f$」多出的这一份，就是在补偿前向扩散造成的密度涂抹。 $\Delta t \to 0$ 时高阶项消失，剩下式 (17) 的精确形式。这也解释了为什么扩散项系数原样保留：随机性本身是各向同性的，时间反演不改变它的强度，只改变漂移该往哪儿拉。
 
 ## 6. Probability-flow ODE：同一条密度流的确定性版本
 
@@ -275,7 +275,7 @@ $$
 
 **符号**： $t$ 正向 $0 \to 1$ 时该 ODE 复现前向密度涂抹；采样沿 $t: 1 \to 0$ 积分。
 
-推导的实质就一步：式 (19) 把「抹平密度」翻译成「沿 $-\nabla \log p$ 方向搬运密度」——扩散对密度的净效果等价于一个指向低密度的漂移；把这个等效漂移从随机项里拿出来并入确定性速度场，随机项清零。两个注记防误读：(i) $v$ 不唯一——任何满足 $\nabla \cdot (w\thinspace p_t) = 0$ 的无散修正场都能加上去，式 (20) 是把扩散系数取零的最简选择（也正是逆时 SDE 式 (17) 的「去噪极限」：比较两式，PF-ODE = 逆时 SDE 抽掉 $d\bar W$、并把 score 项减半）；(ii) $v$ 依赖 $p_t$ 本身——这不是循环论证，score 已由 $s_\theta$ 提供，代入即得可积分的 ODE。
+推导的实质就一步：式 (19) 把「抹平密度」翻译成「沿 $-\nabla \log p$ 方向搬运密度」。扩散对密度的净效果，等价于一个指向低密度的漂移；把这个等效漂移从随机项里拿出来并入确定性速度场，随机项清零。两个注记防误读。(i) $v$ 不唯一：任何满足 $\nabla \cdot (w\thinspace p_t) = 0$ 的无散修正场都能加上去，式 (20) 是把扩散系数取零的最简选择。它也正是逆时 SDE 式 (17) 的「去噪极限」——比较两式，PF-ODE = 逆时 SDE 抽掉 $d\bar W$、并把 score 项减半。(ii) $v$ 依赖 $p_t$ 本身，这不是循环论证：score 已由 $s_\theta$ 提供，代入即得可积分的 ODE。
 
 对 VP-SDE 展开（ $f = -\frac{1}{2}\beta x$， $g^2 = \beta$），并用换算式 (9) 写成 $\varepsilon_\theta$ 口径：
 
@@ -295,7 +295,7 @@ PF-ODE 没有噪声项， $x(1) \mapsto x(0)$ 是确定性双射（ $v$ 光滑�
 2. **误差预算全在离散化**：随机采样器每步注噪、靠多步平均掉误差；ODE 采样器的误差只有数值积分的截断，阶数与步数是可计算的账——这是 7.4「采样器军备竞赛」发生在 PF-ODE 上的原因。
 3. **似然可算**：确定性双射 + 连续 change of variables，见下节。
 
-还有一个定位注记：PF-ODE 使扩散模型在数学上成为一种连续归一化流（continuous normalizing flow）——7.1 对照表里 Flow 与 Diffusion 两行的「似然可解性」一列由此合并。两家剩下的差别在训练侧：离散 flow 直接以似然为目标，训练每步都要付 Jacobian 行列式的账（7.1 §5 的对数行列式项，架构必须专门设计使其可算）；扩散把似然从训练里整个移出——训练只做回归（便宜、架构自由），似然作为 PF-ODE 的事后副产品按需评估（贵、但只在需要密度时付一次）。
+还有一个定位注记：PF-ODE 使扩散模型在数学上成为一种连续归一化流（continuous normalizing flow）。7.1 对照表里 Flow 与 Diffusion 两行的「似然可解性」一列由此合并。两家剩下的差别在训练侧。离散 flow 直接以似然为目标，训练每步都要付 Jacobian 行列式的账（7.1 §5 的对数行列式项，架构必须专门设计使其可算）。扩散把似然从训练里整个移出：训练只做回归（便宜、架构自由），似然作为 PF-ODE 的事后副产品按需评估（贵，但只在需要密度时付一次）。
 
 ### 6.3 精确似然：连续 change of variables
 
@@ -315,7 +315,7 @@ $$
 
 **符号**： $p_1 \approx \mathcal{N}(0, I)$ 已知；积分沿采样轨迹反向重走一遍。
 
-7.1 的对照表里 diffusion 的「似然不可解」至此被补上缺口：**PF-ODE 给出精确似然**，代价写在式 (22) 的 trace 里——精确求迹要对 $d$ 个输入维各做一次向量-Jacobian 积（ $d$ 次 backward 量级/每步）；score-SDE 论文的实现用 Hutchinson 随机估计器 $`\mathrm{tr}(J) = \mathbb{E}_u[u^\top J u]`$（ $u$ 取 Rademacher 或高斯随机向量，一次 backward 出无偏估计）把每步压到一次额外 backward，再把整条轨迹的散度积分交给黑盒 ODE solver 的容差控制（[Song et al., 2021](../references.md)，[A]；走读锚点 [yang-song/score_sde_pytorch](../references.md)，[A]）。该论文以此在 CIFAR-10 上报告了与 flow 家族同口径的 bits/dim 似然——扩散模型从此同时握住 7.1 表里的两列：高质量采样与精确密度。训练侧对应物是 §3 末尾的账：想让 DSM 目标与这个似然对齐，损失权重取 $\lambda(t) = g(t)^2$。
+7.1 的对照表里 diffusion 的「似然不可解」至此被补上缺口：**PF-ODE 给出精确似然**。代价写在式 (22) 的 trace 里：精确求迹要对 $d$ 个输入维各做一次向量-Jacobian 积（每步 $d$ 次 backward 量级）。score-SDE 论文的实现用 Hutchinson 随机估计器 $`\mathrm{tr}(J) = \mathbb{E}_u[u^\top J u]`$（ $u$ 取 Rademacher 或高斯随机向量，一次 backward 出无偏估计）把每步压到一次额外 backward，再把整条轨迹的散度积分交给黑盒 ODE solver 的容差控制（[Song et al., 2021](../references.md)，[A]；走读锚点 [yang-song/score_sde_pytorch](../references.md)，[A]）。该论文以此在 CIFAR-10 上报告了与 flow 家族同口径的 bits/dim 似然。扩散模型从此同时握住 7.1 表里的两列：高质量采样与精确密度。训练侧的对应物是 §3 末尾的账：想让 DSM 目标与这个似然对齐，损失权重取 $\lambda(t) = g(t)^2$。
 
 ## 7. 统一视角：一个网络，一族采样器
 
@@ -352,7 +352,7 @@ $$
 
 **符号**：第二步用 $1/\sqrt{\alpha_i} = 1/\sqrt{1 - \beta_i} = 1 + \beta_i/2 + O(\beta_i^2)$，并把 $\beta_i^2 s_\theta$ 量级项收入余项。
 
-而 7.2 的 ancestral 更新（§3.1 与 §3.3 的两式合并、并经本章式 (9) 换写成 score 口径）恰为 $x_{i-1} = \frac{1}{\sqrt{\alpha_i}} (x_i + \beta_i s_\theta) + \sigma_i z$：取 $\sigma_i = \sqrt{\beta_i}$ 时与式 (25) 到一阶完全一致——**7.2 的采样算法是逆时 SDE 的一阶随机离散**，离散与连续的两个方差选择（ $\beta_i$ vs $\tilde\beta_i$，7.2 §5.2）之差也在 $O(\beta_i^2)$ 余项里。统一表：
+而 7.2 的 ancestral 更新（§3.1 与 §3.3 的两式合并、并经本章式 (9) 换写成 score 口径）恰为 $x_{i-1} = \frac{1}{\sqrt{\alpha_i}} (x_i + \beta_i s_\theta) + \sigma_i z$。取 $\sigma_i = \sqrt{\beta_i}$ 时，它与式 (25) 到一阶完全一致：**7.2 的采样算法是逆时 SDE 的一阶随机离散**。离散与连续的两个方差选择（ $\beta_i$ vs $\tilde\beta_i$，7.2 §5.2）之差也在 $O(\beta_i^2)$ 余项里。统一表：
 
 | 动力学 | 方程 | 离散化 → 采样器 | 随机性 | 精确似然 |
 | --- | --- | --- | --- | --- |
@@ -376,7 +376,7 @@ VE 情形下 $\sigma(t)$ 就是式 (15) 的 $\sigma(t)$ 本身，无需换算。
 
 在此坐标上，EDM 把设计空间拆成互不纠缠的三轴：
 
-1. **网络预处理（preconditioning）**：不让裸网络 $F_\theta$ 直接当去噪器，而是包一层代数外壳 $D_\theta(x; \sigma) = c_{\mathrm{skip}}(\sigma)\thinspace x + c_{\mathrm{out}}(\sigma)\thinspace F_\theta\negthinspace\left( c_{\mathrm{in}}(\sigma)\thinspace x;\ c_{\mathrm{noise}}(\sigma) \right)$。系数由「 $F_\theta$ 的输入与回归目标都保持单位方差」这一要求反解出来： $c_{\mathrm{skip}} = \sigma_d^2 / (\sigma^2 + \sigma_d^2)$、 $c_{\mathrm{out}} = \sigma \sigma_d / \sqrt{\sigma^2 + \sigma_d^2}$、 $c_{\mathrm{in}} = 1/\sqrt{\sigma^2 + \sigma_d^2}$、 $c_{\mathrm{noise}} = \ln(\sigma) / 4$（ $\sigma_d$：数据标准差，EDM 取 $0.5$；时间条件的嵌入改成噪声尺度的对数）。端点读法： $\sigma \to 0$ 时 $D_\theta \to x$（恒等旁路接管，网络不用学「复制输入」）； $\sigma \to \infty$ 时 $D_\theta \to c_{\mathrm{out}} F_\theta$（网络全权）。7.2 §5.1 的三种预测参数化是这个外壳的特例位置—— $\varepsilon$/$`x_0`$/$`v`$ 之争在 EDM 坐标下变成「 $c_{\mathrm{skip}}$ 与 $c_{\mathrm{out}}$ 怎么随 $\sigma$ 分配」一个连续问题。
+1. **网络预处理（preconditioning）**：不让裸网络 $F_\theta$ 直接当去噪器，而是包一层代数外壳 $D_\theta(x; \sigma) = c_{\mathrm{skip}}(\sigma)\thinspace x + c_{\mathrm{out}}(\sigma)\thinspace F_\theta\negthinspace\left( c_{\mathrm{in}}(\sigma)\thinspace x;\ c_{\mathrm{noise}}(\sigma) \right)$。系数由「 $F_\theta$ 的输入与回归目标都保持单位方差」这一要求反解出来： $c_{\mathrm{skip}} = \sigma_d^2 / (\sigma^2 + \sigma_d^2)$、 $c_{\mathrm{out}} = \sigma \sigma_d / \sqrt{\sigma^2 + \sigma_d^2}$、 $c_{\mathrm{in}} = 1/\sqrt{\sigma^2 + \sigma_d^2}$、 $c_{\mathrm{noise}} = \ln(\sigma) / 4$（ $\sigma_d$：数据标准差，EDM 取 $0.5$；时间条件的嵌入改成噪声尺度的对数）。端点读法： $\sigma \to 0$ 时 $D_\theta \to x$，恒等旁路接管，网络不用学「复制输入」； $\sigma \to \infty$ 时 $D_\theta \to c_{\mathrm{out}} F_\theta$，网络全权。7.2 §5.1 的三种预测参数化是这个外壳的特例位置： $\varepsilon$/$`x_0`$/$`v`$ 之争在 EDM 坐标下变成「 $c_{\mathrm{skip}}$ 与 $c_{\mathrm{out}}$ 怎么随 $\sigma$ 分配」这一个连续问题。
 2. **损失权重 $\lambda(\sigma)$ 与 $\sigma$ 采样分布**：§3 式 (11) 已证明权重是自由度；EDM 选 $\lambda(\sigma) = 1/c_{\mathrm{out}}(\sigma)^2$ 使有效回归误差跨 $\sigma$ 均匀，并配 log-normal 形的 $\sigma$ 采样密度——「哪些噪声水平值得更多训练样本」成为显式旋钮（7.5 的 logit-normal $t$ 采样是同一思想在 FM 坐标的版本）。
 3. **采样器**：确定性 PF-ODE + Heun 二阶方法（预测-校正梯形步，每步 2 次 NFE、局部截断误差比 Euler 低一阶）作默认——同样的网络，求解器阶数是纯粹的质量/NFE 旋钮，留给 7.4 对账。
 

@@ -1,6 +1,6 @@
 # 7.7 T2I 系统拆解与 AR 生图（T2I Systems and Autoregressive Image Generation）
 
-> 本章把 7.1–7.6 推导过的每个部件装回整机：SD3 = 现代开放参考实现的完整配方汇总（MMDiT + rectified flow + logit-normal，每一项指向前文章节）、SDXL（micro-conditioning 把数据质量标注写进条件、base+refiner 沿 t 轴分工）、Imagen [B]（像素级联 64→256→1024、T5-only text encoder、dynamic thresholding）；然后整条换掉生成目标：LlamaGen（「图像 = 另一种语言」的公式论证）、VAR（next-scale prediction 的顺序设计）、Infinity（bitwise 词表）；再换一族解码范式：MaskGIT / MUSE（mask-predict）；Emu3（图、视、文全 token 统一的账）；最后落一张 diffusion vs AR vs mask-predict 对照总表 | 前置：7.1（家族坐标与对照表）、7.2（DDPM 约定、频谱读法）、7.3（PF-ODE）、7.4（CFG 与 dynamic thresholding 推导、蒸馏族）、7.5（rectified flow、logit-normal、timestep shift）、7.6（latent 账、text encoder 消融、MMDiT）、6.3（VQ/RVQ/LFQ tokenizer）、2.8（decoder block 标准配方）、2.4（KV cache）、1.1（AR 分解与精确似然）、1.3（scaling law 账）、4.5（MoE 专家分工） | 锚点：SD3 [A]、SDXL [A]、LlamaGen [A]、VAR [A]、Infinity [A]、MaskGIT [A]、Emu3 [A]、Imagen [B]、MUSE [B]；Stability-AI/sd3.5 [A]、Stability-AI/generative-models [A]、stabilityai/stable-diffusion-xl-base-1.0 [A]、FoundationVision/LlamaGen [A]、FoundationVision/VAR [A]、FoundationVision/Infinity [A]、baaivision/Emu3 [A]
+> 本章把 7.1–7.6 推导过的部件装回整机。先看扩散系三台整机：SD3 是现代开放参考实现的完整配方（MMDiT + rectified flow + logit-normal，每一项都能指回前文的推导）；SDXL 用 micro-conditioning 把数据质量标注写进条件，base+refiner 沿 t 轴分工；Imagen [B] 走像素级联 64→256→1024、T5-only text encoder 与 dynamic thresholding。然后整条换掉生成目标：LlamaGen 给出「图像 = 另一种语言」的公式论证，VAR 把顺序改成 next-scale prediction，Infinity 把词表改成 bitwise。再换一族解码范式：MaskGIT / MUSE 的 mask-predict。Emu3 则算图、视、文全 token 统一的账。最后落一张 diffusion vs AR vs mask-predict 对照总表 | 前置：7.1（家族坐标与对照表）、7.2（DDPM 约定、频谱读法）、7.3（PF-ODE）、7.4（CFG 与 dynamic thresholding 推导、蒸馏族）、7.5（rectified flow、logit-normal、timestep shift）、7.6（latent 账、text encoder 消融、MMDiT）、6.3（VQ/RVQ/LFQ tokenizer）、2.8（decoder block 标准配方）、2.4（KV cache）、1.1（AR 分解与精确似然）、1.3（scaling law 账）、4.5（MoE 专家分工） | 锚点：SD3 [A]、SDXL [A]、LlamaGen [A]、VAR [A]、Infinity [A]、MaskGIT [A]、Emu3 [A]、Imagen [B]、MUSE [B]；Stability-AI/sd3.5 [A]、Stability-AI/generative-models [A]、stabilityai/stable-diffusion-xl-base-1.0 [A]、FoundationVision/LlamaGen [A]、FoundationVision/VAR [A]、FoundationVision/Infinity [A]、baaivision/Emu3 [A]
 
 ## 1. SD3：现代开放参考实现的配方汇总
 
@@ -13,7 +13,7 @@
 | $t$ 的采样分布 | logit-normal $(0, 1)$ = log-SNR 轴上的高斯，质量压中段 | 7.5 §8 |
 | 分辨率 shift | $t' = s t / (1 + (s-1) t)$， $1024^2$ 档取 $s = 3$ | 7.5 §8 |
 | 主干 | MMDiT：图文双流各自 QKV/MLP/adaLN + 拼接序列联合 attention | 7.6 §7.1 |
-| 训练稳定化 | QK-norm：per-head RMSNorm 把 logit 上界钉在 $\sqrt{d_h}$ | 7.6 §7.2 |
+| 训练稳定化 | QK-norm：per-head RMSNorm 把 logit 上界固定在 $\sqrt{d_h}$ | 7.6 §7.2 |
 | 文本条件 | CLIP-L + OpenCLIP-G + T5-XXL 三 encoder（123M + 695M + 4.7B） | 7.6 §4 |
 | 采样 | PF-ODE solver（7.3 §6 族）+ CFG： $\tilde v = v_\theta(\varnothing) + w\thinspace(v_\theta(c) - v_\theta(\varnothing))$ | 7.4 §4.2 |
 
@@ -30,7 +30,7 @@ prompt ─► T5-XXL ───► sequence 沿序列维拼进 Y ────┘
 z_0 ─► 除以 scaling factor ─► VAE decoder ─► 像素图
 ```
 
-**scaling 证据。** SD3 论文报告验证 loss 随主干规模（depth 15–38，最大 8B 档）持续下降，且与人类偏好评测同向改善；8B 档在人类偏好上超过 SDXL 等前代开放模型（均论文 Figure 口径，2026-11-12）。机制读法：DiT 在 ImageNet 上的 Gflops↔FID 对数线性（7.6 §6.3）延续到了 T2I 尺度——「换 transformer 主干就能吃 scaling law」这个 DiT 的核心论点，由 SD3 在开放权重系统上坐实。后续的 SD3.5 与 FLUX（[C]，权重 gated、仅述已披露口径）都是这台整机的直接变体：前者同配方的权重更新，后者 double→single stream 的结构变体（7.6 §7.3）。
+**scaling 证据。** SD3 论文报告验证 loss 随主干规模（depth 15–38，最大 8B 档）持续下降，且与人类偏好评测同向改善；8B 档在人类偏好上超过 SDXL 等前代开放模型（均论文 Figure 口径，2026-11-12）。机制读法：DiT 在 ImageNet 上的 Gflops↔FID 对数线性（7.6 §6.3）延续到了 T2I 尺度——「换 transformer 主干就能吃 scaling law」这个 DiT 的核心论点，由 SD3 在开放权重系统上证实。后续的 SD3.5 与 FLUX（[C]，权重 gated、仅述已披露口径）都是这台整机的直接变体：前者是同配方的权重更新，后者是 double→single stream 的结构变体（7.6 §7.3）。
 
 本章其余系统都可以读作对这张配方表的改写：SDXL 改的是条件通路与阶段分工，Imagen 改的是表示空间与模型分解，AR 系把生成目标整个换掉。
 
@@ -54,7 +54,7 @@ $$
 
 机制读法：模型学到的是条件分布 $p(x_0 \mid c,\thinspace h_0, w_0, c_y, c_x)$——「断头构图」不再混进主分布，而是被收进 $c_y > 0$ 的条件分支；推理时固定 $(c_y, c_x) = (0, 0)$、 $(h_0, w_0) = (h_t, w_t)$，采样落在「全幅构图」的条件模式上。本质是把数据清洗的判断题改成条件生成的选择题：**标注替代丢弃**——小图、裁剪图全部保留（数据量与多样性保住），质量信号以条件形式进模型，推理时把条件拨到「好」的角上。同一招可挂任何可标注的信号（美学分、水印标记等），是数据工程进条件通路的通用范式。
 
-**base + refiner 两阶段。** SDXL 的整机由两个独立权重的 latent diffusion 模型组成（同 f8/4ch latent 空间，6.3 §7.1）：base 是 2.6B 的 U-Net 主干（论文口径；text encoder 侧 CLIP-L 123M + OpenCLIP-G 695M，7.6 §4 已核），refiner 是同族 U-Net，只在**低噪声段**（ $t$ 近 0 的一端）训练与工作——正是 7.2 §2.3 频谱读法里高频细节成形的区间。两种用法（论文口径）：(a) 切换式（ensemble of expert denoisers）：base 从 $t = 1$ 走到切换时刻 $t_s$，refiner 接管 $t_s \to 0$；(b) 后处理式：base 出完整 latent，加少量噪声回到 $t_s$ 再让 refiner 去回 0（SDEdit 风格的细节精修）。账的读法与 4.5 的 MoE 同构：MoE 沿 token 轴分工，这里沿 $t$ 轴分工——两个专家各自只在自己擅长的噪声区间分配容量，refiner 不必学构图、base 不必精修纹理。refiner 是可选项：base 单用即可出图，加 refiner 换细节与纹理的偏好分（论文口径）。
+**base + refiner 两阶段。** SDXL 的整机由两个独立权重的 latent diffusion 模型组成（同 f8/4ch latent 空间，6.3 §7.1）：base 是 2.6B 的 U-Net 主干（论文口径；text encoder 侧 CLIP-L 123M + OpenCLIP-G 695M，7.6 §4 已核），refiner 是同族 U-Net，只在**低噪声段**（ $t$ 近 0 的一端）训练与工作——正是 7.2 §2.3 频谱读法里高频细节成形的区间。两种用法（论文口径）：(a) 切换式（ensemble of expert denoisers），base 从 $t = 1$ 走到切换时刻 $t_s$，refiner 接管 $t_s \to 0$；(b) 后处理式，base 出完整 latent，加少量噪声回到 $t_s$ 再让 refiner 去回 0（SDEdit 风格的细节精修）。账的读法与 4.5 的 MoE 同构：MoE 沿 token 轴分工，这里沿 $t$ 轴分工——两个专家各自只在自己擅长的噪声区间分配容量，refiner 不必学构图、base 不必精修纹理。refiner 是可选项：base 单用即可出图，加 refiner 换细节与纹理的偏好分（论文口径）。
 
 定位一句话：SDXL 的生成目标与主干家族全是 7.2/7.6 §5 的旧部件（latent + U-Net + cross-attention），新意集中在**条件通路**（式 (1)(2)）与**沿 $t$ 的系统分工**——它是一个「系统工程」而非「算法」意义上的升级。
 
@@ -126,7 +126,7 @@ r_1    r_2    r_3              r_10
 重建：ẑ = Σ_k upsample(r_k 的查表向量)
 ```
 
-**raster vs scale 的信息结构论证。** (a) 条件完备性：每步的条件是整张图的粗粒度全貌——全局构图在 $r_1$（ $1 \times 1$）一步定死，之后逐步补细节；raster 在任何一步都看不到全图。(b) 2D 结构保留：步内并行 + 双向注意力，token map 的空间邻接不被展平破坏。(c) 依赖链长度： $256^2$ 档总 token 数 $\sum_k h_k w_k = 680$，但串行步数只有 $K = 10$——raster 的 256 步压到 10 步，且每步是一次完整的并行前向。注意这个顺序与扩散同构：coarse-to-fine 正是 7.2 §2.3 频谱读法里 $t: 1 \to 0$ 的进程，VAR 把扩散的时间轴离散化成了尺度轴——它兼有 AR 的精确似然与扩散的「先全局后局部」结构。
+**raster vs scale 的信息结构论证。** (a) 条件完备性：每步的条件是整张图的粗粒度全貌——全局构图在 $r_1$（ $1 \times 1$）一步确定，之后逐步补细节；raster 在任何一步都看不到全图。(b) 2D 结构保留：步内并行 + 双向注意力，token map 的空间邻接不被展平破坏。(c) 依赖链长度： $256^2$ 档总 token 数 $\sum_k h_k w_k = 680$，但串行步数只有 $K = 10$——raster 的 256 步压到 10 步，且每步是一次完整的并行前向。注意这个顺序与扩散同构：coarse-to-fine 正是 7.2 §2.3 频谱读法里 $t: 1 \to 0$ 的进程，VAR 把扩散的时间轴离散化成了尺度轴——它兼有 AR 的精确似然与扩散的「先全局后局部」结构。
 
 **scaling law。** VAR 论文给出 test loss 与 FID 随参数量（至 2B）与训练算力的幂律拟合（论文 Figure 口径，2026-11-12）——图像 AR 生成第一次接入 1.3 的 scaling-law 账，且幂律形态干净；VAR-2B（depth 30）在 ImageNet $256^2$ 报 FID 1.73（VAR-d30-re，rejection sampling 变体；裸 d30 为 1.92，均论文口径），压过同基准全部扩散与 GAN 对照。附带品：由于每步条件是完整粗图，in-painting / out-painting 变成「改条件前缀」的特例，论文演示了免微调的 zero-shot 编辑（论文口径）。
 
@@ -146,7 +146,7 @@ $$
 
 ## 7. mask-predict 族：MaskGIT 与 MUSE [B]
 
-先看第三个回答：AR 的串行来自「顺序承诺」——每个 token 一旦生成就不可改。mask-predict 族换个承诺方式：全部位点同时出价、逐轮收敛，每轮只兑现最有把握的一部分。MaskGIT（[Chang et al., 2022](../references.md)，arXiv:2202.04200，[A]）用 8 轮迭代完成一张 $256^2$ 图（论文报告甜点 8–12 轮、更多迭代反而有害；raster AR 要 256 步严格串行），ImageNet $256^2$ FID 6.18（论文口径，2026-11-12）。代价在似然列：每步预测的是「给定未 mask 位点、被 mask 位点的条件分布」，整轮迭代的伪似然乘积不等于联合似然——7.1 对照表里这一格要让给 AR 与 diffusion（ELBO）。
+先看第三个回答：AR 的串行来自「顺序承诺」——每个 token 一旦生成就不可改。mask-predict 族换个承诺方式：全部位点同时预测、逐轮收敛，每轮只把最有把握的一部分定下来。MaskGIT（[Chang et al., 2022](../references.md)，arXiv:2202.04200，[A]）用 8 轮迭代完成一张 $256^2$ 图（论文报告最佳区间为 8–12 轮、更多迭代反而有害；raster AR 要 256 步严格串行），ImageNet $256^2$ FID 6.18（论文口径，2026-11-12）。代价在似然列：每步预测的是「给定未 mask 位点、被 mask 位点的条件分布」，整轮迭代的伪似然乘积不等于联合似然——7.1 对照表里这一格要让给 AR 与 diffusion（ELBO）。
 
 **训练。** BERT 式目标：VQ token 网格（VQGAN f16 tokenizer，6.3 §4 的 $16 \times 16$ 档）随机 mask 一部分，双向 transformer 预测被 mask 位点；训练时的 mask 比例按与解码同一族的 schedule 采样（ $r = \gamma(u)$， $u$ 均匀，论文口径）。
 
@@ -156,7 +156,7 @@ $$
 n_t = \left\lceil \gamma\negthinspace\left( \tfrac{t}{T} \right) \cdot N \right\rceil, \qquad \gamma(t) = \cos\negthinspace\left( \frac{\pi t}{2} \right) \qquad (8)
 $$
 
-**符号**： $n_t$：第 $t$ 轮后仍被 mask 的位点数； $N$：总位点数； $\gamma$ 从 $\gamma(0) = 1$ 单调降到 $\gamma(1) = 0$。 $\cos$ 形的读法：前期 $\gamma$ 降得快、每轮大批兑现（此时上下文少、只有高置信位点敢定）；后期降速放缓、小步精修（低置信位点留到上下文充分时再定）。机制上与 AR 的顺序承诺相反：AR 早步的错误没有撤回通道，mask-predict 每轮都保留「收回重出」的权利。
+**符号**： $n_t$：第 $t$ 轮后仍被 mask 的位点数； $N$：总位点数； $\gamma$ 从 $\gamma(0) = 1$ 单调降到 $\gamma(1) = 0$。 $\cos$ 形的读法：前期 $\gamma$ 降得快，每轮有大批位点被确定（此时上下文少，只有高置信位点才敢定下来）；后期降速放缓、小步精修（低置信位点留到上下文充分时再定）。机制上与 AR 的顺序承诺相反：AR 早步的错误没有撤回通道，mask-predict 每轮都保留「收回重出」的权利。
 
 ```
 轮次   t=0        t=1         t=2                  t=T
@@ -166,17 +166,17 @@ $$
 每轮：全位点并行预测 → 按置信度保留 n_t 个继续 mask
 ```
 
-**MUSE [B]。** MUSE（[Chang et al., 2023](../references.md)，arXiv:2301.00704，[B]——Google 未开源，`google-research/muse` 404 实测 2026-11-12，不作代码锚点，机制按论文公式讲、实现细节不断言）把 mask-predict 装进 T2I 系统：T5-XXL 文本条件拼进序列，base $256^2$ masked transformer + token 空间级联超分到 $512^2$——与 Imagen 的级联同位，但每级是 mask-predict 而非 diffusion。步数优势直接兑现成延迟（论文表 3 口径）：MUSE $512^2$ 出图 1.3 秒、 $256^2$ 出图 0.5 秒（TPUv4）；同表的 Imagen $256^2$ 为 9.1 秒（同硬件）、SD v1.4（LDM 50 步） $512^2$ 为 3.7 秒（A100 口径）——数字跨硬件、跨分辨率，只宜读作量级证据：并行解码把单图延迟压进秒级，而迭代去噪系统在十秒级。同一时代的三个系统恰好各占本表一族，这组数字是三路线延迟结构差异的直接证据。
+**MUSE [B]。** MUSE（[Chang et al., 2023](../references.md)，arXiv:2301.00704，[B]——Google 未开源，`google-research/muse` 404 实测 2026-11-12，不作代码锚点，机制按论文公式讲、实现细节不断言）把 mask-predict 装进 T2I 系统：T5-XXL 文本条件拼进序列，base $256^2$ masked transformer + token 空间级联超分到 $512^2$——与 Imagen 的级联同位，但每级是 mask-predict 而非 diffusion。步数优势直接变成延迟优势（论文表 3 口径）：MUSE $512^2$ 出图 1.3 秒、 $256^2$ 出图 0.5 秒（TPUv4）；同表的 Imagen $256^2$ 为 9.1 秒（同硬件）、SD v1.4（LDM 50 步） $512^2$ 为 3.7 秒（A100 口径）——数字跨硬件、跨分辨率，只宜读作量级证据：并行解码把单图延迟压进秒级，而迭代去噪系统在十秒级。同一时代的三个系统恰好各占本表一族，这组数字是三路线延迟结构差异的直接证据。
 
 ## 8. Emu3：图、视、文全 token 统一的账
 
-LlamaGen 证明了「AR 主干够」、VAR 证明了「顺序可以换」、Infinity 证明了「词表可以推到 $2^d$」；Emu3（[Wang et al., 2024](../references.md)，arXiv:2409.18869，[A]，走读锚点 [baaivision/Emu3](../references.md)）走的是最后一步：模态也可以并。它用同一个 next-token 目标从头训练一个 8B transformer，输入混合文本 BPE token、图像与视频的离散 token（SBER-MoVQGAN 系 visual tokenizer，codebook 32768、空间 f8： $512^2$ 图 = $64 \times 64 = 4096$ token；视频加时域下采样，论文口径）——生成与理解统一在一个 softmax 下，论文摘要主张无 diffusion、无组合架构即在生成与感知任务上超过 SDXL 等任务专用模型（摘要口径，2026-11-12）。
+LlamaGen 证明了「AR 主干够」、VAR 证明了「顺序可以换」、Infinity 证明了「词表可以推到 $2^d$」；Emu3（[Wang et al., 2024](../references.md)，arXiv:2409.18869，[A]，走读锚点 [baaivision/Emu3](../references.md)）走的是最后一步：模态也可以合并进同一条序列。它用同一个 next-token 目标从头训练一个 8B transformer，输入混合文本 BPE token、图像与视频的离散 token（SBER-MoVQGAN 系 visual tokenizer，codebook 32768、空间 f8： $512^2$ 图 = $64 \times 64 = 4096$ token；视频加时域下采样，论文口径）——生成与理解统一在一个 softmax 下，论文摘要主张无 diffusion、无组合架构即在生成与感知任务上超过 SDXL 等任务专用模型（摘要口径，2026-11-12）。
 
 「统一」的含金量拆成三条账：
 
 **(a) 接口账。** 单 softmax 覆盖文本 + 32768 个视觉 code + 控制符；7.6 §3 的 cross-attention、7.6 §7.1 的双流 MMDiT 这类「跨模态接口」整体消失——模态对齐不再由架构显式搭桥，而由共享序列里的 next-token 监督自发学成。系统复杂度从「多组件组合」塌缩回「一个 transformer」。
 
-**(b) 序列账。** 一张 $512^2$ 图 4096 token，对一段几十 token 的 prompt 是两个数量级的碾压——视觉统治序列长度、KV cache 与解码延迟；视频更甚。含义直接：P2 的全部长上下文与推理优化（KV cache 2.4、稀疏/线性注意力 P4、投机采样）从「文本基建」变成「生成质量与成本的第一变量」，这也是 AR 视觉路线对 infra 侧的真实拉力。
+**(b) 序列账。** 一张 $512^2$ 图 4096 token，而一段 prompt 通常只有几十 token——两者差两个数量级，视觉统治了序列长度、KV cache 与解码延迟；视频更甚。含义直接：P2 的全部长上下文与推理优化（KV cache 2.4、稀疏/线性注意力 P4、投机采样）从「文本基建」变成「生成质量与成本的第一变量」，这也是 AR 视觉路线对 infra 侧的真实拉力。
 
 **(c) tokenizer 账。** 6.3 §6 的判断在此完全落地：离散 tokenizer 的重建保真是全系统的质量上限——LLM 侧的任何改进都穿不过 tokenizer 的有损瓶颈；Emu3 把视频也压进同一 tokenizer，tokenizer 的每一笔重建损失摊给三个模态，tokenizer 训练的优先级被推到系统最高位。对照扩散侧：LDM 的两阶段分工（7.6 §1）里 VAE 同样是上限，但连续 latent 的瓶颈软得多（f8 16ch 的保真对多数任务已足够）——离散统一付出的信息瓶颈代价，是 Emu3 路线必须持续偿还的债。
 

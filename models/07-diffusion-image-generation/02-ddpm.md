@@ -1,6 +1,6 @@
 # 7.2 DDPM 完整推导（Denoising Diffusion Probabilistic Models: The Complete Derivation）
 
-> 本章把 DDPM 从一条高斯加噪链推到底：前向闭式解（高斯卷积递推）、noise schedule 的 linear/cosine 对比与频谱读法、反向过程的参数化、后验 $q(x_{t-1} \mid x_t, x_0)$ 的 Bayes 配方推导、ELBO 三项分解、 $\varepsilon$-参数化、 $L_{simple}$ 与严格 ELBO 的 SNR weighting 差异、 $\varepsilon$/$`x_0`$/$`v`$ 三种预测参数化换算、 $\sigma_t$ 的两个选择 | 前置：1.1（KL 散度与 CE 分解式 (6)）、6.3（ELBO 双路径推导式 (3)(4)、reparameterization、Gaussian KL 闭式式 (6)(7)）、7.1（生成模型家族定位） | 锚点：DDPM [A]、iDDPM [A]、progressive distillation [A]（v-prediction 原始出处）；hojonathanho/diffusion [A]、lucidrains/denoising-diffusion-pytorch（教学参照）
+> 本章把 DDPM 从一条高斯加噪链推到底。推导主线：前向闭式解（高斯卷积递推）、后验 $q(x_{t-1} \mid x_t, x_0)$ 的 Bayes 配方、ELBO 三项分解，最后落到 $\varepsilon$-参数化。另有两笔对照账：noise schedule 的 linear/cosine 对比与频谱读法，以及 $L_{simple}$ 与严格 ELBO 的 SNR weighting 差异。 $\varepsilon$/$`x_0`$/$`v`$ 三种预测参数化的换算、 $\sigma_t$ 的两个选择在章末定案 | 前置：1.1（KL 散度与 CE 分解式 (6)）、6.3（ELBO 双路径推导式 (3)(4)、reparameterization、Gaussian KL 闭式式 (6)(7)）、7.1（生成模型家族定位） | 锚点：DDPM [A]、iDDPM [A]、progressive distillation [A]（v-prediction 原始出处）；hojonathanho/diffusion [A]、lucidrains/denoising-diffusion-pytorch（教学参照）
 
 ## 1. 问题设定：一条固定的加噪链 + 一个学习的逆过程
 
@@ -36,7 +36,7 @@ $$
 
 **符号**： $\alpha_t, \beta_t, \bar\alpha_t$ 在 §2.1 定义； $\mu_\theta, \sigma_t$ 在 §3 定义。
 
-训练侧一次前向就能拿到任意 $t$ 的监督信号（类似 1.1 teacher forcing 的并行性），生成侧则必须串行走完 $T$ 步、每步一次网络评估——这个「训练并行、采样串行」的不对称是 7.4 整章（采样器与蒸馏）存在的根本原因，先记账：DDPM 原生采样 = 1000 次 NFE（network function evaluations）。
+训练侧一次前向就能拿到任意 $t$ 的监督信号（类似 1.1 teacher forcing 的并行性）；生成侧则必须串行走完 $T$ 步，每步一次网络评估。这个「训练并行、采样串行」的不对称，正是 7.4 整章（采样器与蒸馏）存在的根本原因。先记账：DDPM 原生采样 = 1000 次 NFE（network function evaluations）。
 
 把 DDPM 与 6.3 的 VAE 逐项摆在一起，后面的推导每一步行了什么棋都有对应物：
 
@@ -150,7 +150,7 @@ $$
 
 **符号**： $\varepsilon$：注入 $x_t$ 的全部累计噪声的单一代表样本。式 (5) 是密度口径，式 (6) 是采样口径，二者等价。
 
-同一递推在密度层面的读法： $q(x_t \mid x_0) = \int q(x_t \mid x_{t-1})\thinspace q(x_{t-1} \mid x_0)\thinspace dx_{t-1}$ 是两个高斯密度的卷积，引理式 (4) 正是「高斯卷积仍是高斯、方差相加」这条密度事实的采样口径。递推每走一步，信号系数乘一个 $\sqrt{\alpha}$、噪声方差按「1 减累计保留率」归位——采样路径展开与密度卷积是同一枚硬币的两面，本书推导一律走采样口径（写起来没有积分号），需要密度语义时回引本段。
+同一递推在密度层面的读法： $q(x_t \mid x_0) = \int q(x_t \mid x_{t-1})\thinspace q(x_{t-1} \mid x_0)\thinspace dx_{t-1}$ 是两个高斯密度的卷积，引理式 (4) 正是「高斯卷积仍是高斯、方差相加」这条密度事实的采样口径。递推每走一步，信号系数乘一个 $\sqrt{\alpha}$，噪声方差按「1 减累计保留率」归位。采样路径展开与密度卷积是同一枚硬币的两面。本书推导一律走采样口径（写起来没有积分号）；需要密度语义时回引本段。
 
 式 (6) 是 DDPM 训练可行的支点：给定 $x_0$，任意 $t$ 的 $x_t$ 一次采样直达，不需要真的滚动 $t$ 步链。训练时对每个样本独立随机抽 $t$（§4.4），1000 层的层级模型被摊平成「一次采样 + 一次回归」。同时式 (6) 也给出了噪声的精确语义： $\varepsilon$ 是 $x_t$ 中全部随机性的充分统计量——后面 $\varepsilon$-参数化（§3.3）让网络回归的正是它。
 
@@ -193,17 +193,17 @@ $$
 | 900 | 2.75e−4 | −35.6 | 0.0241 | −16.1 |
 | 1000 | 4.04e−5 | −43.9 | $\to 0$ | $\to -\infty$ |
 
-两条曲线的形状差异在 log-SNR 坐标下看得最清楚。linear-β： $\beta_t$ 小， $\log \bar\alpha_t = \sum_{s \le t} \log(1 - \beta_s) \approx -\sum_{s \le t} \beta_s$，等差数列求和出 $t$ 的二次函数——这只是 $\log \bar\alpha$ 的形状； $\log \mathrm{SNR} = \log \bar\alpha_t - \log(1 - \bar\alpha_t)$ 还要叠上 $-\log(1 - \bar\alpha_t)$ 项， $t$ 小时 $1 - \bar\alpha_t$ 从 0 快速升起、该项陡峭下跌，合成的 log-SNR 两端陡、中段相对缓。cosine：取 $s \to 0$ 的极限看结构， $\bar\alpha_t = \cos^2(\pi t / 2T)$、 $1 - \bar\alpha_t = \sin^2(\pi t / 2T)$，故
+两条曲线的形状差异在 log-SNR 坐标下看得最清楚。先看 linear-β。 $\beta_t$ 小，所以 $\log \bar\alpha_t = \sum_{s \le t} \log(1 - \beta_s) \approx -\sum_{s \le t} \beta_s$，等差数列求和出 $t$ 的二次函数——但这只是 $\log \bar\alpha$ 的形状。 $\log \mathrm{SNR} = \log \bar\alpha_t - \log(1 - \bar\alpha_t)$ 还要叠上 $-\log(1 - \bar\alpha_t)$ 项： $t$ 小时 $1 - \bar\alpha_t$ 从 0 快速升起，该项陡峭下跌。合成的 log-SNR 两端陡、中段相对缓。再看 cosine。取 $s \to 0$ 的极限看结构： $\bar\alpha_t = \cos^2(\pi t / 2T)$、 $1 - \bar\alpha_t = \sin^2(\pi t / 2T)$，故
 
 $$
 \mathrm{SNR}_t = \frac{\cos^2\left( \pi t / 2T \right)}{\sin^2\left( \pi t / 2T \right)}, \qquad \log \mathrm{SNR}_t = 2 \log \cos\left( \frac{\pi t}{2T} \right) - 2 \log \sin\left( \frac{\pi t}{2T} \right)
 $$
 
-对 $u = \pi t / 2T$ 求导： $\frac{d}{du} \log \mathrm{SNR} = -2 \frac{\sin u}{\cos u} - 2 \frac{\cos u}{\sin u} = -\frac{2}{\sin u \cos u} = -\frac{4}{\sin(2u)}$——由 $\sin(2u) \le 1$ 知斜率绝对值 $\ge 4$，最小值 $4$ 在中点 $u = \pi/4$ 处取得，中段近似匀速；两端斜率发散，是整条曲线最陡的部分。带 $s = 0.008$ 时 $`\mathrm{SNR}_t = \cos^2(u_t) / (\sin^2(u_t) - \sin^2(u_0))`$（由 $\cos^2 a - \cos^2 b = \sin^2 b - \sin^2 a$ 化简）， $\sin^2(u_0) \approx 1.5 \times 10^{-4}$ 只在 $t$ 极小时偏离上式形状。一句话对比：linear-β 的 log-SNR 前半程掉得更急（ $t = 500$ 已 −10.7 dB，同期 cosine 仍在 0 dB 附近）、尾部却留着 $\bar\alpha_T > 0$ 的残余以有限斜率收场；cosine 中段匀速、两端陡，尾部斜率发散恰好把 $\bar\alpha$ 在 $t = T$ 压到 0。同样的 1000 步，cosine 的 $\Delta_t \log \mathrm{SNR}$ 分布更均匀——联系式 (25)（ $w_t \approx \frac{1}{2} \Delta_t \log \mathrm{SNR}$），cosine 的严格 ELBO 权重本身就更平。
+对 $u = \pi t / 2T$ 求导： $\frac{d}{du} \log \mathrm{SNR} = -2 \frac{\sin u}{\cos u} - 2 \frac{\cos u}{\sin u} = -\frac{2}{\sin u \cos u} = -\frac{4}{\sin(2u)}$——由 $\sin(2u) \le 1$ 知斜率绝对值 $\ge 4$，最小值 $4$ 在中点 $u = \pi/4$ 处取得，中段近似匀速；两端斜率发散，是整条曲线最陡的部分。带 $s = 0.008$ 时 $`\mathrm{SNR}_t = \cos^2(u_t) / (\sin^2(u_t) - \sin^2(u_0))`$（由 $\cos^2 a - \cos^2 b = \sin^2 b - \sin^2 a$ 化简）， $\sin^2(u_0) \approx 1.5 \times 10^{-4}$ 只在 $t$ 极小时偏离上式形状。一句话对比：linear-β 的 log-SNR 前半程掉得更急（ $t = 500$ 已 −10.7 dB，同期 cosine 仍在 0 dB 附近），尾部却留着 $\bar\alpha_T > 0$ 的残余，以有限斜率收场；cosine 中段匀速、两端陡，尾部斜率发散，恰好把 $\bar\alpha$ 在 $t = T$ 压到 0。同样的 1000 步，cosine 的 $\Delta_t \log \mathrm{SNR}$ 分布更均匀。联系式 (25)（ $w_t \approx \frac{1}{2} \Delta_t \log \mathrm{SNR}$）：cosine 的严格 ELBO 权重本身就更平。
 
-**频谱读法**。式 (6) 在傅里叶域逐频率成立（傅里叶变换是正交线性变换，保持各向同性高斯的独立性，噪声谱不混合）： $\hat x_t(f) = \sqrt{\bar\alpha_t}\thinspace \hat x_0(f) + \sqrt{1 - \bar\alpha_t}\thinspace \hat\varepsilon(f)$，其中 $\hat\varepsilon(f)$ 各频率等功率（白噪声 = 平谱）。自然图像的功率谱随频率快速衰减、能量集中在低频（经验事实），于是对每个 $t$ 存在交叉频率 $f_c(t)$： $\bar\alpha_t \cdot P_{\mathrm{img}}(f_c) = (1 - \bar\alpha_t) \cdot P_{\varepsilon}$， $f > f_c$ 的频段信噪比小于 1，信息已被淹没。 $t$ 增大 $\Rightarrow$ $f_c$ 单调下移——**加噪是从高频到低频的逐层淹没，去噪反过来：先恢复低频构图与色块，后恢复高频纹理**。这也解释了生成中途图像「先成形、后出细节」的普遍观察。
+**频谱读法**。式 (6) 在傅里叶域逐频率成立（傅里叶变换是正交线性变换，保持各向同性高斯的独立性，噪声谱不混合）： $\hat x_t(f) = \sqrt{\bar\alpha_t}\thinspace \hat x_0(f) + \sqrt{1 - \bar\alpha_t}\thinspace \hat\varepsilon(f)$，其中 $\hat\varepsilon(f)$ 各频率等功率（白噪声 = 平谱）。自然图像的功率谱随频率快速衰减，能量集中在低频（经验事实）。于是对每个 $t$ 存在一个交叉频率 $f_c(t)$： $\bar\alpha_t \cdot P_{\mathrm{img}}(f_c) = (1 - \bar\alpha_t) \cdot P_{\varepsilon}$。 $f > f_c$ 的频段信噪比小于 1，信息已被淹没。 $t$ 增大 $\Rightarrow$ $f_c$ 单调下移。换句话说，**加噪是从高频到低频的逐层淹没；去噪反过来：先恢复低频构图与色块，后恢复高频纹理**。这也解释了生成中途图像「先成形、后出细节」的普遍观察。
 
-schedule 的好坏由此可以量化。linear 的 log-SNR 两端陡、中段缓， $t = 500$（半程）时 SNR 已掉到 −10.7 dB；且尾部在 $\bar\alpha_T = 4.04 \times 10^{-5} > 0$ 处收场——末端 $\sqrt{\bar\alpha_T} = 0.0064$，已低于 8-bit 图像在 $[-1, 1]$ 标度下的一个量化台阶 $1/127.5 \approx 0.0078$：从 $t = 979$ 起到 $T$ 的 22 步残余信号都低于量化台阶，**对 32×32 图像几乎没有可恢复信息，链的长度被浪费**。cosine 把信息破坏摊匀：半程时 SNR 仍在 0 dB 附近，且 $\bar\alpha_t$ 恰在 $t = T$ 归零（低于量化台阶的只有从 $t = 995$ 起的 6 步），1000 步步步有活干。iDDPM 的动机正是此，且作用的分辨率区间与本节算例精确对齐：论文实测 linear schedule 在高分辨率图像上表现良好，但在 64×64 与 32×32 上 sub-optimal——小分辨率下 linear 的末端过于嘈杂，最后约四分之一的 latent 已几乎是纯噪声（原文 Figure 3 口径），与上面的 32×32 量化账互为印证。cosine 的设计意图（原文）： $\bar\alpha_t$ 在中段近似线性下降、在 $t = 0$ 与 $t = T$ 两端变化平缓，防止噪声水平在端点附近突变；其论文实验中 cosine schedule 改善 log-likelihood（[Nichol & Dhariwal, 2021](../references.md)，[A]），随后成为标准选项之一。
+schedule 的好坏由此可以量化。linear 的 log-SNR 两端陡、中段缓， $t = 500$（半程）时 SNR 已掉到 −10.7 dB。尾部的问题更直接：它在 $\bar\alpha_T = 4.04 \times 10^{-5} > 0$ 处收场，末端 $\sqrt{\bar\alpha_T} = 0.0064$，已低于 8-bit 图像在 $[-1, 1]$ 标度下的一个量化台阶 $1/127.5 \approx 0.0078$。从 $t = 979$ 起到 $T$ 的 22 步，残余信号都低于量化台阶——**对 32×32 图像几乎没有可恢复信息，链的长度被浪费**。cosine 把信息破坏摊匀：半程时 SNR 仍在 0 dB 附近，且 $\bar\alpha_t$ 恰在 $t = T$ 归零（低于量化台阶的只有从 $t = 995$ 起的 6 步），1000 步步步有活干。iDDPM 的动机正是此，且作用的分辨率区间与本节算例精确对齐：论文实测 linear schedule 在高分辨率图像上表现良好，但在 64×64 与 32×32 上 sub-optimal——小分辨率下 linear 的末端过于嘈杂，最后约四分之一的 latent 已几乎是纯噪声（原文 Figure 3 口径），与上面的 32×32 量化账互为印证。cosine 的设计意图（原文）： $\bar\alpha_t$ 在中段近似线性下降，在 $t = 0$ 与 $t = T$ 两端变化平缓，防止噪声水平在端点附近突变。其论文实验中 cosine schedule 改善 log-likelihood（[Nichol & Dhariwal, 2021](../references.md)，[A]），随后成为标准选项之一。
 
 另外记一个后面要用的数字：linear schedule 下 $\bar\alpha_T = 4.04 \times 10^{-5}$，即 $q(x_T \mid x_0) \approx \mathcal{N}(0, I)$ 到很高精度——这给了模型端点 $p(x_T) = \mathcal{N}(0, I)$ 的合法性，§4.1 的 $L_T$ 项将因此近似为零。
 
@@ -219,7 +219,7 @@ $$
 
 **符号**： $\mu_\theta$：网络给出的反向均值； $\sigma_t^2$：反向方差，DDPM 取固定值（ $\beta_t$ 或 $\tilde\beta_t$，§5.2），iDDPM 让它可学。
 
-高斯假设的合法性：当 $\beta_t$ 足够小，前向单步只注入微量噪声，真实的反向条件分布 $q(x_{t-1} \mid x_t)$（对数据分布取边际）与它的前向镜像一样接近高斯——DDPM 原文以此论证式 (10) 的函数形式在 $\beta_t \to 0$ 极限下无损；严格的连续时间版本（reverse-time SDE）在 7.3 给出。直觉上， $\beta_t$ 大时反向一步的「可能来源」是数据流形上大片的 $x_0$ 混合，真实反向条件是多峰的，单高斯装不下； $\beta_t$ 小把来源收窄到 $x_t$ 的局部邻域，混合退化为单峰。这个论证同时说明了为什么 $T$ 要取到 1000 量级： $T$ 越大、每步 $\beta_t$ 越小，式 (10) 的函数形式误差越小。注意式 (10) 的条件里**没有 $x_0$**：生成时 $x_0$ 正是待求之物，网络只能从 $(x_t, t)$ 推断它——这是反向与下面后验的本质区别。
+高斯假设的合法性：当 $\beta_t$ 足够小，前向单步只注入微量噪声，真实的反向条件分布 $q(x_{t-1} \mid x_t)$（对数据分布取边际）与它的前向镜像一样接近高斯。DDPM 原文以此论证式 (10) 的函数形式在 $\beta_t \to 0$ 极限下无损；严格的连续时间版本（reverse-time SDE）在 7.3 给出。直觉上， $\beta_t$ 大时，反向一步的「可能来源」是数据流形上大片的 $x_0$ 混合，真实反向条件是多峰的，单高斯装不下。 $\beta_t$ 小则把来源收窄到 $x_t$ 的局部邻域，混合退化为单峰。这个论证同时说明了为什么 $T$ 要取到 1000 量级： $T$ 越大、每步 $\beta_t$ 越小，式 (10) 的函数形式误差越小。注意式 (10) 的条件里**没有 $x_0$**：生成时 $x_0$ 正是待求之物，网络只能从 $(x_t, t)$ 推断它。这是反向与下面后验的本质区别。
 
 ### 3.2 后验 $q(x_{t-1} \mid x_t, x_0)$：Bayes + 配方（完整推导）
 
@@ -318,7 +318,7 @@ $$
 
 这个恒等式是 §4.2 把 KL 项化成 $\varepsilon$ 回归的枢纽。
 
-式 (18) 的更新结构值得多看一眼： $\mu_\theta$ 是「 $x_t$ 本身（缩放 $1/\sqrt{\alpha_t}$）减去沿噪声预测方向的一步修正」。网络从不直接输出 $x_{t-1}$，而是输出「 $x_t$ 里哪部分是噪声」——输入与输出的主干由恒等通路承担，网络只学残差。这与 2.1 残差连接的设计同源：恒等主干保住信号，学习集中在修正项上。反向一步「当前值减修正项」的形状也是 7.4 全部 ODE 求解器（DDIM、DPM-Solver）离散更新的离散原型。
+式 (18) 的更新结构值得多看一眼： $\mu_\theta$ 是「 $x_t$ 本身（缩放 $1/\sqrt{\alpha_t}$）减去沿噪声预测方向的一步修正」。网络从不直接输出 $x_{t-1}$，而是输出「 $x_t$ 里哪部分是噪声」：输入与输出的主干由恒等通路承担，网络只学残差。这与 2.1 残差连接的设计同源——恒等主干保住信号，学习集中在修正项上。反向一步「当前值减修正项」的形状，也是 7.4 全部 ODE 求解器（DDIM、DPM-Solver）更新式的离散原型。
 
 ## 4. ELBO 分解与 $L_{simple}$
 
@@ -352,7 +352,7 @@ $$
 \sum_{t=2}^{T} \log q(x_t \mid x_{t-1}, x_0) = \sum_{t=2}^{T} \log q(x_{t-1} \mid x_t, x_0) + \sum_{t=2}^{T} \left[ \log q(x_t \mid x_0) - \log q(x_{t-1} \mid x_0) \right]
 $$
 
-第二个和逐项相消（伸缩）： $= \log q(x_T \mid x_0) - \log q(x_1 \mid x_0)$。而 $t = 1$ 项单独是 $\log q(x_1 \mid x_0)$，恰好与之抵消。伸缩与抵消不是技巧性巧合：它们把「逐层前向比」重排成「端点 + 逐层后验比 + 首层重建」三件可分别闭式处理的对象—— $q(x_T \mid x_0)$ 与 $p(x_T)$ 都比的是端点， $q(x_{t-1} \mid x_t, x_0)$ 与 $p_\theta(x_{t-1} \mid x_t)$ 条件对齐（都给 $x_t$）， $p_\theta(x_0 \mid x_1)$ 单独成项。把所有项归位：
+第二个和逐项相消（伸缩）： $= \log q(x_T \mid x_0) - \log q(x_1 \mid x_0)$。而 $t = 1$ 项单独是 $\log q(x_1 \mid x_0)$，恰好与之抵消。伸缩与抵消不是技巧性巧合：它们把「逐层前向比」重排成「端点 + 逐层后验比 + 首层重建」三件可分别闭式处理的对象。 $q(x_T \mid x_0)$ 与 $p(x_T)$ 都比的是端点； $q(x_{t-1} \mid x_t, x_0)$ 与 $p_\theta(x_{t-1} \mid x_t)$ 条件对齐（都给 $x_t$）； $p_\theta(x_0 \mid x_1)$ 单独成项。把所有项归位：
 
 $$
 L_{\mathrm{vlb}} = \mathbb{E}_q\left[ \log \frac{q(x_T \mid x_0)}{p(x_T)} + \sum_{t=2}^{T} \log \frac{q(x_{t-1} \mid x_t, x_0)}{p_\theta(x_{t-1} \mid x_t)} - \log p_\theta(x_0 \mid x_1) \right]
@@ -430,7 +430,7 @@ $$
 
 **符号**： $`\Delta_t \log \mathrm{SNR} = \log \mathrm{SNR}_{t-1} - \log \mathrm{SNR}_t`$；近似号用 $\beta_t$ 小时 $1/(2\alpha_t) \approx 1/2$ 及 $1 - r \approx -\log r$。
 
-式 (25) 给出严格 ELBO 的加权画像：**每步的权重 = 该步造成的 SNR 相对下降量**——信息销毁最剧烈的步占最大权重。代入 linear schedule 的端点数值： $w_1 = 1/(2\alpha_1) \approx 0.500$（ $t=1$ 处 $1 - \bar\alpha_1 = \beta_1$， $\beta_1$ 约去）； $w_T = \beta_T / (2\alpha_T(1 - \bar\alpha_T)) = 0.02/(2 \times 0.98 \times 0.99996) \approx 0.0102$。首末相差约 49 倍——**严格 ELBO 把近 50 倍的权重压在小 $t$ 端**，那些步的噪声量 $\beta_1 = 10^{-4}$ 级别，去噪任务接近「把像素微调回量化 bin」。
+式 (25) 给出严格 ELBO 的加权画像：**每步的权重 = 该步造成的 SNR 相对下降量**——信息销毁最剧烈的步占最大权重。代入 linear schedule 的端点数值： $w_1 = 1/(2\alpha_1) \approx 0.500$（ $t=1$ 处 $1 - \bar\alpha_1 = \beta_1$， $\beta_1$ 约去）； $w_T = \beta_T / (2\alpha_T(1 - \bar\alpha_T)) = 0.02/(2 \times 0.98 \times 0.99996) \approx 0.0102$。首末相差约 49 倍：**严格 ELBO 把近 50 倍的权重压在小 $t$ 端**。那些步的噪声量是 $\beta_1 = 10^{-4}$ 级别，去噪任务接近「把像素微调回量化 bin」。
 
 DDPM 的简化（论文消融后采用）：**把 $w_t$ 整个扔掉**：
 
@@ -440,7 +440,7 @@ $$
 
 **符号**： $t$ 均匀采样使式 (24) 的求和变成期望；每个样本一次回归。
 
-差异的机制读法：相对严格 ELBO， $L_{simple}$ 把小 $t$（低噪声、接近重建）的项**相对**降权、把大 $t$（高噪声、语义重建）的项相对升权——容量从「像素级微调」挪到「从半噪声里恢复结构」，这正是扩散模型生成质量的主战场；DDPM 论文的消融中 $L_{simple}$ 的样本质量（FID）优于带权版本（[Ho et al., 2020](../references.md)，[A]）。两个边界说明，防误读：(i) $L_{simple}$ 不是把小 $t$ 项删掉—— $t$ 均匀采样下它们照样进 batch，只是不再乘 49 倍的权重；(ii) 丢掉 $w_t$ 的代价是目标不再是似然下界，要算 NLL 得回到式 (21) 全量评估——「训练目标」与「评价指标」从此分家，7.3 的精确似然路线会把指标侧补回来。iDDPM 折中：均值仍用 $L_{simple}$ 训，另加小权重的 $L_{\mathrm{vlb}}$ 项供方差分支学习（hybrid objective，§5.2）。weighting 作为设计空间的系统梳理（ $\sigma$-参数化与损失权重的解耦）属 EDM 口径，放 7.3。
+差异的机制读法：相对严格 ELBO， $L_{simple}$ 把小 $t$（低噪声、接近重建）的项**相对**降权，把大 $t$（高噪声、语义重建）的项相对升权。容量从「像素级微调」挪到「从半噪声里恢复结构」——这正是扩散模型生成质量的主战场。DDPM 论文的消融中， $L_{simple}$ 的样本质量（FID）优于带权版本（[Ho et al., 2020](../references.md)，[A]）。两个边界说明，防误读：(i) $L_{simple}$ 不是把小 $t$ 项删掉—— $t$ 均匀采样下它们照样进 batch，只是不再乘 49 倍的权重；(ii) 丢掉 $w_t$ 的代价是目标不再是似然下界，要算 NLL 得回到式 (21) 全量评估。「训练目标」与「评价指标」从此分家，7.3 的精确似然路线会把指标侧补回来。iDDPM 折中：均值仍用 $L_{simple}$ 训，另加小权重的 $L_{\mathrm{vlb}}$ 项供方差分支学习（hybrid objective，§5.2）。weighting 作为设计空间的系统梳理（ $\sigma$-参数化与损失权重的解耦）属 EDM 口径，放 7.3。
 
 ### 4.4 训练与采样算法
 
@@ -513,7 +513,7 @@ $$
 | $\varepsilon$（ $L_{simple}$） | $\lVert e \rVert^2$ | 两端均匀 |
 | $v$ | $`\lVert e \rVert^2 / \bar\alpha_t = \lVert e \rVert^2 (1 + 1/\mathrm{SNR}_t)`$ | $t \to 0$ 端 $\approx \varepsilon$-loss； $t \to T$ 端 $\approx x_0$-loss——各取两者在该端较平的一侧 |
 
-**术语防混**：iDDPM 的 hybrid objective 里也写作 $v$ 的量是**方差对数插值系数**（式 (30)），均值仍走 $\varepsilon$-参数化，与式 (27) 的 v-prediction 同名不同物，引用文献时勿混（约定页已锁此口径：v-prediction 归 Salimans & Ho）。
+**术语防混**：iDDPM 的 hybrid objective 里也有一个写作 $v$ 的量，那是**方差对数插值系数**（式 (30)），均值仍走 $\varepsilon$-参数化。它与式 (27) 的 v-prediction 同名不同物，引用文献时勿混（约定页已锁此口径：v-prediction 归 Salimans & Ho）。
 
 ### 5.2 $\sigma_t$ 的选择： $\beta_t$ vs $\tilde\beta_t$ vs 学习
 
@@ -525,7 +525,7 @@ $$
 
 **符号**： $\beta_t$：前向单步方差； $\tilde\beta_t$：式 (14) 的后验方差。
 
-读法： $\tilde\beta_t$ 是「 $x_0$ 已知」时反向一步的真实不确定性， $\beta_t$ 略大（ $\tilde\beta_t < \beta_t$，因 $(1 - \bar\alpha_{t-1}) < (1 - \bar\alpha_t)$）——多出的部分是「 $x_0$ 未知」的补偿。DDPM 消融中两者样本质量相近。端点行为不同： $\tilde\beta_1 = 0$（ $t=1$ 后验本来就退化，见 §3.2 检查 (i)）， $\beta_1 > 0$ 则最后一步仍注入噪声；实现上 $t = 1$ 一律取 $z = 0$。iDDPM 让方差可学，参数化为两个端点的对数插值：
+读法： $\tilde\beta_t$ 是「 $x_0$ 已知」时反向一步的真实不确定性； $\beta_t$ 略大（ $\tilde\beta_t < \beta_t$，因 $(1 - \bar\alpha_{t-1}) < (1 - \bar\alpha_t)$），多出的部分是「 $x_0$ 未知」的补偿。DDPM 消融中两者样本质量相近。端点行为不同： $\tilde\beta_1 = 0$（ $t=1$ 后验本来就退化，见 §3.2 检查 (i)）， $\beta_1 > 0$ 则最后一步仍注入噪声；实现上 $t = 1$ 一律取 $z = 0$。iDDPM 让方差可学，参数化为两个端点的对数插值：
 
 $$
 \Sigma_\theta(x_t, t) = \exp\left( v \log \beta_t + (1 - v) \log \tilde\beta_t \right) \qquad (30)
