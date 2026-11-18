@@ -1,10 +1,10 @@
 # 6.1 Megatron 的层栈并行原语（Megatron's Parallel Primitives for the Layer Stack）
 
-> 5.1 把张量并行推成了公式：列切与行切的分法、f/g 恒等算子、每层两次 all-reduce 的位置。本章把这套数学逐项对到 NVIDIA/Megatron-LM 的实现上：`megatron/core` 模块树导览；f/g 的 autograd.Function 定义（`tensor_parallel/mappings.py` 的 `_CopyToModelParallelRegion` / `_ReduceFromModelParallelRegion`，每个只有 forward/backward 两行）与 5.1 公式逐行对照；`ColumnParallelLinear` / `RowParallelLinear` / `VocabParallelEmbedding`（`tensor_parallel/layers.py`）的构造与 forward 调用点；attention 与 MLP 的组合接线（`transformer/attention.py` / `transformer/mlp.py`）；并行下权重初始化的按分片 RNG 处理（`tensor_parallel/random.py`）；RMSNorm 与 RoPE 在序列并行区段的归属 | 前置：5.1（TP 推导，本章引用其结论不重复）、1.1（autograd 与自定义 Function）、4.1（集合通信语义）；5.2（SP 的通信恒等改写） | 锚点：Megatron-LM 论文（[Shoeybi et al., 2019](../references.md)，arXiv:1909.08053，[A]）+ NVIDIA/Megatron-LM repo（[A]，文件与类名核实于 2026-11-17，main 分支）、Megatron-SP（[Korthikanti et al., 2022](../references.md)，arXiv:2205.05198，[A]）
+> 5.1 把张量并行推成了公式：列切与行切怎么分、f/g 恒等算子、每层两次 all-reduce 的位置。本章把这套数学逐项对到 NVIDIA/Megatron-LM 的代码上，分四块读。第一块是 repo 结构：`megatron/core` 模块树。第二块是 f/g 的 autograd.Function 定义——`tensor_parallel/mappings.py` 的 `_CopyToModelParallelRegion` 与 `_ReduceFromModelParallelRegion`，每个只有 forward/backward 两行——与 5.1 的公式逐行对照。第三块是三个并行层原语：`ColumnParallelLinear`、`RowParallelLinear`、`VocabParallelEmbedding`（`tensor_parallel/layers.py`）的构造与 forward 调用点，以及 attention 与 MLP 怎么把它们接起来（`transformer/attention.py`、`transformer/mlp.py`）。第四块是两件边界事项：并行下权重初始化的按分片 RNG 处理（`tensor_parallel/random.py`），RMSNorm 与 RoPE 在序列并行区段的归属 | 前置：5.1（TP 推导，本章引用其结论不重复）、1.1（autograd 与自定义 Function）、4.1（集合通信语义）；5.2（SP 的通信恒等改写） | 锚点：Megatron-LM 论文（[Shoeybi et al., 2019](../references.md)，arXiv:1909.08053，[A]）+ NVIDIA/Megatron-LM repo（[A]，文件与类名核实于 2026-11-17，main 分支）、Megatron-SP（[Korthikanti et al., 2022](../references.md)，arXiv:2205.05198，[A]）
 
 ## 1. `megatron/core` 模块树导览
 
-Megatron-Core 是 Megatron-LM 的可复用库层。与本章及前后章相关的模块树（目录清单核实于 2026-11-17）：
+Megatron-Core 是 Megatron-LM 的可复用库层。先看它的结构。下面是与本章及前后章相关的模块树（目录清单核实于 2026-11-17）：
 
 ```
 megatron/core/
@@ -27,11 +27,11 @@ megatron/core/
 └── datasets/                # 数据管线（衔接 7.1）
 ```
 
-三层分工：tensor_parallel/ 回答「单个矩阵乘怎么切」，transformer/ 回答「切好的算子怎么接成一个 Transformer 层」，parallel_state.py 回答「rank 怎么分组」（5.5 的 group 树，走读归 6.2）。5.1 的公式落在第一层，本章的接线在第二层。
+这三层各回答一个问题。tensor_parallel/ 回答「单个矩阵乘怎么切」；transformer/ 回答「切好的算子怎么接成一个 Transformer 层」；parallel_state.py 回答「rank 怎么分组」（5.5 的 group 树，走读归 6.2）。5.1 的公式落在第一层，本章的接线在第二层。
 
 ## 2. f/g 的 autograd 实现：mappings.py
 
-5.1 的推导结论（本章只登记不重复）：列切线性层前向不需要通信、反向要对各 rank 算出的输入梯度求和；行切前向要对各 rank 的部分积求和、反向直通。两个通信点被封装成一对互为镜像的算子：
+先把 5.1 的推导结论登记在这里（本章不重复推导）：列切线性层前向不需要通信，反向要把各 rank 算出的输入梯度求和；行切线性层前向要把各 rank 的部分积求和，反向直通。这两个通信点被封装成一对互为镜像的算子：
 
 $$
 f: \quad \text{前向 } f(x) = x \thinspace ; \qquad \text{反向 } \overline{x} = \mathrm{AllReduce}(\overline{y}) \qquad (1)
@@ -41,7 +41,7 @@ $$
 g: \quad \text{前向 } g(x) = \mathrm{AllReduce}(x) \thinspace ; \qquad \text{反向 } \overline{x} = \overline{y} \qquad (2)
 $$
 
-**符号**： $x$、 $y$ 为前向输入输出，上划线记对应的上游梯度（ $\overline{y} = \partial L / \partial y$ ）；all-reduce 在 TP 组内做。这两个算子的 forward 与 backward 不对称——恒等映射的默认 backward 是直通、all-reduce 不是逐点可微算子——框架推不出来，必须手写 `torch.autograd.Function`（1.1 的扩展机制）。代码逐字对应（`megatron/core/tensor_parallel/mappings.py`，行级事实核实于 2026-11-17）：
+**符号**： $x$、 $y$ 为前向输入输出，上划线记对应的上游梯度（ $\overline{y} = \partial L / \partial y$ ）；all-reduce 在 TP 组内做。注意这两个算子的 forward 与 backward 不对称：恒等映射的默认 backward 是直通，all-reduce 不是逐点可微算子。框架推不出这种行为，必须手写 `torch.autograd.Function`（1.1 的扩展机制）。代码与公式逐字对应（`megatron/core/tensor_parallel/mappings.py`，行级事实核实于 2026-11-17）：
 
 ```python
 class _CopyToModelParallelRegion(torch.autograd.Function):      # 式 (1) 的 f
@@ -83,9 +83,9 @@ f 与 g 互为镜像的代数根源是 all-reduce（求和算子）的反向仍�
 | `_ReduceScatterToSequenceParallelRegion` / `_AllGatherFromTensorParallelRegion` | reduce-scatter 到序列维 / all-gather 回全量 | 互逆 | SP 下 g / f 的替代对 |
 | `_AllToAll` | 按组重排分片 | 互逆 | EP dispatch/combine 的底层（5.4） |
 
-SP 的改写规则（推导归 5.2）：TP 区段两端的 all-reduce 换成 all-gather + reduce-scatter 对，字节数不变；megatron-sp 论文记这对转换算子为 g / ḡ——g 前向 all-gather、反向 reduce-scatter，ḡ 前向 reduce-scatter、反向 all-gather（[Korthikanti et al., 2022](../references.md)，[A]，§4.2.2 及 Figure 5）。上表中间两行就是这对算子的实现。
+SP 的改写规则（推导归 5.2）：TP 区段两端的 all-reduce 换成 all-gather + reduce-scatter 对，字节数不变。megatron-sp 论文把这对转换算子记为 g / ḡ——g 前向 all-gather、反向 reduce-scatter；ḡ 前向 reduce-scatter、反向 all-gather（[Korthikanti et al., 2022](../references.md)，[A]，§4.2.2 及 Figure 5）。上表中间两行就是这对算子的实现。
 
-一处容易被略读的实测注记值得登记：megatron-sp 论文明确报告「reduce-scatter + all-gather 合起来的执行时间比单次 all-reduce 慢」（其 §6.2：序列并行让单层前向从 7.7 ms 降到 7.2 ms，收益被这一项吃掉一部分）——字节数恒等不代表墙钟时间恒等，SP 的收益来自激活显存侧（norm 与 dropout 的激活从全量复制变成按 $t$ 分片：其逐算子账里 $10sbh$ 的复制项由此可除 $t$（其 §4.2.1 对该项的归属），账归 1.4 与 5.2），通信侧甚至是小幅倒退。这解释了 SP 为什么是一个显式开关（`TransformerConfig.sequence_parallel`）而不是默认行为：它是拿通信效率换激活显存的权衡，不是免费的改写。
+这里有一处容易被略读的实测注记。megatron-sp 论文明确报告：「reduce-scatter + all-gather 合起来的执行时间比单次 all-reduce 慢」（其 §6.2：序列并行让单层前向从 7.7 ms 降到 7.2 ms，收益被这一项吃掉一部分）。字节数恒等不代表墙钟时间恒等。SP 的收益在激活显存侧：norm 与 dropout 的激活从全量复制变成按 $t$ 分片——其逐算子账里 $10sbh$ 的复制项由此可除 $t$（该项的归属见其 §4.2.1），账归 1.4 与 5.2。通信侧甚至是小幅倒退。这也解释了 SP 为什么是一个显式开关（`TransformerConfig.sequence_parallel`）而不是默认行为：它拿通信效率换激活显存，是权衡，不是免费的改写。
 
 ## 3. `ColumnParallelLinear`：列切
 
@@ -95,15 +95,15 @@ $$
 Y_i = X A_i \thinspace , \qquad Y = [Y_1, \ldots, Y_t] \qquad (3)
 $$
 
-前向无通信（输入 $X$ 全量、各 rank 独立算自己那块输出列），反向经 f 对 $\partial L / \partial X$ 做 all-reduce。逐元素算子（GELU 等）作用在分片 $Y_i$ 上不需通信——这是「列切 + 激活函数 + 行切」三段式省掉中间通信的原因（5.1 的论证）。
+前向无通信：输入 $X$ 全量，各 rank 独立算自己那块输出列。反向经 f 对 $\partial L / \partial X$ 做 all-reduce。逐元素算子（GELU 等）作用在分片 $Y_i$ 上不需要通信——这是「列切 + 激活函数 + 行切」三段式能省掉中间通信的原因（5.1 的论证）。
 
 代码（`tensor_parallel/layers.py`，类 `ColumnParallelLinear`）：
 
-- **构造**：本地权重形状 `[output_size_per_partition, input_size]`——`torch.nn.functional.linear` 计算的是 $XA^{\top}$，故分片维（输出维）存在权重第 0 维；`divide(output_size, world_size)` 执行整除；初始化走 §7 的 RNG 路径；`set_tensor_model_parallel_attributes` 在参数上标记分片维，供 optimizer 与 checkpoint 识别。
-- **forward**（三个调用点按序）：
-  1. f 的位置：`input_parallel = copy_to_tensor_model_parallel_region(input_)`。默认生产配置实际走**融合分支**：构造期 `allreduce_dgrad = (world_size > 1 and not sequence_parallel and not disable_grad_reduce)` 为真时跳过独立 f——同一次输入梯度 all-reduce 折进 GEMM autograd.Function 的 backward 里异步发出（`LinearWithGradAccumulationAndAsyncCommunication.backward` 的 `all_reduce(grad_input, async_op=True)`，源码注释说明依赖 `CUDA_DEVICE_MAX_CONNECTIONS=1` 保证它在权重梯度计算前排入流）；`sequence_parallel=True` 时同样跳过——f 的 SP 变体（前向 all-gather 输入、反向 reduce-scatter 输入梯度）也折进同一个 Function 内（其 forward 里的 `dist_all_gather_func(all_gather_buffer, input, ...)`）。数学与式 (1)(3) 逐项相同，实现位置不同：参考形态是 mappings.py 的独立算子，生产形态是融合进 GEMM。
+- **构造**。本地权重形状 `[output_size_per_partition, input_size]`——`torch.nn.functional.linear` 计算的是 $XA^{\top}$，故分片维（输出维）存在权重第 0 维；`divide(output_size, world_size)` 执行整除；初始化走 §7 的 RNG 路径；`set_tensor_model_parallel_attributes` 在参数上标记分片维，供 optimizer 与 checkpoint 识别。
+- **forward**，三个调用点按序：
+  1. f 的位置：`input_parallel = copy_to_tensor_model_parallel_region(input_)`。但默认生产配置实际走**融合分支**：构造期 `allreduce_dgrad = (world_size > 1 and not sequence_parallel and not disable_grad_reduce)` 为真时，独立 f 被跳过，同一次输入梯度 all-reduce 折进 GEMM autograd.Function 的 backward 里异步发出（`LinearWithGradAccumulationAndAsyncCommunication.backward` 的 `all_reduce(grad_input, async_op=True)`；源码注释说明它依赖 `CUDA_DEVICE_MAX_CONNECTIONS=1`，保证这次通信排在权重梯度计算之前入流）。`sequence_parallel=True` 时同样跳过——f 的 SP 变体（前向 all-gather 输入、反向 reduce-scatter 输入梯度）也折进同一个 Function 内（其 forward 里的 `dist_all_gather_func(all_gather_buffer, input, ...)`）。数学与式 (1)(3) 逐项相同，只是实现位置不同：参考形态是 mappings.py 的独立算子，生产形态是融合进 GEMM。
   2. `self._forward_impl(...)`：本地 GEMM（可选梯度累加融合 `main_grad` 直写等工程分支）。
-  3. 可选 `gather_tensor_parallel_output`（`gather_output=True` 时沿最后一维 all-gather 拼回全量 $Y$）。Transformer 层内恒为 `False`——输出保持分片、直接喂给下一个行切层；只在需要全量结果的场合（如某些 logits 用法）打开。
+  3. 可选 `gather_tensor_parallel_output`：`gather_output=True` 时沿最后一维 all-gather，拼回全量 $Y$。Transformer 层内恒为 `False`——输出保持分片，直接喂给下一个行切层；只在需要全量结果的场合（如某些 logits 用法）打开。
 
 ## 4. `RowParallelLinear`：行切
 
@@ -117,11 +117,11 @@ $$
 
 代码（同类文件，类 `RowParallelLinear`）：
 
-- **构造**：`input_is_parallel` 标记输入是否已沿最后一维分好——Transformer 接线里恒为 `True`（上游列切层的输出天然是分片的），免一次 scatter；独立使用时 forward 先调 `scatter_to_tensor_model_parallel_region` 补切。
-- **forward**：本地 GEMM 之后两分支——默认 `reduce_from_tensor_model_parallel_region(output_parallel)`（g，前向 all-reduce）；`sequence_parallel=True` 时换 `reduce_scatter_to_sequence_parallel_region(...)`（g 的 SP 变体 ḡ：求和并沿序列维散开，输出直接落进 $[s/t, b, h]$ 的序列分片布局）。
-- **bias 的位置**：bias 不切分，且只在 g 之后加一次（forward 末尾的 `output = (output_ + self.bias)`——若先加再 all-reduce，bias 会被求和放大 $t$ 倍）；`skip_bias_add=True` 时 bias 不进层内、作为返回值交给调用方与后续逐元素算子融合。这与 5.1 公式里「行切层输出 = 部分和 + bias」的书写一一对应。
+- **构造**。`input_is_parallel` 标记输入是否已沿最后一维分好——Transformer 接线里恒为 `True`，因为上游列切层的输出天然是分片的，省掉一次 scatter；独立使用时，forward 会先调 `scatter_to_tensor_model_parallel_region` 补切。
+- **forward**。本地 GEMM 之后两分支：默认 `reduce_from_tensor_model_parallel_region(output_parallel)`（g，前向 all-reduce）；`sequence_parallel=True` 时换 `reduce_scatter_to_sequence_parallel_region(...)`——g 的 SP 变体 ḡ，求和并沿序列维散开，输出直接落进 $[s/t, b, h]$ 的序列分片布局。
+- **bias 的位置**。bias 不切分，且只在 g 之后加一次（forward 末尾的 `output = (output_ + self.bias)`；若先加再 all-reduce，bias 会被求和放大 $t$ 倍）。`skip_bias_add=True` 时 bias 不进层内，作为返回值交给调用方与后续逐元素算子融合。这与 5.1 公式里「行切层输出 = 部分和 + bias」的书写一一对应。
 
-对照 §3 的列切层可以看出 Megatron 的接线美学：f 永远紧贴列切层输入、g 永远紧贴行切层输出，中间的分片区段（逐元素激活、attention 本体）零通信——5.1 的「每层两次 all-reduce」在代码层面就是每层两个 g 点（§6 的接线图）。
+对照 §3 的列切层，Megatron 的接线规律很清楚：f 永远紧贴列切层输入，g 永远紧贴行切层输出，中间的分片区段（逐元素激活、attention 本体）零通信。5.1 的「每层两次 all-reduce」，在代码层面就是每层两个 g 点（§6 的接线图）。
 
 ## 5. `VocabParallelEmbedding`：词表切分
 
@@ -131,7 +131,7 @@ $$
 \mathrm{Emb}(x) = \sum_{i=1}^{t} \mathrm{Emb}_i(x - v_i) \cdot \mathbb{1}[v_i \le x \lt v_i + V/t] \qquad (5)
 $$
 
-**符号**： $`\mathrm{Emb}_i`$ 为本地分片查表； $\mathbb{1}[\cdot]$ 为指示函数。指示函数保证每 token 只被一个 rank 贡献、其余 rank 出 0，于是求和（all-reduce）精确等于查表——不是近似。梯度侧对称：只有拥有该 token 行的 rank 收到非零行梯度，分片所有权与梯度归属天然一致，embedding 的稀疏梯度模式（2.2 §1 的动机之一）在分片下不需要额外处理。
+**符号**： $`\mathrm{Emb}_i`$ 为本地分片查表； $\mathbb{1}[\cdot]$ 为指示函数。指示函数保证每 token 只被一个 rank 贡献、其余 rank 出 0，于是求和（all-reduce）精确等于查表——不是近似。梯度侧对称：只有拥有该 token 行的 rank 收到非零行梯度，分片所有权与梯度归属天然一致。embedding 的稀疏梯度模式（2.2 §1 的动机之一）在分片下不需要额外处理。
 
 代码（同类文件，类 `VocabParallelEmbedding`，forward 逐行）：
 
@@ -140,7 +140,7 @@ $$
 3. `output_parallel[input_mask, :] = 0.0`——非己贡献清零；
 4. `reduce_from_tensor_model_parallel_region(output_parallel)`——all-reduce 求和（g）；`reduce_scatter_embeddings=True`（SP 配置）时换 `reduce_scatter_to_sequence_parallel_region`，输出直接进序列分片布局。
 
-两个工程注记。其一，查表有两条路径：`deterministic_mode` 下走 `weight[masked_input]` 张量索引（其反向为确定性的索引累加），源码注释说明默认的 `F.embedding` 反向本身非确定性，追求逐位复现的实验要显式打开这个开关。其二，`EmbeddingWithGradAccumulationFusion` 分支把行梯度直接累加进 `main_grad` 缓冲——与 §3 的梯度累加融合同族，省一次中间梯度物化。
+两个工程注记。其一，查表有两条路径：`deterministic_mode` 下走 `weight[masked_input]` 张量索引（其反向为确定性的索引累加）；源码注释说明默认的 `F.embedding` 反向本身非确定性，追求逐位复现的实验要显式打开这个开关。其二，`EmbeddingWithGradAccumulationFusion` 分支把行梯度直接累加进 `main_grad` 缓冲——与 §3 的梯度累加融合同族，省一次中间梯度物化。
 
 配套一句：输出侧 logits 投影用同一个 `ColumnParallelLinear`（`gather_output=False`，logits 保持词表分片），交叉熵在分片 logits 上直接算——`tensor_parallel/cross_entropy.py` 的词表并行 CE 避免物化全量 $[b, s, V]$；CE 的数值稳定数学归 3.1，本章只登记入口。
 
@@ -183,9 +183,9 @@ $$
         y [s, b, h]
 ```
 
-核实点：`MLP.__init__`（mlp.py）以 `gather_output=False` 构造 `linear_fc1`、以 `input_is_parallel=True` 构造 `linear_fc2`；GLU 族激活时 `ffn_hidden_size` 翻倍且 `stride=2`——源码注释说明这是为了让每个 TP rank 持有交错的 [gate, up] 对、保证跨 TP 度数 resharding 的正确性。`Attention.__init__`（attention.py）以 `input_is_parallel=True` 构造 `linear_proj`；`SelfAttention` 以 `gather_output=False` 构造 `linear_qkv`。两个 g 点即 5.1 「每层两次 all-reduce」的全部集合通信。
+核实点有三个。第一，`MLP.__init__`（mlp.py）以 `gather_output=False` 构造 `linear_fc1`、以 `input_is_parallel=True` 构造 `linear_fc2`。第二，GLU 族激活时 `ffn_hidden_size` 翻倍且 `stride=2`——源码注释说明，这是为了让每个 TP rank 持有交错的 [gate, up] 对，保证跨 TP 度数 resharding 的正确性。第三，`Attention.__init__`（attention.py）以 `input_is_parallel=True` 构造 `linear_proj`，`SelfAttention` 以 `gather_output=False` 构造 `linear_qkv`。两个 g 点即 5.1 「每层两次 all-reduce」的全部集合通信。
 
-把 shape 沿接线图走一遍（ $t$ 为 TP 度数， $a$ = head 数， $d_h$ = head dim， $h_{ff}$ = FFN 中间维；张量布局 $[s, b, \cdot]$）。attention 支路： $x$ 为 $[s, b, h]$ 全量； `linear_qkv` 输出 $[s, b, (a + 2 a_{kv}) d_h / t]$（ $a_{kv}$ = KV 组数，列切后每 rank 只持自己 head 的行块）；reshape 成 head 维后 RoPE 与 core attention 都在 $[s, b, a/t, d_h]$ 上本地算； `linear_proj` 输入 $[s, b, a d_h / t]$（行切的右因子已按列分好）、输出是 $[s, b, h]$ 的部分和，g 点 all-reduce 成全量。MLP 支路同构： `linear_fc1` 输出 $[s, b, h_{ff} / t]$（GLU 时 gate/up 交错），逐元素激活本地算， `linear_fc2` 输出 $[s, b, h]$ 部分和再过 g。两个支路之间、以及层与层之间，残差流始终保持 $[s, b, h]$ 全量——通信只发生在「回到全量」的两个点上，这正是 5.1 位置论的代码形状。
+把 shape 沿接线图走一遍（ $t$ 为 TP 度数， $a$ = head 数， $d_h$ = head dim， $h_{ff}$ = FFN 中间维；张量布局 $[s, b, \cdot]$）。attention 支路： $x$ 为 $[s, b, h]$ 全量； `linear_qkv` 输出 $[s, b, (a + 2 a_{kv}) d_h / t]$（ $a_{kv}$ = KV 组数，列切后每 rank 只持自己 head 的行块）；reshape 成 head 维后，RoPE 与 core attention 都在 $[s, b, a/t, d_h]$ 上本地算； `linear_proj` 输入 $[s, b, a d_h / t]$（行切的右因子已按列分好），输出是 $[s, b, h]$ 的部分和，g 点 all-reduce 成全量。MLP 支路同构： `linear_fc1` 输出 $[s, b, h_{ff} / t]$（GLU 时 gate/up 交错），逐元素激活本地算， `linear_fc2` 输出 $[s, b, h]$ 部分和再过 g。两个支路之间、以及层与层之间，残差流始终保持 $[s, b, h]$ 全量——通信只发生在「回到全量」的两个点上，这正是 5.1 位置论的代码形状。
 
 把接线图写成可跑的教学实现（教学用，非优化实现；单进程模拟 $t$ 个 rank，通信用求和模拟；逐行与式 (3)(4) 对应。注意梯度方向在单进程模拟里由 autograd 自动正确——「求和」就是 g 的前向、其反向自动是广播，f 的恒等前向、其反向自动累加各分片对 $x$ 的梯度，这两个性质在多进程实现里才需要 §2 的手写 Function）：
 
@@ -222,7 +222,7 @@ GQA 分支（attention.py 构造期）：`num_query_groups >= t` 时 K/V 按组�
 
 ## 7. 并行下权重初始化的一致性
 
-分片初始化要同时满足三个不变量：(i) 同一分片的不同 DP 副本取值必须一致（否则 DP 的梯度平均语义被破坏，4.1）；(ii) 同层不同 TP 分片取值必须不同（否则列切的多个分片初始化成同一份、对称性不破）；(iii) 初始化不得污染默认 RNG 流（dropout 等的可复现性）。
+分片初始化要同时满足三个不变量。第一，同一分片的不同 DP 副本取值必须一致，否则 DP 的梯度平均语义被破坏（4.1）。第二，同层不同 TP 分片取值必须不同——否则列切的多个分片初始化成同一份，对称性不破。第三，初始化不得污染默认 RNG 流（dropout 等的可复现性）。
 
 实现（`tensor_parallel/random.py` 与 layers.py，行级事实核实于 2026-11-17）：`model_parallel_cuda_manual_seed` 为每个 rank 注册多条 RNG 流，seed 公式为
 
@@ -230,17 +230,17 @@ $$
 s_{\mathrm{dp}} = s_0 \thinspace , \qquad s_{\mathrm{tp}} = s_0 + 2718 + i_{\mathrm{tp}} \thinspace , \qquad s_{\mathrm{ep}} = s_0 + 1024 + 100 \thinspace i_{\mathrm{ep}} + i_{\mathrm{etp}} \qquad (6)
 $$
 
-**符号**： $s_0$ 为用户 seed； $i_{\mathrm{tp}}$、 $i_{\mathrm{ep}}$、 $i_{\mathrm{etp}}$ 为 TP / EP / expert-TP 组内 rank；2718 与 1024 是让三条流错开的任意常数（源码注释原话 "2718 is just for fun"）。不变量的落点：(i) 公式不含 $i_{\mathrm{dp}}$——同一 TP 分片在所有 DP 副本上同 seed；(ii) 含 $i_{\mathrm{tp}}$——同层不同分片不同 seed；(iii) 由 `CudaRNGStatesTracker.fork()` 的 save/set/restore 语义保证：`layers.py` 的 `_initialize_affine_weight_gpu` 在 `get_cuda_rng_tracker().fork()` 上下文里调 `init_method(weight)`，初始化在 model-parallel 流上抽数、退出即恢复默认流。两条流的另一个用途是 dropout：TP 区段内张量各 rank 持不同分片、掩码本应各自独立（model-parallel 流），残差侧的全量张量在组内是复制的、掩码必须组内一致（default 流）——这是代码结构的直接读法。
+**符号**： $s_0$ 为用户 seed； $i_{\mathrm{tp}}$、 $i_{\mathrm{ep}}$、 $i_{\mathrm{etp}}$ 为 TP / EP / expert-TP 组内 rank；2718 与 1024 是让三条流错开的任意常数（源码注释原话 "2718 is just for fun"）。三个不变量各有落点：公式不含 $i_{\mathrm{dp}}$，同一 TP 分片在所有 DP 副本上同 seed；含 $i_{\mathrm{tp}}$，同层不同分片不同 seed；第三条由 `CudaRNGStatesTracker.fork()` 的 save/set/restore 语义保证——`layers.py` 的 `_initialize_affine_weight_gpu` 在 `get_cuda_rng_tracker().fork()` 上下文里调 `init_method(weight)`，初始化在 model-parallel 流上抽数，退出即恢复默认流。两条流还有一个用途：dropout。TP 区段内张量各 rank 持不同分片，掩码本应各自独立（model-parallel 流）；残差侧的全量张量在组内是复制的，掩码必须组内一致（default 流）。这是代码结构的直接读法。
 
-GPU 路径之外还有一条 CPU 路径：`_initialize_affine_weight_cpu` 先在 CPU 上把全量 master weight 完整初始化（同一 $s_0$、默认流——所有 rank 造出同一份全量权重），再 `torch.split` 后按 `weight_list[rank::world_size]` 取本 rank 的切片。stride 的含义在这里可见：stride 1 时该表达式取连续块；GLU 的 stride 2 时（§6 的 [gate, up] 交错约定），`torch.split` 先把每 rank 份额切成两半、交错取样后每 rank 拿到的恰是一对对齐的 gate/up 块——切片规则与 §6 的 stride=2 存储约定互为表里。两条路径的差异值得记清：CPU 路径拼合出的全量权重与 $t$ 无关（先造全量再切），GPU 路径各分片独立抽数（每个分片的分布正确，但拼合矩阵随 $t$ 变）——要求「与并行度无关的初始化」时走 CPU 路径（`use_cpu_initialization` 配置开关）。
+GPU 路径之外还有一条 CPU 路径：`_initialize_affine_weight_cpu` 先在 CPU 上把全量 master weight 完整初始化（同一 $s_0$、默认流——所有 rank 造出同一份全量权重），再 `torch.split` 后按 `weight_list[rank::world_size]` 取本 rank 的切片。stride 的含义在这里可见：stride 1 时该表达式取连续块；GLU 的 stride 2 时（§6 的 [gate, up] 交错约定），`torch.split` 先把每 rank 份额切成两半、交错取样后每 rank 拿到的恰是一对对齐的 gate/up 块——切片规则与 §6 的 stride=2 存储约定互为表里。两条路径的差异值得记清：CPU 路径拼合出的全量权重与 $t$ 无关（先造全量再切）；GPU 路径各分片独立抽数，每个分片的分布正确，但拼合矩阵随 $t$ 变。要求「与并行度无关的初始化」时走 CPU 路径（`use_cpu_initialization` 配置开关）。
 
 ## 8. RMSNorm 与 RoPE 在 SP 区段的归属
 
-SP 把一个 Transformer 层切成两类区段：TP 区段（线性层包围的中间部分，张量按 hidden/head 维分片）与 SP 区段（norm、dropout、残差，张量按序列维分片 $[s/t, b, h]$）——切分规则与通信恒等的推导归 5.2，本节登记边界上的实现事实。
+SP 把一个 Transformer 层切成两类区段：TP 区段（线性层包围的中间部分，张量按 hidden/head 维分片）与 SP 区段（norm、dropout、残差，张量按序列维分片 $[s/t, b, h]$）。切分规则与通信恒等的推导归 5.2，本节登记边界上的实现事实。
 
 **Norm 归 SP 区段**。RMSNorm / LayerNorm 是逐 token 算子：归一化沿 hidden 维计算，参数是逐 hidden 维的增益向量。SP 区段的张量序列维分片、hidden 维全量，norm 在本地分片上直接算，零通信；增益权重在 TP 组内复制持有——增益只有 $h$ 个元素，相对两侧线性层的 $h \times h_{ff}$ 级矩阵在参数量上低两个量级，复制几乎免费（2.2 §8 的参数账同口径）。其梯度因为「同一份复制权重收到组内多个分片的梯度」而需要组内归约——这一笔折进 DP 的梯度归约里统一处理（实现归 6.2 的 DDP 走读）。实现注记：Megatron 的 torch 原生 norm 路径（`ops/norm/torch_norm.py` 的 `WrappedTorchNorm`）对 `sequence_parallel` 配置直接 assert 拒绝（"sequence parallel not supported by torch LayerNorm"）——SP 配置走 Transformer Engine 的 TP-aware norm；RMSNorm 选项要求 torch ≥ 2.4（同文件断言）。
 
-**RoPE 归 TP 区段，但不产生 TP 通信**。RoPE 是逐 (position, head) 的旋转：既不跨 head 归约、也不跨位置归约（公式归 models 2.5）。调用点（attention.py，行级事实）：`apply_rotary_pos_emb` 在 `linear_qkv`（列切投影）之后、`core_attention` 之前施加——每个 rank 只旋转自己持有的 head 分片；位置表按本地序列片的全局偏移索引，函数签名带 `cp_group` 参数处理 CP 下的位置偏移（5.2 的 CP 区段由此接入）。于是 §6 接线图里的 RoPE 节点标「本地」是准确的：它在分片数据上算，却一次集合通信都不发。
+**RoPE 归 TP 区段，但不产生 TP 通信**。RoPE 是逐 (position, head) 的旋转：既不跨 head 归约，也不跨位置归约（公式归 models 2.5）。调用点（attention.py，行级事实）：`apply_rotary_pos_emb` 在 `linear_qkv`（列切投影）之后、`core_attention` 之前施加——每个 rank 只旋转自己持有的 head 分片；位置表按本地序列片的全局偏移索引，函数签名带 `cp_group` 参数处理 CP 下的位置偏移（5.2 的 CP 区段由此接入）。于是 §6 接线图里的 RoPE 节点标「本地」是准确的：它在分片数据上算，却一次集合通信都不发。
 
 ## 总结
 
