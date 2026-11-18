@@ -1,10 +1,10 @@
 # 4.7 机制可解释性基础（Mechanistic Interpretability Primer）
 
-> 本章把「读懂一台训练好的 Transformer」落成四件可计算的东西：以 residual stream 纯加法结构为地基的 logit lens（中间层读出）、superposition 的叠加几何（ $n > d$ 时近似正交编码的干扰账）与其换基工具 SAE（字典学习 $h \approx Dz$）、circuit 方法论（induction head 回链与 IOI 全流程）、activation patching 的因果语义（do 算子与恢复率），以方法工具箱对照表与结论可信度分级收尾 | 前置：2.1（residual stream 式 (1)(2)）、2.7（norm 语义）、3.3 §6–§8（induction heads、Pythia 训练相变） | 锚点：TransformerLens [A]、SAELens [A] + Gemma Scope SAEs（arXiv:2408.05147）[A]、Pythia（arXiv:2304.01373）[A]；IOI（arXiv:2211.00593）[A]、Toy Models of Superposition [B]、induction heads [B]
+> 本章把「读懂一台训练好的 Transformer」落成四件可计算的东西。第一，logit lens：以 residual stream 的纯加法结构为地基，做中间层读出。第二，superposition 的叠加几何（ $n > d$ 时近似正交编码的干扰账）与它的换基工具 SAE（字典学习 $h \approx Dz$）。第三，circuit 方法论：induction head 回链与 IOI 全流程。第四，activation patching 的因果语义：do 算子与恢复率。章末用一张方法工具箱对照表和一张结论可信度分级表收尾 | 前置：2.1（residual stream 式 (1)(2)）、2.7（norm 语义）、3.3 §6–§8（induction heads、Pythia 训练相变） | 锚点：TransformerLens [A]、SAELens [A] + Gemma Scope SAEs（arXiv:2408.05147）[A]、Pythia（arXiv:2304.01373）[A]；IOI（arXiv:2211.00593）[A]、Toy Models of Superposition [B]、induction heads [B]
 
 ## 1. 地基：residual stream 是 read-modify-write 总线
 
-2.1 式 (2) 把整机输出写成纯加和 $x^{(L)} = x^{(0)} + \sum_{\ell} a_{\ell} + \sum_{\ell} f_{\ell}$ 。本章全部方法都从这条加法结构里长出来。先把它改写成 read-modify-write 的通用循环：每个组件（一个 attention head、一个 MLP）从 stream 读入（经 norm 与各自投影），把输出**加回** stream；没有任何组件能覆盖或擦除别人的写入，对冲（写入一个反向量）是唯一可用的「删除」。
+2.1 式 (2) 把整机输出写成纯加和 $x^{(L)} = x^{(0)} + \sum_{\ell} a_{\ell} + \sum_{\ell} f_{\ell}$。本章全部方法都从这条加法结构里长出来。先把它改写成 read-modify-write 的通用循环：每个组件（一个 attention head、一个 MLP）从 stream 读入（经 norm 与各自投影），把输出**加回** stream。没有任何组件能覆盖或擦除别人的写入——对冲（写入一个反向量）是唯一可用的「删除」。
 
 ```
 logit lens（§2）：       ▼          ▼                    ▼
@@ -83,7 +83,7 @@ $$
 
 **符号**： $S$ ：单特征激活概率；第二步用随机方向的 $\mathbb{E}[\langle W_{:i}, W_{:j} \rangle^{2}] = 1/d$ 。判据： $nS \ll d$ 时干扰淹没不了信号——同时在线的特征数 $\sim nS$ 才是有效负载，稀疏把负载压回 $d$ 的量级以下。玩具模型里确能扫出随稀疏度从 monosemantic（一方向一特征、正交存储）到 superposition 的相变 [B，玩具设定]。
 
-**polysemanticity 是式 (4) 的用户界面后果**：neuron $k$ 的激活 $h_k = \sum_i W_{ki} x_i$ 是多个特征的混合坐标；特征一旦以叠加存储，单个 neuron 必然对多个无关概念族同时响应。结论不是「neuron 有时碰巧多义」，而是「neuron 基与特征基系统性不对齐」。要单义坐标就得换基——这是 §4 的 SAE 要干的。同一条几何也解释了 §2 的局限 1：与 $W_U$ 行空间近正交的叠加分量，logit lens 天然读不到。
+**polysemanticity 是式 (4) 的用户界面后果**：neuron $k$ 的激活 $h_k = \sum_i W_{ki} x_i$ 是多个特征的混合坐标；特征一旦以叠加存储，单个 neuron 必然对多个无关概念族同时响应。结论不是「neuron 有时碰巧多义」，而是「neuron 基与特征基系统性不对齐」。要单义坐标就得换基——这是 §4 的 SAE 要解决的问题。同一条几何也解释了 §2 的局限 1：与 $W_U$ 行空间近正交的叠加分量，logit lens 天然读不到。
 
 ## 4. SAE：把 stream 换成稀疏特征坐标
 

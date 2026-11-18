@@ -1,6 +1,6 @@
 # 4.8 前沿方向（Frontier Outlook）
 
-> 本章回收 4.1–4.7 的账与结构，盘点六个仍在移动的方向：吸收态 diffusion LLM（forward 逐 token 腐蚀、reverse 参数化、ELBO 塌缩为加权 CE；与 AR 的 decode 账公式级对比；LLaDA / SEDD）、MoD 与 early-exit 的深度稀疏、differential attention 的双 softmax 消噪、TTT 与 looped-depth recurrence、test-time scaling 与 agentic 负载对四堵墙（4.6）的压力反转；每项标注成熟度；native multimodal 归 P8.5 | 前置：1.1（AR 分解与 NLL）、1.3（训推全生命周期账）、2.4（KV cache 账）、3.1（mask 与 objective）、4.1–4.7 | 锚点：LLaDA（arXiv:2502.09992，ML-GSAI/LLaDA）[A]、SEDD（arXiv:2310.16834，louaaron/Score-Entropy-Discrete-Diffusion）[A]、Differential Transformer（arXiv:2410.05258，代码在 microsoft/unilm）[A]、MoD（arXiv:2404.02258）[B]、TTT（arXiv:2407.04620）[B]、DeepSeek-V3.2（arXiv:2512.02556）[A]、Kimi K3（arXiv:2607.24653）[A]
+> 本章回收 4.1–4.7 的账与结构，盘点六个仍在移动的方向。第一是吸收态 diffusion LLM：forward 逐 token 腐蚀、reverse 参数化、ELBO 塌缩为加权 CE，并与 AR 的 decode 账做公式级对比（LLaDA / SEDD）。第二是 MoD 与 early-exit 的深度稀疏。第三是 differential attention 的双 softmax 消噪。第四是 TTT 与 looped-depth recurrence。第五是 test-time scaling 与 agentic 负载对四堵墙（4.6）的压力反转。每项标注成熟度；native multimodal 归 P8.5 | 前置：1.1（AR 分解与 NLL）、1.3（训推全生命周期账）、2.4（KV cache 账）、3.1（mask 与 objective）、4.1–4.7 | 锚点：LLaDA（arXiv:2502.09992，ML-GSAI/LLaDA）[A]、SEDD（arXiv:2310.16834，louaaron/Score-Entropy-Discrete-Diffusion）[A]、Differential Transformer（arXiv:2410.05258，代码在 microsoft/unilm）[A]、MoD（arXiv:2404.02258）[B]、TTT（arXiv:2407.04620）[B]、DeepSeek-V3.2（arXiv:2512.02556）[A]、Kimi K3（arXiv:2607.24653）[A]
 
 ## 1. Diffusion LLM：把链式法则换成逐步去掩码
 
@@ -28,7 +28,9 @@ $$
 \mathcal{L}(\theta) = \mathbb{E}_{t \sim U(0,1)}\hspace{5mu} \frac{1}{t} \sum_{i:\ x_t^{i} = M} \mathrm{CE}\big(x_0^{i},\ \tilde{p}_\theta(\cdot \mid x_t)\big) \qquad (3)
 $$
 
-**符号**： $t$：掩码率（线性调度下 $1 - \alpha_t = t$）；求和只覆盖被掩位置； $1/t$ 为调度权重（推导为练习 1）。训练循环就三行：均匀采样掩码率 $t$、按 $t$ 独立掩码、只对被掩位置算 CE 并除以 $t$。与 3.1 的 MLM 对照：BERT 把掩码率固定在 15%，式 (3) 把掩码率本身变成被积变量——diffusion LLM 因此与 encoder 家族共享大部分训练基础设施。SEDD（[Lou et al., 2023](../references.md)，arXiv:2310.16834，[A]）走更一般的连续时间马尔可夫链参数化：网络直接学具体分数（concrete score） $`s_\theta(x)_y \approx q_t(y)/q_t(x)`$（扰动后边际的比值），用分数熵（score entropy，Bregman 散度族的 proper scoring rule，极小点唯一落在真实比值）训练，ELBO 由逐步比值的积分给出；吸收态只是其 rate matrix 的一个特例。
+**符号**： $t$：掩码率（线性调度下 $1 - \alpha_t = t$）；求和只覆盖被掩位置； $1/t$ 为调度权重（推导为练习 1）。训练循环就三行：均匀采样掩码率 $t$、按 $t$ 独立掩码、只对被掩位置算 CE 并除以 $t$。与 3.1 的 MLM 对照：BERT 把掩码率固定在 15%，式 (3) 把掩码率本身变成被积变量——diffusion LLM 因此与 encoder 家族共享大部分训练基础设施。
+
+SEDD（[Lou et al., 2023](../references.md)，arXiv:2310.16834，[A]）走更一般的连续时间马尔可夫链参数化：网络直接学具体分数（concrete score） $`s_\theta(x)_y \approx q_t(y)/q_t(x)`$（扰动后边际的比值），用分数熵（score entropy，Bregman 散度族的 proper scoring rule，极小点唯一落在真实比值）训练，ELBO 由逐步比值的积分给出。吸收态只是其 rate matrix 的一个特例。
 
 ```
 前向（式 (1)），t: 0 → 1，逐位置独立腐蚀：
@@ -59,7 +61,9 @@ $$
 x_i^{l+1} = \begin{cases} x_i^{l} + f^{l}\big(\tilde{x}^{l}\big)_i, & i \in \mathrm{TopK}\big(r^{l}, k\big) \\ x_i^{l}, & \text{otherwise} \end{cases} \qquad (4)
 $$
 
-**符号**： $f^{l}$：第 $l$ 个 block（attention + FFN）； $k$：静态容量（论文用序列长的固定分数，如 1/8）； $\tilde{x}^{l}$：选中 token 的子序列。容量写死 ⇒ 负载均衡由构造保证，无 aux loss——与 4.5 的 expert choice 同族（选择方在 block 侧而非 token 侧）。论文报告 iso-FLOPs 训练曲线下移，部分配置下同质量每前向 FLOPs 省至一半量级（论文 claim）。代价两笔：router 的 top-$`k`$ 依赖整条序列，AR 推理需要辅助预测头来近似；选中 token 的 attention 只在选中集合内闭合，逐 token 的深度不再均匀。**成熟度：研究原型**（无官方代码）。early-exit 是同族更激进的版本：判定器不问「过不过这一层」而问「是否就此读出」，可视为式 (4) 的容量随 token 自适应的极限形态；两者共同的工程难点是逐 token 可变深度与 batch 规整执行的冲突——序列内每个位置的层数不同，kernel 与流水线的处理归 inference 与 cluster 维度。
+**符号**： $f^{l}$：第 $l$ 个 block（attention + FFN）； $k$：静态容量（论文用序列长的固定分数，如 1/8）； $\tilde{x}^{l}$：选中 token 的子序列。容量写死 ⇒ 负载均衡由构造保证，无 aux loss——与 4.5 的 expert choice 同族（选择方在 block 侧而非 token 侧）。论文报告 iso-FLOPs 训练曲线下移，部分配置下同质量每前向 FLOPs 省至一半量级（论文 claim）。代价两笔：router 的 top-$`k`$ 依赖整条序列，AR 推理需要辅助预测头来近似；选中 token 的 attention 只在选中集合内闭合，逐 token 的深度不再均匀。**成熟度：研究原型**（无官方代码）。
+
+early-exit 是同族更激进的版本：判定器不问「过不过这一层」而问「是否就此读出」，可视为式 (4) 的容量随 token 自适应的极限形态。两者共同的工程难点是逐 token 可变深度与 batch 规整执行的冲突——序列内每个位置的层数不同，kernel 与流水线的处理归 inference 与 cluster 维度。
 
 ## 3. Differential Attention：两张 softmax 图相减
 
@@ -87,9 +91,9 @@ looped-depth recurrence 是相邻坐标上的另一个旋钮：同一 block 的�
 
 前四节是「新算子」；本节是两个已经在 serving 账上兑现的需求侧变化，方向相同：单次请求的 token 生成量与驻留长度上移。
 
-**测试时扩展（test-time scaling）的架构含义**。长推理链把单次请求的生成从 $10^{2}\text{–}10^{3}$ token 上移到 $10^{3}\text{–}10^{5}$：链全程驻留 context，4.6 的四堵墙从长尾需求变为默认约束——KV cache 随链长线性增长（2.4 账），直接抬高 MLA / DSA / KDA（4.1 / 4.2 / 4.3）的受益面；串行 decode 步数随链长放大，MTP 类摊薄（4.5）从加速器变成标配；1.3 的全生命周期账中推理侧占比上移，训练-推理算力配比被重写。工业佐证：DeepSeek-V3.2 把 top-2048 稀疏检索（4.2）带上 128K serving（arXiv:2512.02556，[A]），Kimi K3 以 KDA 主干加 1M 上下文上架（arXiv:2607.24653，[A]）——稀疏层与线性层的工业化正是推理链经济学的直接产物。**成熟度：工业现实**。
+**测试时扩展（test-time scaling）的架构含义**。长推理链把单次请求的生成从 $10^{2}\text{–}10^{3}$ token 上移到 $10^{3}\text{–}10^{5}$。链全程驻留 context，4.6 的四堵墙从长尾需求变为默认约束。KV cache 随链长线性增长（2.4 账），直接抬高 MLA / DSA / KDA（4.1 / 4.2 / 4.3）的受益面。串行 decode 步数随链长放大，MTP 类摊薄（4.5）从加速器变成标配。1.3 的全生命周期账中，推理侧占比上移，训练-推理算力配比被重写。工业佐证：DeepSeek-V3.2 把 top-2048 稀疏检索（4.2）带上 128K serving（arXiv:2512.02556，[A]），Kimi K3 以 KDA 主干加 1M 上下文上架（arXiv:2607.24653，[A]）——稀疏层与线性层的工业化正是推理链经济学的直接产物。**成熟度：工业现实**。
 
-**Agentic 化的架构含义**。多轮工具调用在机制上等于：每轮把工具返回 append 进 context，会话单调变长且前缀高度共享。两个直接后果：(a) 前缀复用成为 serving 一级优化（prefix caching 的调度与命中归 inference 维度），架构侧对应的是长窗与有效上下文（4.6 的 claimed vs effective 口径）成为默认指标而非宣传数字；(b) 会话状态即 KV cache 的持久化、分叉与回滚——长会话的边际成本由固定状态层（4.4 的 hybrid 账）与稀疏检索层（4.2）决定，链式生成的串行延迟由 MTP（4.5）与 §1 的并行解码对冲。**成熟度：工业现实**。
+**Agentic 化的架构含义**。多轮工具调用在机制上等于：每轮把工具返回 append 进 context，会话单调变长，且前缀高度共享。两个直接后果。(a) 前缀复用成为 serving 一级优化（prefix caching 的调度与命中归 inference 维度）；架构侧的对应是，长窗与有效上下文（4.6 的 claimed vs effective 口径）成为默认指标，而非宣传数字。(b) 会话状态即 KV cache 的持久化、分叉与回滚——长会话的边际成本由固定状态层（4.4 的 hybrid 账）与稀疏检索层（4.2）决定，链式生成的串行延迟由 MTP（4.5）与 §1 的并行解码对冲。**成熟度：工业现实**。
 
 ## 6. 边界与去向
 

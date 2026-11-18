@@ -1,6 +1,6 @@
 # 4.5 MoE 与 MTP（Mixture-of-Experts and Multi-Token Prediction）
 
-> 本章拆两件围绕「每个 token 该算多少」的设计：MoE 把 FFN 复制成 $N_e$ 份、每 token 只激活 $k$ 份，实现参数与计算的解耦（FLOPs ∝ 激活参数，容量 ∝ 总参数）；MTP 在训练时给主模型挂上预测更远 token 的辅助模块，推理时翻过来当 self-speculative 的草稿。推导主线：Shazeer 2017 noisy top-k 门控 → 负载均衡辅助损失 $\alpha N_e \sum_i f_i P_i$ 的完整推导（协方差分解、对角最小性、梯度动力学）→ Switch 的 top-1 与容量因子 → z-loss → expert choice → DeepSeekMoE 细粒度 + 共享 → DeepSeek-V3 的 sigmoid 路由、aux-loss-free 偏置控制器与组限定分发 → router 病理学 → MTP 目标与接受率公式 | 前置：2.6（FFN 账、等参数规则式 (8)、MoE 预告 §5）、1.2（ $6ND$ 口径）、1.3（compute-optimal 分配、全生命周期成本式 (8)、MoE scaling §6）| 锚点：DeepSeek-V3（官方推理代码 inference/model.py 的 Gate / MoE 模块）[A]、Mixtral-8x7B（HF modeling_mixtral 的 MixtralSparseMoeBlock）[A]、Qwen3-30B-A3B [A]；Shazeer et al. [B]、GShard [B]、Switch [A]、ST-MoE [B]、expert choice [B]、DeepSeekMoE [A]、DeepSeek-V3 [A]、Medusa [A]、speculative decoding [B]
+> 本章围绕「每个 token 该算多少」拆两件设计。第一件是 MoE：把 FFN 复制成 $N_e$ 份，每个 token 只激活其中 $k$ 份，参数与计算就此解耦——FLOPs 按激活参数付，容量按总参数付。第二件是 MTP：训练时给主模型挂上预测更远 token 的辅助模块，推理时翻过来当 self-speculative 的草稿。推导主线依次是：Shazeer 2017 的 noisy top-k 门控，负载均衡辅助损失 $\alpha N_e \sum_i f_i P_i$ 的完整推导（协方差分解、对角最小性、梯度动力学），Switch 的 top-1 与容量因子，z-loss，expert choice，DeepSeekMoE 的细粒度加共享，DeepSeek-V3 的 sigmoid 路由、aux-loss-free 偏置控制器与组限定分发，router 病理学，MTP 的目标与接受率公式 | 前置：2.6（FFN 账、等参数规则式 (8)、MoE 预告 §5）、1.2（ $6ND$ 口径）、1.3（compute-optimal 分配、全生命周期成本式 (8)、MoE scaling §6）| 锚点：DeepSeek-V3（官方推理代码 inference/model.py 的 Gate / MoE 模块）[A]、Mixtral-8x7B（HF modeling_mixtral 的 MixtralSparseMoeBlock）[A]、Qwen3-30B-A3B [A]；Shazeer et al. [B]、GShard [B]、Switch [A]、ST-MoE [B]、expert choice [B]、DeepSeekMoE [A]、DeepSeek-V3 [A]、Medusa [A]、speculative decoding [B]
 
 ## 1. 解耦：容量按总参数付内存，计算按激活付 FLOPs
 
@@ -37,11 +37,11 @@ $$
 \mathrm{TC}(N_{\mathrm{tot}}, N_{\mathrm{act}}, D, Q) = \underbrace{6 N_{\mathrm{act}} D}_{\text{train}} + \underbrace{2 N_{\mathrm{act}} Q}_{\text{inference}}, \qquad L \approx L(N_{\mathrm{tot}}, D) \qquad (2)
 $$
 
-**符号**： $Q$：服务期推理 token 总量；右侧第二式是质量侧约束——loss 由总参数与数据决定，1.3 §6 的论证：1.3 式 (2) 的 $A/N^{\alpha}$ 项在 MoE 上由 $N_{\mathrm{tot}} \gg N_{\mathrm{act}}$ 摊薄。1.3 §5 的结论是「 $Q$ 大则最优 $N$ 向小偏移」；MoE 把这个结论推到极端——服务成本只认 $N_{\mathrm{act}}$，容量维度 $N_{\mathrm{tot}}$ 不再出现在 FLOPs 目标里，其上限改由内存（bf16 下 2 bytes/参数，1.2 式 (7)）与 §7 的通信账钉死。参数与计算解耦的全部经济含义就是： $N_{\mathrm{act}}$ 按延迟与吞吐的经济学定价， $N_{\mathrm{tot}}$ 按显存与互联定价，两本账分开优化。
+**符号**： $Q$：服务期推理 token 总量。右侧第二式是质量侧约束：loss 由总参数与数据决定，依据是 1.3 §6 的论证——1.3 式 (2) 的 $A/N^{\alpha}$ 项在 MoE 上由 $N_{\mathrm{tot}} \gg N_{\mathrm{act}}$ 摊薄。1.3 §5 的结论是「 $Q$ 大则最优 $N$ 向小偏移」，MoE 把这个结论推到极端：服务成本只认 $N_{\mathrm{act}}$，容量维度 $N_{\mathrm{tot}}$ 不再出现在 FLOPs 目标里，它的上限改由两笔账固定——内存（bf16 下 2 bytes/参数，1.2 式 (7)）与 §7 的通信账。参数与计算解耦的全部经济含义就是一句话： $N_{\mathrm{act}}$ 按延迟与吞吐的经济学定价， $N_{\mathrm{tot}}$ 按显存与互联定价，两本账分开优化。
 
 实数走一遍 DeepSeek-V3（config [A]：61 层、前 3 层 dense 即 first_k_dense_replace = 3、hidden $d$ = 7168、expert 中间维 2048）：单个 expert 参数 $= 3 \times 7168 \times 2048 \approx 44.0$ M；单 MoE 层参数 $= 257 \times 44.0 \approx 11.3$ B，58 层合计 ≈ 656 B（其余为 dense 层、attention 与 embedding，凑齐 671B）。激活侧：每 token 每层走 9 个 expert ≈ 396 M 参数、per-token MoE FLOPs $= 6 \times 7168 \times 2048 \times 9 \approx 7.9 \times 10^{8}$。对照：同参数的 dense FFN 每 token 要付 $257/9 \approx 28.6$ 倍的 FLOPs。
 
-记忆视角再收一次尾。2.6 §4 把 dense FFN 读成一张 $d_{\mathrm{ff}} \times L$ 条目的键值记忆表；MoE 是这张表的 expert 粒度分片——每层 $N_e$ 张子表、每 token 只查 $k$ 张，router 的 top-k 选择相当于把 2.6 式 (10) 的软稀疏系数 $c_i(x)$ 换成条目集合粒度的硬稀疏。2.6 §5 预告的两个接口在此全部落地：单 expert 尺寸按等参数规则起算（§3.1 的式 (14) 是它在稀疏维度的推广），系数视角则解释了塌缩为何是容量的实质损失—— $N_e$ 张子表若只用到几张，总参数摊薄容量的承诺就失效，§4 的病理学与 §2.2 的均衡力学由此获得同一读法。
+记忆视角再收一次尾。2.6 §4 把 dense FFN 读成一张 $d_{\mathrm{ff}} \times L$ 条目的键值记忆表；MoE 是这张表按 expert 粒度的分片——每层 $N_e$ 张子表，每个 token 只查 $k$ 张，router 的 top-k 选择相当于把 2.6 式 (10) 的软稀疏系数 $c_i(x)$ 换成条目集合粒度的硬稀疏。2.6 §5 预告的两个接口在此全部落地。第一，单 expert 尺寸按等参数规则起算，§3.1 的式 (14) 是它在稀疏维度的推广。第二，系数视角解释了塌缩为什么是容量的实质损失： $N_e$ 张子表若只用到几张，总参数摊薄容量的承诺就失效。§4 的病理学与 §2.2 的均衡力学由此获得同一读法。
 
 Mixtral 的官方实现是这节账的最小代码锚点：transformers 的 `modeling_mixtral.py` 中 `MixtralSparseMoeBlock`（[HuggingFace](https://github.com/huggingface/transformers/blob/main/src/transformers/models/mixtral/modeling_mixtral.py)）：router logits 过 softmax、`top_k = 2` 取两家、归一化后按 expert 加权求和——式 (1) 的逐行直译，token-choice 族的最简实例。
 
@@ -111,7 +111,7 @@ $$
 
 每条 token 上 expert $i$ 的概率被以正比于 $f_i$ 的力度下压；softmax 的逐 token 归一把「下压高负载者」转化为「相对抬升低负载者」。这是均值回复动力学：任何 $f$ 偏离均匀的配置都会产生把它推回去的力，内点不动点只有均匀分布。
 
-**诚实边界**：在整个 $(f, P)$ 乘积单纯形上，双线性形 $\sum_i f_i P_i$ 的无约束最小在反相关顶点（趋于 0），不在均匀点——式 (6) 不是「最小即均匀」的凸景观，可用性来自「 $f$ 与 $P$ 由同一 router 生成」的可达集与梯度方向。这个边界有推论：既然起作用的是均值回复方向而非损失值本身，同一个不动点就可以用不进损失函数的控制器实现——§3.2 的 aux-loss-free 路由正是这条路。
+**诚实边界**：在整个 $(f, P)$ 乘积单纯形上，双线性形 $\sum_i f_i P_i$ 的无约束最小点在反相关顶点（趋于 0），不在均匀点。式 (6) 不是「最小即均匀」的凸景观；它之所以可用，是因为 $f$ 与 $P$ 由同一台 router 生成，可达集与梯度方向把优化限在了有效区域。这个边界有一个推论：既然起作用的是均值回复方向而非损失值本身，同一个不动点就可以用不进损失函数的控制器实现。§3.2 的 aux-loss-free 路由走的正是这条路。
 
 **为什么不用熵**： $H(P)$ 只看平均概率分布。极端情形所有 token 都路由到同一 expert 时，若该 expert 对每条 token 的概率只是略高， $P$ 仍可接近平坦、熵接近最大——熵对「塌缩但分数接近」失效，式 (6) 的乘积结构则直接读出 $f$ 与 $P$ 的错位。
 
@@ -127,7 +127,7 @@ C_e = \left\lceil \mathrm{CF} \cdot \frac{T_{\mathrm{batch}}}{N_e} \right\rceil 
 $$
 
 **符号**： $\mathrm{CF} \ge 1$：容量因子（论文对照 1.0 / 1.25 / 1.5 / 2.0，常用工作点 1.25）； $T_{\mathrm{batch}}$：一个 batch 的 token 总数。容量是内存对齐的需要：expert 的输入 batch 必须定长才能向量化， $\mathrm{CF}$ 是「为负载波动预留多少缓冲」的工程旋钮。
-- **token 溢出机制**：expert $i$ 满员后，轮到它的 token 被丢弃——该层 FFN 输出取零，token 仅靠 residual stream 穿层，等效于跳过该层。质量影响随 CF 的扫描呈两段：溢出率压在小概率区（CF = 1.25）时影响可忽略；CF 压向 1.0、或 router 不均衡抬高溢出率时，质量退化。丢弃不可微，被丢 token 的 router 梯度断供——所以 Switch 把式 (6) 的 top-1 特例与容量机制绑定使用：aux loss 负责把溢出率压下去，容量机制负责兜底。
+- **token 溢出机制**：expert $i$ 满员后，轮到它的 token 被丢弃——该层 FFN 输出取零，token 仅靠 residual stream 穿层，等效于跳过该层。质量影响随 CF 的扫描呈两段：溢出率压在小概率区（CF = 1.25）时影响可忽略；CF 压向 1.0、或 router 不均衡抬高溢出率时，质量退化。丢弃不可微，被丢 token 的 router 梯度断供——所以 Switch 把式 (6) 的 top-1 特例与容量机制绑定使用：aux loss 负责把溢出率压下去，容量机制负责保底。
 
 ### 2.4 z-loss：只压数值、不管均衡
 
@@ -197,11 +197,11 @@ $$
 
 **(i) 收敛行为**。式 (18) 是负载误差上的离散积分器： $b_i$ 累积历史误差，稳态要求 $\mathrm{observed} = \mathrm{target}$，否则 $b_i$ 继续单向漂移——任何不动点必为均衡负载。符号步版本的稳态不是点而是幅度 $\sim \gamma$ 的极限环：偏置在均衡值附近振荡，负载偏差被 $\gamma$ 对应的分数位移界定。 $\gamma$ 越小稳态波纹越小、响应越慢， $10^{-3}$ 是响应速度与波纹的折中点。
 
-**(ii) 不扭曲路由分布**。三个结构事实。(a) 偏置只出现在 TopK 的掩码位置：式 (17) 的权重由无偏置分数计算，被选中的 expert 拿多少权重不受 $b$ 影响；(b) $b$ 是按规则更新的状态量、不在计算图里、无梯度路径——LM 损失对 router 参数（式 (16) 的 $e_i$）的梯度与无控制器时逐位相同；(c) 对照式 (6)：aux loss 的梯度直接进 logits（式 (10)），等于在 LM 目标上恒定叠加一股均值回复力，router 学到的分布被这股力持续塑形。aux-loss-free 把「均衡」从优化目标降级为控制回路，目标函数里只剩 LM 一项。诚实注记：权重经 top-k 集合的归一化分母仍间接受选择集影响——偏置改变「选谁」，不改变「选中者的相对权重」。
+**(ii) 不扭曲路由分布**。三个结构事实。(a) 偏置只出现在 TopK 的掩码位置：式 (17) 的权重由无偏置分数计算，被选中的 expert 拿多少权重不受 $b$ 影响；(b) $b$ 是按规则更新的状态量、不在计算图里、无梯度路径——LM 损失对 router 参数（式 (16) 的 $e_i$）的梯度与无控制器时逐位相同；(c) 对照式 (6)：aux loss 的梯度直接进 logits（式 (10)），等于在 LM 目标上恒定叠加一股均值回复力，router 学到的分布被这股力持续推拉。aux-loss-free 把「均衡」从优化目标降级为控制回路，目标函数里只剩 LM 一项。诚实注记：权重经 top-k 集合的归一化分母仍间接受选择集影响——偏置改变「选谁」，不改变「选中者的相对权重」。
 
 **(iii) 与 aux loss 的不动点等价**。§2.2 (iii) 的均值回复方向与式 (18) 的控制方向一致：同一均衡点，前者用梯度实现、后者用前馈偏置实现。
 
-**seq-mask balancing（序列级兜底）**。控制器保证的是 batch 级均衡，单条序列内仍可能极端集中。V3 补一个序列级辅助损失——式 (6) 的 $f_i$、 $P_i$ 改在单序列内统计（sigmoid 路由下 $P_i$ 按归一化的 sigmoid 分数计），系数取极小（论文口径：extremely small），只兜底不主导。
+**seq-mask balancing（序列级兜底）**。控制器保证的是 batch 级均衡，单条序列内仍可能极端集中。V3 补一个序列级辅助损失——式 (6) 的 $f_i$、 $P_i$ 改在单序列内统计（sigmoid 路由下 $P_i$ 按归一化的 sigmoid 分数计），系数取极小（论文口径：extremely small），只保底、不主导。
 
 **node-limited routing（组限定分发）**。256 个 expert 分 8 组，先按组内 top-2 亲和度之和选 top-4 组、再在选中组内取 top-8（V2 的 group-limited 路由沿用，[DeepSeek-AI, 2024](../references.md)，arXiv:2405.04434，[A]；config 字段 n_group = 8、topk_group = 4；官方代码对应行 `scores.topk(2, dim=-1)[0].sum(-1)`）。每 token 的分发目标节点数 $\le 4$——这条规则的收益不在模型侧，在 §7 的通信账。
 
@@ -243,7 +243,13 @@ MoE 特有的失效全部围绕 router 的反馈回路（素材分散于 Switch 
 
 ## 5. MoE × scaling laws：细粒度缩放的曲线证据
 
-1.3 §6 已建立框架： $C \approx 6 N_{\mathrm{act}} D$ 下，FLOPs 角色由 $N_{\mathrm{act}}$ 继承、容量项由 $N_{\mathrm{tot}}$ 摊薄。本章补两条实证。其一，DeepSeekMoE 的 IsoFLOPs 对照（[A]）：同算力下 MoE 的 loss 曲线整体低于 dense，细粒度切分（式 (14)）再压一截——组合自由度（式 (15)）兑现为 loss 差；该论文的粒度消融进一步显示：固定激活参数、只增大切分倍数 $m$，loss 单调改善，直到路由与通信开销反超。其二，工作点终点：DeepSeek-V3 以 671B 总参 / 37B 激活、14.8T token 训练，pre-training 用 2.664M H800 GPU-hours（全训练 2.788M，口径见 1.2 §9；[A]）。按 $C = 6 N_{\mathrm{act}} D \approx 3.3 \times 10^{24}$ FLOPs 的预算，dense 等价物只养得起 37B 量级的容量；MoE 把容量推到 671B，边际成本不进 FLOPs 账而进内存与 §7 的通信账。细粒度仍在推进：Qwen3-Next 的 512+1、top-10（[W]）把 $\rho$ 压到 2.1%；router 成本与 expert 通信何时反超容量收益是进行时问题，本章不下结论。
+1.3 §6 已建立框架： $C \approx 6 N_{\mathrm{act}} D$ 下，FLOPs 角色由 $N_{\mathrm{act}}$ 继承，容量项由 $N_{\mathrm{tot}}$ 摊薄。本章补两条实证。
+
+其一，DeepSeekMoE 的 IsoFLOPs 对照（[A]）：同算力下 MoE 的 loss 曲线整体低于 dense，细粒度切分（式 (14)）再压一截，组合自由度（式 (15)）在这里兑现为 loss 差。该论文的粒度消融进一步显示：固定激活参数、只增大切分倍数 $m$，loss 单调改善，直到路由与通信开销反超。
+
+其二，工作点的终点形态。DeepSeek-V3 以 671B 总参 / 37B 激活、14.8T token 训练，pre-training 用 2.664M H800 GPU-hours（全训练 2.788M，口径见 1.2 §9；[A]）。按 $C = 6 N_{\mathrm{act}} D \approx 3.3 \times 10^{24}$ FLOPs 的预算，dense 等价物只养得起 37B 量级的容量；MoE 把容量推到 671B，边际成本不进 FLOPs 账，进的是内存与 §7 的通信账。
+
+细粒度仍在推进：Qwen3-Next 的 512+1、top-10（[W]）把 $\rho$ 压到 2.1%。router 成本与 expert 通信何时反超容量收益是进行时的问题，本章不下结论。
 
 ## 6. MTP：训练辅助目标，推理自投机
 
@@ -276,7 +282,7 @@ $$
 L_{\mathrm{MTP}} = \frac{\lambda}{D} \sum_{k=1}^{D} L_{\mathrm{MTP}}^{k}, \qquad L_{\mathrm{MTP}}^{k} = \frac{1}{T} \sum_{i} \mathrm{CE}\big(P_{i+k+1}^{k},\ t_{i+k+1}\big) \qquad (21)
 $$
 
-**符号**： $\lambda$：MTP 权重；CE 口径同 1.1 式 (4)。梯度路径值得写明： $L_{\mathrm{MTP}}^{1}$ 经式 (19) 回传到 backbone 表示 $h_i$，主模型参数同时被下一 token 目标与次一 token 目标塑形； $\mathrm{Emb}$ 与 $\mathrm{OutHead}$ 共享意味着 MTP 误差也直接训练词表两侧。推理时这些模块可整体丢弃、恢复标准自回归模型——辅助目标是纯训练期装置，§6.2 再把它翻过来用。训练收益按论文口径是监督信号加密：每个位置除下一 token 外还对更远 horizon 提供监督，表示被迫编码更长程的可预测结构，数据效率由此提高。
+**符号**： $\lambda$：MTP 权重；CE 口径同 1.1 式 (4)。梯度路径值得写明： $L_{\mathrm{MTP}}^{1}$ 经式 (19) 回传到 backbone 表示 $h_i$，主模型参数同时被下一 token 与次一 token 两个目标训练； $\mathrm{Emb}$ 与 $\mathrm{OutHead}$ 共享意味着 MTP 误差也直接训练词表两侧。推理时这些模块可整体丢弃、恢复标准自回归模型——辅助目标是纯训练期装置，§6.2 再把它翻过来用。训练收益按论文口径是监督信号加密：每个位置除下一 token 外还对更远 horizon 提供监督，表示被迫编码更长程的可预测结构，数据效率由此提高。
 
 ### 6.2 推理：self-speculative 与接受率
 
@@ -310,7 +316,11 @@ $$
 
 ## 7. 系统接口：expert 并行与 all-to-all 预告
 
-MoE 的稀疏激活把 dense 层换成跨设备分发问题：expert 分片到不同卡（expert parallelism，EP—— $N_{\mathrm{tot}}$ 的内存账使分片成为容量前提而非优化选项），每 token 的隐状态发往其 top-$`k`$ expert 所在设备、算完收回——dispatch 与 combine 两次 all-to-all。通信账（每 token 每 MoE 层，bf16，按逐 expert 发送的上界口径）： $2 \cdot k \cdot d \cdot b = 2 \times 8 \times 7168 \times 2 \approx 229$ KB（V3 口径），乘 58 个 MoE 层。node-limited routing（§3.2，每 token $\le 4$ 个目标节点）把 all-to-all 的扇出从「全设备」压成有界子集——路由规则直接为通信服务。负载不均的系统化身是热点卡（straggler）： $f_i$ 不均不只是统计问题，还是尾延迟问题，这是均衡回路的第二层动机。进一步主题分层归属——训练侧（DualPipe 等计算-通信重叠调度、EP 与 TP 的切分权衡、all-to-all 通信账细化）归 training 维度 5.3 / 5.4；硬件与网络侧（all-to-all 的带宽与拓扑、EPLB 的系统实现）归 cluster 维度；本章交付的接口量是路由数学（式 (1)–(18)）加两个数：每 token 每 MoE 层 $2kd$ 个元素（bf16 合 $4kd$ 字节）的通信上界、 $\le M$ 节点的扇出上界。
+MoE 的稀疏激活把 dense 层换成一个跨设备分发问题。expert 分片到不同的卡（expert parallelism，EP）——注意 $N_{\mathrm{tot}}$ 的内存账使分片成为容量的前提，而非优化选项。每个 token 的隐状态发往其 top-$`k`$ expert 所在的设备，算完再收回：dispatch 与 combine 两次 all-to-all。
+
+通信账（每 token 每 MoE 层，bf16，按逐 expert 发送的上界口径）： $2 \cdot k \cdot d \cdot b = 2 \times 8 \times 7168 \times 2 \approx 229$ KB（V3 口径），乘 58 个 MoE 层。node-limited routing（§3.2，每 token $\le 4$ 个目标节点）把 all-to-all 的扇出从「全设备」压成有界子集——路由规则直接为通信服务。负载不均的系统化身是热点卡（straggler）： $f_i$ 不均不只是统计问题，还是尾延迟问题，这是均衡回路的第二层动机。
+
+进一步主题分层归属——训练侧（DualPipe 等计算-通信重叠调度、EP 与 TP 的切分权衡、all-to-all 通信账细化）归 training 维度 5.3 / 5.4；硬件与网络侧（all-to-all 的带宽与拓扑、EPLB 的系统实现）归 cluster 维度；本章交付的接口量是路由数学（式 (1)–(18)）加两个数：每 token 每 MoE 层 $2kd$ 个元素（bf16 合 $4kd$ 字节）的通信上界、 $\le M$ 节点的扇出上界。
 
 ## 总结
 

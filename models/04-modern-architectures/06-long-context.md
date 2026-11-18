@@ -1,6 +1,6 @@
 # 4.6 长上下文（Long Context）
 
-> 本章把「上下文长度」从一个 config 数字拆成四笔互相独立的账：attention FLOPs 的 $O(T^{2})$、KV cache 的 $O(T)$、softmax 的熵稀释（ $\ln T$）、RoPE 的角度出域；随后推导 RoPE 缩放族的统一形式——PI / NTK-aware / YaRN / LongRoPE 都是逐通道位置压缩率 $\eta_j$ 这一条曲线的不同参数化——以及 dual-chunk attention 的三段位置重编号；架构侧对照 SWA 堆叠、Ring Attention 与 GQA / MLA / DSA / KDA 在 1M token 下的 cache 实账；最后落到训练配方（staged extension、长文档上采样）与评测方法论（needle 的局限、RULER、claimed vs effective context） | 前置：2.3（softmax 方差账）、2.4（KV cache 式 (9)、decode 读取式 (11)）、2.5（RoPE 主命题式 (13)、波长账式 (16)、§6 外推失败机制）、4.1（MLA cache 576 元素 / token / 层、FlashAttention 定位）、4.2（SWA 账、attention sink、DSA top-2048）、4.3（KDA 固定状态） | 锚点：DeepSeek-V3 config（YaRN 字段实例）[A]、Qwen2.5-1M 报告 [A]、Llama-3.1 herd paper（128K 配方）[A]、Kimi-Linear config [A]；PI [B]、YaRN [A]、LongRoPE [B]、RULER [A]、StreamingLLM [A]
+> 本章把「上下文长度」从一个 config 数字拆成四笔互相独立的账。第一笔是 attention FLOPs 的 $O(T^{2})$，第二笔是 KV cache 的 $O(T)$，第三笔是 softmax 的熵稀释（ $\ln T$），第四笔是 RoPE 的角度出域。随后推导 RoPE 缩放族的统一形式：PI、NTK-aware、YaRN、LongRoPE 都是同一条逐通道位置压缩率曲线 $\eta_j$ 的不同参数化，外加 dual-chunk attention 的三段位置重编号。架构侧对照 SWA 堆叠、Ring Attention，以及 GQA / MLA / DSA / KDA 在 1M token 下的 cache 实账。最后落到训练配方（staged extension、长文档上采样）与评测方法论（needle 的局限、RULER、claimed vs effective context） | 前置：2.3（softmax 方差账）、2.4（KV cache 式 (9)、decode 读取式 (11)）、2.5（RoPE 主命题式 (13)、波长账式 (16)、§6 外推失败机制）、4.1（MLA cache 576 元素 / token / 层、FlashAttention 定位）、4.2（SWA 账、attention sink、DSA top-2048）、4.3（KDA 固定状态） | 锚点：DeepSeek-V3 config（YaRN 字段实例）[A]、Qwen2.5-1M 报告 [A]、Llama-3.1 herd paper（128K 配方）[A]、Kimi-Linear config [A]；PI [B]、YaRN [A]、LongRoPE [B]、RULER [A]、StreamingLLM [A]
 
 ## 1. 四堵墙：长度方向的四笔独立账
 
@@ -35,7 +35,7 @@ $$
 | DSA（DeepSeek-V3.2，主路同 MLA + indexer 小 cache，4.2 §6）[A] | 1152 B（驻留不变） | 61 | $\approx 65.4$ GiB |
 | KDA hybrid（Kimi-Linear，7 层 MLA + 20 层固定状态）[A] | 7 层 $\times$ 1152 B + 20 层 $\times$ 0 | 27 | $\approx 7.5$ GiB + 20 MiB |
 
-KDA 行的两笔：full-attn 层（MLA，576 元素 / token / 层）随 $T$ 线性： $7 \times 576 \times 10^{6} \times 2$ B $\approx 7.5$ GiB；KDA 层的状态是定数——每 head $d_v \times d_k$ = $128 \times 128$ 元素、32 heads、bf16 = 1 MiB / 层，与 $T$ 无关（4.3 §3 的 decode 账），20 层共 20 MiB。同尺度全 MLA 的 27 层反事实是 $27 \times 576 \times 10^{6} \times 2$ B $\approx 29$ GiB——hybrid 结构把线性增长项压到约 26%（论文 headline 数字的口径对照在 4.4，此处只记由 config 推出的账）。
+KDA 行有两笔。full-attn 层（MLA，576 元素 / token / 层）随 $T$ 线性增长： $7 \times 576 \times 10^{6} \times 2$ B $\approx 7.5$ GiB。KDA 层的状态是定数：每 head $d_v \times d_k$ = $128 \times 128$ 元素、32 heads、bf16 = 1 MiB / 层，与 $T$ 无关（4.3 §3 的 decode 账），20 层共 20 MiB。同尺度全 MLA 的 27 层反事实是 $27 \times 576 \times 10^{6} \times 2$ B $\approx 29$ GiB——hybrid 结构把线性增长项压到约 26%（论文 headline 数字的口径对照在 4.4，此处只记由 config 推出的账）。
 
 decode 每步读取同构（2.4 式 (11) 分母的 cache 项）：GQA-8 在 1M 处每步要读 122 GiB，按约 3 TB/s 的 HBM 带宽量级下单序列理论下界约 40 ms / token——这是「1M decode 为什么慢」的账源，也是 4.3 / 4.4 的固定状态架构在长窗 decode 上加速的账源。DSA 的读法是另一维：cache 驻留不变，但每步只 gather top-2048 行（4.2 §6 的账），1M 处读取占比约 0.2%。
 
@@ -75,9 +75,9 @@ $$
 
 ### 1.4 墙四：RoPE 角度出训练域
 
-2.5 §6 已定格机制，此处只登记接口并补一个对偶观察。失败不是数值问题—— $\cos / \sin$ 在任意角度有定义——而是分布外问题：慢通道（ $\lambda_j > W$，窗内转不满一圈）训练全程只见过角度区间 $[0, W\theta_j]$，推理位置越过 $W$ 后这些通道的输入进入未训区间，score 分布漂移，perplexity 在窗界处断崖上升。失败集中在慢通道，所以管全局位置的远程依赖先断、近程行为相对保持。
+2.5 §6 已定格机制，此处只登记接口，并补一个对偶观察。失败不是数值问题—— $\cos / \sin$ 在任意角度都有定义——而是分布外问题。慢通道（ $\lambda_j > W$，窗内转不满一圈）在训练全程只见过角度区间 $[0, W\theta_j]$；推理位置越过 $W$ 后，这些通道的输入进入未训区间，score 分布漂移，perplexity 在窗界处断崖上升。失败集中在慢通道，所以管全局位置的远程依赖先断，近程行为相对保持。
 
-对偶观察（为 §2 铺垫）：快通道也有失败模式，但方向相反。任何把位置压小的修复（ $m \to m/\eta$）都在压缩相邻位置的相位差——快通道 $\theta_0$ = 1 rad / token 的相位标定是网络对「相邻」「隔几个」这类短距关系的全部依据，压缩 $\eta$ 倍后短距相位差落入训练时对应「零距离」的邻域，局部分辨率先受损。缩放族的全部设计就是在「慢通道出域」与「快通道压缩」之间按频率分账。
+对偶观察（为 §2 铺垫）：快通道也有失败模式，但方向相反。任何把位置压小的修复（ $m \to m/\eta$）都在压缩相邻位置的相位差。快通道 $\theta_0$ = 1 rad / token 的相位标定，是网络对「相邻」「隔几个」这类短距关系的全部依据；压缩 $\eta$ 倍后，短距相位差落入训练时对应「零距离」的邻域，局部分辨率先受损。缩放族的全部设计，就是在「慢通道出域」与「快通道压缩」之间按频率分账。
 
 ## 2. RoPE 缩放族：统一成一条逐通道压缩率曲线
 
@@ -117,7 +117,7 @@ $$
 
 端点检验： $j = 0$ 得 $\eta_0 = s^{0} = 1$——最快通道完全不动； $j = d/2 - 1$ 得 $\eta = s^{(d-2)/(d-2)} = s$——最慢通道吃满压缩。中间是按频率的几何 ramp。谱读法：通道 $j$ 的波长从 $\lambda_j$ 变为 $\lambda_j \cdot s^{2j/(d-2)}$，只有最慢通道的波长真正乘上 $s$。与 PI 对照：PI 是常数曲线，NTK-aware 是指数曲线，二者在最慢通道端点重合、在最快通道端点分叉——高频过度压缩正是这里省掉的。数值感： $d$ = 64、 $s$ = 40（DeepSeek-V3 的维度与倍率），中点通道 $j$ = 15 的 $\eta = 40^{30/62} \approx 6.0$。
 
-为什么取指数形式而不是线性 ramp：频率轴本身是对数刻度的几何级数（2.5 式 (16)， $\theta_j$ 相邻通道差一个公比），在 $1$ 与 $s$ 之间分配压缩率时，「等比分配」是对数轴上的等距——每走一步通道，压缩率乘同一个因子 $s^{2/(d-2)}$，最慢通道恰好累计到 $s$。任何低频端多于高频端的线性分配都不是对数轴上的匀速，会在中段留下与频率 schedule 不对齐的折痕。
+为什么取指数形式而不是线性 ramp？频率轴本身是对数刻度的几何级数（2.5 式 (16)， $\theta_j$ 相邻通道差一个公比）。在 $1$ 与 $s$ 之间分配压缩率时，「等比分配」就是对数轴上的等距：每走一步通道，压缩率乘同一个因子 $s^{2/(d-2)}$，最慢通道恰好累计到 $s$。任何「低频端多分、高频端少分」的线性分配都不是对数轴上的匀速，会在中段留下与频率 schedule 不对齐的折痕。
 
 名字注记：「NTK」之名来自社区把它与神经正切核的尺度论证相联系；本书只登记机制层面的事实——它是一次保快通道的 base 重参数化，不引入任何新对象，等价于式 (10) 这条曲线。
 
@@ -139,17 +139,17 @@ $$
 \theta'_j = (1 - \gamma_j) \cdot \frac{\theta_j}{s} + \gamma_j \cdot \theta_j \qquad \Longleftrightarrow \qquad \eta_j = \frac{s}{1 + \gamma_j (s - 1)} \qquad (13)
 $$
 
-三段读法： $r_j > \beta$（快通道，窗内转 $\beta$ 圈以上，经验充分）—— $\gamma = 1$，不动； $r_j < \alpha$（慢通道，窗内不满 $\alpha$ 圈，正是出域元凶）—— $\gamma = 0$，吃满压缩 $s$；中间线性过渡。验证端点： $\gamma = 0$ 时 $\eta = s$， $\gamma = 1$ 时 $\eta = 1$，与 §2.2 的端点约束一致。
+三段读法。 $r_j > \beta$ 的是快通道：窗内转 $\beta$ 圈以上，经验充分， $\gamma = 1$，不动。 $r_j < \alpha$ 的是慢通道：窗内不满 $\alpha$ 圈，正是出域元凶， $\gamma = 0$，吃满压缩 $s$。中间的通道线性过渡。验证端点： $\gamma = 0$ 时 $\eta = s$， $\gamma = 1$ 时 $\eta = 1$，与 §2.2 的端点约束一致。
 
 **DeepSeek-V3 config 走读**（W1 实测，[DeepSeek-V3 config](../references.md)，[A]）：`{type: "yarn", factor: 40.0, beta_fast: 32, beta_slow: 1, mscale: 1.0, mscale_all_dim: 1.0, original_max_position_embeddings: 4096}`。映射到式 (11)–(13)： $W$ = 4096、 $s$ = 40、 $\alpha$ = beta_slow = 1、 $\beta$ = beta_fast = 32。逐段数一遍通道（V3 旋转维 $d$ = 64，32 个通道， $\lambda_j = 2\pi \cdot 10^{4j/32}$）： $\lambda_j > W/\alpha$ = 4096 ⟺ $j \ge 23$——9 个最慢通道全压 40 倍； $\lambda_j < W/\beta$ = 128 ⟺ $j \le 10$——11 个最快通道不动； $j$ = 11 至 22 共 12 个通道走 ramp。窗口账： $4096 \times 40 = 163840$，恰为 config 的 max_position_embeddings。
 
-**温度修正（熵不变性论证）**。YaRN 的第二件工具是 attention 温度。机制链条：位置压缩 $1/s$ 把相对距离压小 → 由位置差异贡献的 logit 变差被同比例压缩 → score 分布趋平 → 熵向 §1.3 的上界 $\ln(sW)$ 漂移 → 有效感受野被摊平。补偿手段是把 logits 乘 $\beta = 1/t$；式 (6) 已证明提高 $\beta$ 单调减熵，方向正确。取多大？§1.3 的账给出函数形式：扩窗引入的熵增量上界是 $\ln s$，故补偿应当是 $\ln s$ 的函数。YaRN 取（论文式，[A]）：
+**温度修正（熵不变性论证）**。YaRN 的第二件工具是 attention 温度。机制链条是：位置压缩 $1/s$ 把相对距离压小，由位置差异贡献的 logit 变差被同比例压缩，score 分布趋平，熵向 §1.3 的上界 $\ln(sW)$ 漂移，有效感受野被摊平。补偿手段是把 logits 乘 $\beta = 1/t$；式 (6) 已证明提高 $\beta$ 单调减熵，方向正确。取多大？§1.3 的账给出函数形式：扩窗引入的熵增量上界是 $\ln s$，所以补偿应当是 $\ln s$ 的函数。YaRN 取（论文式，[A]）：
 
 $$
 \sqrt{\frac{1}{t}} = 0.1 \cdot \ln s + 1 \qquad \Longleftrightarrow \qquad \frac{1}{t} = \left( 0.1 \ln s + 1 \right)^{2} \qquad (14)
 $$
 
-函数形式（ $\ln s$ 的线性）由熵账钉死，系数 0.1 是论文的拟合值——推导到此为止，常数不进教科书。V3 实例： $s$ = 40 时 $\sqrt{1/t} \approx 1.369$，logits 放大 $(1.369)^{2} \approx 1.87$ 倍；config 的 mscale = 1.0 / mscale_all_dim = 1.0 正是式 (14) 的基础系数取值（官方推理代码按此式计算 attention 缩放，[DeepSeek-AI, 2024](../references.md)，arXiv:2412.19437，[A]）——V3 的 YaRN 是带温度修正的完整形态。
+函数形式（ $\ln s$ 的线性）由熵账锁定，系数 0.1 是论文的拟合值——推导到此为止，常数不进教科书。V3 实例： $s$ = 40 时 $\sqrt{1/t} \approx 1.369$，logits 放大 $(1.369)^{2} \approx 1.87$ 倍；config 的 mscale = 1.0 / mscale_all_dim = 1.0 正是式 (14) 的基础系数取值（官方推理代码按此式计算 attention 缩放，[DeepSeek-AI, 2024](../references.md)，arXiv:2412.19437，[A]）——V3 的 YaRN 是带温度修正的完整形态。
 
 ### 2.4 LongRoPE：把曲线打开成逐维自由变量
 
@@ -175,7 +175,7 @@ $$
 
 **符号**： $P_k[j]$：key $j$ 的位置编号。块身份被抹掉——编号只保块内顺序（块内越靠后编号越大），不保「第几块」；KV cache 里存的旋转后 key 因此与块号无关，可复用。
 
-query 侧按块间距离备三张编号表：intra（同块）用 $P_q^{\mathrm{intra}}[i] = r_i$；inter（相隔两块及以上）用常数 $P_q^{\mathrm{inter}}[i] = W - 1$——钉在预训练窗末尾，保证 query 编号大于一切 key 编号（左到右的序不破）；successive（相邻块）在局部窗 $w$ 内抬升、窗外回落：
+query 侧按块间距离备三张编号表：intra（同块）用 $P_q^{\mathrm{intra}}[i] = r_i$；inter（相隔两块及以上）用常数 $P_q^{\mathrm{inter}}[i] = W - 1$——固定在预训练窗末尾，保证 query 编号大于一切 key 编号（左到右的序不破）；successive（相邻块）在局部窗 $w$ 内抬升、窗外回落：
 
 $$
 P_q^{\mathrm{succ}}[i] = \begin{cases} S + r_i, & r_i < w \\ W - 1, & r_i \ge w \end{cases} \qquad (17)
@@ -224,7 +224,7 @@ SWA 与 §2 缩放族有一层交互值得点破：Gemma 3 给 local 层配 rope
 
 ### 3.3 cache 经济学对照表
 
-把 §1.2 的账按「每 token 每层的线性增长项」收口——这一列是长上下文架构的全部战场：
+把 §1.2 的账按「每 token 每层的线性增长项」归并进一张表——这一列是长上下文架构的全部战场：
 
 | 形态 | 每 token 每层（bf16） | $T = 10^{6}$ 增量 | 长程检索保证 | 锚点 |
 | --- | --- | --- | --- | --- |
@@ -239,7 +239,11 @@ SWA 与 §2 缩放族有一层交互值得点破：Gemma 3 给 local 层配 rope
 
 位置编码修好后（§2），权重还要在目标长度上见过数据。两份公开配方把结构讲清楚了。
 
-**staged extension（分阶段扩窗）**。不直接上目标窗，分阶段抬：Llama-3.1 从 8K 出发分六个阶段扩到 128K，全程约 800B token 的扩窗预算（[Grattafiori et al., 2024](../references.md)，arXiv:2407.21783，[A]，论文口径——该预算数字为旗舰 405B 模型的配方口径，较小模型沿用同一 schedule 结构）；DeepSeek-V3 报告两阶段扩窗、YaRN 落点 $4096 \times 40 = 163840$（[A]，论文口径；扩窗训练占 119K H800 GPU-hours，paper Table 1 的全训练口径内）。每阶段的公共结构：抬窗（配 §2 的缩放）→ 在长文档上采样后的混合数据上续训 → 双校验——长程能力（needle 类）与短上下文回归（防扩窗掉短任务点）同时达标才进下一阶段。为什么分阶段而不一步到位，可以用墙一算定量账：设阶段窗长按公比 $q$ 几何增长（ $W, qW, q^{2}W, \ldots, sW$），每阶段投入相近的 token 预算 $B_k$——注意到 token 数预算下 attention FLOPs $\propto B_k \cdot W_k$（每 token 的 attention 成本正比于窗长），几何级数窗长下总开销 $\propto \sum_k B_k q^{k}$，被末阶段主导。若把全部预算直接砸在末窗 $sW$ 上：等 token 量下开销相同，但模型从未在中等长度上被校验过。阶段化买的不是 FLOPs 节省（两者同阶），而是「逐段可校验」的过程控制：每个阶段末都能用 needle 类测试确认当前窗已吸收，失败时回退的成本只有一个阶段。同时，前几阶段用较短窗训练，墙一的 $T^{2}$ 项在浅阶段尚小，等价的 token 预算能买更多参数更新步数——浅阶段学内容与短程结构，深阶段只补长程适配，任务难度与序列长度同步爬坡。
+**staged extension（分阶段扩窗）**。不直接上目标窗，分阶段往上抬。Llama-3.1 从 8K 出发，分六个阶段扩到 128K，全程约 800B token 的扩窗预算（[Grattafiori et al., 2024](../references.md)，arXiv:2407.21783，[A]，论文口径——该预算数字为旗舰 405B 模型的配方口径，较小模型沿用同一 schedule 结构）。DeepSeek-V3 报告两阶段扩窗，YaRN 落点 $4096 \times 40 = 163840$（[A]，论文口径；扩窗训练占 119K H800 GPU-hours，paper Table 1 的全训练口径内）。
+
+每个阶段的公共结构是三步：抬窗（配 §2 的缩放），在长文档上采样后的混合数据上续训，然后双校验——长程能力（needle 类）与短上下文回归（防扩窗掉短任务点）同时达标，才进下一阶段。
+
+为什么分阶段而不一步到位？可以用墙一算一笔定量账。设阶段窗长按公比 $q$ 几何增长（ $W, qW, q^{2}W, \ldots, sW$），每阶段投入相近的 token 预算 $B_k$。注意 token 数预算下 attention FLOPs $\propto B_k \cdot W_k$（每 token 的 attention 成本正比于窗长），几何级数窗长下总开销 $\propto \sum_k B_k q^{k}$，被末阶段主导。若把全部预算直接砸在末窗 $sW$ 上：等 token 量下开销相同，但模型从未在中等长度上被校验过。阶段化买的不是 FLOPs 节省（两者同阶），而是「逐段可校验」的过程控制：每个阶段末都能用 needle 类测试确认当前窗已吸收，失败时回退的成本只有一个阶段。同时，前几阶段用较短窗训练，墙一的 $T^{2}$ 项在浅阶段尚小，等价的 token 预算能买更多参数更新步数——浅阶段学内容与短程结构，深阶段只补长程适配，任务难度与序列长度同步爬坡。
 
 **长文档上采样（long-document upsampling）**。机制必要性：预训练语料的长度分布重尾， $\ge$ 128K 的连续文档占比极小——直接训长窗，长程位置的梯度信号稀薄（与 2.5 §2.3 的 learned absolute「大行号行训练信号稀薄」同构）。做法：按长度桶重加权，提高长文档的采样份额（Llama-3.1 与 Qwen2.5-1M 报告均采用，[A]）。边界注记：上采样同时改变领域分布——长文档集中来自书籍 / 代码 / 长报告——配方要在「长程信号密度」与「领域分布漂移」之间权衡；各家的精确配比属未公开细节，本书只登记结构。Qwen2.5-1M 的组合是这条线的完整实例：分阶段续训 + 长文档上采样 + rope_theta $10^{7}$ + dual-chunk 与 YaRN attention scaling 的推理侧组合扩展到 1M（[Yang et al., 2025](../references.md)，arXiv:2501.15383，[A]；§2.5 末的口径）。
 
@@ -247,7 +251,7 @@ SWA 与 §2 缩放族有一层交互值得点破：Gemma 3 给 local 层配 rope
 
 **needle-in-a-haystack（大海捞针）**。方法：长文填充物中埋入一句事实（针），在（植入深度 × 上下文长度）网格上问答检索。它测的是最弱意义的长程能力——单针、单跳、答案与针近乎逐字对应。按 §1.3 的账看其局限：单根针只要造出 $\ln T$ 量级的 logit 优势就能被取出，而一个训练过的检索头对「反常插入句」产生的 $\Delta$ 通常远超阈值——needle 全绿只排除了最差失效模式，对多针区分、多跳链、聚合统计这些 $\Delta$ 预算更紧的任务没有区分度（RULER 论文 §1 的批评口径，[Hsieh et al., 2024](../references.md)，arXiv:2404.06654，[A]）。
 
-**RULER**。13 个合成任务分四类（[A]，官方 repo NVIDIA/RULER），每一类对应一种不同的 $\Delta$ 预算压力（§1.3 的语言）：retrieval 类把 needle 变难——多针并存、多 key 干扰、单 key 对多 value——针与干扰项的 logit 差距被刻意压小，直接测式 (5) 的 $\Delta$ 预算余量；multi-hop tracing 类（变量追踪链： $x_1 \to x_2 \to \cdots \to x_k$ 的赋值链回溯）测的是「多次连续取用」——每一跳都要付一次 $\Delta$，任何一跳稀释则链断；aggregation 类（统计高频词 / 共现词）把单点检索换成对全窗的分布式计数，attention mass 必须同时覆盖大量位置，逼近均匀极限 $\ln T$ 的另一端；QA 类把真问题嵌入长干扰文本，测语义检索而非模板匹配。方法论贡献是把「上下文长度」从 config 字段变成行为测量：沿长度扫性能曲线，把跌破通过线（相对短窗基线的阈值，论文口径）的位置定义为该模型的 effective context（有效上下文）。论文的总体发现：多数受测模型的 effective context 短于其 claimed context（定性结论，[A]；逐模型数字以论文表格为准，本书不复录）。
+**RULER**。13 个合成任务分四类（[A]，官方 repo NVIDIA/RULER），每一类对应一种不同的 $\Delta$ 预算压力（§1.3 的语言）。retrieval 类把 needle 变难——多针并存、多 key 干扰、单 key 对多 value——针与干扰项的 logit 差距被刻意压小，直接测式 (5) 的 $\Delta$ 预算余量。multi-hop tracing 类（变量追踪链： $x_1 \to x_2 \to \cdots \to x_k$ 的赋值链回溯）测的是「多次连续取用」：每一跳都要付一次 $\Delta$，任何一跳稀释则链断。aggregation 类（统计高频词 / 共现词）把单点检索换成对全窗的分布式计数，attention mass 必须同时覆盖大量位置，逼近均匀极限 $\ln T$ 的另一端。QA 类把真问题嵌入长干扰文本，测语义检索而非模板匹配。方法论贡献是把「上下文长度」从 config 字段变成行为测量：沿长度扫性能曲线，把跌破通过线（相对短窗基线的阈值，论文口径）的位置定义为该模型的 effective context（有效上下文）。论文的总体发现：多数受测模型的 effective context 短于其 claimed context（定性结论，[A]；逐模型数字以论文表格为准，本书不复录）。
 
 **claimed vs effective 对照**（claimed 侧为 config / 报告实测口径）：
 

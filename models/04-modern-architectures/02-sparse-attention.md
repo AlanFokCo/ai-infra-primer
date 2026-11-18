@@ -1,6 +1,6 @@
 # 4.2 稀疏注意力（Sparse Attention）
 
-> 本章把「改可见集」这条省算路线推到底：分类学两轴（静态 pattern vs 动态选择、token 级 vs 块级）；SWA 的窗口账与 $L \cdot w$ 感受野归纳推导（Mistral-7B 实例）；SWA+full 混合层的 Gemma 3 5:1 走读（sliding_window_pattern=6）；attention sink 的 softmax 归一化解释与 StreamingLLM 处方；NSA 的 compression / selection / sliding 三分支公式（[B]：无官方 repo，按论文拆）；DSA 的 lightning indexer → top-2048 → MLA 只在选中位置算的链路，与 sparse-from-dense 训练配方；MoBA 的 query 级块路由与 SWA+MoBA hybrid；以召回类任务的质量风险收尾 | 前置：2.3（softmax 饱和与 Jacobian 式 (8)）、2.4（可见集式 (2)、cache 式 (9)、decode 强度式 (11)(12)）、2.5（RoPE 两种维度配对约定）、4.1（MLA cache 账 576 元素 / token / 层、FlashAttention 不改数学的定位） | 锚点：Mistral-7B（arXiv:2310.06825）[A]、Gemma 3（arXiv:2503.19786，HF gated 挂论文条目）[A]、StreamingLLM（arXiv:2309.17453）[A]、NSA（arXiv:2502.11089）[B]、DeepSeek-V3.2-Exp（arXiv:2512.02556）[A]、MoonshotAI/MoBA（arXiv:2502.13189）[B]、Longformer（arXiv:2004.05150）[A]
+> 本章把「改可见集」这条省算路线推到底，按四个问题展开。第一，怎么分类：静态 pattern vs 动态选择、token 级 vs 块级两轴。第二，静态方案怎么算账：SWA 的窗口账与 $L \cdot w$ 感受野归纳推导（Mistral-7B 实例）、SWA+full 混合层的 Gemma 3 5:1 走读（sliding_window_pattern=6）、attention sink 的 softmax 归一化解释与 StreamingLLM 处方。第三，动态方案怎么打分：NSA 的 compression / selection / sliding 三分支公式（[B]：无官方 repo，按论文拆）、DSA 的 lightning indexer → top-2048 → MLA 只在选中位置算的链路与 sparse-from-dense 训练配方、MoBA 的 query 级块路由与 SWA+MoBA hybrid。第四，质量风险在哪：召回类任务 | 前置：2.3（softmax 饱和与 Jacobian 式 (8)）、2.4（可见集式 (2)、cache 式 (9)、decode 强度式 (11)(12)）、2.5（RoPE 两种维度配对约定）、4.1（MLA cache 账 576 元素 / token / 层、FlashAttention 不改数学的定位） | 锚点：Mistral-7B（arXiv:2310.06825）[A]、Gemma 3（arXiv:2503.19786，HF gated 挂论文条目）[A]、StreamingLLM（arXiv:2309.17453）[A]、NSA（arXiv:2502.11089）[B]、DeepSeek-V3.2-Exp（arXiv:2512.02556）[A]、MoonshotAI/MoBA（arXiv:2502.13189）[B]、Longformer（arXiv:2004.05150）[A]
 
 ## 1. 账的位置：改可见集，不改 softmax
 
@@ -14,9 +14,9 @@
 
 代价只有一类，但致命：可见集外的 token 对输出的贡献恒为精确的 0——精确检索负载（needle 类）一旦目标落在可见集外，该层没有任何机制能把它找回来。§8 处理这笔风险账。
 
-**分类学两轴**。轴一：静态 pattern（ $V(i)$ 只依赖位置坐标、编译期确定——滑窗、扩张窗、固定全局 token；谱系起点是 Longformer 的「滑窗 + 任务相关 global token」[A]）vs 动态选择（ $V(i)$ 依赖输入内容、运行时打分取 top-K——NSA 的 selection、DSA 的 indexer、MoBA 的块路由）。轴二：粒度——token 级（DSA）vs 块级（NSA、MoBA；块是连续显存读取与 tensor core tile 的天然单位）。第三个性质单列：训练需求——StreamingLLM 免训练插入，NSA 与主模型从头联合训练，DSA 从 dense checkpoint 继续训，MoBA 声明可免训练插入。
+**分类学两轴**。第一根轴是「可见集怎么定」。静态 pattern 的 $V(i)$ 只依赖位置坐标、编译期确定：滑窗、扩张窗、固定全局 token 都属此类，谱系起点是 Longformer 的「滑窗 + 任务相关 global token」[A]。动态选择的 $V(i)$ 依赖输入内容、运行时打分取 top-K：NSA 的 selection、DSA 的 indexer、MoBA 的块路由属此类。第二根轴是粒度：token 级（DSA）对块级（NSA、MoBA）。块是连续显存读取与 tensor core tile 的天然单位，这是块级方案的系统侧动机。第三个性质单列：训练需求。StreamingLLM 免训练插入；NSA 与主模型从头联合训练；DSA 从 dense checkpoint 继续训；MoBA 声明可免训练插入。
 
-两轴的差别不只是算法口味。静态 pattern 编译期可知：显存布局、kernel 形状、cache 淘汰策略都可以在加载时一次定死，系统的全部优化空间随之打开。动态选择的可见集到运行时才知道，打分器本身成为新的成本项与新的故障点——§6 会看到 DSA 为打分器付出的续训管线（约一万亿 token）正是这笔成本的真实量级。反过来，静态 pattern 无法随内容调整可见域：局部性假设失效的负载（长程检索、跨文档引用）上，静态方案只能靠 §3 那种周期性全局层硬撑。
+两轴的差别不只是算法口味。静态 pattern 编译期可知：显存布局、kernel 形状、cache 淘汰策略都可以在加载时一次定死，系统的全部优化空间随之打开。动态选择的可见集到运行时才知道，打分器本身成为新的成本项与新的故障点——§6 会看到，DSA 为打分器付出的续训管线（约一万亿 token）正是这笔成本的真实量级。反过来看静态方案：它无法随内容调整可见域。局部性假设失效的负载（长程检索、跨文档引用）上，静态方案只能靠 §3 那种周期性全局层硬撑。
 
 | 方法 | 可见集结构 | 动态？ | 粒度 | 每 query 的 key 位量级 | 训练 |
 | --- | --- | --- | --- | --- | --- |
@@ -29,7 +29,7 @@
 
 ## 2. SWA：滑窗、三笔账与 $L \cdot w$ 感受野推导
 
-滑窗 attention（sliding window attention，SWA）把可见集钉在最近 $w$ 个位置上（ $w$ 含自身）：
+滑窗 attention（sliding window attention，SWA）把可见集固定在最近 $w$ 个位置上（ $w$ 含自身）：
 
 $$
 V(i) = \lbrace \max(1,\thinspace i - w + 1), \ldots, i \rbrace \qquad (1)
@@ -84,7 +84,7 @@ $$
 
 实现注记两条。其一，ring buffer 下 RoPE 仍按绝对位置旋转后写入（2.4 §4.2 的注记不变），buffer 槽位取位置对 $w$ 取模——槽位复用安全，因为被覆盖的列已滑出可见集；Mistral-7B 的 rolling buffer cache 即此形态（[A]，论文设计描述）。其二，扩张窗（dilated window，Longformer 已含）是静态轴上的常见变体：窗内按固定步长抽样可见，感受野乘以扩张率，代价是相邻分辨率变差——本章不展开，谱系归入静态轴。
 
-SWA 不承诺长程检索——它承诺的是「局部结构精确、长程结构靠层堆叠稀释扩散」。需要点对点的长程精确召回时，静态窗口必须让位给全局机制：§3 的周期全量层、§4 的 sink 保底、§5–§7 的动态选择，都是这个缺口的不同补法。谱系起点 Longformer（[Beltagy et al., 2020](../references.md)，arXiv:2004.05150，[A]）即「滑窗 + 任务相关 global token」：默认局部，点名位置（如分类头的 [CLS]）双向全通——把「哪些位置值得全局可见」写死进 pattern，是静态轴上的最早答案。
+SWA 不承诺长程检索，它承诺的是「局部结构精确、长程结构靠层堆叠稀释扩散」。需要点对点的长程精确召回时，静态窗口必须让位给全局机制：§3 的周期全量层、§4 的 sink 保底、§5–§7 的动态选择，都是这个缺口的不同补法。谱系起点 Longformer（[Beltagy et al., 2020](../references.md)，arXiv:2004.05150，[A]）即「滑窗 + 任务相关 global token」：默认局部，被指定的位置（如分类头的 [CLS]）双向全通。把「哪些位置值得全局可见」写死进 pattern，是静态轴上的最早答案。
 
 ## 3. SWA+full 混合层：Gemma 3 的 5:1 走读
 
@@ -93,7 +93,7 @@ SWA 不承诺长程检索——它承诺的是「局部结构精确、长程结�
 - **层交错**：每 6 层一组，前 5 层 local（SWA），第 6 层 global（full causal）；HF config 的实现字段是 `sliding_window_pattern = 6`——「每第 6 层不套窗口」。local 层窗口 1024（论文口径）。
 - **RoPE 分工**（论文口径）：global 层 base 提到 $10^{6}$、local 层保持 $10^{4}$。机制读法：local 层见过的相对距离最远就是窗口 1024，而 $10^{4}$ base 的最长波长约 $2\pi \times 10^{4}$、数十倍覆盖窗口——local 层不需要长波长余量；长距离外推预算全部留给 global 层。与 4.6 的 base-波长账同源，此处只登记分工结构。
 
-信息流的形状：每个 local 组在 $w$ 邻域内做局部聚合 → 周期末的 global 层把各邻域的汇总广播到全前缀 → 下一个 local 组在更新后的表示上再局部细化。式 (3) 的 $L(w-1)$ 上限被 global 层周期性重置——任意位置对任意 query 的依赖链最长只需穿过 $\le 5$ 个 local 层加 1 个 global 层。全局层放在组末而非组首的机制读法：local 组先各自聚合、global 一次性广播的是新鲜汇总，下一组读到的是已更新的全前缀表示。
+信息流的形状是：每个 local 组在 $w$ 邻域内做局部聚合，周期末的 global 层把各邻域的汇总广播到全前缀，下一个 local 组在更新后的表示上再局部细化。式 (3) 的 $L(w-1)$ 上限被 global 层周期性重置：任意位置对任意 query 的依赖链，最长只需穿过 $\le 5$ 个 local 层加 1 个 global 层。为什么全局层放在组末而非组首？机制读法是：local 组先各自聚合，global 一次性广播的是新鲜汇总，下一组读到的是已更新的全前缀表示。
 
 混合比与 attention FLOPs 账：每 $p$ 层一组（Gemma 3： $p$ = 6），组内成本 $(p-1) \cdot 4Twd + 2T^{2}d$，全 dense 基线 $p \cdot 2T^{2}d$，比值
 
@@ -117,7 +117,7 @@ $$
 o_t = \pi \cdot v_1 + (1 - \pi) \cdot \bar{v}_{\mathrm{rest}}, \qquad \bar{v}_{\mathrm{rest}} = \frac{1}{1 - \pi} \sum_{s \ge 2} p_{t,s} v_s \qquad (6)
 $$
 
-**符号**： $\pi = p_{t,1}$：倒在首 token 上的质量； $`\bar{v}_{\mathrm{rest}}`$：其余位置的加权均值。两个旋钮合读： $\pi \to 1$ 把「无关但非零」的 $`\bar{v}_{\mathrm{rest}}`$ 压掉， $\Vert v_1\Vert \to 0$ 让 sink 自身的贡献消失——两头都推到时 $o_t \to 0$，这个 head 对该 query 近似静默，而均匀摊开（softmax 的另一默认解）只能给出全体 value 的均值，既不接近零也不受控。训练因此有明确梯度方向：给「无相关 key」的 query 抬升 $\langle q, k_1 \rangle$、压低 $\Vert v_1\Vert$。为什么恰好是位置 1：causal mask 下 $1 \in V(t)$ 对一切 $t$ 成立——它是唯一在所有行、所有层、整条训练数据里都待在归一化域内的位置，是唯一能被稳定塑造成「公共默认 key」的候选。论文的观测与此一致：sink 质量集中在开头几个 token，与其语义无关。
+**符号**： $\pi = p_{t,1}$：倒在首 token 上的质量； $`\bar{v}_{\mathrm{rest}}`$：其余位置的加权均值。两个旋钮合读： $\pi \to 1$ 把「无关但非零」的 $`\bar{v}_{\mathrm{rest}}`$ 压掉， $\Vert v_1\Vert \to 0$ 让 sink 自身的贡献消失。两头都推到时 $o_t \to 0$，这个 head 对该 query 近似静默；而均匀摊开（softmax 的另一默认解）只能给出全体 value 的均值，既不接近零也不受控。训练因此有明确梯度方向：给「无相关 key」的 query 抬升 $\langle q, k_1 \rangle$、压低 $\Vert v_1\Vert$。为什么恰好是位置 1？causal mask 下 $1 \in V(t)$ 对一切 $t$ 成立，它是唯一在所有行、所有层、整条训练数据里都待在归一化域内的位置，也是唯一能被稳定训练成「公共默认 key」的候选。论文的观测与此一致：sink 质量集中在开头几个 token，与其语义无关。
 
 **第三段：驱逐 = 抽掉归一化的出口，剩余列等比放大**。设一行 logit 为 $z_1, \ldots, z_t$， $Z = \sum_j e^{z_j}$， $Z' = \sum_{j \ge 2} e^{z_j}$。驱逐位置 1 后 $`p'_s = e^{z_s} / Z'`$；由 $1 - p_1 = Z' / Z$ 得
 
@@ -127,7 +127,7 @@ $$
 
 **符号**： $p_s$：驱逐前权重。 $p_1$ 接近 1（sink 吸收了该行大部分质量）时放大因子 $1/(1-p_1)$ 巨大——原本被 sink 压住的一整行低分 key 被等比抬到主导，输出分布剧变。这不是「窗口不够大」的检索失败，是归一化结构崩塌。
 
-**StreamingLLM 处方**（[A]，论文数字）：cache = 首 4 个 token + 最近 $w$ 个的滑窗；RoPE 按 cache 内坐标重编号（保持相对距离在训练分布内）。4 而不是 1 的机制读法：不同 head 学到的倾倒方向不同——论文观察到 sink 质量分散在开头若干 token 上（首 token、句首标点等），只保 1 个等于删掉一部分头的出口，那些行的权重仍被部分重分配，PPL 部分恶化；4 个覆盖多数头的倾倒点。显式替代：训练时前置一个专职可学 sink token，把隐含约定变成结构（论文验证可行）。
+**StreamingLLM 处方**（[A]，论文数字）：cache = 首 4 个 token + 最近 $w$ 个的滑窗；RoPE 按 cache 内坐标重编号（保持相对距离在训练分布内）。为什么是 4 而不是 1？机制读法：不同 head 学到的倾倒方向不同。论文观察到 sink 质量分散在开头若干 token 上（首 token、句首标点等），只保 1 个等于删掉一部分头的出口，那些行的权重仍被部分重分配，PPL 部分恶化；4 个覆盖多数头的倾倒点。显式替代方案是：训练时前置一个专职可学 sink token，把隐含约定变成结构（论文验证可行）。
 
 sink 还有一层副作用值得登记：2.3 §3 的饱和分析里，行内最大 score 越高、其余列的相对权重被压得越低——sink 行天然处于半饱和态，该行对其余列的有效检索分辨率下降。这不是 bug：sink 质量高的行本来就是模型标出的「近似 no-op」行，它打算少做事；真正要检索的行倒进 sink 的质量近零（ $\pi$ 近 0，式 (6) 口径）。
 
@@ -220,9 +220,9 @@ $$
 
 **符号**： $K$ = 2048 为 sparse 训练阶段每 query 的选中数（论文原文口径）。主路即 4.1 式 (9)(10) 的 MLA，求和域从 $\lbrace1..t\rbrace$ 换成 $`\mathcal{S}_t`$。
 
-**账**。训练 / prefill：主 attention 从 $O(T^{2})$ 降到 $O(T \cdot K)$，indexer 打分 $O(T^{2} d_I)$ 但常数小、可 FP8。decode（61 层 MLA、 $t$ = 131072）：每步主路 cache 读取从全量 131072 行降到 2048 行——1.5625%；字节数 $61 \times 2048 \times 576 \times 2$ B ≈ 144 MB / 步，全量对照 $61 \times 131072 \times 576 \times 2$ B ≈ 9.2 GB / 步。**cache 总量不变**（全量 576 元素 / token 仍驻留，选中是每步的运行时行为），减的是带宽与 FLOPs——正是 2.4 式 (11) 分母里 cache 项的削减。论文报告长上下文场景端到端显著加速（[A]；论文正文为定性表述加逐长度成本曲线，按 Fig 3 曲线读数约削减一半）。
+**账**。训练 / prefill：主 attention 从 $O(T^{2})$ 降到 $O(T \cdot K)$，indexer 打分 $O(T^{2} d_I)$ 但常数小、可 FP8。decode（61 层 MLA、 $t$ = 131072）：每步主路 cache 读取从全量 131072 行降到 2048 行，即 1.5625%；字节数 $61 \times 2048 \times 576 \times 2$ B ≈ 144 MB / 步，全量对照 $61 \times 131072 \times 576 \times 2$ B ≈ 9.2 GB / 步。注意 **cache 总量不变**：全量 576 元素 / token 仍驻留，选中是每步的运行时行为。减的是带宽与 FLOPs——正是 2.4 式 (11) 分母里 cache 项的削减。论文报告长上下文场景端到端显著加速（[A]；论文正文为定性表述加逐长度成本曲线，按 Fig 3 曲线读数约削减一半）。
 
-**sparse-from-dense 训练配方**（从 DeepSeek-V3.1-Terminus 的 128K dense checkpoint 出发，[A]，论文口径）。起点选型本身就是设计：V3.1-Terminus 已是 128K 上下文就绪的 dense MLA 模型，sparse 化只动「读哪些」、不动「怎么存」——MLA cache 格式（576 元素 / token / 层）全程不变，续训路线因此不必触碰 4.1 的压缩结构。两阶段：
+**sparse-from-dense 训练配方**（从 DeepSeek-V3.1-Terminus 的 128K dense checkpoint 出发，[A]，论文口径）。起点选型本身就是设计：V3.1-Terminus 已是 128K 上下文就绪的 dense MLA 模型，sparse 化只动「读哪些」、不动「怎么存」。MLA cache 格式（576 元素 / token / 层）全程不变，续训路线因此不必触碰 4.1 的压缩结构。两阶段：
 
 1. **Dense warm-up**：冻结主模型全部参数，只训 indexer。目标是让 indexer 的分布逼近主 attention 的分布（论文口径）：对每个 query $t$，把主模型全部 attention 头在历史位置上的注意力分数跨头求和聚合，再 L1 归一化成全模型共享的单一目标分布 $p_{t,:}$；indexer 侧取 $\mathrm{softmax}(I_{t,:})$，loss 为逐位置 KL
 
@@ -233,7 +233,7 @@ $$
 **符号**： $`A^{(h)}_{t,s}`$：主模型第 $h$ 头在位置对 $(t, s)$ 上的注意力分数；先跨头求和、再对历史位置 L1 归一化。注意聚合次序不可换：KL 对第一参数非线性，「先头聚合再取 KL」与「逐头 KL 再求和」不等价——论文取前者，target 是全模型一份的 $p_{t,:}$ 而不是逐头一份。
 
 主模型不动 ⇒ dense 行为零扰动，indexer 学会「主模型会看哪里」——稀疏化的信息瓶颈被打分器蒸馏预先填平。
-2. **Sparse 训练**：解冻全模型、top-K 生效，端到端语言建模继续训：lr 7.3e-6、15000 步、每步 480 条 128K 序列。顺手一记规模账： $480 \times 131072 \approx 6.3 \times 10^{7}$ token / 步，15000 步合计约 $9.4 \times 10^{11}$ token——sparse 化改造的数据预算接近一万亿 token，「免训练」在这条路线上不成立。indexer 在这一阶段的监督也未断流：top-K 选择本身不可微，语言建模 loss 的梯度到不了打分器——indexer 继续吃式 (14) 同形的 KL 对齐（target 同为头聚合分布，截断到选中集），始终被锚在「主模型真实在看哪里」上，而不是随主模型漂移。
+2. **Sparse 训练**：解冻全模型、top-K 生效，端到端语言建模继续训：lr 7.3e-6、15000 步、每步 480 条 128K 序列。顺手记一笔规模账： $480 \times 131072 \approx 6.3 \times 10^{7}$ token / 步，15000 步合计约 $9.4 \times 10^{11}$ token。sparse 化改造的数据预算接近一万亿 token，「免训练」在这条路线上不成立。indexer 在这一阶段的监督也未断流：top-K 选择本身不可微，语言建模 loss 的梯度到不了打分器。indexer 继续吃式 (14) 同形的 KL 对齐（target 同为头聚合分布，截断到选中集），始终被锚在「主模型真实在看哪里」上，而不是随主模型漂移。
 
 实现勘误一条（官方 repo README 公告，2025-11-17）：indexer 的 RoPE 输入用 non-interleaved 布局，MLA 主路用 interleaved——2.5 的两种维度配对约定在同一模型里并存，写 kernel 时混用即错。
 
@@ -265,7 +265,7 @@ $$
 
 1. **可见集外驱逐（静态方案的硬边界）**：SWA 下目标距 query 超过 $L(w-1)$ 时计算图里根本没有边（式 (3)），任何打分、任何训练都救不回单层外的信息。sink 缺失是此类的特例但机制不同（§4）：不是检索失败，是归一化压力失去出口后的整行权重重分配，表现为 PPL 爆炸——StreamingLLM 的对照数据（纯窗口超窗即崩 vs 4 sink 稳定到 4M，[A]）是本章最干净的一组因果证据。
 2. **打分器漏选（动态方案的上限）**：needle 所在位置的 indexer 分或块分排不进 top-K，效果等同于被驱逐。动态方案的召回率上限 = 打分器的召回率——DSA 用 KL 蒸馏把主模型行为灌进 indexer（式 (14)）、NSA 直接复用 compression 支路的真实 attention 权重（式 (9)），都是在抬高这个上限；MoBA 的零参数均值打分器最便宜，上限也最依赖「needle 所在块的均值方向与 query 对齐」这一假设。
-3. **保底结构对照**：NSA 的 compression（全局稀释在场）+ sliding（近处硬保证）；MoBA 的当前块恒选 + SWA hybrid；Gemma 3 每 6 层一次感受野重置；StreamingLLM 的显式 sink 位。每家都给「窗口不够 / 打分失败」留了兜底——评估一个稀疏方案，先看它的兜底覆盖哪类失败。
+3. **保底结构对照**：NSA 的 compression（全局稀释在场）+ sliding（近处硬保证）；MoBA 的当前块恒选 + SWA hybrid；Gemma 3 每 6 层一次感受野重置；StreamingLLM 的显式 sink 位。每家都给「窗口不够 / 打分失败」留了保底手段——评估一个稀疏方案，先看它覆盖哪类失败。
 
 **证据面**（各方案自报，证据等级随行）：NSA 报告与 full attention 基线持平或更好，含长上下文检索任务（[B]，无官方代码，结论按论文口径引）；DeepSeek-V3.2-Exp 报告与 V3.1-Terminus 各基准持平（[A]）；MoBA 报告与 full 基线可比（[B]）。评测口径警告：单针 needle 任务易饱和（模型学会「找异常 token」即满分），区分不了「可见集够大」与「真会检索」；多针、键值追踪等复合检索的系统性讨论与 RULER 数据见 4.6——稀疏方案宣称的「等效上下文长度」应以该类复合任务为准。
 
