@@ -1,12 +1,12 @@
 # 1.4 激活内存与 Gradient Checkpointing（Activation Memory and Gradient Checkpointing）
 
-> 本章把激活显存从「一笔随 $B \cdot T$ 涨的账」精确化到逐算子字节账（Megatron 的 $sbh(34 + 5as/h)$ 公式逐项拆解），再给出重计算换内存的完整数学： $L$ 层分 $k$ 段、内存 $M(k) = a(k + L/k)$ 、最优 $k = \sqrt{L}$ 、代价一次额外前向（+33% step 时间）；full vs selective recompute 的对照账（GPT-3 省 70% 激活只付 2.7% FLOPs）；`torch.utils.checkpoint` 的机制走读（RNG 态保存/恢复、dropout 掩码一致性、`use_reentrant` 两模式语义差异）与策略决策表 | 前置：1.1（vjp 链式执行、`ctx.save_for_backward` 语义）、1.2（算子 vjp 总表——每个算子反向需要前向留什么）、models 1.2（激活账初版： $BTL(65536 + 16T) \times 2$ bytes） | 锚点：`torch/utils/checkpoint.py`（教学参照 + 官方实现）、[Korthikanti et al., 2022] [A]；[Chen et al., 2016] [B]
+> 本章回答「激活显存从哪来、怎么用算力换回去」。先把激活从「一笔随 $B \cdot T$ 涨的账」精确化到逐算子字节账（Megatron 的 $sbh(34 + 5as/h)$ 公式逐项拆解）；再推重计算换内存的完整数学： $L$ 层分 $k$ 段、内存 $M(k) = a(k + L/k)$ 、最优 $k = \sqrt{L}$ 、代价一次额外前向（+33% step 时间）；然后是 full vs selective recompute 的对照账（GPT-3 省 70% 激活只付 2.7% FLOPs）；最后走读 `torch.utils.checkpoint` 的实现（RNG 态保存/恢复、dropout 掩码一致性、`use_reentrant` 两模式语义差异）并给策略决策表 | 前置：1.1（vjp 链式执行、`ctx.save_for_backward` 语义）、1.2（算子 vjp 总表——每个算子反向需要前向留什么）、models 1.2（激活账初版： $BTL(65536 + 16T) \times 2$ bytes） | 锚点：`torch/utils/checkpoint.py`（教学参照 + 官方实现）、[Korthikanti et al., 2022] [A]；[Chen et al., 2016] [B]
 
 ## 1. 激活账精确化：反向时哪些张量必须还在
 
-反向传播不是免费的方向场：每个算子的 vjp 都要消费前向留下的某些张量（1.1 的 `ctx.save_for_backward` 语义；逐算子的「前向公式 / 反向公式 / 需 save 的量」总表在 1.2）。最典型的是 matmul： $Y = XW$ 的权重梯度 $\partial \mathcal{L} / \partial W = X^{\top} G$ 需要前向输入 $X$ ——前向算完不存 $X$ ，反向就算不出权重梯度。激活账的全部内容就是回答：一张 $L$ 层网络的前向，每个算子必须为反向留下什么。
+反向传播不是免费的方向场：每个算子的 vjp 都要消费前向留下的某些张量（1.1 的 `ctx.save_for_backward` 语义；逐算子的「前向公式 / 反向公式 / 需 save 的量」总表在 1.2）。最典型的是 matmul。 $Y = XW$ 的权重梯度 $\partial \mathcal{L} / \partial W = X^{\top} G$ 需要前向输入 $X$ ——前向算完不存 $X$ ，反向就算不出权重梯度。激活账的全部内容就是回答一个问题：一张 $L$ 层网络的前向，每个算子必须为反向留下什么。
 
-Megatron 论文把这笔账算到了字节粒度（[Korthikanti et al., 2022](../references.md)，arXiv:2205.05198，[A]，§4.1）。记号： $s$ = 序列长度， $b$ = micro-batch 序列数， $h$ = hidden 宽度， $a$ = attention head 数；激活以 2 字节（fp16/bf16）计、dropout 掩码以 1 字节计。单个 transformer 层（GPT 式：attention 块 + MLP 块 + 两个 LayerNorm，MLP 为 $h \to 4h$ 的 GeLU 结构）逐项清点——每行同时给出「为什么要存」：
+Megatron 论文把这笔账算到了字节粒度（[Korthikanti et al., 2022](../references.md)，arXiv:2205.05198，[A]，§4.1）。记号： $s$ = 序列长度， $b$ = micro-batch 序列数， $h$ = hidden 宽度， $a$ = attention head 数；激活以 2 字节（fp16/bf16）计，dropout 掩码以 1 字节计。取单个 transformer 层（GPT 式：attention 块 + MLP 块 + 两个 LayerNorm，MLP 为 $h \to 4h$ 的 GeLU 结构）逐项清点，每行同时给出「为什么要存」：
 
 | 算子 | 存下的张量 | 字节数 | 反向用途 |
 | --- | --- | --- | --- |
@@ -30,15 +30,15 @@ $$
 
 **符号**：定长项 34 来自全部随 $s$ 线性的张量； $5as/h$ 项来自 attention 核心（ $QK^{\top}$ 、softmax、softmax dropout、 $PV$ 四处共存的 $T^{2}$ 级张量）。式 (1) 是论文 Equation 1（无并行口径）；论文的 Equation 5 再把 pipeline、embedding、输出头等修正项补齐，并注明那些项相对式 (1) 可忽略（22B 模型上小于 0.01%）。
 
-读式 (1) 的方式与 models 1.2 的激活账相同：定长项随 $B \cdot T$ 线性， $5as^{2}b$ 项随 $T^{2}$ 二次——models 1.2 的「 $65536 + 16T$ 」结构与这里「 $34 + 5as/h$ 」是同一件事的两种实现口径（SwiGLU 三矩阵对 GeLU 双矩阵、causal 平均对全量 $T^{2}$ 、存的张量清单不同），结构项不变。代入 GPT-3 175B（ $a = 96$ 、 $s = 2048$ 、 $h = 12288$ ）： $5as/h = 80$ ，定长项 34—— $T^{2}$ 张量占全层激活的 70%。这个比例是第 3 节 selective recompute 的全部动机。
+读式 (1) 的方式与 models 1.2 的激活账相同：定长项随 $B \cdot T$ 线性， $5as^{2}b$ 项随 $T^{2}$ 二次。models 1.2 的「 $65536 + 16T$ 」结构与这里「 $34 + 5as/h$ 」是同一件事的两种实现口径——SwiGLU 三矩阵对 GeLU 双矩阵、causal 平均对全量 $T^{2}$ 、存的张量清单不同，结构项不变。代入 GPT-3 175B（ $a = 96$ 、 $s = 2048$ 、 $h = 12288$ ）： $5as/h = 80$ ，定长项 34， $T^{2}$ 张量占全层激活的 70%。这个比例是第 3 节 selective recompute 的全部动机。
 
-存与不存的判据逐行可对回 1.2 的 vjp 总表，两条规则覆盖全表。其一，matmul 类算子的两个梯度各要一个操作数： $Y = XW$ 的 $\partial \mathcal{L} / \partial W = X^{\top} G$ 要 $X$ ， $\partial \mathcal{L} / \partial X = G W^{\top}$ 要 $W$（ $W$ 是参数、常驻显存，不进激活账）——所以表中每个 matmul 行存的净是「输入」。其二，逐元素算子的反向是「输出梯度 = 导函数值 × 上游梯度」：导函数若能用输出闭式表达就存输出（softmax 反向 $p \odot (g - \langle p, g \rangle)$ 只用输出 $P$ ，推导见 1.2），必须由输入求值就存输入（ $\mathrm{GeLU}'$ 无输出的闭式表达，存输入 $8sbh$ ）。dropout 两行特殊：掩码是 1 字节布尔，而它的「存」在重计算实现里直接转化为 RNG 态问题——第 4 节会看到 checkpoint 实现通过保存/恢复 RNG 态让掩码被逐位重建，等效于存掩码。
+存与不存的判据可以逐行对回 1.2 的 vjp 总表，两条规则覆盖全表。其一，matmul 类算子的两个梯度各要一个操作数： $Y = XW$ 的 $\partial \mathcal{L} / \partial W = X^{\top} G$ 要 $X$ ， $\partial \mathcal{L} / \partial X = G W^{\top}$ 要 $W$（ $W$ 是参数、常驻显存，不进激活账）。所以表中每个 matmul 行存的都是「输入」。其二，逐元素算子的反向是「输出梯度 = 导函数值 × 上游梯度」：导函数若能用输出闭式表达就存输出——softmax 反向 $p \odot (g - \langle p, g \rangle)$ 只用输出 $P$ （推导见 1.2）；必须由输入求值就存输入—— $\mathrm{GeLU}'$ 无输出的闭式表达，存输入 $8sbh$ 。dropout 两行特殊：掩码是 1 字节布尔，而它的「存」在重计算实现里直接转化为 RNG 态问题——第 4 节会看到，checkpoint 实现通过保存/恢复 RNG 态让掩码被逐位重建，等效于存掩码。
 
-代入一组现代训练口径的数字（ $h = 4096$ 、 $a = 32$ 、 $s = 4096$ 、 $b = 1$ ，近 Llama-3.1-8B 的几何）：每 token 每层 $34h + 5as \approx 7.9 \times 10^{5}$ 字节 ≈ 776 KB，32 层累计约 24 MB/token，一个 $B \cdot T = 32768$ token 的 step 全存约 800 GB——80 GB 级单卡无望，「重计算与并行切分至少启用其一」由此从经验变成算术。models 1.2 对同规模模型给出约 256 GiB 的账，与本段相差约 3 倍，差异来自所存张量清单的精简程度与 causal 平均口径；两账同阶同结构：定长项 $\propto BTLh$ ， $T^{2}$ 项 $\propto BLaT^{2}$ 。
+代入一组现代训练口径的数字（ $h = 4096$ 、 $a = 32$ 、 $s = 4096$ 、 $b = 1$ ，近 Llama-3.1-8B 的几何）。每 token 每层 $34h + 5as \approx 7.9 \times 10^{5}$ 字节 ≈ 776 KB；32 层累计约 24 MB/token；一个 $B \cdot T = 32768$ token 的 step 全存约 800 GB。80 GB 级单卡无望，「重计算与并行切分至少启用其一」由此从经验变成算术。models 1.2 对同规模模型给出约 256 GiB 的账，与本段相差约 3 倍，差异来自所存张量清单的精简程度与 causal 平均口径；两账同阶同结构：定长项 $\propto BTLh$ ， $T^{2}$ 项 $\propto BLaT^{2}$ 。
 
 ## 2. 重计算换内存： $\sqrt{L}$ 分段最优
 
-Chen et al. 的方案把问题压成一行优化（[Chen et al., 2016](../references.md)，arXiv:1604.06174，[B]，§4.3）。设 $L$ 层链式网络、每层激活 $a$ 字节（均匀假设；非均匀情形的贪心分配见论文 Alg. 3），把 $L$ 层切成 $k$ 段，只存 $k$ 个段边界激活（checkpoint）；反向进入第 $i$ 段时，从段入口的 checkpoint 重新前向该段、即时重建段内 $(L/k)$ 层的激活供 vjp 消费，用完即释放。峰值内存两笔相加：
+Chen et al. 的方案把问题压成一行优化（[Chen et al., 2016](../references.md)，arXiv:1604.06174，[B]，§4.3）。设 $L$ 层链式网络、每层激活 $a$ 字节（均匀假设；非均匀情形的贪心分配见论文 Alg. 3）。把 $L$ 层切成 $k$ 段，只存 $k$ 个段边界激活（checkpoint）。反向进入第 $i$ 段时，从段入口的 checkpoint 重新前向该段，即时重建段内 $(L/k)$ 层的激活供 vjp 消费，用完即释放。峰值内存两笔相加：
 
 $$
 M(k) = \underbrace{k \cdot a}_{\text{checkpoints}} + \underbrace{\frac{L}{k} \cdot a}_{\text{segment recompute peak}} \qquad (2)
@@ -50,9 +50,9 @@ $$
 k^{\ast} = \sqrt{L}, \qquad M(k^{\ast}) = 2a\sqrt{L} \qquad (3)
 $$
 
-激活内存从 $O(L)$ 降到 $O(\sqrt{L})$ 。代价：每个 checkpoint 段在前向跑一次、反向前再重跑一次——一次额外前向。按前向 : 反向 = 1 : 2 的 FLOPs 比（models 1.2 式 (4)），step 总开销从 3 份涨到 4 份：+33%，即 $C$ 从 $6ND$ 涨到 $8ND$ 量级（models 1.2 练习 4 的口径）。Megatron 的实测与此一致：full recomputation 的执行时间开销 30–40%（[Korthikanti et al., 2022](../references.md)，[A]，§5）。Chen et al. 的实证：1000 层 ResNet 的激活内存从 48 GB 压到 7 GB；论文另给递归版本的极端情形—— $O(\log L)$ 内存、 $O(L \log L)$ 额外计算，本书不展开。
+激活内存从 $O(L)$ 降到 $O(\sqrt{L})$ 。代价：每个 checkpoint 段在前向跑一次、反向前再重跑一次，即一次额外前向。按前向 : 反向 = 1 : 2 的 FLOPs 比（models 1.2 式 (4)），step 总开销从 3 份涨到 4 份：+33%，也就是 $C$ 从 $6ND$ 涨到 $8ND$ 量级（models 1.2 练习 4 的口径）。Megatron 的实测与此一致：full recomputation 的执行时间开销 30–40%（[Korthikanti et al., 2022](../references.md)，[A]，§5）。Chen et al. 的实证：1000 层 ResNet 的激活内存从 48 GB 压到 7 GB。论文另给递归版本的极端情形—— $O(\log L)$ 内存、 $O(L \log L)$ 额外计算，本书不展开。
 
-两个工程注记。其一， $k$ 无须整除 $L$ ，式 (2) 对任意分段成立；实践中段界常与 pipeline stage 边界对齐（5.3），可选的 $k$ 是离散集合，取离 $\sqrt{L}$ 最近的可行值即可——式 (2) 在最优点附近平坦： $k$ 偏到 $2\sqrt{L}$ 时 $M$ 只涨到 $2.5 \thinspace a\sqrt{L}$ ，即 $1.25 \times M(k^{\ast})$ 。其二，本节的分段粒度是整层，段内激活一律不驻留；把粒度拆到层内算子、让「贵的留下、便宜的重算」，就是第 3 节 selective 的内容。
+两个工程注记。其一， $k$ 无须整除 $L$ ，式 (2) 对任意分段成立；实践中段界常与 pipeline stage 边界对齐（5.3），可选的 $k$ 是离散集合，取离 $\sqrt{L}$ 最近的可行值即可。式 (2) 在最优点附近平坦： $k$ 偏到 $2\sqrt{L}$ 时， $M$ 只涨到 $2.5 \thinspace a\sqrt{L}$ ，即 $1.25 \times M(k^{\ast})$ 。其二，本节的分段粒度是整层，段内激活一律不驻留；把粒度拆到层内算子、让「贵的留下、便宜的重算」，就是第 3 节 selective 的内容。
 
 时序图（ $k$ 段，□ 为驻留的 checkpoint，重算段以 ── 标出）：
 
@@ -68,9 +68,11 @@ $$
 
 ## 3. full vs selective：Megatron 的选择账
 
-式 (3) 的段取到最细（每段一层）就是 full activation recomputation：只存层输入，每层 $2sbh$ 字节、全模型 $2sbhL$ ，激活从式 (1) 的 $(34 + 5as/h)$ 倍压到 2 倍；代价即第 2 节的一次额外前向，30–40% 时间开销。介于「全存」与「full」之间的粗粒度折中——只 checkpoint 一部分层、其余层全存——在 PP 下经常失效：层已按 stage 切薄，可调的层数所剩无几（MT-NLG 每设备只有 3 层，论文 §5）。Megatron 论文的观察是这笔交易可以拆细：**不是所有激活都同样难算**（[Korthikanti et al., 2022](../references.md)，[A]，§5）。式 (1) 里 $5as^{2}b$ 那五项—— $QK^{\top}$ 、softmax、softmax dropout、 $PV$ ——字节数占全层大头但每元素 FLOPs 极低（softmax、dropout 是逐元素算子；两个 matmul 的收缩维只有 head 维 $h/a$ ）；其余 34 项对应的投影与 MLP matmul 才是算力大头。selective activation recomputation 据此只重算 attention 核心、保留其余全部激活：字节大头消失，重算的 FLOPs 只是零头。
+式 (3) 的段取到最细（每段一层）就是 full activation recomputation：只存层输入，每层 $2sbh$ 字节、全模型 $2sbhL$ ，激活从式 (1) 的 $(34 + 5as/h)$ 倍压到 2 倍；代价即第 2 节的一次额外前向，30–40% 时间开销。介于「全存」与「full」之间的粗粒度折中——只 checkpoint 一部分层、其余层全存——在 PP 下经常失效：层已按 stage 切薄，可调的层数所剩无几（MT-NLG 每设备只有 3 层，论文 §5）。
 
-论文的两个实例（§5）：GPT-3 175B（ $5as/h = 80$ ）省 70% 激活内存、重算仅引入 2.7% FLOPs 开销；MT-NLG 530B（ $5as/h = 64$ ）省 65%、1.6%。这两个 FLOPs 数可以独立复核。重算内容是 $QK^{\top}$ 与 $PV$ 两个 matmul（softmax / dropout 的逐元素开销相对低一个 head 维因子）：每序列每层 $4 s^{2} h$ FLOPs——朴素实现先算满 $s \times s$ 矩阵再 mask，causal 不减这笔账（models 1.2 式 (6) 的减半是 causal 感知实现的口径）；对照层前向 matmul 总量 $24 s h^{2}$（QKV 投影 $6sh^{2}$ 、输出投影 $2sh^{2}$ 、MLP $16sh^{2}$ ）：
+Megatron 论文的观察是，这笔交易可以拆细：**不是所有激活都同样难算**（[Korthikanti et al., 2022](../references.md)，[A]，§5）。式 (1) 里 $5as^{2}b$ 那五项—— $QK^{\top}$ 、softmax、softmax dropout、 $PV$ ——字节数占全层大头但每元素 FLOPs 极低（softmax、dropout 是逐元素算子；两个 matmul 的收缩维只有 head 维 $h/a$ ）；其余 34 项对应的投影与 MLP matmul 才是算力大头。selective activation recomputation 据此只重算 attention 核心、保留其余全部激活：字节大头消失，重算的 FLOPs 只是零头。
+
+论文的两个实例（§5）：GPT-3 175B（ $5as/h = 80$ ）省 70% 激活内存、重算仅引入 2.7% FLOPs 开销；MT-NLG 530B（ $5as/h = 64$ ）省 65%、1.6%。这两个 FLOPs 数可以独立复核。重算内容是 $QK^{\top}$ 与 $PV$ 两个 matmul（softmax / dropout 的逐元素开销相对低一个 head 维因子）：每序列每层 $4 s^{2} h$ FLOPs。朴素实现先算满 $s \times s$ 矩阵再 mask，causal 不减这笔账（models 1.2 式 (6) 的减半是 causal 感知实现的口径）。对照层前向 matmul 总量 $24 s h^{2}$（QKV 投影 $6sh^{2}$ 、输出投影 $2sh^{2}$ 、MLP $16sh^{2}$ ）：
 
 $$
 \frac{\text{attn core recompute}}{\text{layer fwd matmul}} = \frac{4 s^{2} h}{24 s h^{2}} = \frac{s}{6 h} \qquad (4)
@@ -95,7 +97,7 @@ $$
 | TP + SP + selective | $sbh\thinspace (34/t)$ |
 | full recompute | $2sbh$ |
 
-一行边界注记：式 (1) 的 $5as^{2}b$ 项以物化 softmax 概率矩阵 $P$ 为前提；FlashAttention（models 4.1）不物化 $P$ 、只留 online softmax 的统计量，把该项的大头直接消掉。现代训练栈里两者通常同时启用——FlashAttention 管 $T^{2}$ 项、checkpoint 管定长项——selective 的收益对象随 FlashAttention 的普及而收缩，这是本书对论文口径之外形势的注记。
+一行边界注记：式 (1) 的 $5as^{2}b$ 项以物化 softmax 概率矩阵 $P$ 为前提；FlashAttention（models 4.1）不物化 $P$ 、只留 online softmax 的统计量，把该项的大头直接消掉。现代训练栈里两者通常同时启用：FlashAttention 管 $T^{2}$ 项，checkpoint 管定长项。selective 的收益对象随 FlashAttention 的普及而收缩，这是本书对论文口径之外形势的注记。
 
 ## 4. `torch.utils.checkpoint` 机制走读
 
@@ -113,7 +115,7 @@ PyTorch 的官方实现在 pytorch/pytorch repo 的 `torch/utils/checkpoint.py`�
 - 反向首次 unpack 某个占位时：经 `input_saver.grad_fn` 取回输入，恢复 RNG 与 autocast 态，在 `_recomputation_hook` 下重跑 `function` ；重算过程中的 `pack_hook` 按序把每个被 save 的张量写回对应 holder，反向图随即拿到真实张量。默认开启 early stop：重算出全部所需张量即抛 `_StopRecomputationError` 终止重算（`set_checkpoint_early_stop(False)` 可关）；重入版无此机制，永远整段重算——文档明示这是两版差异之一。
 - `determinism_check="default"` 比对重算张量与前向 metadata 的 shape/dtype/device；若前向与重算不一致（如全局变量漂移），重入版会静默产出错误梯度，非重入版至少能报 shape 级不符。
 
-RNG 态的保存/恢复不是细节而是正确性条件：段内有 dropout 时，反向 vjp 要乘回前向那张掩码（1.2 的 dropout 反向）；重算若用不同的 RNG 态，掩码就不同，梯度静默地错。两版都靠「stash 前向态 + `fork_rng` 恢复 + 用完还原外围态」保证重算与前向逐位一致。`preserve_rng_state=False` 只在段内无随机性时才安全。
+RNG 态的保存/恢复不是细节而是正确性条件。段内有 dropout 时，反向 vjp 要乘回前向那张掩码（1.2 的 dropout 反向）；重算若用不同的 RNG 态，掩码就不同，梯度静默地错。两版都靠「stash 前向态 + `fork_rng` 恢复 + 用完还原外围态」保证重算与前向逐位一致。`preserve_rng_state=False` 只在段内无随机性时才安全。
 
 两个补充。其一，同文件还有便利函数 `checkpoint_sequential(functions, segments, input)` ：把 Sequential 式层序列切成 `segments` 段逐段 checkpoint，是式 (2) 分段的直接 API 化。其二，两版的能力差逐条来自源码 docstring 的对照清单：
 
@@ -125,7 +127,7 @@ RNG 态的保存/恢复不是细节而是正确性条件：段内有 dropout 时
 | kwargs、嵌套结构、段内 detach | 不支持 | 支持 |
 | `determinism_check` | 不可用 | 默认比对重算张量的 shape / dtype / device |
 
-新代码一律 `use_reentrant=False` ——官方文档明确推荐，重入版存在的意义是历史兼容；`determinism_check="none"` 可关掉 metadata 比对换一点开销，默认开启时它是「前向与重算不一致」这类静默错误的第一道哨兵。
+新代码一律 `use_reentrant=False` ——官方文档明确推荐，重入版存在的意义是历史兼容。`determinism_check="none"` 可关掉 metadata 比对换一点开销；默认开启时，它能拦下「前向与重算不一致」这类静默错误。
 
 教学骨架（教学用，非优化实现）：
 
@@ -142,23 +144,23 @@ loss.backward()                        # 反向逐段：取输入 → 恢复 RNG
 
 ## 5. 与 TP / PP 的交互与策略决策表
 
-**TP 交互**。TP 把 attention 与 MLP 块内的激活按度数 $t$ 切分，但 LayerNorm、dropout 等逐位置算子的激活在各 rank 冗余——式 (1) 拆成论文 Equation 2 的 $10 + 24/t + 5as/(ht)$ 正是这种结构的账： $24/t$ 项是块内被切分的部分， $10$ 项是冗余不动的部分（消掉它是 sequence parallelism 的事，归 5.2）。代入 GPT-3 几何与 $t = 8$ ：TP 后每层 $10 + 3 + 10 = 23$ 个 $sbh$ 单位，再叠 selective 压到 13——无并行口径 114 的约九分之一。checkpoint 段与 TP 通信算子正交：段内该 all-reduce 照常 all-reduce，重算时原样重放同样的通信；TP 组内各 rank 必须重算出同一份激活，RNG 态因此按 DP rank 区分种子、TP 组内共享（实现细节归 5.1 / 6.2）。
+**TP 交互**。TP 把 attention 与 MLP 块内的激活按度数 $t$ 切分，但 LayerNorm、dropout 等逐位置算子的激活在各 rank 冗余。式 (1) 拆成论文 Equation 2 的 $10 + 24/t + 5as/(ht)$ 正是这种结构的账： $24/t$ 项是块内被切分的部分， $10$ 项是冗余不动的部分（消掉它是 sequence parallelism 的事，归 5.2）。代入 GPT-3 几何与 $t = 8$ ：TP 后每层 $10 + 3 + 10 = 23$ 个 $sbh$ 单位，再叠 selective 压到 13，约为无并行口径 114 的九分之一。checkpoint 段与 TP 通信算子正交：段内该 all-reduce 照常 all-reduce，重算时原样重放同样的通信；TP 组内各 rank 必须重算出同一份激活，RNG 态因此按 DP rank 区分种子、TP 组内共享（实现细节归 5.1 / 6.2）。
 
-**PP 交互**。PP 按层分 stage，每个 stage 只持有自己那几层：checkpoint 策略逐 stage 独立决定，互不影响。真正与激活峰值耦合的是流水线调度：GPipe 式调度下同一时刻有 $m$ 份 micro-batch 的激活在飞，1F1B 压到至多 $p$ 份（ $p$ 为 stage 数；气泡与在飞份数的推导归 5.3）。stage 峰值 = 单份激活 × 在飞份数——本章式 (1)(2) 决定「一份多大」，schedule 决定「同时几份」，两轴正交相乘。还有一个粒度后果：一个 stage 内层数少时（MT-NLG 每设备只有 3 层，论文 §5 原话），「只 checkpoint 其中几层」这种粗粒度折中直接不可用，选择塌缩成 full 或 selective 二选一——这是 selective 存在的另一个理由。
+**PP 交互**。PP 按层分 stage，每个 stage 只持有自己那几层：checkpoint 策略逐 stage 独立决定，互不影响。真正与激活峰值耦合的是流水线调度：GPipe 式调度下同一时刻有 $m$ 份 micro-batch 的激活在飞，1F1B 压到至多 $p$ 份（ $p$ 为 stage 数；气泡与在飞份数的推导归 5.3）。stage 峰值 = 单份激活 × 在飞份数——本章式 (1)(2) 决定「一份多大」，schedule 决定「同时几份」，两轴正交相乘。还有一个粒度后果：一个 stage 内层数少时（MT-NLG 每设备只有 3 层，论文 §5 原话），「只 checkpoint 其中几层」这种粗粒度折中直接不可用，只剩 full 或 selective 二选一——这是 selective 存在的另一个理由。
 
 **决策表**。给定单卡显存 $M_{\mathrm{budget}}$ 与可接受的 step 时间膨胀上限，选择顺序：
 
 | 情形 | 策略 | 代价 |
 | --- | --- | --- |
 | 激活放得下 | 不 checkpoint | 0 |
-| 差一点（ $T^{2}$ 项顶格） | selective（式 (5) 成立时） | 2–7% 时间（论文实测区间） |
+| 差一点（ $T^{2}$ 项占主导） | selective（式 (5) 成立时） | 2–7% 时间（论文实测区间） |
 | 差一个数量级 | full（每层一段） | 30–40% 时间 |
 | 还不够 | full + 缩小 micro-batch（梯度累加补回批量，归 1.5） | 时间 + 通信账另算 |
 | 算力有余量、想换批量 | 反向用省下的显存放大 micro-batch | 重算开销换吞吐 |
 
-把表读一遍的具体情形：设权重三态与通信 buffer 已由并行方案安置（激活账与三态账合成统一账归 4.4），单卡剩 20 GiB 给激活；模型取 $h = 4096$ 、 $a = 32$ 、 $s = 4096$ 、 $L = 32$ 、 $B \cdot T = 8192$ token——此几何下 $5as/h = 160$ ，式 (1) 的系数为 $34 + 160 = 194$ ，全存激活约 194 GiB（794624 字节 × 32 层 × 8192 token），缺口近 10 倍。逐档换算：只上 selective 剩 $34 / 194$ 即 34 GiB，仍超预算；TP 8 路加 selective 为 $194 \times (10 + 3) / 194 = 13$ GiB，已满足 20 GiB 预算、只付 2–7% 时间；再叠 SP 压到 $34 / (8 \times 194)$ 即 4.25 GiB，属进一步压缩（SP 的通信与时间账归 5.2）；full checkpoint 压到 $194 \times 2 / 194 = 2$ GiB，但付 30–40% 时间——算力余量不够时这笔交易不成立。决策的读法：先算「激活缺口倍数」，再从表内自上而下取第一个满足预算的策略。
+把表读一遍的具体情形：设权重三态与通信 buffer 已由并行方案安置（激活账与三态账合成统一账归 4.4），单卡剩 20 GiB 给激活；模型取 $h = 4096$ 、 $a = 32$ 、 $s = 4096$ 、 $L = 32$ 、 $B \cdot T = 8192$ token。此几何下 $5as/h = 160$ ，式 (1) 的系数为 $34 + 160 = 194$ ，全存激活约 194 GiB（794624 字节 × 32 层 × 8192 token），缺口近 10 倍。逐档换算：只上 selective 剩 $34 / 194$ 即 34 GiB，仍超预算；TP 8 路加 selective 为 $194 \times (10 + 3) / 194 = 13$ GiB，已满足 20 GiB 预算、只付 2–7% 时间；再叠 SP 压到 $34 / (8 \times 194)$ 即 4.25 GiB，属进一步压缩（SP 的通信与时间账归 5.2）；full checkpoint 压到 $194 \times 2 / 194 = 2$ GiB，但付 30–40% 时间——算力余量不够时这笔交易不成立。决策的读法：先算「激活缺口倍数」，再从表内自上而下取第一个满足预算的策略。
 
-判断式 (5) 的两端代入即知： $a = 32$ 、 $s = 4096$ 、 $h = 4096$ 时 $5as/h = 160 > 34$ ，selective 划算；短序列小模型 $5as/h$ 只有个位数时，selective 无肉可吃，要么不 checkpoint 要么直接 full。
+判断式 (5) 的两端代入即知： $a = 32$ 、 $s = 4096$ 、 $h = 4096$ 时 $5as/h = 160 > 34$ ，selective 划算；短序列小模型 $5as/h$ 只有个位数时，selective 省不下多少，要么不 checkpoint 要么直接 full。
 
 ## 总结
 
