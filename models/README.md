@@ -223,6 +223,8 @@ graph LR
 
 | 波次 | 日期 | 覆盖章节 | 审查轮次 | S1 | S2 | S3 | 未关闭项 | 结论 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| R1 | 2026-11-19 | 全 51 章可读性改写（只改文风、不动内容；与 training R1 同规） | 15 名 fresh writer 分 Part 改写 + 保留性审查 × 1（fresh-context evaluator 对照 HEAD 逐章过） | 0 | 0 | 9（全部登记接受：冻结区词级最小替换与同义去重等已授权取舍） | 无 | 放行（机械门禁 51/51 全过 + 保留性审查：2143 行 diff 逐行人读 + 引用/arXiv/证据等级 multiset 51/51 恒等 + 冻结区扫描；完整档案见 [models-r1-preservation-review](../docs/reviews/models-r1-preservation-review.md)）。改写 spec：docs/superpowers/specs/2026-11-18-readability-rewrite-design.md |
+
 | W1 | 2026-11-11 | P1+P2 共 11 章 | 逐章 evaluator review × 11 + 波末独立对抗审查 1 轮 | 2（全部关闭） | 2（全部关闭） | 5（波末 sweep 全部清零） | 无 | 放行（强制重推导 5 项 pass：Chinchilla Lagrangian / 2.3 √d_k / 2.4 KV cache / 2.5 RoPE / 2.7 Pre-Post-LN 梯度；完整档案见 [w1-review-report.md](../docs/reviews/w1-review-report.md)） |
 | W2 | 2026-11-12 | P3+P4 共 11 章 | 逐章批量审查 × 3 批 + 波末独立对抗审查 1 轮 | 0 | 2（全部关闭） | 9（波末 sweep 全部清零） | 无 | 放行（强制重推导 3 项 pass：4.1 MLA absorption / 4.3 DeltaNet-GDN-KDA 状态更新链 / 4.5 MoE routing；完整档案见 [w2-review-report.md](../docs/reviews/w2-review-report.md)） |
 | W3 | 2026-11-12 | P5+P6 共 9 章 | 逐章批量审查 × 3 批 + 波末独立对抗审查 1 轮（含修复轮复审） | 1（全部关闭） | 2（全部关闭） | 5（全部清零：修复轮 2 条 + 波末 sweep 3 条——F5/F6/F8 原按协议转 W4，提前于本波波末 sweep 清零） | 无 | 初轮有条件放行（5.1 含 S1 需复审）→ 修复后 9 章全放行（强制重推导 3 项 pass：6.2 InfoNCE 双向 CE 与温度梯度 / 6.3 VAE ELBO+STE+RVQ / 5.5 MuonClip qk-clip；完整档案见 [w3-review-report.md](../docs/reviews/w3-review-report.md)） |
