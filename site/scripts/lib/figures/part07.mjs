@@ -44,7 +44,7 @@ function cloud(cx, cy, n, rx, ry, rng, r = 1.7, op = 0.55) {
 
 /* ============ 7.2 §2.3 — DDPM 噪声日程：x_0 随 t 被噪声淹没 ============ */
 function ddpmSchedule() {
-  const w = 720, h = 340;
+  const w = 720, h = 356;
   const parts = [svgOpen(w, h, 'DDPM 噪声日程：同一 x_0 随 t 增大被噪声逐层淹没，SNR 单调下降')];
   parts.push(
     `<text ${MONO_S} x='24' y='22' fill='var(--ink-soft)'>x_t = √ᾱ_t·x₀ + √(1−ᾱ_t)·ε（式 6）：同一 x₀ 随 t 被噪声淹没 — 每格 = 信号层 ×√ᾱ_t ＋ 噪声层 ×√(1−ᾱ_t)</text>`
@@ -140,15 +140,18 @@ function ddpmSchedule() {
       `<animateMotion dur='7s' repeatCount='indefinite' path='M ${linPts.join(' L ')}'/></circle>`
   );
 
-  // 图例与 x 轴
-  parts.push(`<line x1='400' y1='306' x2='422' y2='306' stroke='var(--seal)' stroke-width='1.6'/>`);
-  parts.push(`<text ${MONO_S} x='426' y='310' fill='var(--ink-soft)'>linear（β: 1e−4→0.02，式 7）</text>`);
-  parts.push(`<line x1='592' y1='306' x2='614' y2='306' stroke='var(--ink-soft)' stroke-width='1.6'/>`);
-  parts.push(`<text ${MONO_S} x='618' y='310' fill='var(--ink-soft)'>cosine（式 8）</text>`);
+  // 图例（置于曲线族右上空白区，避开末端端点）与 x 轴
+  parts.push(`<line x1='372' y1='210' x2='394' y2='210' stroke='var(--seal)' stroke-width='1.6'/>`);
+  parts.push(`<text ${MONO_S} x='398' y='214' fill='var(--ink-soft)'>linear（β: 1e−4→0.02，式 7）</text>`);
+  parts.push(`<line x1='584' y1='210' x2='598' y2='210' stroke='var(--ink-soft)' stroke-width='1.6'/>`);
+  parts.push(`<text ${MONO_S} x='602' y='214' fill='var(--ink-soft)'>cosine（式 8）</text>`);
   parts.push(`<text ${MONO_S} x='78' y='310' fill='var(--ink-faint)'>t（T = 1000）→</text>`);
 
   parts.push(
-    `<text ${CJK_S} x='24' y='328' fill='var(--ink-faint)'>√ᾱ_T = 0.0064 ＜ 量化台阶 1/127.5 ≈ 0.0078 ⇒ linear 末 22 步浪费；cosine 恰在 t = T 归零（仅末 6 步低于台阶）、半程 SNR ≈ 0 dB（§2.3 的账）</text>`
+    `<text ${CJK_S} x='24' y='326' fill='var(--ink-faint)'>√ᾱ_T = 0.0064 ＜ 量化台阶 1/127.5 ≈ 0.0078 ⇒ linear 末 22 步浪费</text>`
+  );
+  parts.push(
+    `<text ${CJK_S} x='24' y='343' fill='var(--ink-faint)'>cosine 恰在 t = T 归零（仅末 6 步低于台阶）、半程 SNR ≈ 0 dB（§2.3 的账）</text>`
   );
   parts.push('</svg>');
   return parts.join('');

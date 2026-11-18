@@ -15,7 +15,7 @@ const pulseDefs = (uid) =>
 // 手工路径上的脉冲（L 形 / 大弧线通道，kit 只支持自动贝塞尔）
 const pathPulse = (d, { dur = 2.4, delay = 0, uid, r = 4.2 } = {}) =>
   `<circle class="dia-pulse" r="${r}" fill="url(#${uid}-pg)">` +
-  `<animateMotion dur="${dur}s" begin="${delay}s" repeatCount="indefinite" path="${d}"/>` +
+  `<animateMotion dur="${dur}s" begin="${delay}s" repeatCount="indefinite" calcMode="spline" keyPoints="0;1" keyTimes="0;1" keySplines="0.42 0 0.58 1" path="${d}"/>` +
   `</circle>`;
 
 // 小 token 芯片：角色浅染与 dia-node 同系；tone ∈ data / ghost / hot(朱砂·腐蚀位) / warm(琥珀·起始符)
@@ -313,7 +313,7 @@ function modernBertStack() {
   const UID = 'mb';
   const body = [pulseDefs(UID)];
 
-  body.push(cap(36, 22, 'ModernBERT-base：22 层 × local/global 交替（global 周期 3）· unpad 入栈 · tied MLM head —— 形态不变（M≡0 + MLM），零件全换（§10）', { size: 11, color: 'var(--ink-soft)' }));
+  body.push(cap(28, 22, 'ModernBERT-base：22 层 × local/global 交替 · unpad 入栈 · tied MLM head —— 形态不变（M≡0+MLM），零件全换（§10）', { size: 11, color: 'var(--ink-soft)' }));
 
   // 顶部输出头与底部输入
   const outH = node({ id: 'mlm', x: 200, y: 32, w: 320, h: 36, role: 'proj', title: 'MLM head · tied Emb', sub: 'vocab 50368 · 同形表征', mono: true, titleSize: 12 });

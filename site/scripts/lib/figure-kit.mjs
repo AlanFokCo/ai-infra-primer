@@ -72,9 +72,12 @@ export function edge(from, to, { nodes = [], portFrom, portTo, pulse = false, du
   const cls = `dia-edge${strong ? ' strong' : ''}${dash ? ' dash' : ''}${arrow ? ' arrowed' : ''}`;
   const out = [`<path id="${id}" class="${cls}" d="${d}"/>`];
   if (pulse) {
+    // calcMode spline + keyPoints/keyTimes：单程 ease-in-out 配速（端点慢、中段快），
+    // 循环有呼吸感；保持单向（0→1 后回绕），不破坏有向数据流语义
     out.push(
       `<circle class="dia-pulse" r="4.2" fill="url(#${PULSE_GRAD_ID})">` +
-      `<animateMotion dur="${dur}s" begin="${delay}s" repeatCount="indefinite">` +
+      `<animateMotion dur="${dur}s" begin="${delay}s" repeatCount="indefinite" ` +
+      `calcMode="spline" keyPoints="0;1" keyTimes="0;1" keySplines="0.42 0 0.58 1">` +
       `<mpath xlink:href="#${id}" href="#${id}"/></animateMotion></circle>`
     );
   }

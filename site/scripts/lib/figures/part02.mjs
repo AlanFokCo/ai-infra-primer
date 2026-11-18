@@ -7,7 +7,7 @@ import { scene, node, edge, zone, cap, PULSE_GRAD_ID } from '../figure-kit.mjs';
 // 脉冲渐变由页面级 PULSE_GRAD_DEFS 注入（Chapter.astro / fig-check），edge 与手工路径共用同一 id
 const pathPulse = (d, { dur = 2.4, delay = 0, r = 4.2 } = {}) =>
   `<circle class="dia-pulse" r="${r}" fill="url(#${PULSE_GRAD_ID})">` +
-  `<animateMotion dur="${dur}s" begin="${delay}s" repeatCount="indefinite" path="${d}"/>` +
+  `<animateMotion dur="${dur}s" begin="${delay}s" repeatCount="indefinite" calcMode="spline" keyPoints="0;1" keyTimes="0;1" keySplines="0.42 0 0.58 1" path="${d}"/>` +
   `</circle>`;
 
 // 残差加和圆圈
@@ -162,7 +162,7 @@ function tokenPipeline() {
   const s2 = node({ id: 's2', x: 182, y: 52, w: 196, h: 52, role: 'data', title: '[110, 101, 119, 101, 115, 116]', sub: 'byte 序列 · 256 基元', mono: true, titleSize: 10, subSize: 9.5 });
   const s3 = node({ id: 's3', x: 428, y: 52, w: 116, h: 52, role: 'data', title: '["new", "est"]', sub: 'token → id', mono: true, titleSize: 10.5, subSize: 10 });
   const s4 = node({ id: 's4', x: 594, y: 52, w: 112, h: 52, role: 'cache', title: 'e_t = E_{id,:}', sub: 'gather · 无乘加', mono: true, titleSize: 10.5, subSize: 9.5 });
-  const s5 = node({ id: 's5', x: 594, y: 140, w: 112, h: 48, role: 'proj', title: 'embedding [T, d]', sub: 'stream 起点（2.1 式 1）', mono: true, titleSize: 10, subSize: 9 });
+  const s5 = node({ id: 's5', x: 594, y: 140, w: 120, h: 48, role: 'proj', title: 'embedding [T, d]', sub: 'stream 起点（2.1 式 1）', mono: true, titleSize: 10, subSize: 8.5 });
   [s1, s2, s3, s4, s5].forEach((n) => { nodes.push(n); body.push(n.svg); });
   body.push(edge(s1, s2, { nodes, pulse: true, dur: 1.6, delay: 0, uid: UID, eid: 'p1' }));
   body.push(cap(157, 44, 'UTF-8 编码', { size: 9.5, anchor: 'middle' }));
@@ -193,9 +193,10 @@ function tokenPipeline() {
   body.push(cap(198, 258, '语料符号总长', { size: 9, anchor: 'end' }));
 
   body.push(cap(28, 322, '一次加权频次 c 的 merge 把 c 处「两符号」换成「一符号」：语料总长恰减 c —— 79 → 47（−40%）；merge 可组合 → token 带层级结构', { size: 10 }));
-  body.push(cap(28, 342, 'byte-level 起点（256 个基元）：任何字符串皆可编码，OOV 机制上不存在 —— GPT-2 词表 50257 = 256 + 50000 merge + 1 特殊 token；CJK 单字最坏 3 token（§3）', { size: 10 }));
+  body.push(cap(28, 340, 'byte-level 起点（256 个基元）：任何字符串皆可编码，OOV 机制上不存在', { size: 10 }));
+  body.push(cap(28, 358, 'GPT-2 词表 50257 = 256 + 50000 merge + 1 特殊 token；CJK 单字最坏 3 token（§3）', { size: 10 }));
 
-  return scene(720, 356, body, { label: '字符串经 UTF-8、BPE 切分、embedding 查表进入模型；副板为 BPE 四轮 merge 的语料压缩账' }).svg();
+  return scene(720, 372, body, { label: '字符串经 UTF-8、BPE 切分、embedding 查表进入模型；副板为 BPE 四轮 merge 的语料压缩账' }).svg();
 }
 
 /* ============================================================
@@ -373,22 +374,22 @@ function kvDecodeStep() {
   body.push(cap(552, 118, 'append 沿 t 维', { size: 9, anchor: 'end' }));
 
   // score / 输出
-  const sc = node({ id: 'sc', x: 380, y: 282, w: 160, h: 50, role: 'attn', title: 's_t = q_tKᵀ/√D', sub: '[B, 32, 1, t] · 单行', mono: true, titleSize: 10.5, subSize: 9 });
-  const ot = node({ id: 'ot', x: 590, y: 282, w: 116, h: 48, role: 'data', title: 'o_t = p_tV', sub: '[B, 32, 1, 128]', mono: true, titleSize: 10, subSize: 9 });
-  const wo = node({ id: 'wo', x: 590, y: 352, w: 116, h: 44, role: 'proj', title: 'concat+W^O', sub: '→ [B, 1, 4096]', mono: true, titleSize: 9.5, subSize: 9 });
+  const sc = node({ id: 'sc', x: 350, y: 272, w: 160, h: 50, role: 'attn', title: 's_t = q_tKᵀ/√D', sub: '[B, 32, 1, t] · 单行', mono: true, titleSize: 10.5, subSize: 9 });
+  const ot = node({ id: 'ot', x: 590, y: 272, w: 116, h: 48, role: 'data', title: 'o_t = p_tV', sub: '[B, 32, 1, 128]', mono: true, titleSize: 10, subSize: 9 });
+  const wo = node({ id: 'wo', x: 590, y: 340, w: 116, h: 44, role: 'proj', title: 'concat+W^O', sub: '→ [B, 1, 4096]', mono: true, titleSize: 9.5, subSize: 9 });
   [sc, ot, wo].forEach((n) => { nodes.push(n); body.push(n.svg); });
   // q_t → score（左路下行通道，避让 k_t/v_t）
-  body.push(`<path class="dia-edge" d="M 366 90 V 108 H 334 V 282 H 380"/>`);
-  body.push(pathPulse('M 366 90 V 108 H 334 V 282 H 380', { dur: 2.2, delay: 1.0 }));
-  // cache K/V 全量读出 → score / o_t
-  body.push(`<path class="dia-edge strong" d="M 566 147 H 548 V 262 H 530 V 282"/>`);
-  body.push(pathPulse('M 566 147 H 548 V 262 H 530 V 282', { dur: 2.2, delay: 1.15 }));
-  body.push(`<path class="dia-edge strong" d="M 633 226 V 306 H 540"/>`);
-  body.push(pathPulse('M 633 226 V 306 H 540', { dur: 2.2, delay: 1.3 }));
+  body.push(`<path class="dia-edge" d="M 366 90 V 108 H 334 V 272 H 380"/>`);
+  body.push(pathPulse('M 366 90 V 108 H 334 V 272 H 380', { dur: 2.2, delay: 1.0 }));
+  // cache K/V 全量读出：K → score（顶边入），V → o_t（顶边直落，o_t = p_tV）
+  body.push(`<path class="dia-edge strong" d="M 566 147 H 548 V 262 H 510 V 272"/>`);
+  body.push(pathPulse('M 566 147 H 548 V 262 H 510 V 272', { dur: 2.2, delay: 1.15 }));
+  body.push(`<path class="dia-edge strong" d="M 633 226 V 272"/>`);
+  body.push(pathPulse('M 633 226 V 272', { dur: 2.2, delay: 1.3 }));
   body.push(cap(548, 256, '本步读出全量', { size: 9, anchor: 'end' }));
   body.push(edge(sc, ot, { nodes, pulse: true, dur: 1.4, delay: 1.5, uid: UID, eid: 'so' }));
-  body.push(cap(565, 272, 'softmax → p_t', { size: 9, anchor: 'middle' }));
-  body.push(edge(ot, wo, { nodes, pulse: true, dur: 1.4, delay: 1.5, uid: UID, eid: 'ow' }));
+  body.push(cap(550, 288, 'softmax → p_t', { size: 9, anchor: 'middle' }));
+  body.push(edge(ot, wo, { nodes, portFrom: ot.bottom, portTo: wo.top, pulse: true, dur: 1.4, delay: 1.5, uid: UID, eid: 'ow' }));
 
   body.push(cap(28, 366, 'decode 步不需要 mask：第 t 行的可见集 = cache 的全部列（s ≤ t 是 cache 的定义域），未来列尚不存在', { size: 10.5 }));
   body.push(cap(28, 384, '本步 attention FLOPs：每层 4td（式 8）；与并行前向逐项相同 —— cache 买的是「不重算」的墙钟，不是 FLOPs', { size: 10.5 }));

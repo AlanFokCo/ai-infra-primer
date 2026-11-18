@@ -13,7 +13,7 @@ const pulseDefs = (uid) =>
 // 手工路径上的脉冲（kit 只支持自动贝塞尔；L 形/弧形通道用 path 直写）
 const pathPulse = (d, { dur = 2.4, delay = 0, uid, r = 4.2 } = {}) =>
   `<circle class="dia-pulse" r="${r}" fill="url(#${uid}-pg)">` +
-  `<animateMotion dur="${dur}s" begin="${delay}s" repeatCount="indefinite" path="${d}"/>` +
+  `<animateMotion dur="${dur}s" begin="${delay}s" repeatCount="indefinite" calcMode="spline" keyPoints="0;1" keyTimes="0;1" keySplines="0.42 0 0.58 1" path="${d}"/>` +
   `</circle>`;
 
 /* ============================================================

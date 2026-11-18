@@ -141,9 +141,9 @@ function induction() {
   p.push(`<text ${CJK_S} x='560' y='222' fill='var(--seal-deep)'>logit(B) 被抬升 → 预测 B</text>`);
   p.push(`<line x1='540' y1='30' x2='540' y2='230' stroke='var(--rule-soft)' stroke-width='1' stroke-dasharray='3 4'/>`);
   // 底部图例（编号对应弧上标记）
-  p.push(`<text ${CJK_S} x='40' y='252' fill='var(--ink-soft)'>① previous-token head（第 1 层）：A⁽¹⁾_{j+1,j} ≈ 1 —— i+1 的 stream 同时含「我是 B」与「前驱是 A」</text>`);
-  p.push(`<text ${CJK_S} x='40' y='274' fill='var(--ink-soft)'>② induction head（第 2 层）：s_{t,i+1} ∝ E_{x_t}ᵀ (W_Q⁽²⁾)ᵀW_K⁽²⁾W_OV⁽¹⁾ E_{x_i} —— 跨两层的「token 相等」检测（prefix match，式 7）</text>`);
-  p.push(`<text ${CJK_S} x='40' y='296' fill='var(--ink-faint)'>③ copy：value(i+1) = B 的表征写入 t；induction score = attention mass 落在偏移对角线的比例，可测（TransformerLens）</text>`);
+  p.push(`<text ${CJK_S} x='28' y='252' fill='var(--ink-soft)'>① previous-token head（第 1 层）：A⁽¹⁾_{j+1,j} ≈ 1 —— i+1 的 stream 同时含「我是 B」与「前驱是 A」</text>`);
+  p.push(`<text ${CJK_S} x='28' y='274' fill='var(--ink-soft)'>② induction head（第 2 层）：s_{t,i+1} ∝ E_{x_t}ᵀ(W_Q⁽²⁾)ᵀW_K⁽²⁾W_OV⁽¹⁾ E_{x_i} —— 跨两层「token 相等」检测（prefix match，式 7）</text>`);
+  p.push(`<text ${CJK_S} x='28' y='296' fill='var(--ink-faint)'>③ copy：value(i+1) = B 的表征写入 t；induction score = attention mass 落在偏移对角线的比例，可测（TransformerLens）</text>`);
   p.push('</svg>');
   return p.join('');
 }

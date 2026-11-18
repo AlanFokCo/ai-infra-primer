@@ -262,11 +262,16 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .fig-sig .sig-flow, .fig-sig .sig-cell, .fig-sig .sig-cell-text, .fig-sig .sig-bar,
-  .fig-sig .sig-rotor, .fig-sig .sig-diag, .fig-sig .sig-step, .fig-sig .sig-dashflow {
+  /* 复位选择器须提权至 .fig.in（0-3-0），与常亮规则同特异性且靠后书写才生效；
+     此前写作 .fig-sig .sig-*（0-2-0）输给常亮规则，无限循环动画在降级态照跑 */
+  .fig.in .sig-cell, .fig.in .sig-cell-text, .fig.in .sig-bar,
+  .fig.in .sig-rotor, .fig.in .sig-diag, .fig.in .sig-step, .fig.in .sig-dashflow {
     opacity: 1;
     stroke-opacity: 1;
     animation: none;
     transform: none;
   }
+  /* 裸 SMIL 移动光点（sig-flow 全部内嵌 animateMotion）：CSS 停不了 SMIL，
+     降级态整点隐藏，与 .dia-pulse / .flow 的降级策略一致 */
+  .fig-sig .sig-flow { display: none; }
 }
