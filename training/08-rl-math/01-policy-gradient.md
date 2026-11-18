@@ -1,16 +1,16 @@
 # 8.1 MDP、策略梯度定理与 REINFORCE（MDP, the Policy Gradient Theorem, and REINFORCE）
 
-> 本章从「reward 不可微」这个硬约束出发，建立 LLM 强化学习的全部基础件：MDP 形式化与 LLM 场景的 token-level 退化结构（state = prompt + 已生成前缀、action = 下一 token、reward 集中在末端）、log-derivative trick 逐步展开的策略梯度定理（轨迹形式与状态分布形式两种）、reward-to-go 因果引理、baseline 无偏性证明与最优 baseline 的方差最小化推导、REINFORCE 算法，以及长序列下的方差分析（噪声地板随 T 线性增长、末端奖励下 reward-to-go 失效、baseline 成为唯一杠杆），最后落在样本效率问题——on-policy 约束与 rollout 成本是 8.3 importance sampling 与 PPO 的动机 | 前置：2.2（AdamW）、3.2 §5（在线 / 离线分界定义）、models 1.1（语言建模的链式分解）、1.1（vjp 与 autograd 机制） | 锚点：Williams 1992 [B]（REINFORCE 原始出处，无 arXiv）、Sutton et al. 1999 [B]（函数逼近策略梯度定理，无 arXiv）、Sutton & Barto 教材第 13 章 [B]、Christiano et al. 2017 [B]（RLHF 语境一句）
+> LLM 后训练的 reward 对参数不可微，本章从这个硬约束出发搭 RL 的数学地基。先把生成过程写成 MDP（state = prompt + 已生成前缀、action = 下一 token、reward 集中在末端的退化结构），再逐步推出策略梯度定理（log-derivative trick、轨迹形式与状态分布形式两种）。然后回答两个方差问题：baseline 为什么可以随便减（无偏性证明）、减哪个最好（最优 baseline 的方差最小化推导）。REINFORCE 算法是这些推导的最小实现。最后两节算两笔账：方差账（噪声地板随 T 线性增长；末端奖励下 reward-to-go 失效、baseline 成为唯一杠杆）与样本效率账——on-policy 约束与 rollout 成本是 8.3 importance sampling 与 PPO 的动机 | 前置：2.2（AdamW）、3.2 §5（在线 / 离线分界定义）、models 1.1（语言建模的链式分解）、1.1（vjp 与 autograd 机制） | 锚点：Williams 1992 [B]（REINFORCE 原始出处，无 arXiv）、Sutton et al. 1999 [B]（函数逼近策略梯度定理，无 arXiv）、Sutton & Barto 教材第 13 章 [B]、Christiano et al. 2017 [B]（RLHF 语境一句）
 
 ## 1. 动机：reward 不可微，只有样本可用
 
-后训练阶段的 reward——reward model 的标量打分，或 verifier 的对错判定——对策略参数 $\theta$ 没有梯度通路。SFT 的 CE 能对 $\theta$ 求导，因为 loss 是模型输出的可微函数，梯度沿计算图 vjp 回传（1.1）；RL 的 reward 只依赖采样得到的回答 $y$， $\theta$ 影响 reward 的唯一路径是改变 $y$ 的采样分布。问题的形式化是
+后训练阶段的 reward 有两种常见来源：reward model 的标量打分，或 verifier 的对错判定。它们有一个共同点——对策略参数 $\theta$ 没有梯度通路。对比一下 SFT：CE 能对 $\theta$ 求导，因为 loss 是模型输出的可微函数，梯度沿计算图逐节点 vjp 回传（机制见 1.1）。RL 的 reward 不吃这一套：它只依赖采样得到的回答 $y$ ， $\theta$ 影响 reward 的唯一路径是改变 $y$ 的采样分布。于是问题只能写成
 
 $$
 \max_\theta \thinspace \mathbb{E}_{y \sim \pi_\theta(\cdot|x)}\left[ R(x, y) \right]
 $$
 
-期望号下的分布依赖 $\theta$ ，被期望的函数 $R$ 只能前向求值——RM 是另一个网络，verifier 是符号判定，两者都不提供 $\partial R / \partial \theta$ 。这类「分布含参数、函数只求值」的优化问题有通用解法：score function estimator（对数导数技巧），它就是策略梯度的全部内容。
+注意这个结构的特殊性：期望号下的采样分布依赖 $\theta$ ，被期望的函数 $R$ 却只能前向求值。RM 是另一个网络，verifier 是符号判定，两者都不提供 $\partial R / \partial \theta$ 。「分布含参数、函数只求值」的优化问题有一个通用解法：score function estimator（对数导数技巧）。它就是策略梯度的全部内容。
 
 ## 2. MDP 形式化与 LLM 的退化结构
 
@@ -58,17 +58,17 @@ s_0 = x ──a_0=y_1──► s_1=(x,y_1) ──a_1=y_2──► s_2=(x,y_1,y_2
   └─ π_θ(·|s_t) = LM 在位置 t 的 softmax 输出        ↑ reward model 或 verifier（不可微黑盒）
 ```
 
-这个映射的结构注记有三条。其一，**转移完全已知且确定**：环境没有未知动力学，轨迹分布式 (1) 里的 $P$ 与 $p_0$ 都是已知的（拼接规则与 prompt 分布），MDP 的随机性全部由 $\pi_\theta$ 自己携带——「探索」在这里就是采样温度下的 token 抽样。其二，**奖励集中在末端**：中间步骤没有任何即时奖励信号，token-level MDP 是退化结构；§7 会看到这让因果引理变成空操作。其三，**同一个对象的两种粒度**：sequence-level 视角把整个回答 $y$ 当作一个动作（contextual bandit，prompt 为 context），token-level 视角把每个 token 当作一步。两者严格等价——语言建模的链式分解
+这个映射有三个结构注记。第一，**转移完全已知且确定**。环境没有未知动力学：轨迹分布式 (1) 里的 $P$ 与 $p_0$ 都已知（一个是拼接规则，一个是 prompt 分布），MDP 的全部随机性由 $\pi_\theta$ 自己携带。所谓「探索」，在这里就是采样温度下的 token 抽样。第二，**奖励集中在末端**。中间步骤没有任何即时奖励信号，token-level MDP 是退化结构；§7 会看到这让因果引理变成空操作。第三，**同一个对象有两种粒度**。sequence-level 视角把整个回答 $y$ 当作一个动作（contextual bandit，prompt 为 context）；token-level 视角把每个 token 当作一步。两种粒度严格等价，原因是语言建模的链式分解
 
 $$
 \log \pi_\theta(y|x) = \sum_{t=1}^{T} \log \pi_\theta(y_t|x, y_{\lt t})
 $$
 
-（models 1.1 的 LM 定义本身）让整条序列的 score 恰好是逐 token score 之和；§7.1 会证明，不带 per-token baseline 时两种粒度的梯度估计器逐字相同，差别只在 credit assignment 的粒度工具上。
+（models 1.1 的 LM 定义本身）让整条序列的 score 恰好是逐 token score 之和。§7.1 会证明一件事：不带 per-token baseline 时，两种粒度给出的梯度估计器逐字相同；差别只在 credit assignment 可用的粒度工具。
 
-reward 的来源一句带过：RLHF 路线的 $R$ 来自人类偏好数据训出的 reward model（[Christiano et al., 2017](../references.md)，arXiv:1706.03741，[B]；RM 训练归 9.2），RLVR 路线来自规则验证器（数学等价判定、代码单测，归 9.5）。本章只需要一条性质： $R(x, y)$ 是只能前向求值的标量黑盒。
+reward 的来源交代一句。RLHF 路线里， $R$ 来自人类偏好数据训出的 reward model（[Christiano et al., 2017](../references.md)，arXiv:1706.03741，[B]；RM 训练归 9.2）。RLVR 路线里，它来自规则验证器，如数学等价判定、代码单测（归 9.5）。本章只需要一条性质： $R(x, y)$ 是只能前向求值的标量黑盒。
 
-**终止的形式化**一句：EOS 之后状态进入吸收态（absorbing state，转移回自身、奖励恒零），有限回合由此嵌入无穷视界记号， $\gamma = 1$ 下各级数仍因 $T$ 有界而收敛。长度上限 $T_{\max}$ 造成的截断样本要单独注意：轨迹在生成完成前被强行终止，其 $R$ 仍是良定义的（RM 对截断文本照样打分），但样本不再代表「策略想生成的完整回答」——截断样本进不进 batch、以什么权重进，是 8.4 才处理的工程决策（DAPO 的 overlong 处理），本章只需记住截断 ≠ 正常终止。
+终止怎么形式化？EOS 之后让状态进入吸收态（absorbing state）：转移回自身、奖励恒零。有限回合由此嵌入无穷视界的记号里， $\gamma = 1$ 下各级数因 $T$ 有界而收敛，没有发散问题。长度上限 $T_{\max}$ 造成的截断样本要单独注意。截断的意思是：轨迹在生成完成前被强行终止。它的 $R$ 仍是良定义的（RM 对截断文本照样打分），但样本已经不再代表「策略想生成的完整回答」。截断样本进不进 batch、以什么权重进，是 8.4 才处理的工程决策（DAPO 的 overlong 处理）。本章只需记住：截断 ≠ 正常终止。
 
 ## 3. 目标函数与 log-derivative trick
 
@@ -78,7 +78,7 @@ $$
 J(\theta) = \mathbb{E}_{\tau \sim \pi_\theta}\left[ R(\tau) \right] = \sum_{\tau} p_\theta(\tau) \thinspace R(\tau) \qquad (3)
 $$
 
-**符号**：求和遍历全部可能轨迹（LLM 场景下轨迹空间有限但天文数字大—— $T$ 步、每步 $|\mathcal{V}|$ 个分支——显式求和不可行，只能采样）。 $R(\tau)$ 的值不依赖 $\theta$ ：它只依赖轨迹内容； $\theta$ 只通过采样分布进入目标。逐步展开求导。
+**符号**：求和遍历全部可能轨迹。LLM 场景下轨迹空间有限、但大到天文数字—— $T$ 步、每步 $|\mathcal{V}|$ 个分支——显式求和不可行，只能采样。另一个关键观察： $R(\tau)$ 的值不依赖 $\theta$ ，它只依赖轨迹内容； $\theta$ 只通过采样分布进入目标。下面逐步展开求导。
 
 **第一步，梯度穿过求和**：
 
@@ -94,7 +94,7 @@ $$
 \nabla_\theta J = \sum_{\tau} p_\theta(\tau) \thinspace R(\tau) \thinspace \nabla_\theta \log p_\theta(\tau) = \mathbb{E}_{\tau \sim \pi_\theta}\left[ R(\tau) \thinspace \nabla_\theta \log p_\theta(\tau) \right] \qquad (5)
 $$
 
-「对分布求导」变成「在分布下求期望」——采样估计的大门由此打开：不需要枚举轨迹，从 $\pi_\theta$ 采一批、算加权 score 的样本均值即可。这一个代数恒等式是全章的支点，它的适用条件是 $p_\theta(\tau) \gt 0$ 在 $R(\tau) \neq 0$ 处成立（绝对连续；softmax 策略对所有有限序列输出正概率，自动满足）。
+「对分布求导」变成了「在分布下求期望」，采样估计的大门由此打开：不需要枚举轨迹，从 $\pi_\theta$ 采一批轨迹、算加权 score 的样本均值即可。这一个代数恒等式是全章的支点。它有一个适用条件：在 $R(\tau) \neq 0$ 的轨迹上 $p_\theta(\tau) \gt 0$（绝对连续）。softmax 策略对所有有限序列都输出正概率，条件自动满足。
 
 **第三步，展开** $\log p_\theta(\tau)$ 。对式 (1) 取对数：
 
@@ -108,7 +108,7 @@ $$
 \nabla_\theta \log p_\theta(\tau) = \sum_{t=0}^{T-1} \nabla_\theta \log \pi_\theta(a_t|s_t) \qquad (7)
 $$
 
-式 (7) 是策略梯度全部工程含义的源头：**环境的转移概率与初始状态分布不需要知道，也不需要可微**。对 LLM 这是字面成立—— $P$ 是确定性拼接、 $p_0$ 是 prompt 分布，两者本就与 $\theta$ 无关。式 (7) 右端的单步项 $\nabla_\theta \log \pi_\theta(a_t|s_t)$ 称为 score function（得分函数），它有一个贯穿全章的性质：
+式 (7) 是策略梯度全部工程含义的源头：**环境的转移概率与初始状态分布既不需要知道，也不需要可微**。对 LLM 这是字面成立的： $P$ 是确定性拼接、 $p_0$ 是 prompt 分布，两者本就与 $\theta$ 无关。式 (7) 右端的单步项 $\nabla_\theta \log \pi_\theta(a_t|s_t)$ 称为 score function（得分函数）。它有一个贯穿全章的性质：
 
 $$
 \mathbb{E}_{a \sim \pi_\theta(\cdot|s)}\left[ \nabla_\theta \log \pi_\theta(a|s) \right] = \sum_a \pi_\theta(a|s) \thinspace \nabla_\theta \log \pi_\theta(a|s) = \sum_a \nabla_\theta \pi_\theta(a|s) = \nabla_\theta \sum_a \pi_\theta(a|s) = \nabla_\theta 1 = 0 \qquad (8)
@@ -122,7 +122,7 @@ $$
 \nabla_\theta J = \mathbb{E}_{\tau \sim \pi_\theta}\left[ R(\tau) \sum_{t=0}^{T-1} \nabla_\theta \log \pi_\theta(a_t|s_t) \right] \qquad (9)
 $$
 
-LLM 读法： $R(\tau) = R(x, y)$ ，内层和式是对 response 全部 token 的 score 求和。注意式 (9) 里每个 token 的 score 都乘**同一个**整条轨迹的回报——「哪个 token 把回答带好了」的信息完全没有被区分，这是 credit assignment 问题在本章的形态，也是方差问题的根源（§6）。
+LLM 读法： $R(\tau) = R(x, y)$ ，内层和式是对 response 全部 token 的 score 求和。注意式 (9) 的结构缺陷：每个 token 的 score 都乘**同一个**整条轨迹的回报。「哪个 token 把回答带好了」这个信息完全没有被区分——这就是 credit assignment 问题在本章的形态，也是方差问题的根源（§6）。
 
 ### 3.1 softmax 策略的 score 闭式
 
@@ -132,9 +132,9 @@ $$
 \frac{\partial \log \pi_\theta(a|s)}{\partial z_j} = \delta_{ja} - \pi_\theta(j|s)
 $$
 
-**符号**： $\delta_{ja}$ ：Kronecker delta（ $j = a$ 时为 1，否则 0）。右端即「one-hot 减概率向量」——与 1.2 的 softmax-CE 融合反向是同一个 Jacobian（ $p - \delta_y$ 形态）：策略梯度的 score 与监督 CE 的 logit 梯度共享同一条反向通路，区别只在 CE 里目标 token 由数据给定、这里动作由策略自己采样，且外面多乘一个 credit 权重。式 (8) 的零均值在闭式下可直接验算： $`\mathbb{E}_a[\nabla_z \log \pi] = \sum_a \pi_a (e_a - p) = p - p = 0`$（ $e_a$ 为 one-hot 基向量）。
+**符号**： $\delta_{ja}$ ：Kronecker delta（ $j = a$ 时为 1，否则 0）。右端是「one-hot 减概率向量」。这个形态似曾相识：1.2 的 softmax-CE 融合反向是同一个 Jacobian（ $p - \delta_y$ 形态）。也就是说，策略梯度的 score 与监督 CE 的 logit 梯度共享同一条反向通路。区别只有两处：CE 里目标 token 由数据给定，这里动作由策略自己采样；这里外面还要多乘一个 credit 权重。式 (8) 的零均值在闭式下可直接验算： $`\mathbb{E}_a[\nabla_z \log \pi] = \sum_a \pi_a (e_a - p) = p - p = 0`$（ $e_a$ 为 one-hot 基向量）。
 
-参数梯度由链式法则经模型内部回传（1.1 的 vjp 机制），实现层只需 gather 所采 token 的 $\log \pi$ 再 backward（§6 的伪损失写法），logit 闭式由 autograd 自动处理。但显式形态解释了一个动力学事实：某 token 被押到 $p_a \to 1$ 时， $e_a - p$ 的各分量趋零——高置信区间的 score 幅度自然收缩，策略越确定、梯度信号越弱；这是 entropy 管理与探索问题的第一道数学影子（8.2 的 entropy bonus、8.4 的 entropy 塌缩动机都在这条性质上做文章）。
+参数梯度由链式法则经模型内部回传（1.1 的 vjp 机制）。实现层只需 gather 所采 token 的 $\log \pi$ 再 backward（§6 的伪损失写法），logit 闭式由 autograd 自动处理。但这个显式形态解释了一个动力学事实：某 token 被押到 $p_a \to 1$ 时， $e_a - p$ 的各分量趋零。换句话说，高置信区间的 score 幅度自然收缩——策略越确定，梯度信号越弱。这是 entropy 管理与探索问题的第一道数学影子：8.2 的 entropy bonus、8.4 的 entropy 塌缩动机，都在这条性质上做文章。
 
 ## 4. 策略梯度定理：因果引理、Q 形式、状态分布
 
@@ -152,7 +152,7 @@ $$
 
 $\square$
 
-把式 (9) 中的 $R(\tau) = \sum_{t'} r_{t'}$ 对每个 $t$ 拆成「过去」（ $t' \lt t$ ）与「未来」（ $t' \ge t$ ）两段，过去项的贡献被引理清零，每个 score 只需乘它**之后**的奖励：
+把式 (9) 中的 $R(\tau) = \sum_{t'} r_{t'}$ 对每个 $t$ 拆成两段：「过去」（ $t' \lt t$ ）与「未来」（ $t' \ge t$ ）。引理说过去项的贡献为零，所以每个 score 只需乘它**之后**的奖励：
 
 $$
 \nabla_\theta J = \mathbb{E}_{\tau \sim \pi_\theta}\left[ \sum_{t=0}^{T-1} \nabla_\theta \log \pi_\theta(a_t|s_t) \thinspace G_t \right] \qquad (11)
@@ -160,7 +160,7 @@ $$
 
 这一步去掉的是估计器里「与本步动作无关的噪声源」：过去的奖励乘上零均值 score，期望为零、只贡献方差（§6 把它算成账）。
 
-**数值化这条引理的方差账**（本书构造）：设第 0 步奖励 $r_0$ 为 $\pm 1$ 等概率（由环境噪声决定、与后续动作无关），第 1 步 score $g_1$ 为 $\pm 1$ 等概率且与 $r_0$ 独立。式 (9) 形式的估计器含 $r_0 \thinspace g_1$ 项：期望 $\mathbb{E}[r_0 g_1] = 0$ 、二阶矩 $\mathbb{E}[r_0^{2} g_1^{2}] = 1$ ——每个「过去奖励 × 未来 score」项贡献一份纯方差， $K$ 个无关过去奖励就是 $K$ 份。若环境噪声的幅度是真实 credit 信号的 100 倍，未剔除的过去项把估计器标准差放大约 100 倍（方差 $10^{4}$ 倍）、信噪比掉两个数量级——因果引理不是美学化简，是方差的数量级管理。
+**数值化这条引理的方差账**（本书构造）。设第 0 步奖励 $r_0$ 为 $\pm 1$ 等概率，由环境噪声决定、与后续动作无关；第 1 步 score $g_1$ 为 $\pm 1$ 等概率，与 $r_0$ 独立。式 (9) 形式的估计器含有 $r_0 \thinspace g_1$ 这样的项：期望 $\mathbb{E}[r_0 g_1] = 0$ 、二阶矩 $\mathbb{E}[r_0^{2} g_1^{2}] = 1$ 。也就是说，每个「过去奖励 × 未来 score」项贡献一份纯方差； $K$ 个无关的过去奖励，就是 $K$ 份纯方差。量级感受一下：若环境噪声的幅度是真实 credit 信号的 100 倍，未剔除的过去项会把估计器标准差放大约 100 倍（方差 $10^{4}$ 倍），信噪比掉两个数量级。因果引理不是美学化简，是方差的数量级管理。
 
 ### 4.2 Q 形式：塔性质一步
 
@@ -176,7 +176,7 @@ $$
 \nabla_\theta J = \mathbb{E}\left[ \sum_{t=0}^{T-1} \nabla_\theta \log \pi_\theta(a_t|s_t) \thinspace Q^{\pi}(s_t, a_t) \right] \qquad (13)
 $$
 
-即梯度 = 策略诱导轨迹分布下「score × 动作价值」的逐步期望之和。Sutton et al. 1999 对函数逼近策略给出了同一形式的证明，并指出它对任意可微策略参数化成立（[Sutton et al., 1999](../references.md)，NeurIPS 1999，无 arXiv，[B]）。 $Q^{\pi}$ 不可查表时——LLM 场景永远如此——它只是理论对象：实践中用采样回报（§5）或学习到的近似（8.2 的 critic）代替。
+即梯度等于策略诱导轨迹分布下「score × 动作价值」的逐步期望之和。Sutton et al. 1999 对函数逼近策略给出了同一形式的证明，并指出它对任意可微策略参数化成立（[Sutton et al., 1999](../references.md)，NeurIPS 1999，无 arXiv，[B]）。 $Q^{\pi}$ 不可查表时——LLM 场景永远如此——它只是理论对象。实践中用采样回报（§5）或学习到的近似（8.2 的 critic）代替。
 
 ### 4.3 状态分布与 discounted 形式
 
@@ -186,7 +186,7 @@ $$
 V^{\pi}(s) = \mathbb{E}_{\tau \sim \pi}\left[ \sum_{l=0}^{\infty} \gamma^{l} \thinspace r_{t+l} \mid s_t = s \right] \qquad (14)
 $$
 
-**符号**： $V^{\pi}$ ：从 $s$ 出发沿 $\pi$ 的期望折扣回报；这里视界取无穷（episodic 情形用吸收态处理，结论同形）。这次不走轨迹 trick，而从 Bellman 方程 $V^{\pi}(s) = \sum_a \pi_\theta(a|s) \thinspace Q^{\pi,\gamma}(s, a)$ 两端对 $\theta$ 求导（Sutton-Barto §13.2 的路线，[Sutton & Barto, 2018](../references.md)，[B]）：
+**符号**： $V^{\pi}$ ：从 $s$ 出发沿 $\pi$ 的期望折扣回报。这里视界取无穷；episodic 情形用吸收态处理，结论同形。这次的推导不走轨迹 trick，改走另一条路：从 Bellman 方程 $V^{\pi}(s) = \sum_a \pi_\theta(a|s) \thinspace Q^{\pi,\gamma}(s, a)$ 两端对 $\theta$ 求导（Sutton-Barto §13.2 的路线，[Sutton & Barto, 2018](../references.md)，[B]）：
 
 $$
 \nabla_\theta V^{\pi}(s) = \sum_a \left[ \nabla_\theta \pi_\theta(a|s) \thinspace Q^{\pi,\gamma}(s, a) + \pi_\theta(a|s) \thinspace \nabla_\theta Q^{\pi,\gamma}(s, a) \right] \qquad (15)
@@ -198,13 +198,13 @@ $$
 \nabla_\theta Q^{\pi,\gamma}(s, a) = \gamma \sum_{s'} P(s'|s, a) \thinspace \nabla_\theta V^{\pi}(s') \qquad (16)
 $$
 
-代回式 (15)，右端再次含有 $\nabla_\theta V^{\pi}$ ——这是一个不动点方程。记 $\Pr(s \to x, k, \pi)$ 为策略 $\pi$ 下从 $s$ 恰好 $k$ 步转移到 $x$ 的概率，逐层展开该递归（每次展开把本状态的 score×Q 项留下、把 $\nabla V$ 项以概率 $\gamma \Pr(\cdot)$ 推向下一步）：
+代回式 (15)，右端再次含有 $\nabla_\theta V^{\pi}$ ——这是一个不动点方程。记 $\Pr(s \to x, k, \pi)$ 为策略 $\pi$ 下从 $s$ 恰好 $k$ 步转移到 $x$ 的概率。逐层展开这个递归：每次展开把本状态的 score×Q 项留下，把 $\nabla V$ 项以概率 $\gamma \Pr(\cdot)$ 推向下一步。
 
 $$
 \nabla_\theta V^{\pi}(s) = \sum_{x \in \mathcal{S}} \sum_{k=0}^{\infty} \gamma^{k} \thinspace \Pr(s \to x, k, \pi) \thinspace \sum_a \nabla_\theta \pi_\theta(a|x) \thinspace Q^{\pi,\gamma}(x, a) \qquad (17)
 $$
 
-展开的几何级数在 $\gamma \lt 1$ 时收敛（episodic 有限视界下亦然——乘积测度有界）。对 $s_0 \sim p_0$ 取期望，定义**折扣状态访问测度**（discounted state visitation measure）
+展开的几何级数在 $\gamma \lt 1$ 时收敛（episodic 有限视界下也一样，乘积测度有界）。对 $s_0 \sim p_0$ 取期望，就可以定义**折扣状态访问测度**（discounted state visitation measure）
 
 $$
 d^{\gamma}(x) = \sum_{t=0}^{\infty} \gamma^{t} \thinspace \Pr(s_t = x) \qquad (18)
@@ -216,7 +216,7 @@ $$
 \nabla_\theta J_\gamma = \sum_{t=0}^{\infty} \gamma^{t} \thinspace \mathbb{E}_{s_t, a_t}\left[ \nabla_\theta \log \pi_\theta(a_t|s_t) \thinspace Q^{\pi,\gamma}(s_t, a_t) \right] = \sum_x d^{\gamma}(x) \sum_a \nabla_\theta \pi_\theta(a|x) \thinspace Q^{\pi,\gamma}(x, a) \qquad (19)
 $$
 
-三条注记把式 (19) 读全。第一，它是**恒等式**、无比例常数；把 $d^{\gamma}$ 归一化为 $\mu = d^{\gamma} / Z$（持续任务下 $Z = \sum_x d^{\gamma}(x) = 1/(1-\gamma)$ ，episodic 下 $Z$ 为期望回合长度），即得教材中常见的比例形式 $\nabla J \propto \sum_s \mu(s) \sum_a \nabla \pi \thinspace q_{\pi}$ ——比例系数被吸收进学习率（[Sutton & Barto, 2018](../references.md)，[B]，§13.2）。第二， $\gamma^{t}$ 的权重落在**状态**上：折扣目标的梯度更看重早期状态的策略改进；实践中一个广泛使用的变体把 $\gamma$ 只折进回报、丢掉状态的 $\gamma^{t}$ 权重（估计器写成 $\sum_t \nabla \log \pi_t \thinspace \Psi_t$ 、 $\Psi_t$ 内部含 $\gamma$ ）——8.2 会看到 GAE 论文正是采用这个约定并明确标注它相对无折扣目标已引入偏差。第三，LLM 场景 $\gamma = 1$ 时式 (19) 退化回式 (13) 的未折扣形态， $d^{\gamma}$ 的发散问题随有限 $T$ 消失。
+三条注记把式 (19) 读全。第一，它是**恒等式**，没有比例常数。把 $d^{\gamma}$ 归一化为 $\mu = d^{\gamma} / Z$（持续任务下 $Z = \sum_x d^{\gamma}(x) = 1/(1-\gamma)$ ，episodic 下 $Z$ 为期望回合长度），就得到教材中常见的比例形式 $\nabla J \propto \sum_s \mu(s) \sum_a \nabla \pi \thinspace q_{\pi}$ ——比例系数被吸收进学习率（[Sutton & Barto, 2018](../references.md)，[B]，§13.2）。第二， $\gamma^{t}$ 的权重落在**状态**上：折扣目标的梯度更看重早期状态的策略改进。实践中一个广泛使用的变体把 $\gamma$ 只折进回报、丢掉状态的 $\gamma^{t}$ 权重（估计器写成 $\sum_t \nabla \log \pi_t \thinspace \Psi_t$ ， $\Psi_t$ 内部含 $\gamma$ ）；8.2 会看到 GAE 论文正是采用这个约定，并明确标注它相对无折扣目标已引入偏差。第三，LLM 场景 $\gamma = 1$ 时式 (19) 退化回式 (13) 的未折扣形态， $d^{\gamma}$ 的发散问题随有限 $T$ 消失。
 
 ## 5. Baseline：无偏性证明与最优 baseline
 
@@ -234,11 +234,11 @@ $$
 \nabla_\theta J = \mathbb{E}\left[ \sum_{t=0}^{T-1} \nabla_\theta \log \pi_\theta(a_t|s_t) \thinspace \left( Q^{\pi}(s_t, a_t) - b(s_t) \right) \right] \qquad (21)
 $$
 
-期望不动、方差变——baseline 的全部作用是降方差。Sutton et al. 1999 在函数逼近设定下证明了同一结论（[Sutton et al., 1999](../references.md)，[B]）；选哪一族 $b$ 是设计自由，§5.2 给出「最优」的精确含义。
+期望不动、方差变——baseline 的全部作用是降方差。Sutton et al. 1999 在函数逼近设定下证明了同一结论（[Sutton et al., 1999](../references.md)，[B]）。选哪一族 $b$ 是设计自由；§5.2 给出「最优」的精确含义。
 
 ### 5.2 最优 baseline：方差最小化推导
 
-哪个 $b(s)$ 把方差压得最狠？逐状态最小化估计器的二阶矩。固定 $s$ ，记 $g(a) = \nabla_\theta \log \pi_\theta(a|s)$ （向量），估计器 $X(a) = g(a) \thinspace (Q(s, a) - b)$ 。由式 (20)，均值 $\mathbb{E}[X] = \mathbb{E}[g \thinspace Q]$ 与 $b$ 无关，最小化方差等价于最小化
+哪个 $b(s)$ 把方差压得最狠？逐状态最小化估计器的二阶矩就有答案。固定 $s$ ，记 $g(a) = \nabla_\theta \log \pi_\theta(a|s)$ （向量），估计器 $X(a) = g(a) \thinspace (Q(s, a) - b)$ 。由式 (20)，均值 $\mathbb{E}[X] = \mathbb{E}[g \thinspace Q]$ 与 $b$ 无关，所以最小化方差等价于最小化
 
 $$
 \mathbb{E}_a\left[ \Vert X \Vert^2 \right] = \mathbb{E}_a\left[ \Vert g(a) \Vert^2 \thinspace \left( Q(s, a) - b \right)^2 \right] \qquad (22)
@@ -250,15 +250,15 @@ $$
 \frac{\partial}{\partial b} \thinspace \mathbb{E}_a\left[ \Vert g \Vert^2 (Q - b)^2 \right] = -2 \thinspace \mathbb{E}_a\left[ \Vert g \Vert^2 (Q - b) \right] = 0 \quad \Longrightarrow \quad b^{\ast}(s) = \frac{\mathbb{E}_a\left[ \Vert g(a) \Vert^2 \thinspace Q(s, a) \right]}{\mathbb{E}_a\left[ \Vert g(a) \Vert^2 \right]} \qquad (23)
 $$
 
-**最优 baseline = 以 score 范数平方为权的 Q 加权平均**。当 $\Vert g \Vert^2$ 与 $Q$ 近似无关（各动作 score 幅度相近）时， $`b^{\ast}(s) \approx \mathbb{E}_a[Q(s, a)] = V^{\pi}(s)`$ ——价值函数是近似最优 baseline，这是 8.2 专门学一个 $V$ 网络的动机源头；当 score 幅度在动作间不均时 $b^{\ast} \neq V$ 是系统性差异而非噪声（下面算例）。最优 baseline 的方差最小化推导以 Greensmith et al. 2004 为标准出处（[Greensmith et al., 2004](../references.md)，JMLR 5:1471-1530，无 arXiv，[B]）；Sutton-Barto §13.4 给出无偏性与定性讨论。
+**最优 baseline = 以 score 范数平方为权的 Q 加权平均**。两个极端情形帮助理解。当 $\Vert g \Vert^2$ 与 $Q$ 近似无关（各动作 score 幅度相近）时， $`b^{\ast}(s) \approx \mathbb{E}_a[Q(s, a)] = V^{\pi}(s)`$ ——价值函数是近似最优 baseline，这就是 8.2 专门学一个 $V$ 网络的动机源头。当 score 幅度在动作间不均时， $b^{\ast} \neq V$ 是系统性差异而非噪声（下面算例会演出来）。这个方差最小化推导的标准出处是 Greensmith et al. 2004（[Greensmith et al., 2004](../references.md)，JMLR 5:1471-1530，无 arXiv，[B]）；Sutton-Barto §13.4 给出无偏性与定性讨论。
 
-**算例**（数值构造，本书）：单状态、三动作， $\pi = (0.5, 0.25, 0.25)$ ， $Q = (3, 1, 0)$ ，取标量 score $g = (1, 0, -2)$ ——满足 $\sum_i \pi_i g_i = 0.5 - 0 - 0.5 = 0$ ，即式 (8) 的离散形态。 $V^{\pi} = 0.5 \times 3 + 0.25 \times 1 = 1.75$ 。逐个 baseline 算估计器 $X = g_i (Q_i - b)$ 的方差（ $\mathbb{E}[X] = \mathbb{E}[gQ] = 1.5$ ，与 $b$ 无关，可作自检）：
+**算例**（数值构造，本书）。单状态、三动作： $\pi = (0.5, 0.25, 0.25)$ ， $Q = (3, 1, 0)$ ，取标量 score $g = (1, 0, -2)$ 。先验证它合法： $\sum_i \pi_i g_i = 0.5 - 0 - 0.5 = 0$ ，即式 (8) 的离散形态。价值 $V^{\pi} = 0.5 \times 3 + 0.25 \times 1 = 1.75$ 。逐个 baseline 算估计器 $X = g_i (Q_i - b)$ 的方差（自检锚点： $\mathbb{E}[X] = \mathbb{E}[gQ] = 1.5$ ，与 $b$ 无关）：
 
 - $b = 0$ ： $\mathbb{E}[X^2] = 0.5 \times 9 + 0 + 0 = 4.5$ ， $\mathrm{Var} = 4.5 - 1.5^2 = 2.25$ ；
 - $b^{\ast} = \mathbb{E}[g^2 Q] / \mathbb{E}[g^2] = (0.5 \times 1 \times 3 + 0 + 0) / (0.5 + 0 + 0.25 \times 4) = 1.5 / 1.5 = 1$ ： $\mathbb{E}[X^2] = 0.5 \times 4 + 0 + 0.25 \times 4 \times 1 = 3$ ， $\mathrm{Var} = 3 - 2.25 = 0.75$ ；
 - $b = V^{\pi} = 1.75$ ： $\mathbb{E}[X^2] = 0.5 \times 1.25^2 + 0 + 0.25 \times 4 \times 1.75^2 \approx 3.84$ ， $\mathrm{Var} \approx 3.84 - 2.25 = 1.59$ 。
 
-$b^{\ast}$ 把方差从 2.25 压到 0.75（3 倍）， $V$ 只压到 1.59——此例中 score 幅度最大的动作（ $|g| = 2$ 的 $a_3$ ）恰好 $Q$ 最低，范数加权与等权平均发生分歧。工程上没人逐状态解式 (23)：要么用常数 baseline（回报的移动平均），要么学 $V$ 作近似——后者就是 actor-critic（8.2）。
+结果： $b^{\ast}$ 把方差从 2.25 压到 0.75（3 倍）， $V$ 只压到 1.59。分歧的机制在这：例中 score 幅度最大的动作（ $|g| = 2$ 的 $a_3$ ）恰好 $Q$ 最低，范数加权与等权平均就此分道扬镳。工程上没人逐状态解式 (23)，通行做法是两档：常数 baseline（回报的移动平均），或学一个 $V$ 作近似——后者就是 actor-critic（8.2）。
 
 ### 5.3 baseline 谱系：从常数到价值网络
 
@@ -269,17 +269,17 @@ $b^{\ast}$ 把方差从 2.25 压到 0.75（3 倍）， $V$ 只压到 1.59——�
 - **价值网络 baseline**： $b(s) = V_\varphi(s)$ ，用回归学出的前缀条件期望——8.2 的全部内容。
 - **同 prompt 组均值**：同一 prompt 下 $G$ 个采样回报的均值作 $b$ ——8.4 GRPO 的选择，免学价值网络。
 
-排序背后的账：baseline 越贴近 $\mathbb{E}[R \mid \text{可获得信息}]$ ，残差方差越小；但越复杂的 baseline 自己要付学习成本与偏差风险。§7 的玩具模型里 baseline 的收益由 $\mu_R^{2} / \sigma_R^{2}$ 的比值决定——奖励越「确定可分」（ $p$ 远离 0.5），常数 baseline 吃掉越多；残差方差大时（难任务、训练早期），学习型 baseline 的增量收益才显著。
+排序背后的账是这样：baseline 越贴近 $\mathbb{E}[R \mid \text{可获得信息}]$ ，残差方差越小；但越复杂的 baseline，自己要付的学习成本与偏差风险也越大。§7 的玩具模型里，baseline 的收益由 $\mu_R^{2} / \sigma_R^{2}$ 的比值决定：奖励越「确定可分」（ $p$ 远离 0.5），常数 baseline 吃掉越多；残差方差大时（难任务、训练早期），学习型 baseline 的增量收益才显著。
 
 ## 6. REINFORCE：从随机单元到轨迹梯度
 
-REINFORCE 的原始形态来自 Williams 1992（[Williams, 1992](../references.md)，Machine Learning 8:229-256，无 arXiv，[B]）：网络含随机输出单元，单元 $i$ 依概率 $g_i(\xi_i, w)$ 采样输出（ $\xi_i$ 为注入的随机性），环境回以标量强化信号 $r$ ，按
+REINFORCE 的原始形态来自 Williams 1992（[Williams, 1992](../references.md)，Machine Learning 8:229-256，无 arXiv，[B]）。当时的设定是：网络含随机输出单元，单元 $i$ 依概率 $g_i(\xi_i, w)$ 采样输出（ $\xi_i$ 为注入的随机性）；环境回以一个标量强化信号 $r$ 。更新规则是
 
 $$
 \Delta w_{ij} = \alpha_{ij} \thinspace (r - b_{ij}) \thinspace e_{ij}, \qquad e_{ij} = \frac{\partial \ln g_i}{\partial w_{ij}} \qquad (24)
 $$
 
-更新。**符号**： $\alpha_{ij}$ ：学习率； $b_{ij}$ ：不依赖即时输出的 baseline； $e_{ij}$ ：characteristic eligibility（资格），即该参数对输出对数概率的导数。论文的核心结果是 $\mathbb{E}[\Delta w]$ 与 $\nabla_w \mathbb{E}[r]$ 同向（baseline 不依赖单元即时输出时无偏）——式 (20)(21) 的原始版本。把「随机单元」换成整条轨迹、把 $r$ 换成 reward-to-go 减 baseline，就是现代教科书形式（Sutton-Barto §13.3-13.4 的 REINFORCE 与 REINFORCE with baseline）：
+**符号**： $\alpha_{ij}$ ：学习率； $b_{ij}$ ：不依赖即时输出的 baseline； $e_{ij}$ ：characteristic eligibility（资格），即该参数对输出对数概率的导数。论文的核心结果是 $\mathbb{E}[\Delta w]$ 与 $\nabla_w \mathbb{E}[r]$ 同向（baseline 不依赖单元即时输出时无偏）——这就是式 (20)(21) 的原始版本。把「随机单元」换成整条轨迹、把 $r$ 换成 reward-to-go 减 baseline，就得到现代教科书形式（Sutton-Barto §13.3-13.4 的 REINFORCE 与 REINFORCE with baseline）：
 
 $$
 \hat{g} = \frac{1}{N_{\mathrm{traj}}} \sum_{i=1}^{N_{\mathrm{traj}}} \sum_{t=0}^{T_i-1} \nabla_\theta \log \pi_\theta(a_t^{(i)}|s_t^{(i)}) \thinspace \left( G_t^{(i)} - b \right), \qquad \theta \leftarrow \theta + \eta \thinspace \hat{g} \qquad (25)
@@ -302,7 +302,7 @@ $$
 
 $\nabla L = -\hat{g}$ ： $\log \pi$ 的梯度由 autograd 产出（1.1 的 vjp 机制）， $\hat{A}$ 只作逐样本权重。「把 credit 当权重、把 log 概率当损失」是全部 RL 训练栈的共用模式，8.2-8.4 的目标函数都写成这个形态。
 
-一个退化情形把「信号从哪来」钉死：若所有采样的回报恒为常数 $R \equiv c$ ，式 (25) 的期望为 $c \sum_t \mathbb{E}[\nabla_\theta \log \pi_\theta(a_t|s_t)] = 0$（式 (8) 逐分量作用）——没有任何学习信号。驱动策略移动的不是 reward 的绝对水平，而是 reward 在采样分布下的**变差**；这也是 baseline 不动期望的镜像读法——减掉常数不动信号，只动噪声。
+一个退化情形能把「信号从哪来」锁定下来：若所有采样的回报恒为常数 $R \equiv c$ ，式 (25) 的期望为 $c \sum_t \mathbb{E}[\nabla_\theta \log \pi_\theta(a_t|s_t)] = 0$（式 (8) 逐分量作用）——没有任何学习信号。驱动策略移动的不是 reward 的绝对水平，而是 reward 在采样分布下的**变差**。这也是 baseline 不动期望的镜像读法：减掉常数不动信号，只动噪声。
 
 教学代码（教学用，非优化实现；省 padding / EOS mask、并行采样与 KL 正则，只保留式 (26) 的语义骨架）：
 
@@ -321,13 +321,13 @@ def reinforce_step(model, opt, prompts, reward_fn, max_len=64):
     return loss.item(), R.mean().item()
 ```
 
-它与生产实现的差距逐条对应后文：采一批用一次（样本效率，§8）；baseline 只是 batch 均值而非前缀条件的 $V$（8.2）；对单步更新幅度没有任何信任域约束（8.3 的 clip）；采样引擎与训练引擎未拆分（8.5）。
+这段代码与生产实现的差距有四点，逐点对应后文：采一批用一次（样本效率，§8）；baseline 只是 batch 均值，不是前缀条件的 $V$（8.2）；对单步更新幅度没有任何信任域约束（8.3 的 clip）；采样引擎与训练引擎未拆分（8.5）。
 
 ## 7. 方差分析：长序列、退化奖励与粒度
 
 ### 7.1 单样本噪声地板：随 $T$ 线性增长
 
-REINFORCE 的方差从哪来、被什么压低，用一个显式假设的玩具模型算成账（本书分析；假设逐条列出，不假装它预测真实方差）。设：
+REINFORCE 的方差从哪来、又被什么压低？用一个显式假设的玩具模型把账算出来（本书分析；假设逐条列出——它不预测真实方差，只给结构）。设：
 
 - on-policy 采样 ⇒ 每个 token 的 score 零均值（式 (8)），且跨步不相关： $\mathbb{E}[g_t] = 0$ ， $\mathbb{E}[g_t g_{t'}^{\top}] = \sigma^{2} I \cdot [t = t']$ ；
 - 末端奖励 $R$ 与 score 的噪声分量独立， $\mathbb{E}[R] = \mu_R$ ， $\mathrm{Var}(R) = \sigma_R^{2}$ 。
@@ -340,7 +340,7 @@ $$
 \mathrm{Var}(\hat{g}) = T \thinspace \sigma^{2} \thinspace (\sigma_R^{2} + \mu_R^{2}) \qquad (27)
 $$
 
-两个读法。其一，**噪声地板随序列长度线性涨**： $T$ 个零均值 score 各携一份方差，共享同一个 $R$ 把它们同相放大。长链推理（ $T$ 上千）的 REINFORCE 单样本估计天然更吵，这是结构性结论而非实现问题。其二， $\mu_R^{2}$ 与 $\sigma_R^{2}$ 分家：常数 baseline $b = \mu_R$ 恰好杀掉 $\mu_R^{2}$ 项，使 $\mathrm{Var} = T \sigma^{2} \sigma_R^{2}$ 。代入二值奖励的数字（答对率 $p = 0.9$ ： $\mu_R^{2} = 0.81$ 、 $\sigma_R^{2} = 0.09$ ）：加 baseline 前后噪声系数 0.90 → 0.09，一个数量级。剩下的 $\sigma_R^{2}$ 项只有两个去处——状态依赖 baseline（把「从 $s_t$ 就能预言的那部分 $R$ 」减掉，即 8.2 的 $V(s_t)$ ）与加大 batch（ $N_{\mathrm{traj}}$ 条独立轨迹平均，方差整除 $N_{\mathrm{traj}}$ ）。
+两个读法。其一，**噪声地板随序列长度线性涨**。机制是： $T$ 个零均值 score 各携一份方差，共享的同一个 $R$ 把它们同相放大。长链推理（ $T$ 上千）的 REINFORCE 单样本估计天然更吵——这是结构性结论，不是实现问题。其二，** $\mu_R^{2}$ 与 $\sigma_R^{2}$ 分家**。常数 baseline $b = \mu_R$ 恰好杀掉 $\mu_R^{2}$ 项，使 $\mathrm{Var} = T \sigma^{2} \sigma_R^{2}$ 。代入二值奖励的数字感受一下（答对率 $p = 0.9$ ： $\mu_R^{2} = 0.81$ 、 $\sigma_R^{2} = 0.09$ ）：加 baseline 前后，噪声系数 0.90 → 0.09，差一个数量级。剩下的 $\sigma_R^{2}$ 项只有两个去处：一是状态依赖 baseline，把「从 $s_t$ 就能预言的那部分 $R$ 」减掉（即 8.2 的 $V(s_t)$ ）；二是加大 batch， $N_{\mathrm{traj}}$ 条独立轨迹平均、方差整除 $N_{\mathrm{traj}}$ 。
 
 ### 7.2 末端奖励的退化：reward-to-go 是空操作
 
@@ -353,7 +353,7 @@ $$
 §4.1 的因果引理在这个场景是空操作——没有「过去的奖励」可供剔除。两个直接推论：
 
 1. **token-level 与 sequence-level 估计器逐字相同**。由 §2.2 的链式分解， $\sum_t \nabla \log \pi_\theta(y_t|s_t) \cdot R = \nabla \log \pi_\theta(y|x) \cdot R$ ——把整个回答当一个动作的 bandit REINFORCE 与逐 token 的全回报 REINFORCE 是同一个估计器。
-2. **per-token credit 的唯一工具是 per-token baseline**。把每个 token 的权重从 $(R - b)$ 换成 $(R - b(s_t))$ ，式 (27) 中的 $\mu_R$ 就被换成「给定前缀 $s_t$ 后 $R$ 的残差」——前缀对结果的解释力越强，残差方差越小。常数 baseline（免费）→ 前缀条件 baseline $V(s_t)$ （要学一个网络，8.2）→ 同 prompt 组统计 baseline（8.4 的 GRPO），LLM-RL 的方差缩减沿这个杠杆排序演进。
+2. **per-token credit 的唯一工具是 per-token baseline**。把每个 token 的权重从 $(R - b)$ 换成 $(R - b(s_t))$ ，式 (27) 中的 $\mu_R$ 就被换成「给定前缀 $s_t$ 后 $R$ 的残差」——前缀对结果的解释力越强，残差方差越小。LLM-RL 的方差缩减沿一个杠杆排序演进：常数 baseline（免费）→ 前缀条件 baseline $V(s_t)$ （要学一个网络，8.2）→ 同 prompt 组统计 baseline（8.4 的 GRPO）。
 
 per-token baseline 的收益有一个干净的量化（本书分析）。取最优的前缀条件 baseline $b(s_t) = \mathbb{E}[R \mid s_t]$ ，每个 score 项的权重 $w_t = R - \mathbb{E}[R \mid s_t]$ 满足
 
@@ -361,21 +361,21 @@ $$
 \mathbb{E}[w_t^{2}] = \mathbb{E}\left[ \mathrm{Var}(R \mid s_t) \right] = \mathrm{Var}(R) - \mathrm{Var}\left( \mathbb{E}[R \mid s_t] \right) \qquad (29)
 $$
 
-**符号**：末步是全方差公式（law of total variance）。读法：per-token baseline 杀掉的恰是「 $R$ 中被前缀解释掉的方差份额」——某 prompt 下「开头两个 token 就基本注定结局」时 $\mathrm{Var}(\mathbb{E}[R|s_t])$ 大、收益大；结果完全由末端偶然决定时收益趋零。把式 (29) 代回式 (27) 的结构：噪声地板从 $T \sigma^{2} (\sigma_R^{2} + \mu_R^{2})$ 降到 $T \sigma^{2} \thinspace \mathbb{E}[\mathrm{Var}(R|s_t)]$ 量级（忽略跨步相关）——这就是 8.2 值得为 $V$ 单独养一个网络的定量理由。
+**符号**：末步是全方差公式（law of total variance）。读法：per-token baseline 杀掉的，恰好是「 $R$ 中被前缀解释掉的方差份额」。极端情形对照着看：某 prompt 下「开头两个 token 就基本注定结局」时， $\mathrm{Var}(\mathbb{E}[R|s_t])$ 大、收益大；结果完全由末端偶然决定时，收益趋零。把式 (29) 代回式 (27) 的结构：噪声地板从 $T \sigma^{2} (\sigma_R^{2} + \mu_R^{2})$ 降到 $T \sigma^{2} \thinspace \mathbb{E}[\mathrm{Var}(R|s_t)]$ 量级（忽略跨步相关）。这就是 8.2 值得为 $V$ 单独养一个网络的定量理由。
 
 ### 7.3 batch 与采样成本的账
 
-$N_{\mathrm{traj}}$ 条独立轨迹的样本均值把式 (27) 整除 $N_{\mathrm{traj}}$ ；要把单步梯度噪声压到固定水平，所需 $N_{\mathrm{traj}}$ 随 $T$ 线性涨。另一边，LLM rollout 的成本也是每条约 $T$ 次解码步（自回归串行）。噪声地板与采样成本两头都挂 $T$ ——长链推理 RL 的吞吐账由此而来；系统侧（rollout 引擎、权重同步）归 8.5。
+$N_{\mathrm{traj}}$ 条独立轨迹的样本均值，把式 (27) 整除 $N_{\mathrm{traj}}$ ；要把单步梯度噪声压到固定水平，所需 $N_{\mathrm{traj}}$ 随 $T$ 线性涨。另一边，LLM rollout 的成本也是每条约 $T$ 次解码步（自回归串行）。噪声地板与采样成本两头都挂 $T$ ——长链推理 RL 的吞吐账由此而来。系统侧（rollout 引擎、权重同步）归 8.5。
 
 ## 8. 样本效率与 on-policy 约束
 
 式 (25) 的期望号下是当前策略 $\pi_\theta$ ——按 3.2 §5 的分界定义，REINFORCE 是 on-policy：参数每更新一次，旧样本的分布假设即失效。三个直接后果：
 
-1. **数据一次性**：每个梯度步消耗的轨迹必须采自当前（或近似当前）策略，采一批只能用一次；对照离线目标（SFT / DPO）一份静态数据反复过 epoch，样本成本高出一个量级维度。
-2. **rollout 常驻训练循环**：每个 step 之前先付 $N_{\mathrm{traj}} \times T$ 次解码，训练循环里必须养一个采样引擎，这是 LLM-RL 系统形态与纯训练栈分家的根源（8.5）。量级账可以先记一笔（口径 recap：models 1.2 的每 token 算力账——前向约 $2N$ FLOPs、训练前向加反向约 $6N$ FLOPs， $N$ 为参数量）： $N_{\mathrm{traj}}$ 条长度 $T$ 的 rollout 约付 $2N \cdot N_{\mathrm{traj}} \thinspace T$ FLOPs 的前向（decode 还有 KV cache 与引擎常数，系统侧归 8.5），紧随的一次训练前向反向约 $6N \cdot N_{\mathrm{traj}} \thinspace T$ ——rollout 与训练的 FLOPs 比约 1:3，采样不是免费的副产品，而是与训练同量级的常驻开销；梯度方差要求的 $N_{\mathrm{traj}}$ 越大（§7.3），这个比值越向 rollout 倾斜。
-3. **复用的偏差与校正**：拿旧策略 $\pi_{\theta_{\mathrm{old}}}$ 的样本直接更新，期望号下分布错误、估计有偏；校正工具是重要性比 $\pi_\theta / \pi_{\theta_{\mathrm{old}}}$ ，配套的是限制单步移动幅度的信任域思路——这两条正是 8.3 PPO 的出发点。
+1. **数据一次性**。每个梯度步消耗的轨迹必须采自当前（或近似当前）策略，采一批只能用一次。对照离线目标（SFT / DPO）：一份静态数据可以反复过 epoch。样本成本高出一个量级维度。
+2. **rollout 常驻训练循环**。每个 step 之前先付 $N_{\mathrm{traj}} \times T$ 次解码，训练循环里必须养一个采样引擎——这是 LLM-RL 系统形态与纯训练栈分家的根源（8.5）。量级账可以先记一笔。口径 recap 自 models 1.2 的每 token 算力账：前向约 $2N$ FLOPs、训练前向加反向约 $6N$ FLOPs， $N$ 为参数量。于是 $N_{\mathrm{traj}}$ 条长度 $T$ 的 rollout 约付 $2N \cdot N_{\mathrm{traj}} \thinspace T$ FLOPs 的前向（decode 还有 KV cache 与引擎常数，系统侧归 8.5），紧随的一次训练前向反向约 $6N \cdot N_{\mathrm{traj}} \thinspace T$ 。两者比一下：rollout 与训练的 FLOPs 比约 1:3。采样不是免费的副产品，而是与训练同量级的常驻开销；梯度方差要求的 $N_{\mathrm{traj}}$ 越大（§7.3），这个比值越向 rollout 倾斜。
+3. **复用的偏差与校正**。拿旧策略 $\pi_{\theta_{\mathrm{old}}}$ 的样本直接更新，期望号下的分布就错了，估计有偏。校正工具是重要性比 $\pi_\theta / \pi_{\theta_{\mathrm{old}}}$ ，配套的是限制单步移动幅度的信任域思路——这两条正是 8.3 PPO 的出发点。
 
-RLHF 语境一句：把这套梯度估计机器嵌进后训练完整链路（人类偏好数据 → reward model → 策略优化）的流程来自 Christiano et al. 2017（[Christiano et al., 2017](../references.md)，arXiv:1706.03741，[B]），工程链归 9.2；本章交付的是它的梯度内核。
+RLHF 语境交代一句：把这套梯度估计机器嵌进后训练完整链路（人类偏好数据 → reward model → 策略优化）的流程来自 Christiano et al. 2017（[Christiano et al., 2017](../references.md)，arXiv:1706.03741，[B]），工程链归 9.2；本章交付的是它的梯度内核。
 
 ## 总结
 
