@@ -4,7 +4,7 @@
 
 ## 1. 激活账精确化：反向时哪些张量必须还在
 
-反向传播不是免费的方向场：每个算子的 vjp 都要消费前向留下的某些张量（1.1 的 `ctx.save_for_backward` 语义；逐算子的「前向公式 / 反向公式 / 需 save 的量」总表在 1.2）。最典型的是 matmul。 $Y = XW$ 的权重梯度 $\partial \mathcal{L} / \partial W = X^{\top} G$ 需要前向输入 $X$ ——前向算完不存 $X$ ，反向就算不出权重梯度。激活账的全部内容就是回答一个问题：一张 $L$ 层网络的前向，每个算子必须为反向留下什么。
+反向传播不是免费的方向场（口径：「免费」= 不消费前向保存的中间值）：每个算子的 vjp 都要消费前向留下的某些张量（1.1 的 `ctx.save_for_backward` 语义；逐算子的「前向公式 / 反向公式 / 需 save 的量」总表在 1.2）。最典型的是 matmul。 $Y = XW$ 的权重梯度 $\partial \mathcal{L} / \partial W = X^{\top} G$ 需要前向输入 $X$ ——前向算完不存 $X$ ，反向就算不出权重梯度。激活账的全部内容就是回答一个问题：一张 $L$ 层网络的前向，每个算子必须为反向留下什么。
 
 Megatron 论文把这笔账算到了字节粒度（[Korthikanti et al., 2022](../references.md)，arXiv:2205.05198，[A]，§4.1）。记号： $s$ = 序列长度， $b$ = micro-batch 序列数， $h$ = hidden 宽度， $a$ = attention head 数；激活以 2 字节（fp16/bf16）计，dropout 掩码以 1 字节计。取单个 transformer 层（GPT 式：attention 块 + MLP 块 + 两个 LayerNorm，MLP 为 $h \to 4h$ 的 GeLU 结构）逐项清点，每行同时给出「为什么要存」：
 
@@ -36,9 +36,11 @@ $$
 
 代入一组现代训练口径的数字（ $h = 4096$ 、 $a = 32$ 、 $s = 4096$ 、 $b = 1$ ，近 Llama-3.1-8B 的几何）。每 token 每层 $34h + 5as \approx 7.9 \times 10^{5}$ 字节 ≈ 776 KB；32 层累计约 24 MB/token；一个 $B \cdot T = 32768$ token 的 step 全存约 800 GB。80 GB 级单卡无望，「重计算与并行切分至少启用其一」由此从经验变成算术。models 1.2 对同规模模型给出约 256 GiB 的账，与本段相差约 3 倍，差异来自所存张量清单的精简程度与 causal 平均口径；两账同阶同结构：定长项 $\propto BTLh$ ， $T^{2}$ 项 $\propto BLaT^{2}$ 。
 
+本章口径：字节数按激活 2 字节、掩码 1 字节计；GPT-3 175B 与 MT-NLG 530B 两组实例随 Megatron 论文口径引用，另一组现代口径（h = 4096、a = 32、s = 4096）为本书自封、首次出现处已注明。
+
 ## 2. 重计算换内存： $\sqrt{L}$ 分段最优
 
-Chen et al. 的方案把问题压成一行优化（[Chen et al., 2016](../references.md)，arXiv:1604.06174，[B]，§4.3）。设 $L$ 层链式网络、每层激活 $a$ 字节（均匀假设；非均匀情形的贪心分配见论文 Alg. 3）。把 $L$ 层切成 $k$ 段，只存 $k$ 个段边界激活（checkpoint）。反向进入第 $i$ 段时，从段入口的 checkpoint 重新前向该段，即时重建段内 $(L/k)$ 层的激活供 vjp 消费，用完即释放。峰值内存两笔相加：
+先回答一个更基本的问题：能不能只存一部分激活、其余用时再算？Chen et al. 的方案把这个问题压成一行优化（[Chen et al., 2016](../references.md)，arXiv:1604.06174，[B]，§4.3）。路线：先把峰值内存写成段数的函数，再对段数求极值——关键一步是认清峰值只有两笔：全程驻留的 checkpoint，与反向经过时的单段重算。设 $L$ 层链式网络、每层激活 $a$ 字节（均匀假设；非均匀情形的贪心分配见论文 Alg. 3）。把 $L$ 层切成 $k$ 段，只存 $k$ 个段边界激活——所谓 checkpoint（检查点），是指这些供反向重建段内其余激活的边界张量。反向进入第 $i$ 段时，从段入口的 checkpoint 重新前向该段，即时重建段内 $(L/k)$ 层的激活供 vjp 消费，用完即释放。峰值内存两笔相加：
 
 $$
 M(k) = \underbrace{k \cdot a}_{\text{checkpoints}} + \underbrace{\frac{L}{k} \cdot a}_{\text{segment recompute peak}} \qquad (2)
@@ -50,9 +52,9 @@ $$
 k^{\ast} = \sqrt{L}, \qquad M(k^{\ast}) = 2a\sqrt{L} \qquad (3)
 $$
 
-激活内存从 $O(L)$ 降到 $O(\sqrt{L})$ 。代价：每个 checkpoint 段在前向跑一次、反向前再重跑一次，即一次额外前向。按前向 : 反向 = 1 : 2 的 FLOPs 比（models 1.2 式 (4)），step 总开销从 3 份涨到 4 份：+33%，也就是 $C$ 从 $6ND$ 涨到 $8ND$ 量级（models 1.2 练习 4 的口径）。Megatron 的实测与此一致：full recomputation 的执行时间开销 30–40%（[Korthikanti et al., 2022](../references.md)，[A]，§5）。Chen et al. 的实证：1000 层 ResNet 的激活内存从 48 GB 压到 7 GB。论文另给递归版本的极端情形—— $O(\log L)$ 内存、 $O(L \log L)$ 额外计算，本书不展开。
+**命题**（分段最优）：均匀链式网络下，激活内存从全存的 $O(L)$ 降到 $O(\sqrt{L})$ 。证明已由上方的求导完成；均值不等式的另一证法与非均匀推广留作练习 3。代价：每个 checkpoint 段在前向跑一次、反向前再重跑一次，即一次额外前向。按前向 : 反向 = 1 : 2 的 FLOPs 比（models 1.2 式 (4)），step 总开销（口径：单步墙钟时间相对基线的增量）从 3 份涨到 4 份：+33%，也就是 $C$ 从 $6ND$ 涨到 $8ND$ 量级（models 1.2 练习 4 的口径）。Megatron 的实测与此一致：full recomputation 的执行时间开销 30–40%（[Korthikanti et al., 2022](../references.md)，[A]，§5）。Chen et al. 的实证：1000 层 ResNet 的激活内存从 48 GB 压到 7 GB。论文另给递归版本的极端情形—— $O(\log L)$ 内存、 $O(L \log L)$ 额外计算，本书不展开。
 
-两个工程注记。其一， $k$ 无须整除 $L$ ，式 (2) 对任意分段成立；实践中段界常与 pipeline stage 边界对齐（5.3），可选的 $k$ 是离散集合，取离 $\sqrt{L}$ 最近的可行值即可。式 (2) 在最优点附近平坦： $k$ 偏到 $2\sqrt{L}$ 时， $M$ 只涨到 $2.5 \thinspace a\sqrt{L}$ ，即 $1.25 \times M(k^{\ast})$ 。其二，本节的分段粒度是整层，段内激活一律不驻留；把粒度拆到层内算子、让「贵的留下、便宜的重算」，就是第 3 节 selective 的内容。
+两个工程注记。其一， $k$ 无须整除 $L$ ，式 (2) 对任意分段成立；实践中段界常与 pipeline stage 边界对齐（5.3），可选的 $k$ 是离散集合，取离 $\sqrt{L}$ 最近的可行值即可。式 (2) 在最优点附近平坦： $k$ 偏到 $2\sqrt{L}$ 时， $M$ 只涨到 $2.5 \thinspace a\sqrt{L}$ ，即 $1.25 \times M(k^{\ast})$ 。其二，本节的分段粒度是整层，段内激活一律不驻留；把粒度拆到层内算子、让「贵的留下、便宜的重算」（口径：贵与便宜按每字节的重算 FLOPs 计），就是第 3 节 selective 的内容。
 
 时序图（ $k$ 段，□ 为驻留的 checkpoint，重算段以 ── 标出）：
 
@@ -115,7 +117,11 @@ PyTorch 的官方实现在 pytorch/pytorch repo 的 `torch/utils/checkpoint.py`�
 - 反向首次 unpack 某个占位时：经 `input_saver.grad_fn` 取回输入，恢复 RNG 与 autocast 态，在 `_recomputation_hook` 下重跑 `function` ；重算过程中的 `pack_hook` 按序把每个被 save 的张量写回对应 holder，反向图随即拿到真实张量。默认开启 early stop：重算出全部所需张量即抛 `_StopRecomputationError` 终止重算（`set_checkpoint_early_stop(False)` 可关）；重入版无此机制，永远整段重算——文档明示这是两版差异之一。
 - `determinism_check="default"` 比对重算张量与前向 metadata 的 shape/dtype/device；若前向与重算不一致（如全局变量漂移），重入版会静默产出错误梯度，非重入版至少能报 shape 级不符。
 
+**命题**（重算一致性）：若段内算子确定且 RNG 态恢复，则重算段的全部中间张量与前向逐位相等。**证明**（要点）：checkpoint 把前向时刻的 CPU 与设备 RNG 态封存，重算前在 `fork_rng` 作用域内恢复；dropout 掩码是 RNG 态的函数，所以逐位复现；外围 RNG 态在出口还原，段外不受影响。
+
 RNG 态的保存/恢复不是细节而是正确性条件。段内有 dropout 时，反向 vjp 要乘回前向那张掩码（1.2 的 dropout 反向）；重算若用不同的 RNG 态，掩码就不同，梯度静默地错。两版都靠「stash 前向态 + `fork_rng` 恢复 + 用完还原外围态」保证重算与前向逐位一致。`preserve_rng_state=False` 只在段内无随机性时才安全。
+
+> **坑**：段内含 dropout 却关掉 RNG 保存（`preserve_rng_state=False`），重算拿到的掩码与前向不同——没有任何报错，梯度静默错误。规避：段内有任何随机算子就保留默认的 True；练习 4 可复现这一现象。
 
 两个补充。其一，同文件还有便利函数 `checkpoint_sequential(functions, segments, input)` ：把 Sequential 式层序列切成 `segments` 段逐段 checkpoint，是式 (2) 分段的直接 API 化。其二，两版的能力差逐条来自源码 docstring 的对照清单：
 
@@ -146,7 +152,7 @@ loss.backward()                        # 反向逐段：取输入 → 恢复 RNG
 
 **TP 交互**。TP 把 attention 与 MLP 块内的激活按度数 $t$ 切分，但 LayerNorm、dropout 等逐位置算子的激活在各 rank 冗余。式 (1) 拆成论文 Equation 2 的 $10 + 24/t + 5as/(ht)$ 正是这种结构的账： $24/t$ 项是块内被切分的部分， $10$ 项是冗余不动的部分（消掉它是 sequence parallelism 的事，归 5.2）。代入 GPT-3 几何与 $t = 8$ ：TP 后每层 $10 + 3 + 10 = 23$ 个 $sbh$ 单位，再叠 selective 压到 13，约为无并行口径 114 的九分之一。checkpoint 段与 TP 通信算子正交：段内该 all-reduce 照常 all-reduce，重算时原样重放同样的通信；TP 组内各 rank 必须重算出同一份激活，RNG 态因此按 DP rank 区分种子、TP 组内共享（实现细节归 5.1 / 6.2）。
 
-**PP 交互**。PP 按层分 stage，每个 stage 只持有自己那几层：checkpoint 策略逐 stage 独立决定，互不影响。真正与激活峰值耦合的是流水线调度：GPipe 式调度下同一时刻有 $m$ 份 micro-batch 的激活在飞，1F1B 压到至多 $p$ 份（ $p$ 为 stage 数；气泡与在飞份数的推导归 5.3）。stage 峰值 = 单份激活 × 在飞份数——本章式 (1)(2) 决定「一份多大」，schedule 决定「同时几份」，两轴正交相乘。还有一个粒度后果：一个 stage 内层数少时（MT-NLG 每设备只有 3 层，论文 §5 原话），「只 checkpoint 其中几层」这种粗粒度折中直接不可用，只剩 full 或 selective 二选一——这是 selective 存在的另一个理由。
+**PP 交互**。PP 按层分 stage，每个 stage 只持有自己那几层：checkpoint 策略逐 stage 独立决定，互不影响。真正与激活峰值耦合的是流水线调度：GPipe 式调度下同一时刻有 $m$ 份 micro-batch 的激活在飞（已进入流水线、尚未释放），1F1B 压到至多 $p$ 份（ $p$ 为 stage 数；气泡与在飞份数的推导归 5.3）。stage 峰值 = 单份激活 × 在飞份数——本章式 (1)(2) 决定「一份多大」，schedule 决定「同时几份」，两轴正交相乘。还有一个粒度后果：一个 stage 内层数少时（MT-NLG 每设备只有 3 层，论文 §5 原话），「只 checkpoint 其中几层」这种粗粒度折中直接不可用，只剩 full 或 selective 二选一——这是 selective 存在的另一个理由。
 
 **决策表**。给定单卡显存 $M_{\mathrm{budget}}$ 与可接受的 step 时间膨胀上限，选择顺序：
 
@@ -169,15 +175,15 @@ loss.backward()                        # 反向逐段：取输入 → 恢复 RNG
 | 逐算子激活账 | 式 (1)： $sbh(34 + 5as/h)$ | 每项对应 1.2 vjp 表的「需 save 的量」； $T^{2}$ 项占 GPT-3 层激活 70% |
 | $\sqrt{L}$ 最优 | 式 (2)(3)： $M(k) = a(k + L/k)$ ， $k^{\ast} = \sqrt{L}$ | 内存 $O(\sqrt{L})$ 、代价一次额外前向（+33%，实测 30–40%） |
 | full vs selective | 式 (4)：重算占比 $s/6h$ ；式 (5)：启用条件 $5as/h > 34$ | GPT-3 省 70% 付 2.7%；full 压到 $2sbhL$ 付 30–40% |
-| torch 实现 | `torch/utils/checkpoint.py` | RNG 态 stash/恢复保 dropout 一致；非重入版 = saved_tensors_hooks 占位 + early stop |
-| 并行交互 | 论文 Table 2（ $t$ 度 TP 五行） | PP 逐 stage 独立；「一份多大」×「同时几份」正交 |
+| torch 实现 | `torch/utils/checkpoint.py` | RNG 态 stash/恢复保 dropout 一致；非重入版 = saved_tensors_hooks 占位 + early stop；练习 4 |
+| 并行交互 | 论文 Table 2（ $t$ 度 TP 五行） | PP 逐 stage 独立；「一份多大」×「同时几份」正交；练习 2 |
 
 ## 练习
 
-1.（推导）把式 (2) 推广到非均匀层：第 $\ell$ 层激活 $a_\ell$ 任意，分段点集合 $S$ 的内存为 $\sum_{i \in S} a_i + \max_{\mathrm{seg}} \sum_{\ell \in \mathrm{seg}} a_\ell$ ；说明 $k^{\ast} = \sqrt{L}$ 在均匀情形由均值-几何均值不等式一步得到，并举一个非均匀例子说明贪心预算分配（Chen et al. Alg. 3）的必要性。
-2.（计算）代入验证论文数字：GPT-3 175B（ $a = 96$ 、 $s = 2048$ 、 $h = 12288$ ）算 $5as/h = 80$ 与 selective 的省内存比例 $80 / (34 + 80) \approx 70$% ；再用 Llama-3.1-8B 训练口径（ $a = 32$ 、 $h = 4096$ 、 $s = 4096$ 、 $L = 32$ ）分别算全存、full、TP 8 路 + selective 三种配置下每 token 的激活字节数。
-3.（计算） $L = 61$ 层的模型（DeepSeek-V3 层数）：均匀假设下全存需 $61a$ ，式 (3) 最优分段需 $2\sqrt{61} \thinspace a \approx 15.6 \thinspace a$ ；若段数必须为整数且整除层数，枚举可行 $k$ 并给出实际最优与理论最优的差距。
-4.（代码）教学用：手写一个 30 行的 mini-checkpoint（存输入 + `torch.no_grad` 前向 + backward 钩子内重算），与 `torch.utils.checkpoint(..., use_reentrant=False)` 在同一含 dropout 的网络上对拍梯度；再置 `preserve_rng_state=False` 观察梯度偏差，验证第 4 节的 RNG 论证。
+1.（计算 · [10]） $L = 61$ 层的模型（DeepSeek-V3 层数）：均匀假设下全存需 $61a$ ，式 (3) 最优分段需 $2\sqrt{61} \thinspace a \approx 15.6 \thinspace a$ ；若段数必须为整数且整除层数，枚举可行 $k$ 并给出实际最优与理论最优的差距。校验：k = 8 时 M = 125a/8，与理论最优的相对差约万分之三；整除约束下 k 只能取 1 或 61。
+2.（计算 · [20]）代入验证论文数字：GPT-3 175B（ $a = 96$ 、 $s = 2048$ 、 $h = 12288$ ）算 $5as/h = 80$ 与 selective 的省内存比例 $80 / (34 + 80) \approx 70$% ；再用 Llama-3.1-8B 训练口径（ $a = 32$ 、 $h = 4096$ 、 $s = 4096$ 、 $L = 32$ ）分别算全存、full、TP 8 路 + selective 三种配置下每 token 的激活字节数。校验：GPT-3 的比例与论文正文 70% 一致；Llama 口径下 selective 后应剩 34/194。
+3.（推导 · [30]）把式 (2) 推广到非均匀层：第 $\ell$ 层激活 $a_\ell$ 任意，分段点集合 $S$ 的内存为 $\sum_{i \in S} a_i + \max_{\mathrm{seg}} \sum_{\ell \in \mathrm{seg}} a_\ell$ ；说明 $k^{\ast} = \sqrt{L}$ 在均匀情形由均值-几何均值不等式一步得到，并举一个非均匀例子说明贪心预算分配（Chen et al. Alg. 3）的必要性。校验：均匀情形应退化回正文 2 倍根号 L 的结论（特例锚）。
+4.（代码 · [30]）教学用：手写一个 30 行的 mini-checkpoint（存输入 + `torch.no_grad` 前向 + backward 钩子内重算），与 `torch.utils.checkpoint(..., use_reentrant=False)` 在同一含 dropout 的网络上对拍梯度；再置 `preserve_rng_state=False` 观察梯度偏差，验证第 4 节的 RNG 论证。校验：与官方实现的梯度应逐位相等（容差 0）；关掉 RNG 保存后应观察到偏差。
 
 ## 参考
 

@@ -4,6 +4,8 @@
 
 ## 1. 记号与总纲
 
+本章口径一句话：词表取 128256、宽度取 4096、FFN 宽度取 14336（8B 锚点模型的 config 数值，与 models 的账章同款）；token 行数分两档——单序列 4096 与全 batch 的 32768，随文标注。
+
 全章记号先固定。算子输出 $y$ 的上游梯度记 $G := \partial L / \partial y$（与 models 1.2 §4 一致）；损失 $L$ 是标量。shape 沿用 models 2.1 的 $[B, T, H, D]$ 记法；本章频繁把 $[B, T, \ldots]$ 折成 $[M, \ldots]$，其中 $M = B \cdot T$ 是 token 行数——逐位置算子对每行独立作用，共享参数的梯度对行求和（§2 推论 1）。
 
 每个算子的推导走同一条三步套路：把前向写成逐元素形式；选定上游 $G$；对单个输入变量收拢链式求和、认出矩阵形。读完前两个算子（§2、§3），这个套路会固化为固定流程，后面每个算子只是它的再实例化。
@@ -14,7 +16,7 @@
 
 ## 2. matmul 反向：本章一切推导的母式
 
-设 $Y = AB$， $A \in \mathbb{R}^{m \times k}$， $B \in \mathbb{R}^{k \times n}$， $Y_{ij} = \sum_{s=1}^{k} A_{is} B_{sj}$。给定 $G = \partial L / \partial Y \in \mathbb{R}^{m \times n}$，用逐元素链式法则推 $A$ 的梯度。 $A_{is}$ 只出现在 $Y$ 的第 $i$ 行里，故对 $L$ 的影响途经 $Y_{i1}, \ldots, Y_{in}$ 全部 $n$ 个元素：
+路线只有两步：先把单个输入元素的链式求和写出来，再认出这个求和是哪种矩阵乘积——关键一步是看清每个输入元素只出现在输出的哪一行、哪一列。设 $Y = AB$， $A \in \mathbb{R}^{m \times k}$， $B \in \mathbb{R}^{k \times n}$， $Y_{ij} = \sum_{s=1}^{k} A_{is} B_{sj}$。给定 $G = \partial L / \partial Y \in \mathbb{R}^{m \times n}$，用逐元素链式法则推 $A$ 的梯度。 $A_{is}$ 只出现在 $Y$ 的第 $i$ 行里，故对 $L$ 的影响途经 $Y_{i1}, \ldots, Y_{in}$ 全部 $n$ 个元素：
 
 $$
 \frac{\partial L}{\partial A_{is}} = \sum_{j=1}^{n} \frac{\partial L}{\partial Y_{ij}} \cdot \frac{\partial Y_{ij}}{\partial A_{is}} = \sum_{j=1}^{n} G_{ij} \thinspace B_{sj} \qquad (1)
@@ -47,7 +49,7 @@ shape 走读与账：
 
 ## 3. softmax 反向
 
-$p = \mathrm{softmax}(z)$ 逐行作用（沿词表维 $V$ 或序列维 $T$）。其 Jacobian $J = \mathrm{diag}(p) - p p^{\top}$ 已在 models 2.3 式 (8) 完整推出（含饱和分析），此处只登记 vjp 形式与成本。给定行上游梯度 $g = \partial L / \partial p$，行向量左乘 $J$：
+路线只有一步：把已知的 softmax Jacobian 从左边乘上游梯度，认出行向量乘这个结构化矩阵的闭式——关键是不展开矩阵本身。 $p = \mathrm{softmax}(z)$ 逐行作用（沿词表维 $V$ 或序列维 $T$）。其 Jacobian $J = \mathrm{diag}(p) - p p^{\top}$ 已在 models 2.3 式 (8) 完整推出（含饱和分析），此处只登记 vjp 形式与成本。给定行上游梯度 $g = \partial L / \partial p$，行向量左乘 $J$：
 
 $$
 \frac{\partial L}{\partial z} = g \thinspace J = g \odot p - \langle g, p \rangle \thinspace p = p \odot \bigl( g - \langle p, g \rangle \bigr) \qquad (3)
@@ -75,11 +77,13 @@ $$
 
 **符号**： $\delta_{j y_t}$：Kronecker delta。向量形： $\partial L_t / \partial z_t = p_t - e_{y_t}$， $e_{y}$ 为第 $y$ 个 one-hot 向量。全链就一步：softmax 的概率减目标的 one-hot。
 
-这条化简值得单列一节：它是「分步反向会数值爆炸」的经典案例，也是融合算子存在的数学理由。假如按计算图分两步走——先经 $\partial L / \partial p_i = -\delta_{i y} / p_y$（对数的导数），再乘 softmax Jacobian 式 (3)。代数上这是恒等的：代入 $g_i = -\delta_{iy} / p_y$，内积 $\langle p, g \rangle = -1$，于是 $p_j (g_j - \langle p, g \rangle) = p_j (-\delta_{jy} / p_y + 1) = p_j - \delta_{jy}$。但数值上完全是另一回事。中间量 $-1 / p_y$ 在 $p_y \to 0$ 时发散：bf16 的最大可表示值约 $3.4 \times 10^{38}$， $p_y$ 低于约 $3 \times 10^{-39}$ 时 $-1 / p_y$ 直接溢出为 $-\infty$。再往下的次正规区（最小正规数约 $1.2 \times 10^{-38}$、最小次正规数约 $9.2 \times 10^{-41}$）里， $p_y$ 本身的尾数逐位丢失，梯度精度同步劣化。而融合式 $p - e_y$ 的每个分量恒在 $[-1, 1]$ 里，奇点根本不存在。生产实现（`torch.nn.functional.cross_entropy`，pytorch/pytorch repo `torch/nn/functional.py`，教学参照）前向走 logsumexp 稳定形；eager 反向是 log_softmax 与 nll_loss 两个 ATen 算子反向的复合，其代数效果恒等于 $p - e_y$—— $1 / p_y$ 这个中间量在任意一条实现路径上都不出现。
+这条化简值得单列一节：它是「分步反向会数值爆炸」的经典案例，也是融合算子存在的数学理由。假如按计算图分两步走——先经 $\partial L / \partial p_i = -\delta_{i y} / p_y$（对数的导数），再乘 softmax Jacobian 式 (3)。代数上这是恒等的：代入 $g_i = -\delta_{iy} / p_y$，内积 $\langle p, g \rangle = -1$，于是 $p_j (g_j - \langle p, g \rangle) = p_j (-\delta_{jy} / p_y + 1) = p_j - \delta_{jy}$。但数值上完全是另一回事。中间量 $-1 / p_y$ 在 $p_y \to 0$ 时发散：bf16 的最大可表示值约 $3.4 \times 10^{38}$， $p_y$ 低于约 $3 \times 10^{-39}$ 时 $-1 / p_y$ 直接溢出为 $-\infty$。再往下的次正规区（最小正规数约 $1.2 \times 10^{-38}$、最小次正规数约 $9.2 \times 10^{-41}$）里， $p_y$ 本身的尾数逐位丢失，梯度精度同步劣化。**命题**（融合梯度有界）：融合式 $p - e_y$ 的每个分量恒在 $[-1, 1]$ 里，奇点根本不存在。**证明**（要点）：概率向量的每个分量在 0 到 1 之间，one-hot 只在一个分量上取 1，逐分量相减必落在该闭区间；分步路径要显式构造目标概率的倒数，融合路径从不构造它。生产实现（`torch.nn.functional.cross_entropy`，pytorch/pytorch repo `torch/nn/functional.py`，教学参照）前向走 logsumexp 稳定形；eager 反向是 log_softmax 与 nll_loss 两个 ATen 算子反向的复合，其代数效果恒等于 $p - e_y$—— $1 / p_y$ 这个中间量在任意一条实现路径上都不出现。
 
 式 (5) 还直接给出 CE 梯度的两个 regime。预测自信且正确（ $p_y \to 1$ ）时，整行梯度 $\to 0$——已学会的 token 不再产生信号。预测错误（ $p_y \to 0$ ）时，目标分量 $\approx -1$、其余分量 $\approx p_j$——梯度分量恒有界， $\lvert \partial L / \partial z_j \rvert \le 2$。CE 经这个算子永不爆炸；训练中观测到的 logit 失控另有出处（z-loss 的动机，3.1）。
 
 归约语义是隐藏的口径坑：训练 loss 通常是逐 token 平均 $\bar{L} = (1/M) \sum_t L_t$（mean 归约），梯度因此带 $1/M$ 因子；sum 归约则没有。这个因子在梯度累积（1.5）与 fused CE 的分块实现（§10）里都必须显式处理，处理错一位就是 $M$ 倍的梯度尺度错误。
+
+> **坑**：mean 归约的因子漏乘或乘两次——梯度尺度错一个 batch 因子，表现为学习率「疑似失灵」。规避：把归约因子写成单独一行缩放，再用单 token 手算对照（自查四件套第 (b) 条）。
 
 全链 shape 走读一遍汇总： $z$ 从 $[M, V]$ 进，softmax 保持 $[M, V]$，逐行取目标分量后得 $[M]$，mean 归约成标量；反向从标量的种子 1 出发，按式 (5) 直接落回 $[M, V]$ 的 $p - e_y$——中间概率 $p$ 在融合实现里从不单独成账（它与前向的 $z$ 复用同一份内存语义）。
 
@@ -117,7 +121,7 @@ torch.autograd.gradcheck(lambda t: FusedSoftmaxCE.apply(t, y), (z,))   # 数值�
 
 ### 5.1 RMSNorm 全链推导
 
-前向（逐 token 行 $x \in \mathbb{R}^{D}$ ）： $r = \sqrt{(1/D) \sum_j x_j^{2} + \varepsilon}$， $y_i = \gamma_i \thinspace x_i / r$。给定上游 $g = \partial L / \partial y$，记 $u = g \odot \gamma$（把增益吸收进上游）。先求两个中间导数。 $\partial r / \partial x_i$ 由 $r^{2} = (1/D) \sum_j x_j^{2} + \varepsilon$ 两边微分得到： $2 r \thinspace \partial r = (2 x_i / D) \thinspace \partial x_i$，即 $\partial r / \partial x_i = x_i / (D r)$。于是
+路线三步：先把归一化系数对输入的导数从平方和里微分出来，再对每个输出分量写链式求和，最后把求和收拢成「减掉投影」的向量形——关键一步是分母带来的全局耦合。前向（逐 token 行 $x \in \mathbb{R}^{D}$ ）： $r = \sqrt{(1/D) \sum_j x_j^{2} + \varepsilon}$， $y_i = \gamma_i \thinspace x_i / r$。给定上游 $g = \partial L / \partial y$，记 $u = g \odot \gamma$（把增益吸收进上游）。先求两个中间导数。 $\partial r / \partial x_i$ 由 $r^{2} = (1/D) \sum_j x_j^{2} + \varepsilon$ 两边微分得到： $2 r \thinspace \partial r = (2 x_i / D) \thinspace \partial x_i$，即 $\partial r / \partial x_i = x_i / (D r)$。于是
 
 $$
 \frac{\partial y_j}{\partial x_i} = \frac{\gamma_j}{r} \thinspace \delta_{ij} - \frac{\gamma_j \thinspace x_j}{r^{2}} \cdot \frac{\partial r}{\partial x_i} = \frac{\gamma_j}{r} \thinspace \delta_{ij} - \frac{\gamma_j \thinspace x_j \thinspace x_i}{D \thinspace r^{3}} \qquad (6)
@@ -147,7 +151,7 @@ $$
 \frac{\partial L}{\partial x} = \frac{1}{\sigma} \left( u - \bar{u} \thinspace \mathbf{1} - \frac{\hat{x} \thinspace \langle u, \hat{x} \rangle}{D} \right), \qquad u = g \odot \gamma, \quad \bar{u} = \frac{1}{D} \sum_i u_i \qquad (9)
 $$
 
-**符号**： $\mathbf{1}$：全 1 向量； $\bar{u}$： $u$ 的均值。与式 (8) 逐项对照：RMSNorm 少的正是中心化项 $\bar{u} \thinspace \mathbf{1}$（其 Jacobian 少 $\mathbf{1} \mathbf{1}^{\top} / D$ 这一项）——不减均值，反向就不用抠均值方向的分量。 $\beta$ 的梯度是 $\sum_{\mathrm{tokens}} g$， $\gamma$ 的梯度同式 (8)、把 $\hat{y}$ 换成 $\hat{x}$。save 清单的取舍也多一分：式 (9) 需要 $\hat{x}$ 与 $\sigma$，实现可以存 $x$、 $\mu$、 $\sigma$（反向重算 $\hat{x}$ ），也可以直接存 $\hat{x}$ 与 $\sigma$。前者多一份 $\mu$ 的每行标量，后者省一次重算——差一个每 token 标量的量级，归 1.4 的逐算子权衡。式 (9) 的完整推导留作练习 1。
+**符号**： $\mathbf{1}$：全 1 向量； $\bar{u}$： $u$ 的均值。与式 (8) 逐项对照：RMSNorm 少的正是中心化项 $\bar{u} \thinspace \mathbf{1}$（其 Jacobian 少 $\mathbf{1} \mathbf{1}^{\top} / D$ 这一项）——不减均值，反向就不用抠均值方向的分量。 $\beta$ 的梯度是 $\sum_{\mathrm{tokens}} g$， $\gamma$ 的梯度同式 (8)、把 $\hat{y}$ 换成 $\hat{x}$。save 清单的取舍也多一分：式 (9) 需要 $\hat{x}$ 与 $\sigma$，实现可以存 $x$、 $\mu$、 $\sigma$（反向重算 $\hat{x}$ ），也可以直接存 $\hat{x}$ 与 $\sigma$。前者多一份 $\mu$ 的每行标量，后者省一次重算——差一个每 token 标量的量级，归 1.4 的逐算子权衡。式 (9) 的完整推导留作练习 2。
 
 ## 6. GELU / SiLU / SwiGLU 反向
 
@@ -209,7 +213,7 @@ $$
 D_i = \sum_{j=1}^{N} P_{ij} \thinspace \mathrm{d}P_{ij} = \sum_{j=1}^{N} P_{ij} \thinspace \langle v_j, \mathrm{d}O_i \rangle = \left\langle \sum_{j=1}^{N} P_{ij} \thinspace v_j, \hspace{5mu} \mathrm{d}O_i \right\rangle = \langle O_i, \mathrm{d}O_i \rangle \qquad (15)
 $$
 
-**符号**： $\mathrm{d}P_{ij} = \langle v_j, \mathrm{d}O_i \rangle$（由 $O = PV$ 经式 (2) ）；第三步交换求和与内积；最后一步代回 $O$ 的定义。于是 $D$ 由保存的 $O$ 与上游 $\mathrm{d}O$ 直接给出， $P$ 只在重算它的块内短暂存在。数学一致性：重算的 $S_{ij} = \langle q_i, k_j \rangle / \sqrt{d}$ 与前向的是同一批数——**重算不是近似**，反向梯度与「存下 $P$ 的方案」在数学上逐位一致（浮点累加顺序可不同，容差口径同 models 2.3 §8 的注记）。与前向的结构对偶：前向按块扫 $K, V$、在线累积 $O$ 与行统计；反向按块两重循环，每块从 HBM 读入 $Q, K, V, O, \mathrm{d}O$ 的对应块与行统计，在 SRAM 里重算 $S, P$ 后，就地算出该块对 $\mathrm{d}Q, \mathrm{d}K, \mathrm{d}V$ 的贡献并累加——每个块只进 HBM 一次，IO 账的 $N^{2} d^{2} / M_{\mathrm{sram}}$ 就是这么来的。attention 内 dropout 按 §8 路 (b)：不存 $O(N^{2})$ 的 mask，存前向的 RNG 状态、反向重抽（论文附录 B 口径，只多 $O(N)$ 额外内存）。
+**符号**： $\mathrm{d}P_{ij} = \langle v_j, \mathrm{d}O_i \rangle$（由 $O = PV$ 经式 (2) ）；第三步交换求和与内积；最后一步代回 $O$ 的定义。于是 $D$ 由保存的 $O$ 与上游 $\mathrm{d}O$ 直接给出， $P$ 只在重算它的块内短暂存在。**命题**（重算一致性）：FlashAttention 的反向梯度与「存下 $P$ 的方案」在数学上逐位一致（浮点累加顺序可不同，容差口径同 models 2.3 §8 的注记）。**证明**（要点）：重算的 $S_{ij} = \langle q_i, k_j \rangle / \sqrt{d}$ 与前向的是同一批数，上面的行和化简又说明反向所需的行统计量不必依赖被丢弃的概率矩阵——所以**重算不是近似**。与前向的结构对偶：前向按块扫 $K, V$、在线累积 $O$ 与行统计；反向按块两重循环，每块从 HBM 读入 $Q, K, V, O, \mathrm{d}O$ 的对应块与行统计，在 SRAM 里重算 $S, P$ 后，就地算出该块对 $\mathrm{d}Q, \mathrm{d}K, \mathrm{d}V$ 的贡献并累加——每个块只进 HBM 一次，IO 账的 $N^{2} d^{2} / M_{\mathrm{sram}}$ 就是这么来的。attention 内 dropout 按 §8 路 (b)：不存 $O(N^{2})$ 的 mask，存前向的 RNG 状态、反向重抽（论文附录 B 口径，只多 $O(N)$ 额外内存）。
 
 **账**。IO 复杂度（论文 Theorem 2 的前向界与 Theorem 5 的反向界，同型）：标准 attention 需要 $\Theta(Nd + N^{2})$ 次 HBM 访问，FlashAttention 需要 $\Theta(N^{2} d^{2} / M_{\mathrm{sram}})$ 次；在 $d$ 取 64–128、 $M_{\mathrm{sram}}$ 约 100 KB 的典型区间， $d^{2} \ll M_{\mathrm{sram}}$，访问量少一个量级级，论文并给出「任何精确 attention 算法无法在全部 SRAM 尺度上渐近优于它」的下界。内存：标准 $O(N^{2})$（存 $S$、 $P$ 两张），FlashAttention 在输入输出本体之外只多 $O(N)$（归一化统计）。代入一组数看内存差： $N$ = 4096、bf16 时，单头单序列单层的 $P$ 是 $4096^{2} \times 2$ bytes = 32 MiB；32 头 32 层、 $S$ 与 $P$ 两张共存就是 64 GiB（与 models 2.3 §7 的 scores+probs 表同口径）。FA 存下的行统计 $\ell, m$ 是 $2 \times 4096 \times 4$ bytes = 32 KiB——同一位置，三个数量级的差。这正是 models 2.3 §7 那张 $O(T^{2})$ 内存表被消掉的方式。FLOPs：前向 2 次 matmul（ $QK^{\top}$、 $PV$ ），反向 5 次——重算 $QK^{\top}$ 一次，加上五条闭式里的 4 次（ $\mathrm{d}V$、 $\mathrm{d}P$、 $\mathrm{d}Q$、 $\mathrm{d}K$ 各一次）；反向/前向 = 2.5，比 §2 的 2 倍律多出的 0.5 就是重算的标价。论文的实测口径是「即使 FLOPs 更多，重算因 HBM 访问减少反而加速反向」——FLOPs 一分没省，省的是内存与访存，与 models 1.2 §6 对 FlashAttention 的口径一致。块调度与 SRAM 驻留的 kernel 级实现归 gpu 维度。
 
@@ -280,7 +284,7 @@ class ChunkedLinearCE(torch.autograd.Function):
 
 ## 11. 算子 vjp 总表
 
-全章结果一页汇总。FLOPs 比 = 反向/前向（matmul 口径 $2mnk$；「常数倍」指与前向同为逐元素 $O(\cdot)$、常数在 2–6 之间）。
+全章结果一页汇总。读法只有一条主线：save 列决定显存，FLOPs 比决定时间。FLOPs 比 = 反向/前向（matmul 口径 $2mnk$；「常数倍」指与前向同为逐元素 $O(\cdot)$、常数在 2–6 之间）。
 
 | 算子 | 前向 | 反向 vjp | save 什么 | 反向/前向 FLOPs |
 | --- | --- | --- | --- | --- |
@@ -299,7 +303,9 @@ class ChunkedLinearCE(torch.autograd.Function):
 
 读法：「save 什么」列是激活账的逐项来源（1.4 的压缩对象）；「FLOPs 比」列说明 6ND 的「反向 = 2× 前向」对 matmul 主导部分精确成立，唯二例外是重算型算子（2.5 与 ≈3 两行）——它们用 FLOPs 换掉的正是「save 什么」列里最大的两项（ $T \times T$ 的 $P$ 与 $[M, V]$ 的 logits）。
 
-用 save 列可以把 models 1.2 账二的逐层激活表重新推一遍（8B 口径、每 token）。RMSNorm1 存 $x$ 与 $r$ → $d$ 个元素；QKV 投影是 matmul，两个输入都要存 → 层输入 $x$ 一份 $d$（与上行的 $x$ 是同一份，去重后只计一次）加 QKV 输出本身供后续消费 $(H_q + 2 H_{kv}) \thinspace d_{\mathrm{head}}$；attention 本体在 FA 口径下存 $Q, K, V, O$ 与行统计（否则是 $H_q \cdot T / 2$ 个概率元素，即那张表里的 $16T$ 项）；out 投影存其输入 $d$；RMSNorm2 同第一个；SwiGLU 存 $a, b, x$ 加 $h$ → $3 d_{\mathrm{ff}} + d$。逐项加总（去重后）正是 models 1.2 的每层每 token $4d + (H_q + 2 H_{kv}) \thinspace d_{\mathrm{head}} + 3 d_{\mathrm{ff}}$ 定长项结构——激活账不是经验清单，是这张 vjp 总表 save 列的投影。
+用 save 列可以把 models 1.2 账二的逐层激活表重新推一遍（8B 口径、每 token）。RMSNorm1 存 $x$ 与 $r$ → $d$ 个元素；QKV 投影是 matmul，两个输入都要存 → 层输入 $x$ 一份 $d$（与上行的 $x$ 是同一份，去重后只计一次）加 QKV 输出本身供后续消费 $(H_q + 2 H_{kv}) \thinspace d_{\mathrm{head}}$；attention 本体在 FA 口径下存 $Q, K, V, O$ 与行统计（否则是 $H_q \cdot T / 2$ 个概率元素，即那张表里的 $16T$ 项）；out 投影存其输入 $d$；RMSNorm2 同第一个；SwiGLU 存 $a, b, x$ 加 $h$ → $3 d_{\mathrm{ff}} + d$。逐项加总（去重后）正是 models 1.2 的每层每 token $4d + (H_q + 2 H_{kv}) \thinspace d_{\mathrm{head}} + 3 d_{\mathrm{ff}}$ 定长项结构。
+
+> **提点**：激活账不是经验清单，而是这张 vjp 总表 save 列的投影——压缩激活的每种手段（重算、融合、分块）都是在改写 save 列。
 
 ## 总结
 
@@ -313,17 +319,17 @@ class ChunkedLinearCE(torch.autograd.Function):
 | embedding | scatter-add（式 (13)） | 行稀疏梯度；`sparse=True` 一句 |
 | dropout | $g \odot m / (1 - q)$（式 (14)） | mask 复用；RNG 状态重抽（1.4 与 FA 反向共用） |
 | FlashAttention 反向 | 式 (15) + 五条闭式 | 存 $O$ + 行统计、不存 $P$；IO $\Theta(N^{2} d^{2} / M_{\mathrm{sram}})$；反向 2.5× |
-| fused / chunked CE | 分块 $p - e_y$ + 就地梯度 | logits 永不全量物化；Liger 平均吞吐 +20%、显存 −60%（[A]） |
+| fused / chunked CE | 分块 $p - e_y$ + 就地梯度 | logits 永不全量物化；Liger 平均吞吐 +20%、显存 −60%（[A]，练习 1） |
 
 ## 练习
 
-1.（推导）完成式 (9) 的 LayerNorm 反向：从 $\hat{x} = (x - \mu) / \sigma$ 出发，把 $\mu$ 与 $\sigma$ 对 $x$ 的依赖展开，验证其 vjp 比 RMSNorm 的式 (8) 恰好多一项 $-\bar{u} \thinspace \mathbf{1} / \sigma$；再说明这一项对应「全体输入同时加常数不改变输出」的不变性（对照 models 2.3 §3.3 对 softmax Jacobian 行和为 0 的讨论）。
+1.（计算 · [20]） $V$ = 128256、 $d$ = 4096：(a) $B \times T$ = 8×4096 时，朴素路径（bf16 logits 物化 + fp32 log_softmax save）的 logits 相关显存是多少 GiB？(b) FLCE 路径块长 2048、块 logits 以 fp32 临时物化时，峰值是多少？(c) 把 $T$ 拉到 32768（ $B$ 不变），两路径各是多少？先按正文口径把三问的预测值写出来再动手算；由此说明为什么长序列训练里 fused CE 从可选变成必需。校验：(a) 应等于正文两笔单序列账之和的 8 倍；(c) 里朴素路径随序列长放大 8 倍，分块路径峰值不变。
 
-2.（推导）用 §2 推论 2 证明 TP 的两条通信规则：列切线性层（ $A$ 按列分片到 $t$ 卡）的输入梯度是对各卡部分和的 all-reduce；行切线性层（ $A$ 按行分片、输入相应分片）的前向输出是 all-reduce 而反向无通信。由此写出每个线性层在两种切法下各自前向 + 反向的通信次数（5.1 的前置）。
+2.（推导 · [30]）完成式 (9) 的 LayerNorm 反向：从 $\hat{x} = (x - \mu) / \sigma$ 出发，把 $\mu$ 与 $\sigma$ 对 $x$ 的依赖展开，验证其 vjp 比 RMSNorm 的式 (8) 恰好多一项 $-\bar{u} \thinspace \mathbf{1} / \sigma$；再说明这一项对应「全体输入同时加常数不改变输出」的不变性（对照 models 2.3 §3.3 对 softmax Jacobian 行和为 0 的讨论）。
 
-3.（计算） $V$ = 128256、 $d$ = 4096：(a) $B \times T$ = 8×4096 时，朴素路径（bf16 logits 物化 + fp32 log_softmax save）的 logits 相关显存是多少 GiB？(b) FLCE 路径块长 2048、块 logits 以 fp32 临时物化时，峰值是多少？(c) 把 $T$ 拉到 32768（ $B$ 不变），两路径各是多少？由此说明为什么长序列训练里 fused CE 从可选变成必需。
+3.（推导 · [30]）用 §2 推论 2 证明 TP 的两条通信规则：列切线性层（ $A$ 按列分片到 $t$ 卡）的输入梯度是对各卡部分和的 all-reduce；行切线性层（ $A$ 按行分片、输入相应分片）的前向输出是 all-reduce 而反向无通信。由此写出每个线性层在两种切法下各自前向 + 反向的通信次数（5.1 的前置）。
 
-4.（代码）跑通 §10 的 `ChunkedLinearCE`：用 `torch.autograd.gradcheck`（fp64）验证其反向；与 `F.cross_entropy(H @ W.T, y)` 对 loss 与 `H.grad`、`W.grad` 到 `atol=1e-10`；在 GPU 上以 $V$ = 128256、 $M$ = 32768 跑两版，用 `torch.cuda.max_memory_allocated` 记录峰值显存并对照练习 3 (a)(b) 的估算。
+4.（代码 · [30]）跑通 §10 的 `ChunkedLinearCE`：用 `torch.autograd.gradcheck`（fp64）验证其反向；与 `F.cross_entropy(H @ W.T, y)` 对 loss 与 `H.grad`、`W.grad` 到 `atol=1e-10`；在 GPU 上以 $V$ = 128256、 $M$ = 32768 跑两版，用 `torch.cuda.max_memory_allocated` 记录峰值显存并对照练习 1 的 (a)(b) 估算。先预测两版峰值的比值再测。校验：loss 与两份梯度在 fp64 下 allclose（题面容差即锚）。
 
 ## 参考
 

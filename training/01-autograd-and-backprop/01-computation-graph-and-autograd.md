@@ -14,6 +14,8 @@ $$
 
 三步里只有第二步不是「把已写好的程序再跑一遍」。前向是你显式写出的程序；反向不是人写的，是框架从计算图自动生成的另一段程序。本章回答两个问题：这段自动生成的程序长什么样（§2–§4），它由什么机制执行（§6）。先立一个成本锚点：按 models 1.2 的 8B 口径，每 token 前向约 $1.5 \times 10^{10}$ FLOPs，反向约为其两倍。这个「两倍」不是经验值，是结构结论——依据在 §5，逐算子的证明在 1.2。
 
+本章口径一句话：参数量与算力账用 8B 模型（层参数口径为主，含输出头处随文标注）；token 数分两处——模式账用 4096，激活账用 32768，均随文标注；精度默认 bf16。
+
 ## 2. 计算图：算子作节点、tensor 作边的 DAG
 
 取最小非平凡例子 $y = (x W_1) W_2 + b$、 $L = \mathrm{mean}(y^{\odot 2})$（ $\odot$ 为逐元素乘），它的前向数据流与反向 adjoint 流：
@@ -33,7 +35,7 @@ x [B,T,d1] ─┐
                                                         种子：dL/dL = 1（标量损失的默认 adjoint）
 ```
 
-把这张图形式化：计算图（computation graph）是有向无环图（directed acyclic graph, DAG）。节点是算子实例（一次 `mm`、一次 `add`），边是 tensor（算子的输入输出）。无环是训练图的结构性事实：decoder-only LLM 的前向是无环数据流，梯度沿边反向流动时遇不到环。无环还有一个直接的工程含义：DAG 必有拓扑序，「反向按逆拓扑序逐节点执行」才有定义——§6.1 的引擎调度就建立在这上面。
+把这张图形式化：计算图（computation graph）是有向无环图（directed acyclic graph, DAG）。节点是算子实例（一次 `mm`、一次 `add`），边是 tensor（算子的输入输出）。无环是训练图的结构性事实：decoder-only LLM 的前向是无环数据流，梯度沿边反向流动时遇不到环。无环还有一个直接的工程含义：DAG 必有拓扑序，「反向按逆拓扑序逐节点执行」才有定义——§6.1 的引擎调度就建立在这上面。反例顺便定边界：带环的数据流（比如按时间展开的循环结构）拓扑序不存在，反向调度无从谈起——无环因此必须写进定义。
 
 DAG 不是树。残差连接 $y = x + h(x)$ 让 $x$ 同时被两个算子消费（fan-out），损失沿多条路径依赖同一个 tensor。梯度侧的对应规则是「沿全部路径求和」——这是多元链式法则的直接推论：若 $x$ 被 $f_a$ 与 $f_b$ 消费，则
 
@@ -41,11 +43,11 @@ $$
 \bar{x} = \bar{x}^{(a)} + \bar{x}^{(b)} \qquad (2)
 $$
 
-**符号**： $\bar{x} := \partial L / \partial x$，tensor $x$ 的伴随量（adjoint，即上游梯度）；上标 $(a), (b)$ 区分两条路径各自回传的分量。式 (2) 是「梯度累加」语义的数学原型：PyTorch 的 `.grad` 是 `+=` 累加、gradient accumulation（1.5）把同一参数的多份梯度相加，都源自这一求和规则。
+**符号**：所谓伴随量（adjoint），是指标量损失对某中间 tensor $x$ 的梯度，记 $\bar{x} := \partial L / \partial x$；上标 $(a), (b)$ 区分两条路径各自回传的分量。代入整数看一眼：两路各回传 3 与 4，该 tensor 收到的梯度是 7。式 (2) 是「梯度累加」语义的数学原型：PyTorch 的 `.grad` 是 `+=` 累加、gradient accumulation（1.5）把同一参数的多份梯度相加，都源自这一求和规则。这条规则的完整证明留作练习 4。
 
 ## 3. 链式法则的执行形式：逐节点 vjp，永不物化 Jacobian
 
-把前向写成复合链 $x_k = f_k(x_{k-1})$， $k = 1, \ldots, K$， $x_k \in \mathbb{R}^{n_k}$，损失 $L = \ell(x_K) \in \mathbb{R}$（参数含在 $x_0$ 里）。链式法则给出梯度的 Jacobian 连乘积：
+链式法则给出的是一个矩阵连乘恒等式，但恒等式不告诉你从哪头开始乘——顺序不同，成本差多少？路线：先写出连乘形式，再用结合律比较两种求值顺序，关键一步是「向量乘矩阵与矩阵乘矩阵不同价」。把前向写成复合链 $x_k = f_k(x_{k-1})$， $k = 1, \ldots, K$， $x_k \in \mathbb{R}^{n_k}$，损失 $L = \ell(x_K) \in \mathbb{R}$（参数含在 $x_0$ 里）。链式法则给出梯度的 Jacobian 连乘积：
 
 $$
 \frac{\partial L}{\partial x_0} = \nabla \ell \cdot J_K \cdot J_{K-1} \cdots J_1, \qquad J_k := \frac{\partial f_k}{\partial x_{k-1}} \in \mathbb{R}^{n_k \times n_{k-1}} \qquad (3)
@@ -69,30 +71,34 @@ $$
 
 ## 4. 前向模式 vs 反向模式：输入维与输出维的账
 
-式 (3) 还有第三种乘法顺序：从输入端向右传播切线（tangent）。递推写成 $`\dot{x}_k = J_k \thinspace \dot{x}_{k-1}`$，叫 Jacobian-向量积（jvp）：从 $`\dot{x}_0`$（输入的扰动方向）出发逐节点右传，终点 $`\dot{x}_K`$ 就是 $L$ 沿 $`\dot{x}_0`$ 方向的方向导数。这是前向模式（forward mode）；式 (4) 那样从损失端左传的是反向模式（reverse mode）。两种模式的能力不对称：
+式 (3) 还有第三种乘法顺序：从输入端向右传播切线（tangent）。递推写成 $`\dot{x}_k = J_k \thinspace \dot{x}_{k-1}`$，叫 Jacobian-向量积（jvp）：从 $`\dot{x}_0`$（输入的扰动方向）出发逐节点右传，终点 $`\dot{x}_K`$ 就是 $L$ 沿 $`\dot{x}_0`$ 方向的方向导数。这是前向模式（forward mode）；式 (4) 那样从损失端左传的是反向模式（reverse mode）。下文「一巡」的口径：沿图完整执行一遍对应模式。两种模式的能力不对称：
 
 - 一巡前向模式（选一个 $`\dot{x}_0`$ ）产出标量输出沿**一个输入方向**的导数；
 - 一巡反向模式（选一个输出分量的种子 adjoint）产出**该输出对全部输入**的梯度。
 
 账很好算。对 $f: \mathbb{R}^{n} \to \mathbb{R}^{m}$，求完整 Jacobian 需要 $n$ 次前向模式（逐输入方向喂单位切线），或者 $m$ 次反向模式（逐输出分量喂单位 adjoint）；每巡的成本都是前向求值的小常数倍（[Baydin et al., 2018](../references.md)，[B]）。所以谁划算由 $n$ 与 $m$ 的相对大小决定： $n \ll m$ 用前向， $m \ll n$ 用反向。
 
-LLM 把这个比值推到了极端。这里 $n$ = 参数量：8B 模型 $N \approx 7 \times 10^{9}$（models 1.2 §9 的层参数口径）。而 $m$ = 1——损失是标量。前向模式求一次全梯度要约 $7 \times 10^{9}$ 次前向当量；反向模式只要一巡。折成时间更直白：batch 4096 token 的一次前向约 $6 \times 10^{13}$ FLOPs，乘上 $7 \times 10^{9}$ 巡，按 $10^{15}$ FLOPS 的有效吞吐折合约 14 年；反向模式一巡约 0.1 秒。九个数量级的差距没有工程补救空间——LLM 训练的梯度计算只能用反向模式。这不是框架选择，是结构决定。练习 2 把这笔账的分步算术走一遍。
+LLM 把这个比值推到了极端。这里 $n$ = 参数量：8B 模型 $N \approx 7 \times 10^{9}$（models 1.2 §9 的层参数口径）。而 $m$ = 1——损失是标量。前向模式求一次全梯度要约 $7 \times 10^{9}$ 次前向当量；反向模式只要一巡。折成时间更直白：batch 4096 token 的一次前向约 $6 \times 10^{13}$ FLOPs，乘上 $7 \times 10^{9}$ 巡，按 $10^{15}$ FLOPS 的有效吞吐（口径：可持续的实际吞吐，非峰值）折合约 14 年；反向模式一巡约 0.1 秒。九个数量级的差距没有工程补救空间——LLM 训练的梯度计算只能用反向模式。这不是框架选择，是结构决定。练习 2 把这笔账的分步算术走一遍。
 
-反向模式赢下的梯度不是免费的，代价写在内存上。式 (4) 第 $k$ 步的 vjp 要用前向的中间值——matmul 的 vjp 就需要前向输入 $x_{k-1}$ 。于是前向的每个中间 tensor 都必须活到反向路过它为止。这就是 models 1.2 账二（激活内存）的源头；逐算子「存什么」的清单在 1.2 §11，「少存、用时重算」的压缩手段在 1.4。前向模式不需要存中间值：切线与前向同行，内存 $O(1)$——但它算不起。内存与方向的互换，是 AD 里最经典的权衡。PyTorch 也暴露了前向模式接口（`torch.autograd.forward_ad`，教学参照），在 LLM 规模下它只出现在 Hessian-向量积这类研究场景里。
+反向模式赢下的梯度不是免费的（口径：「免费」指不另耗 FLOPs），代价写在内存上。式 (4) 第 $k$ 步的 vjp 要用前向的中间值——matmul 的 vjp 就需要前向输入 $x_{k-1}$ 。于是前向的每个中间 tensor 都必须活到反向路过它为止。这就是 models 1.2 账二（激活内存）的源头；逐算子「存什么」的清单在 1.2 §11，「少存、用时重算」的压缩手段在 1.4。前向模式不需要存中间值：切线与前向同行，内存 $O(1)$——但它算不起。PyTorch 也暴露了前向模式接口（`torch.autograd.forward_ad`，教学参照），在 LLM 规模下它只出现在 Hessian-向量积这类研究场景里。
+
+> **提点**：内存与方向的互换是 AD 里最经典的权衡——反向模式用内存换「一次拿全梯度」，前向模式用时间换「不存中间值」。后文所有的激活压缩手段，都在这条权衡的反向模式一侧做文章。
 
 ## 5. 反向 FLOPs ≈ 2× 前向的依据
 
 models 1.2 §4 用过这个比例（其式 (4)：反向 $4N$ = 两倍前向 $2N$ ），本节给出它的一般依据，逐元素推导在 1.2 §2。
 
-先看 matmul 特例。 $Y = AB$ 的前向是 $2mnk$ FLOPs（models 1.2 式 (1) 的口径）。反向要为两个输入各算一份 vjp： $\partial L / \partial A = G B^{\top}$ 与 $\partial L / \partial B = A^{\top} G$（ $G = \partial L / \partial Y$ ）。这两个各是一次同形 matmul，各 $2mnk$，合计 $4mnk$——恰为前向两倍。
+**命题**（反向 ≈ 2× 前向）：matmul 主导的网络里，反向传播的 FLOPs 约为前向的两倍——matmul 项上精确成立，逐元素与归一化项同阶、被淹没；结构结论，不是经验值。
 
-这个结构可以一般化到任意算子 $y = f(x, W)$：反向要为每个可微输入各算一份 vjp——输入侧那份回传上游，权重侧那份累加进 `.grad`。matmul 类算子的两份 vjp 都与前向同价；逐元素算子（GELU、dropout）前向反向同为 $O(n)$ ；归一化类（RMSNorm）反向是前向的小常数倍（多两次内积）。后两类都被 matmul 项淹没，所以在 matmul 主导的网络上：反向 ≈ 2× 前向。代入 8B 口径的绝对数：每 token 前向 $2N \approx 1.4 \times 10^{10}$ FLOPs（层参数口径；含输出头约 $1.5 \times 10^{10}$，即 §1 与 §4 用的口径），反向 $4N \approx 2.8 \times 10^{10}$ FLOPs。6ND 的系数 6 就是 2 + 4 这样拼出来的（models 1.2 §5 的口径）。
+**证明**（要点）：路线是先证 matmul 特例，再看一般算子的结构，最后看非 matmul 项为什么不翻盘。先看 matmul 特例。 $Y = AB$ 的前向是 $2mnk$ FLOPs（models 1.2 式 (1) 的口径）。反向要为两个输入各算一份 vjp： $\partial L / \partial A = G B^{\top}$ 与 $\partial L / \partial B = A^{\top} G$（ $G = \partial L / \partial Y$ ）。这两个各是一次同形 matmul，各 $2mnk$，合计 $4mnk$——恰为前向两倍，特例成立。再看一般算子 $y = f(x, W)$：反向要为每个可微输入各算一份 vjp——输入侧那份回传上游，权重侧那份累加进 `.grad`。matmul 类算子的两份 vjp 都与前向同价；逐元素算子（GELU、dropout）前向反向同为 $O(n)$ ；归一化类（RMSNorm）反向是前向的小常数倍（多两次内积）。后两类都被 matmul 项淹没，所以命题成立。
+
+代入 8B 口径的绝对数：每 token 前向 $2N \approx 1.4 \times 10^{10}$ FLOPs（层参数口径；含输出头约 $1.5 \times 10^{10}$，即 §1 与 §4 用的口径），反向 $4N \approx 2.8 \times 10^{10}$ FLOPs。6ND 的系数 6 就是 2 + 4 这样拼出来的（models 1.2 §5 的口径）。
 
 这笔账顺便闭合了 models 1.2 的口径边界。 $C = 6ND$ = （前向 $2N$ + 反向 $4N$ ）× $D$，其适用条件声明「忽略 attention 二次项」。二次项服从同一比例： $QK^{\top}$ 与 $PV$ 两个 batched matmul，反向各是两次同形 matmul，反向 = $2 \times 2LT^{2}d$ 。所以 6ND「不含二次项」不是近似误差，只是把一笔同样满足 1:2 结构的账单另列了——需要时按 $3 \times 2LT^{2}d$（前向 + 反向）加回即可。有一个例外值得预告：重算型实现（FlashAttention）的反向要多付一次打分矩阵的重算，反向 = 2.5× 前向（推导在 1.2 §9）。「反向恒为 2 倍」在重计算算子处失效，这正是 1.4 重计算账的基础。
 
 ## 6. PyTorch autograd 机制走读
 
-前五节讲的是数学，本节落到实现。走读对象是 pytorch/pytorch repo（教学参照）；引擎与 hook 的机制级描述另见 [Li et al., 2020](../references.md)（arXiv:2006.15704，[A]，§3）。
+前五节的数学，在 PyTorch 里具体长什么样？本节落到实现来回答。走读对象是 pytorch/pytorch repo（教学参照）；引擎与 hook 的机制级描述另见 [Li et al., 2020](../references.md)（arXiv:2006.15704，[A]，§3）。
 
 ### 6.1 grad_fn 链、leaf 与 AccumulateGrad
 
@@ -110,6 +116,8 @@ models 1.2 §4 用过这个比例（其式 (4)：反向 $4N$ = 两倍前向 $2N$
 
 配套的正确性保险丝是版本计数（version counter）：被 save 的 tensor 若在反向前被原地修改（in-place），反向时报「modified by an inplace operation」类 RuntimeError——防止反向读到被污染的中间值。这也是 §6.3 里 `inference_mode` 关掉计数后更快的对照面。
 
+> **坑**：对 autograd save 过的 tensor 做原地修改（in-place）——反向在真正用到它时才报「modified by an inplace operation」，错误现场离肇事点很远，排查费劲。规避：要改值先 clone；写自定义算子时把输入当只读。
+
 ### 6.3 retain_graph / no_grad / inference_mode / detach 的精确语义
 
 四个 API 常被混用，语义各不相同：
@@ -120,6 +128,8 @@ models 1.2 §4 用过这个比例（其式 (4)：反向 $4N$ = 两倍前向 $2N$
 - `detach()`：返回与原 tensor 共享存储的新 tensor， `requires_grad=False`、无 `grad_fn` ——梯度流在此截断。注意存储共享意味着版本计数也共享：对 detach 出的 tensor 原地修改，原 tensor 的 autograd 安全检查照样能侦测到；它不是复制，写它会改原 tensor。
 
 ### 6.4 最小代码对照
+
+把本节的机制压成一小段教学代码，跑一遍就能对上号：
 
 ```python
 import torch
@@ -155,7 +165,7 @@ assert x.grad.shape == x.shape and W.grad.shape == W.shape
 
 ## 7. 动态图的工程含义与图捕获
 
-PyTorch 的图是 define-by-run（动态图）：每行前向代码执行时才实例化节点，图随每次前向重建。这带来两条工程含义。其一，Python 控制流（`if` / `for` / 数据依赖的分支）天然可微——图只是当次执行轨迹的记录，没走到的分支不在图里。其二，调试粒度是逐行 Python：任何中间 tensor 都可以直接打印、下断点，报错能指到具体的算子调用。代价也有两笔：逐算子的 Python 派发与图元数据开销，外加编译器看不到跨算子全貌、无从融合。这笔开销在 LLM 训练里不算大：单算子派发是微秒级，一个 $d$ = 4096 的 matmul 是毫秒级。但模型变小或控制流变密时（RL rollout 的小步循环、agent 场景的条件分支），派发占比会升到两位数百分比——动态图的便利与开销，必须放在一起计价。把图静态化再做优化（`torch.compile` 的图捕获与 kernel 融合、CUDA graph 重放），消除的正是这两笔开销；其机制归 gpu 维度（kernel 与图捕获），training 侧只在训练栈配置面遇到（6.3）。编译栈对反向的处理同样在演进：`torch.compile` 的 AOTAutograd 在前向追踪时同步切出反向图，Compiled Autograd 再把反向执行本身纳入整图优化——§6 的逐节点机制在编译路径上变成可被全局重排与融合的对象。数学内容不变，变的是调度粒度。
+PyTorch 的图是 define-by-run（动态图）：每行前向代码执行时才实例化节点，图随每次前向重建。这带来两条工程含义。其一，Python 控制流（`if` / `for` / 数据依赖的分支）天然可微——图只是当次执行轨迹的记录，没走到的分支不在图里。其二，调试粒度是逐行 Python：任何中间 tensor 都可以直接打印、下断点，报错能指到具体的算子调用。代价也有两笔：逐算子的 Python 派发与图元数据开销（口径：「开销」此处指墙钟时间，显存另算），外加编译器看不到跨算子全貌、无从融合。这笔开销在 LLM 训练里不算大：单算子派发是微秒级，一个 $d$ = 4096 的 matmul 是毫秒级。但模型变小或控制流变密时（RL rollout 的小步循环、agent 场景的条件分支），派发占比会升到两位数百分比——动态图的便利与开销，必须放在一起计价。把图静态化再做优化（`torch.compile` 的图捕获与 kernel 融合、CUDA graph 重放），消除的正是这两笔开销；其机制归 gpu 维度（kernel 与图捕获），training 侧只在训练栈配置面遇到（6.3）。编译栈对反向的处理同样在演进：`torch.compile` 的 AOTAutograd 在前向追踪时同步切出反向图，Compiled Autograd 再把反向执行本身纳入整图优化——§6 的逐节点机制在编译路径上变成可被全局重排与融合的对象。数学内容不变，变的是调度粒度。
 
 ## 总结
 
@@ -164,7 +174,7 @@ PyTorch 的图是 define-by-run（动态图）：每行前向代码执行时才�
 | 训练 step | 式 (1)：前向 → 反向 → 更新 | 只有反向是自动生成的程序 |
 | 计算图 | 节点 = 算子、边 = tensor 的 DAG | fan-out 处 adjoint 求和（式 (2)），`.grad` 累加的原型 |
 | 链式法则执行 | 式 (3)(4)： $`\bar{x}_{k-1} = \bar{x}_k \thinspace J_k`$ | 逐节点 vjp、永不物化 Jacobian；物化一层（ $d$ = 4096、 $M$ = 4096）即 128 GiB |
-| 两种模式 | $n$ 次 jvp vs $m$ 次 vjp | LLM： $n \approx 7 \times 10^{9}$、 $m$ = 1 ⇒ 只能反向模式 |
+| 两种模式 | $n$ 次 jvp vs $m$ 次 vjp | LLM： $n \approx 7 \times 10^{9}$、 $m$ = 1 ⇒ 只能反向模式（练习 2） |
 | 成本结构 | 反向 ≈ 2× 前向（matmul： $G B^{\top}$ + $A^{\top} G$ ） | 6ND 的反向 $4N$ 由此而来；重算型算子 2.5×（1.2 §9） |
 | 内存权衡 | 反向模式存全部中间值 | 激活账源头（models 1.2 账二）；压缩归 1.4 |
 | autograd 实现 | grad_fn 链 / AccumulateGrad / save_for_backward / 版本计数 | 引擎按依赖逆序调度；DDP hook 挂 accumulator（4.1） |
@@ -172,13 +182,13 @@ PyTorch 的图是 define-by-run（动态图）：每行前向代码执行时才�
 
 ## 练习
 
-1.（推导）设 $x_k = f_k(x_{k-1})$， $k = 1, \ldots, K$，全部 $n_k = n$。(a) 证明「物化式 (3) 的全链 Jacobian」（从右往左逐层乘）需要 $O(K n^{3})$ FLOPs 与 $O(n^{2})$ 内存，而式 (4) 的 vjp 链只需 $O(K n^{2})$ FLOPs 与 $O(n)$ 的额外内存（前向激活不计）。(b) 当 $f_k$ 全部是逐元素算子时，两种方案各是多少？由此说明 vjp 的优势只在 Jacobian 稠密（matmul 类）时显著。
+1.（推导 · [20]）设 $x_k = f_k(x_{k-1})$， $k = 1, \ldots, K$，全部 $n_k = n$。(a) 证明「物化式 (3) 的全链 Jacobian」（从右往左逐层乘）需要 $O(K n^{3})$ FLOPs 与 $O(n^{2})$ 内存，而式 (4) 的 vjp 链只需 $O(K n^{2})$ FLOPs 与 $O(n)$ 的额外内存（前向激活不计）。(b) 当 $f_k$ 全部是逐元素算子时，两种方案各是多少？由此说明 vjp 的优势只在 Jacobian 稠密（matmul 类）时显著。
 
-2.（计算）用「每巡成本 = 前向求值」口径估算 LLM 全梯度的模式差：8B 模型（ $n$ = $7 \times 10^{9}$ ）、一个 step 4096 token、每 token 前向 $1.5 \times 10^{10}$ FLOPs。(a) 一次前向多少 FLOPs？(b) 前向模式求全梯度（ $7 \times 10^{9}$ 巡）共多少 FLOPs？按 $10^{15}$ FLOPS 有效吞吐折合多少天？(c) 反向模式一巡（≈2× 前向）折合约多少秒？（有效吞吐的量级口径归 gpu 维度，此处只取数量级。）
+2.（计算 · [20]）用「每巡成本 = 前向求值」口径估算 LLM 全梯度的模式差：8B 模型（ $n$ = $7 \times 10^{9}$ ）、一个 step 4096 token、每 token 前向 $1.5 \times 10^{10}$ FLOPs。(a) 一次前向多少 FLOPs？(b) 前向模式求全梯度（ $7 \times 10^{9}$ 巡）共多少 FLOPs？按 $10^{15}$ FLOPS 有效吞吐折合多少天？(c) 反向模式一巡（≈2× 前向）折合约多少秒？（有效吞吐的量级口径归 gpu 维度，此处只取数量级。）先写出你对 (c) 的数量级预测再计算。校验：(b) 与 (c) 的比值应等于巡数的一半——(c) 那一巡本身约为两倍前向。
 
-3.（代码）用 §6.4 的 `MyLinear` 与 `torch.nn.Linear` 对同一组随机输入比对前向输出与 `x.grad / W.grad / b.grad`（fp64，`atol=1e-10` ）；再用 `torch.autograd.gradcheck` 验证 `MyLinear` 的反向（注意 gradcheck 要求 float64 输入）。最后从 `loss.grad_fn` 出发沿 `next_functions` 走三层，逐个打印节点类型，指出 AccumulateGrad 出现在什么位置。
+3.（代码 · [30]）用 §6.4 的 `MyLinear` 与 `torch.nn.Linear` 对同一组随机输入比对前向输出与 `x.grad / W.grad / b.grad`（fp64，`atol=1e-10` ）；再用 `torch.autograd.gradcheck` 验证 `MyLinear` 的反向（注意 gradcheck 要求 float64 输入）。最后从 `loss.grad_fn` 出发沿 `next_functions` 走三层，逐个打印节点类型，指出 AccumulateGrad 出现在什么位置。校验：三份梯度与 `torch.nn.Linear` 逐一对上（题面容差即锚）。
 
-4.（推导 + 代码）fan-out 求和的实验：构造 $y = h(x) + h(x)$（同一算子消费 $x$ 两次）。先按式 (2) 写出 $\bar{x}$ 的两路径求和；再在 PyTorch 里验证 `x.grad` 等于两份 vjp 之和。追加一问：以 `retain_graph=True` 连续两次 `backward()` 后 `x.grad` 是单次的几倍？用 §6.1 的累加语义解释。
+4.（推导 + 代码 · [30]）fan-out 求和的实验：构造 $y = h(x) + h(x)$（同一算子消费 $x$ 两次）。先按式 (2) 写出 $\bar{x}$ 的两路径求和；再在 PyTorch 里验证 `x.grad` 等于两份 vjp 之和。追加一问：以 `retain_graph=True` 连续两次 `backward()` 后 `x.grad` 是单次的几倍？先预测倍数再跑，用 §6.1 的累加语义解释。校验：两次 backward 后 `x.grad` 恰为单次的 2 倍。
 
 ## 参考
 

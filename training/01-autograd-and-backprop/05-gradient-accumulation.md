@@ -4,7 +4,7 @@
 
 ## 1. 累加等价性：micro-batch 平均的平均 = 大 batch 的平均
 
-显存装不下想用的 batch 时，标准做法是把 batch 切成 $m$ 份，逐个前向反向。为什么 batch 会想用到装不下？两个原因。第一，数据并行的度数 $d$ 直接乘进等效 batch（§4）：集群越大，每步摊到的序列越多。第二，梯度噪声随 batch 按 $1/B$ 收缩（2.1 式 (3)），大步长需要大 batch 支撑。激活峰值内存近似正比于一次前向的序列数（1.4），单卡放不下的部分就由累加补齐。设目标 batch 含 $B$ 条序列，第 $j$ 条的 loss 为 $\ell_j$（序列内 token 已平均；token 级口径见式 (4)），大 batch 目标是
+显存装不下想用的 batch 时，标准做法是把 batch 切成 $m$ 份，逐个前向反向。为什么 batch 会想用到装不下？两个原因。第一，数据并行的度数 $d$ 直接乘进等效 batch（精确定义见下节；§4 展开与并行的组合）：集群越大，每步摊到的序列越多。第二，梯度噪声随 batch 按 $1/B$ 收缩（2.1 式 (3)），大步长需要大 batch 支撑。激活峰值内存近似正比于一次前向的序列数（1.4），单卡放不下的部分就由累加补齐。本章数值口径先定死：等效 batch 的算例全章复用同一组参数（b = 8、m = 16、d = 256、T = 4096），通信账全章复用同一模型规模（7B 级参数、bf16 梯度）；练习题自带设定处视为独立口径，随题面给出。设目标 batch 含 $B$ 条序列，第 $j$ 条的 loss 为 $\ell_j$（序列内 token 已平均；token 级口径见式 (4)），大 batch 目标是
 
 $$
 \bar\ell = \frac{1}{B} \sum_{j=1}^{B} \ell_j \qquad (1)
@@ -18,17 +18,21 @@ $$
 \hat\ell_i = \frac{1}{b} \sum_{j \in S_i} \ell_j, \qquad \bar\ell = \frac{1}{m} \sum_{i=1}^{m} \hat\ell_i \qquad (2)
 $$
 
-**符号**： $\hat\ell_i$ ：第 $i$ 个 micro-batch 内的平均 loss。第二行就是「先各自平均再累加」与「全量一次平均」的等价——加法的结合律，没有近似。
+**符号**： $\hat\ell_i$ ：第 $i$ 个 micro-batch 内的平均 loss。
 
-梯度侧同理。对 $\hat\ell_i / m$ 调 `backward()`，autograd 把 $\nabla (\hat\ell_i / m)$ 原地加进每个参数的 `.grad`（1.1 的 `AccumulateGrad` 语义：`.grad` 不清零就持续累加）。 $m$ 个 micro-batch 走完后
+**命题**（累加等价）：在等权、逐样本独立、token 口径一致三个前提下（逐条核对见下），micro-batch 累加得到的参数梯度与大 batch 一次反向完全相同。**证明**（两步：标量用结合律，梯度用线性性）。标量侧：上面第二个等号就是「先各自平均再累加」与「全量一次平均」的等价——加法的结合律，没有近似。梯度侧：对 $\hat\ell_i / m$ 调 `backward()`，autograd 把 $\nabla (\hat\ell_i / m)$ 原地加进每个参数的 `.grad`（1.1 的 `AccumulateGrad` 语义：`.grad` 不清零就持续累加）。 $m$ 个 micro-batch 走完后得到
 
 $$
 \mathrm{grad} = \sum_{i=1}^{m} \nabla \frac{\hat\ell_i}{m} = \frac{1}{m} \sum_{i=1}^{m} \nabla \hat\ell_i = \nabla \bar\ell \qquad (3)
 $$
 
-第二步用了梯度的线性性。结论：累加方案拿到的参数梯度，与大 batch 一次反向完全相同。顺带对照一个相近手段。gradient checkpointing（1.4）用一次额外前向换激活不落地，FLOPs 涨到约 $8ND$ ；gradient accumulation 不动 FLOPs，代价是每步多 $m$ 次小前向反向的固定开销。两者是两种不同的显存手段，可以叠加：先靠累加把单步 batch 抬到目标，再靠 checkpointing 把每个 micro-batch 的激活峰值压进显存。
+第二步用了梯度的线性性，证毕。顺带对照一个相近手段。gradient checkpointing（1.4）用一次额外前向换激活不落地，FLOPs 涨到约 $8ND$ ；gradient accumulation 不动 FLOPs，代价是每步多 $m$ 次小前向反向的固定开销。两者是两种不同的显存手段，可以叠加：先靠累加把单步 batch 抬到目标，再靠 checkpointing 把每个 micro-batch 的激活峰值压进显存。
 
-$1/m$ 这个因子有三种等价放法。(a) 每个 micro-batch 的 loss 先除 $m$ 再 `backward()`，本章代码用这种。(b) 累加 $m$ 份原始梯度，更新前统一除 $m$ 。(c) 更新时把 LR 临时除 $m$ 。三种只选一处放。漏放的后果是梯度放大 $m$ 倍，约等于 LR 放大 $m$ 倍： $m = 16$ 时等于把 LR 无声抬高 16 倍，轻则 loss 曲线整体偏漂，重则直接发散。这类 bug 不抛异常、只改训练语义，排查成本高。(c) 会把 LR 的语义搅乱——schedule、warmup、裁剪阈值都要跟着换算——只作等价性说明，不要落地。
+$1/m$ 这个因子有三种等价放法。(a) 每个 micro-batch 的 loss 先除 $m$ 再 `backward()`，本章代码用这种。(b) 累加 $m$ 份原始梯度，更新前统一除 $m$ 。(c) 更新时把 LR 临时除 $m$ 。三种只选一处放。
+
+> **坑**：漏放归一化因子不抛异常、只改训练语义，排查成本高——后果是梯度放大 $m$ 倍，约等于 LR 放大 $m$ 倍： $m = 16$ 时等于把 LR 无声抬高 16 倍，轻则 loss 曲线整体偏漂，重则直接发散。
+
+(c) 会把 LR 的语义搅乱——schedule、warmup、裁剪阈值都要跟着换算——只作等价性说明，不要落地。
 
 等价性成立依赖三个前提，逐条核对：
 
@@ -44,7 +48,9 @@ $$
 
 审查一份真实训练代码是否踩坑，按三条前提倒查即可：`criterion` 的 reduction 是 mean 还是 sum、每个 micro-batch 的 loss 乘的是 $1/m$ 还是 $1$ 、micro-batch 之间 token 数是否恒定、norm 层是否逐 token。四个答案都对，式 (3) 就在你的代码里成立；任何一个不对，先修口径再谈调参。
 
-**FLOPs 与内存账**。总计算量与切分无关：每 token 前向加反向约 $6N$ FLOPs（models 1.2 式 (5)），总 token 数相同则总 FLOPs 相同，累加在纸面上是免费的。变的是两笔账。收益：激活峰值内存从 $\propto B$ 降到 $\propto b$ ，即 1.4 的激活账除以 $m$ ——这正是动机。代价：每 micro-batch 多一轮 kernel 启动、框架调度与同步开销。 $b$ 太小时单次前向反向喂不饱 GPU，累加从「白拿的显存」退化成「拿吞吐换显存」； $b$ 的下限由硬件利用率定，上限由显存定。累加自身在显存上近乎免费：`.grad` 始终只有一份参数大小的缓冲， $m$ 不放大它。最后补一句浮点事实：浮点加法不满足结合律， $m$ 步累加与一次大 batch 反向的求和顺序不同，结果是「数学恒等、位级不等」。fp32 梯度缓冲下差异远低于梯度噪声本身，bf16 场景放宽容差即可（§5 的自检代码有注）。
+**FLOPs 与内存账**。总计算量与切分无关：每 token 前向加反向约 $6N$ FLOPs（models 1.2 式 (5)），总 token 数相同则总 FLOPs 相同，累加在纸面上是免费的（口径：「免费」指总 FLOPs 不变；kernel 启动等固定开销另计，见下）。变的是两笔账。收益：激活峰值内存从 $\propto B$ 降到 $\propto b$ ，即 1.4 的激活账除以 $m$ ——这正是动机。代价：每 micro-batch 多一轮 kernel 启动、框架调度与同步开销。 $b$ 太小时单次前向反向喂不饱 GPU，累加从「白拿的显存」退化成「拿吞吐换显存」； $b$ 的下限由硬件利用率定，上限由显存定。累加自身在显存上近乎免费：`.grad` 始终只有一份参数大小的缓冲， $m$ 不放大它。
+
+> **坑**：浮点加法不满足结合律—— $m$ 步累加与一次大 batch 反向的求和顺序不同，结果「数学恒等、位级不等」。fp32 梯度缓冲下差异远低于梯度噪声本身；bf16 场景放宽容差即可（§5 的自检代码有注）。
 
 **归一化位置选哪处，工程上有差别**。(a) 的坏处是 loss 日志被缩小 $m$ 倍（§3 的日志口径靠求和恢复）；(b) 要在更新前插一次全参数缩放，多一遍读写；(c) 已否决。生产训练栈多数走 (a) 的变体：把 $1/m$ 折进 criterion 或梯度累加器的缩放里。原因很直接——这个写法把「每个 micro-batch 对总梯度的贡献」的语义写在了反向发生的地方。
 
@@ -65,7 +71,7 @@ $$
 
 ## 3. 顺序与状态陷阱：裁剪、噪声、优化器内部计数
 
-式 (3) 的等价不等于「随便拆都对」。三个陷阱：
+拆开跑，真的还和原来一样吗？式 (3) 的等价不等于「随便拆都对」。陷阱在顺序与状态，共三个：
 
 **梯度裁剪必须作用于累加之后**。`clip_grad_norm_` 读的是 `.grad` 的当前值，正确顺序： $m$ 个 micro-batch 全部累加完（DP 下含一次 all-reduce，§4）→ clip → `step()` → `zero_grad()`。逐 micro-batch 裁剪不是任何意义上的近似。裁剪是按范数的非线性缩放，部分和的范数分布与全和不同。用一个一维示意看两组数。第一组：两个方向相反的 micro-batch 梯度 $g_1 = 0.9$ 、 $g_2 = -0.9$ ，全和为 0、本不该动；逐段以阈值 0.5 裁剪得 $0.5 - 0.5 = 0$ ，这组侥幸相同。第二组： $g_1 = 2$ 、 $g_2 = -0.1$ ，全和 $1.9$ 按比例缩到阈值 1.0、方向不变；逐段裁得 $1.0 - 0.1 = 0.9$ ，方向与幅度全错。一般地 $\mathrm{clip}\left(\sum_i g_i\right) \neq \sum_i \mathrm{clip}(g_i)$ ：逐段裁剪系统性扭曲更新。范数裁剪的公式与阈值选择归 2.4，本章只立顺序语义。fp16 loss scaling 场景同理：unscale 也必须发生在累加完成之后、clip 之前（scaling 机制归 1.3）。
 
@@ -79,7 +85,7 @@ $$
 
 ## 4. 与数据并行的组合：`no_sync` 把通信除以 $m$
 
-数据并行（DP）的意思： $d$ 个副本各自算梯度，再跨副本求平均。这套机制（bucket 化、反向与通信 overlap、hook 注册时机）的完整走读归 4.1，本章只取 API 语义。PyTorch DDP 的同步语义直接从实现读（pytorch/pytorch repo `torch/nn/parallel/distributed.py`，教学参照）。梯度就绪回调里执行的是「梯度除以 world size、再 all-reduce（SUM）」：各 rank 拿到的是跨 rank **平均**梯度。于是 DP + 累加的组合在数学上仍是同一个平均：
+梯度散在多张卡上，什么时候必须同步一次？先把数据并行的语义摆清楚。数据并行（DP）的意思： $d$ 个副本各自算梯度，再跨副本求平均。这套机制（bucket 化、反向与通信 overlap、hook 注册时机）的完整走读归 4.1，本章只取 API 语义。PyTorch DDP 的同步语义直接从实现读（pytorch/pytorch repo `torch/nn/parallel/distributed.py`，教学参照）。梯度就绪回调里执行的是「梯度除以 world size、再 all-reduce（SUM）」：各 rank 拿到的是跨 rank **平均**梯度。于是 DP + 累加的组合在数学上仍是同一个平均：
 
 $$
 g = \frac{1}{d} \sum_{r=1}^{d} g_r, \qquad g_r = \frac{1}{m} \sum_{i=1}^{m} \nabla \hat\ell_{r,i} \qquad (6)
@@ -101,11 +107,11 @@ no_sync: fwd + bwd      fwd + bwd      fwd + bwd      fwd + bwd
 
 通信账。设梯度张量字节数为 $M$ （bf16 梯度下 $M = 2N$ bytes），ring all-reduce 每 rank 每轮通信量 $\approx 2M$ （系数 $2(d-1)/d$ 的推导归 4.1）。固定 token 预算下，naive 的通信总量正比于 $m$ 轮 / step，`no_sync` 只有 1 轮 / step——**通信总量除以 $m$** 。数值感： $N = 7 \times 10^{9}$ 、bf16 梯度 $M \approx 13$ GiB； $m = 8$ 时 naive 每步每 rank 约 $209$ GiB，`no_sync` 约 $26$ GiB，等效于把累加期间的同步开销整个抹掉。两个边界注记。其一，bucket 化 overlap（反向算到一半就开始通信，归 4.1）只发生在最后一次反向；前 $m - 1$ 次反向没有任何通信，也谈不上 overlap。所以 `no_sync` 省的是通信本身，不只是暴露出来的通信。其二，单卡 $d = 1$ 时 `no_sync` 没有作用对象，单机累加写普通循环（§5 第一段）即可。
 
-与异步方案的对照值得立一句。累加 + `no_sync` 保持严格的同步语义：各 rank 在同一参数版本上工作，同一时刻提交同一份平均梯度，没有 staleness。「各 worker 异步推梯度」的路线（异步 SGD）在语义上是另一回事——它用陈旧梯度换通信吞吐，收敛行为不再是式 (6) 的平均。同步与异步的账归 4.1 展开。本章只需记住一点：累加是同步框架内的省通信手段，不改变优化轨迹的数学定义。
+> **提点**：与异步方案对照一下更清楚。累加 + `no_sync` 保持严格的同步语义：各 rank 在同一参数版本上工作，同一时刻提交同一份平均梯度，没有 staleness。「各 worker 异步推梯度」的路线（异步 SGD）在语义上是另一回事——它用陈旧梯度换通信吞吐，收敛行为不再是式 (6) 的平均。同步与异步的账归 4.1 展开。本章只需记住一点：累加是同步框架内的省通信手段，不改变优化轨迹的数学定义。
 
 ## 5. 实现走读：手动循环与 DDP `no_sync`
 
-单机手动累加（教学用，非优化实现）：
+上面四节的规则，能不能落到二十行以内？能。单机手动累加（教学用，非优化实现）：
 
 ```python
 # 教学用，非优化实现。等价性：m 步累加 ≡ 大 batch 一次反向（式 (3)）
@@ -171,10 +177,10 @@ for p_big, p_acc in zip(model_big.parameters(), model_acc.parameters()):
 
 ## 练习
 
-1.（推导）设 $m$ 个 micro-batch 的有效 token 数 $n_1, \ldots, n_m$ 不全等，micro-batch $i$ 的 loss 为其内部有效 token 平均 $\hat\ell_i$ 。(a) 证明：取权重 $w_i = n_i / \sum_j n_j$ 时 $\sum_i w_i \thinspace \nabla \hat\ell_i$ 等于全体有效 token 上的平均梯度。(b) 给一组 $n_i$ 与 $\hat\ell_i$ 的具体数值，使等权 mean-of-means 与全局 token 平均相差 20% 以上。(c) 说明定长 packed 序列为何自动免除该问题。
-2.（计算） $N = 7 \times 10^{9}$ 参数、bf16 梯度、 $d = 512$ 卡、 $m = 8$ 。(a) 按 ring all-reduce 每轮每 rank $2(d-1)/d \cdot M$ 字节（推导归 4.1），算 naive 与 `no_sync` 两种方案每个 optimizer step 的每 rank 通信量。(b) 设单轮 all-reduce 耗时 200 ms、每个 micro-batch 前向加反向 1 s，两种方案通信占 step 时间的比例各是多少？(c) 同一模型改走 $m = 1$ 并把 $b$ 扩大 8 倍（假设显存装得下）：通信量与 (a) 何异？
-3.（计算）某配方报告「global batch size 1024 序列、序列长 8192」，训练代码为 $b = 2$ 、 $d = 64$ 。(a) 求 $m$ 与 $B_{\mathrm{tok}}$ 。(b) 若把 $m$ 减半、其余不动，token 预算不变时 optimizer step 数如何变？cosine schedule 的总步数参数应如何改才能保持 token 轴上的 decay 形状？
-4.（代码）跑通 §5 的等价性自检；然后把 criterion 换成带 padding mask 的 token 平均 loss，人为让各 micro-batch 有效 token 数不等（如末段补 pad），分别用等权累加与练习 1 (a) 的加权累加，用 `torch.allclose` 判定哪个能对上整批 token 平均口径的梯度。
+1.（推导 · [20]）设 $m$ 个 micro-batch 的有效 token 数 $n_1, \ldots, n_m$ 不全等，micro-batch $i$ 的 loss 为其内部有效 token 平均 $\hat\ell_i$ 。(a) 证明：取权重 $w_i = n_i / \sum_j n_j$ 时 $\sum_i w_i \thinspace \nabla \hat\ell_i$ 等于全体有效 token 上的平均梯度。(b) 给一组 $n_i$ 与 $\hat\ell_i$ 的具体数值，使等权 mean-of-means 与全局 token 平均相差 20% 以上。(c) 说明定长 packed 序列为何自动免除该问题。
+2.（计算 · [20]） $N = 7 \times 10^{9}$ 参数、bf16 梯度、 $d = 512$ 卡、 $m = 8$ 。先写出你预测的两种方案通信量之比再动笔。(a) 按 ring all-reduce 每轮每 rank $2(d-1)/d \cdot M$ 字节（推导归 4.1），算 naive 与 `no_sync` 两种方案每个 optimizer step 的每 rank 通信量。(b) 设单轮 all-reduce 耗时 200 ms、每个 micro-batch 前向加反向 1 s，两种方案通信占 step 时间的比例各是多少？(c) 同一模型改走 $m = 1$ 并把 $b$ 扩大 8 倍（假设显存装得下）：通信量与 (a) 何异？校验：(a) 中 `no_sync` 方案的每步通信量应恰为 naive 方案的八分之一（与正文的 26 / 209 GiB 对照）。
+3.（计算 · [20]）某配方报告「global batch size 1024 序列、序列长 8192」，训练代码为 $b = 2$ 、 $d = 64$ 。先口算预测 (a) 的累加步数再动笔。(a) 求 $m$ 与 $B_{\mathrm{tok}}$ 。(b) 若把 $m$ 减半、其余不动，token 预算不变时 optimizer step 数如何变？cosine schedule 的总步数参数应如何改才能保持 token 轴上的 decay 形状？校验：(a) 的累加步数应整除无余；(b) 的步数变化倍数与累加步数的变化倍数互为倒数。
+4.（代码 · [30]）先预测：等长设定下两条累加路径应当一致，不等长设定下只有一条能对上——写出你猜哪条，再跑。跑通 §5 的等价性自检；然后把 criterion 换成带 padding mask 的 token 平均 loss，人为让各 micro-batch 有效 token 数不等（如末段补 pad），分别用等权累加与练习 1 (a) 的加权累加，用 `torch.allclose` 判定哪个能对上整批 token 平均口径的梯度。校验：能对上的那条路径，其梯度与整批 token 平均在 fp32 下应 allclose，容差 1e-6 量级。
 
 ## 参考
 
