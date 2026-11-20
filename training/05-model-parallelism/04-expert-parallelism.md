@@ -30,7 +30,11 @@ $$
 
 通信量的上界由此直接读出： $X^{\prime}$ 有 $nk$ 行，dispatch 移动 $nkd$ 个元素，combine 同量——每 token 每层 $2kd$ 个元素，bf16 合 $4kd$ bytes。这正是 models 4.5 §7 交付的「每 token 每层 $2kd$ 个元素（bf16 合 $4kd$ bytes）、扇出 $\le M$ 节点」的上界（V3 实例： $2 \times 8 \times 7168 \times 2 \approx 229$ KB，乘 58 个 MoE 层）。本章不重复推导，只在 §2 把这个上界按命中分布细化。
 
-为什么要接受这套跨卡机制？因为 MoE 的经济学是「FLOPs 按 $N_{\mathrm{act}}$ 付、容量按 $N_{\mathrm{tot}}$ 付」（models 4.5 §1），而 $N_{\mathrm{tot}}$ 的上限由显存固定——DeepSeek-V3 的 671B 总参数中 expert 占绝对大头，单卡放不下时按卡分片是唯一出路（V3：671B 总参 / 37B 激活，[DeepSeek-AI, 2024](../references.md)，[A]）。EP 买的不是速度，是容量；它的全部系统问题都长在这条通信回路上。
+为什么要接受这套跨卡机制？因为 MoE 的经济学是「FLOPs 按 $N_{\mathrm{act}}$ 付、容量按 $N_{\mathrm{tot}}$ 付」（models 4.5 §1），而 $N_{\mathrm{tot}}$ 的上限由显存固定——DeepSeek-V3 的 671B 总参数中 expert 占绝对大头，单卡放不下时按卡分片是唯一出路（V3：671B 总参 / 37B 激活，[DeepSeek-AI, 2024](../references.md)，[A]）。
+
+> **提点**：EP 买的不是速度，是容量——它的全部系统问题都长在这条通信回路上。
+
+本章口径：数字例统一用 DeepSeek-V3 的配置——61 层、256+1 expert、top-8、hidden 7168、EP64 跨 8 节点；换口径处随文声明。
 
 ## 2. 通信账细化：命中分布函数
 
@@ -46,7 +50,7 @@ $$
 \mathbb{E}[D] = e \left( 1 - \left(1 - \frac{1}{e}\right)^{k} \right) \qquad (3)
 $$
 
-$k \ll e$ 时 Taylor 展开得 $\mathbb{E}[D] \approx k - \binom{k}{2}/e$——几乎不打折。代入 V3 的数字： $e = 64$、 $k = 8$ 时 $\mathbb{E}[D] \approx 7.6$，卡级去重只省约 5%。去重的收益在更粗的粒度上：把「卡」换成「节点」。 $e$ 张卡组在 $e/8$ 个节点上（8 卡/节点）、均衡命中时， $k = 8$ 的期望命中节点数为 $8(1 - (7/8)^8) \approx 5.3$ 个——跨节点流量按节点去重可省约 1/3。如果路由规则直接把节点数压到 $M$（V3 的组限定分发： $M = 4$，选中组内均衡时再算组内命中约 $4(1 - (3/4)^8) \approx 3.6$ 个节点），IB 上的副本数就从逐 expert 的 $k = 8$ 份压到 $\le 4$ 份。**node-limited routing 的通信语义在此**：它不改每 token 的 expert 数，改的是副本的粒度与扇出（§6 展开其内核实现）。
+$k \ll e$ 时 Taylor 展开得 $\mathbb{E}[D] \approx k - \binom{k}{2}/e$——几乎不打折。代入 V3 的数字： $e = 64$、 $k = 8$ 时 $\mathbb{E}[D] \approx 7.6$，卡级去重只省约 5%。去重的收益在更粗的粒度上：把「卡」换成「节点」。 $e$ 张卡组在 $e/8$ 个节点上（8 卡/节点）、均衡命中时， $k = 8$ 的期望命中节点数为 $8(1 - (7/8)^8) \approx 5.3$ 个——跨节点流量按节点去重可省约 1/3。如果路由规则直接把节点数压到 $M$（V3 的组限定分发： $M = 4$，选中组内均衡时再算组内命中约 $4(1 - (3/4)^8) \approx 3.6$ 个节点），IB 上的副本数就从逐 expert 的 $k = 8$ 份压到 $\le 4$ 份。**node-limited routing 的通信语义在此**：它不改每 token 的 expert 数，改的是副本的粒度与扇出（口径：一个 token 的副本发往的不同节点数；§6 展开其内核实现）。
 
 **偏斜情形**。上界不保证时间。记卡 $j$ 一个 step 收到的 (token, expert) 副本数
 
@@ -54,7 +58,7 @@ $$
 R_j = \sum_{t=1}^{n} \sum_{i=1}^{N_e} R_{ti} \cdot \mathbb{1}[\pi(i) = j] \qquad (4)
 $$
 
-**符号**： $\pi(i)$：expert $i$ 所在的卡。总量守恒： $\sum_j R_j = nk$；均衡时 $R_j \approx nk/e$。但 all-to-all 与随后的 expert FFN 都是同步点——一层的时间由最慢的卡决定： $T_{\mathrm{layer}} \propto \max_j R_j$。路由塌缩（models 4.5 §4 的病理学）把 $\max_j R_j$ 推向 $nk$ 的极端，系统读数是 $e$ 倍的层时间劣化。这就是「负载不均不是统计问题、是尾延迟问题」（models 4.5 §7 的口径）的公式化。
+**符号**： $\pi(i)$：expert $i$ 所在的卡。总量守恒： $\sum_j R_j = nk$；均衡时 $R_j \approx nk/e$。但 all-to-all 与随后的 expert FFN 都是同步点——一层的时间由最慢的卡决定： $T_{\mathrm{layer}} \propto \max_j R_j$。路由塌缩（models 4.5 §4 的病理学）把 $\max_j R_j$ 推向 $nk$ 的极端，系统读数是 $e$ 倍的层时间劣化。这就是「负载不均不是统计问题、是尾延迟问题」（models 4.5 §7 的口径）的公式化。代入一组数：组内 n = 65536 个 token、k = 2、e = 64 时，均衡值是 nk/e = 2048；若偏斜使某卡的 R_j 涨到 8192，其余 63 张卡都要等它——该层时长被拖到 4 倍。
 
 ## 3. Capacity factor 与溢出的系统后果
 
@@ -66,11 +70,13 @@ $$
 
 现代栈还有第三条路：不做容量截断的 dropless 分发，按实际命中数变长组批（grouped GEMM 按 expert 分段）。它消除 drop 与 padding，代价是变长 kernel 与负载监控的复杂度——kernel 层的实现归 gpu 维度，Megatron-Core 的 dispatcher 族（§7）提供多条实现路线。
 
+> **坑**：把 capacity factor 当质量旋钮猛调会两头落空——压向 1 时溢出率抬升（丢数据与 router 梯度），调大则 padding 行的 FLOPs 浪费上升（丢算力）。它是负载波动的缓冲预分配，不是超参。
+
 ## 4. 负载不均衡的系统形态
 
-式 (4) 的 $\max_j R_j$ 在三个环节制造延迟，按出现顺序：dispatch 的接收端（热点卡的入口带宽与接收 buffer 先饱和）、expert FFN（热点卡的 batch 大、算得慢）、combine（回程再堵一次）。MoE 层前后都是同步点，所以热点卡把 $\max_j R_j / \bar{R}$ 的倍数直接乘进整层的墙上时间，其余 $e - 1$ 张卡空等——偏斜的代价是乘性的，不是加性的。
+**命题**（木桶）：一层 MoE 的墙上时间由最慢的卡决定，偏斜度直接乘进层时长。式 (4) 的 $\max_j R_j$ 在三个环节制造延迟，按出现顺序：dispatch 的接收端（热点卡的入口带宽与接收 buffer 先饱和）、expert FFN（热点卡的 batch 大、算得慢）、combine（回程再堵一次）。**证明**（要点）：MoE 层前后都是同步点，所以热点卡把 $\max_j R_j / \bar{R}$ 的倍数直接乘进整层的墙上时间，其余 $e - 1$ 张卡空等——偏斜的代价是乘性的，不是加性的。严格化（把系数拆成计算与通信两个）留作练习 4。
 
-工程上有两族对策。模型侧是均衡机制本身：aux loss 把均衡写进优化目标，aux-loss-free 偏置把均衡移出优化目标（两者的数学与梯度分析归 models 4.5 §2.2 与 §3.2，不重复）。这里只记偏置方案的系统读法：V3 的偏置 $b_i$ 只参与 expert 的选择、不进权重、不在计算图里——在系统视角下，它是一个对队列长度的离散积分控制器（超载则扣、欠载则加），把「均衡」从 loss 面降级为控制回路。V3 的部署口径：更新步长 $\gamma = 10^{-3}$（符号步）作用于前 14.3T tokens，最后 500B tokens 关闭；另有 $\alpha = 10^{-4}$ 的 sequence-wise 均衡损失兜底单序列内的极端偏斜（[DeepSeek-AI, 2024](../references.md)，[A]，§4.2 超参节）。系统侧的第二族是复制热点：推理部署把高负载 expert 冗余部署多份（V3 推理框架按在线统计每约 10 分钟检测并调整、prefill 阶段设 32 个冗余 expert，论文 §3.4）——训练侧靠路由控制、推理侧靠容量复制，EPLB 一类的系统实现归 cluster 维度。训练侧的可见诊断信号与式 (4) 是同一偏斜的两端：router 的负载统计 $\max_i f_i$ 与分布熵（models 4.5 §4 的诊断口径）是模型侧读数， $\max_j R_j$ 是它落到卡上的系统读数。
+工程上有两族对策。模型侧是均衡机制本身：aux loss 把均衡写进优化目标，aux-loss-free 偏置把均衡移出优化目标（两者的数学与梯度分析归 models 4.5 §2.2 与 §3.2，不重复）。这里只记偏置方案的系统读法：V3 的偏置 $b_i$ 只参与 expert 的选择、不进权重、不在计算图里——在系统视角下，它是一个对队列长度的离散积分控制器（超载则扣、欠载则加），把「均衡」从 loss 面降级为控制回路。V3 的部署口径：更新步长 $\gamma = 10^{-3}$（符号步）作用于前 14.3T tokens，最后 500B tokens 关闭；另有 $\alpha = 10^{-4}$ 的 sequence-wise 均衡损失兜底单序列内的极端偏斜（[DeepSeek-AI, 2024](../references.md)，[A]，§4.2 超参节）。系统侧的第二族是复制热点：推理部署把高负载 expert 冗余部署多份（V3 推理框架按在线统计每约 10 分钟检测并调整、prefill 阶段设 32 个冗余 expert，论文 §3.4）——训练侧靠路由控制、推理侧靠容量复制，EPLB 一类的系统实现归 cluster 维度。训练侧的可见诊断信号与式 (4) 是同一偏斜的两端：router 的负载统计 $\max_i f_i$ 与分布熵（models 4.5 的病理诊断口径）是模型侧读数， $\max_j R_j$ 是它落到卡上的系统读数。
 
 ## 5. EP × TP × DP 的组合账
 
@@ -86,7 +92,7 @@ V3 的 MoE 结构参数（论文 §2 与超参节）：61 层 Transformer，首 
 
 通信内核按两级网络定制（论文 §3.2.2）。token 的隐状态先经 IB 发到目标节点上与发送卡同序号的 GPU，到节点后立刻经 NVLink 转发到目标 expert 所在的 GPU，两段带宽（50 与 160 GB/s）流水重叠；回程 combine 对称（NVLink 归拢、IB 回传并累加）。全部 dispatch/combine 内核与计算流重叠，且只占用 20 个 SM（H800 共 132 个；warp specialization、10 条通信通道、按负载动态调 warp 数——细节归 gpu/cluster 维度）。论文的伸缩性结论：该设计下每 token 平均每节点可选 3.2 个 expert，同通信成本最多可扩到 13 个（4 节点 × 3.2）——细粒度 expert 数量因此还留有上调空间；只要通信-计算比维持恒定，all-to-all 开销近零（"near-zero all-to-all communication overhead"，§3.2.1 口径）。
 
-这个「通信-计算约 1:1」（论文 §3.2.1 的自述动机）可以当场复算（本书复算，口径假设随注）：每 token 每 MoE 层，IB 通信按节点去重取 $2M \cdot d \cdot 2$ bytes = $2 \times 4 \times 7168 \times 2 \approx 115$ KB（前向一程的 dispatch + combine），expert 计算取 routed 部分 $6 \cdot k \cdot 3 d \thinspace d_{\mathrm{ff}}^{(e)} = 6 \times 8 \times 3 \times 7168 \times 2048 \approx 2.1 \times 10^{9}$ FLOPs（前向加反向，6ND 口径）——通信-计算比 $\approx 5.4 \times 10^{-5}$ bytes/FLOP；H800 的机器平衡点为 IB 50 GB/s 对 BF16 dense 峰值 989 TFLOPS $\approx 5.1 \times 10^{-5}$ bytes/FLOP——比值 1.1，与论文的「约 1:1」相合（attention 与 shared expert 的计算未计入分母，计入后比值再降）。口径注记：上式分子只是前向一程的通信、分母却是全程（前向加反向）的计算，是非对称 pairing；通信按反向对称翻倍时比值约 2.2，「无重叠时 all-to-all 吃掉约一半算力」的读数相应变为「通信超过计算」——论文 1:1 的分子口径未披露，本书复算只支撑「同量级」结论。1:1 的工程含义：没有任何重叠手段时，all-to-all 的暴露时间与计算同量级——这就是 DualPipe 把 all-to-all 列为一等重叠对象的原因（5.3 §6）。DeepSeek 后来把这套 dispatch/combine 内核开源为 DeepEP 库（deepseek-ai/DeepEP repo），kernel 实现归 gpu/cluster 维度，本书不展开。
+这个「通信-计算约 1:1」（论文 §3.2.1 的自述动机）可以当场复算（本书复算，口径假设随注）：每 token 每 MoE 层，IB 通信按节点去重取 $2M \cdot d \cdot 2$ bytes = $2 \times 4 \times 7168 \times 2 \approx 115$ KB（前向一程的 dispatch + combine），expert 计算取 routed 部分 $6 \cdot k \cdot 3 d \thinspace d_{\mathrm{ff}}^{(e)} = 6 \times 8 \times 3 \times 7168 \times 2048 \approx 2.1 \times 10^{9}$ FLOPs（前向加反向，6ND 口径）——通信-计算比 $\approx 5.4 \times 10^{-5}$ bytes/FLOP；H800 的机器平衡点为 IB 50 GB/s 对 BF16 dense 峰值 989 TFLOPS $\approx 5.1 \times 10^{-5}$ bytes/FLOP——比值 1.1，与论文的「约 1:1」相合（attention 与 shared expert 的计算未计入分母，计入后比值再降）。口径注记：上式分子只是前向一程的通信、分母却是全程（前向加反向）的计算，是非对称 pairing；通信按反向对称翻倍时比值约 2.2，「无重叠时 all-to-all 吃掉约一半算力」的读数相应变为「通信超过计算」——论文 1:1 的分子口径未披露，本书复算只支撑「同量级」结论。1:1 的工程含义：没有任何重叠手段时，all-to-all 的暴露时间（口径：没有被计算重叠盖住的通信时间）与计算同量级——这就是 DualPipe 把 all-to-all 列为一等重叠对象的原因（5.3 §6）。DeepSeek 后来把这套 dispatch/combine 内核开源为 DeepEP 库（deepseek-ai/DeepEP repo），kernel 实现归 gpu/cluster 维度，本书不展开。
 
 ## 7. Megatron-Core MoE 走读
 
@@ -126,19 +132,19 @@ def ep_moe_forward(x, topk_idx, topk_w, expert_fns, n_expert, e):
 | 命中细化 | 式 (2)(3)：去重后 $2D_t d$ ；均衡下 $\mathbb{E}[D] = e(1-(1-1/e)^k)$ | 卡级去重收益小（7.6/8）；节点级去重 + 组限定（ $M$ = 4）是主战场 |
 | 偏斜 | 式 (4)：层时间 $\propto \max_j R_j$ | 木桶乘性劣化；尾延迟问题 |
 | capacity factor | $C_e = \lceil \mathrm{CF} \cdot T_{\mathrm{batch}}/N_e \rceil$（models 4.5 式 (11)） | drop = 丢数据与梯度；padding 浪费 $1 - \bar{R}/C_e$；dropless 归 gpu |
-| 均衡的系统读法 | V3： $\gamma = 10^{-3}$ 符号步、末 500B 关闭；seq 级 $\alpha = 10^{-4}$ | 偏置 = 队列长度的积分控制器；推理侧冗余 expert 对照 |
-| 组合 | world = $d \cdot t \cdot c \cdot p \cdot e$；V3：2048 = PP16 × EP64 × DP2 | EP 域收节点内 vs 跨节点（NVLink 160 vs IB 50 GB/s）；总账归 5.5 |
-| V3 部署 | EP64 跨 8 节点、每卡 4 expert；组 = 节点；两级转发；20/132 SM；1:1 复算 | 路由规则为通信服务；DualPipe 重叠归 5.3 |
+| 均衡的系统读法 | V3： $\gamma = 10^{-3}$ 符号步、末 500B 关闭；seq 级 $\alpha = 10^{-4}$ | 偏置 = 队列长度的积分控制器；推理侧冗余 expert 对照（§4） |
+| 组合 | world = $d \cdot t \cdot c \cdot p \cdot e$；V3：2048 = PP16 × EP64 × DP2 | EP 域收节点内 vs 跨节点（NVLink 160 vs IB 50 GB/s）；总账归 5.5；练习 2 |
+| V3 部署 | EP64 跨 8 节点、每卡 4 expert；组 = 节点；两级转发；20/132 SM；1:1 复算 | 路由规则为通信服务；DualPipe 重叠归 5.3；练习 2 |
 
 ## 练习
 
-1.（推导）式 (3) 的完整推导：(a) 由「卡 $j$ 不被命中」的概率出发完成期望命中卡数的推导；(b) 给出 $k \ll e$ 的二阶展开并说明卡级去重为何收益小；(c) 把粒度换成节点（8 卡/节点），对 $e = 64$、 $k = 8$ 算期望命中节点数，并对照组限定 $M = 4$（组内均衡）的 $4(1 - (3/4)^8)$，量化组限定分发省下的 IB 副本比例。
+1.（推导 · [20]）式 (3) 的完整推导：(a) 由「卡 $j$ 不被命中」的概率出发完成期望命中卡数的推导；(b) 给出 $k \ll e$ 的二阶展开并说明卡级去重为何收益小；(c) 把粒度换成节点（8 卡/节点），对 $e = 64$、 $k = 8$ 算期望命中节点数，并对照组限定 $M = 4$（组内均衡）的 $4(1 - (3/4)^8)$，量化组限定分发省下的 IB 副本比例。校验：(c) 的两个期望值应与正文代入 V3 数字得到的两个读数一致。
 
-2.（计算）V3 的 EP 通信账：取每卡每 micro-batch $b \cdot T = 4 \times 4096$ 个 token、 $k = 8$、 $d$ = 7168、bf16、58 个 MoE 层。(a) 按逐 (token, expert) 对口径与按节点去重（ $D = 3.6$ ）两口径，算每卡每 micro-batch 的 dispatch+combine 字节数；(b) 对 50 GB/s 的 IB 有效带宽估两种口径的通信时间；(c) 按 §6 的复算口径给出该 micro-batch 的 expert 计算时间下界（BF16 峰值 989 TFLOPS），三种结果对照并说出重叠的必要性量级。
+2.（计算 · [20]）V3 的 EP 通信账：取每卡每 micro-batch $b \cdot T = 4 \times 4096$ 个 token、 $k = 8$、 $d$ = 7168、bf16、58 个 MoE 层。先写出两口径字节数之比的预测，再动手算。(a) 按逐 (token, expert) 对口径与按节点去重（ $D = 3.6$ ）两口径，算每卡每 micro-batch 的 dispatch+combine 字节数；(b) 对 50 GB/s 的 IB 有效带宽估两种口径的通信时间；(c) 按 §6 的复算口径给出该 micro-batch 的 expert 计算时间下界（BF16 峰值 989 TFLOPS），三种结果对照并说出重叠的必要性量级。校验：两口径之比应等于 k 与节点去重份数之比。
 
-3.（计算）容量账：某 MoE 层 $N_e = 64$、一个 step 组内 $T_{\mathrm{batch}} = 2^{20}$ 个 token、 $k = 2$，命中呈均衡分布加噪（各 expert 命中数 $\sim$ Poisson( $\bar{R}$ )，可用代码模拟）。(a) $\mathrm{CF} = 1.25$ 时每 expert 容量 $C_e$ 与期望溢出 token 占比；(b) 同一命中样本下 padding 行的 FLOPs 浪费率；(c) CF 调到 1.1 与 1.5 重算两数，画出「溢出率-浪费率」交换曲线的工作点。
+3.（计算 · [30]）容量账：某 MoE 层 $N_e = 64$、一个 step 组内 $T_{\mathrm{batch}} = 2^{20}$ 个 token、 $k = 2$，命中呈均衡分布加噪（各 expert 命中数 $\sim$ Poisson( $\bar{R}$ )，可用代码模拟）。(a) $\mathrm{CF} = 1.25$ 时每 expert 容量 $C_e$ 与期望溢出 token 占比；(b) 同一命中样本下 padding 行的 FLOPs 浪费率；(c) CF 调到 1.1 与 1.5 重算两数，画出「溢出率-浪费率」交换曲线的工作点。校验：溢出率应随 CF 单调降、浪费率随 CF 单调升。
 
-4.（推导）木桶的形式化：设层内各卡的计算与通信时间均正比于 $R_j$（系数 $t_e$ 与 $t_c$），证明该 MoE 层的墙上时间下界为 $\max_j R_j \cdot (t_e + t_c)$；定义偏斜度 $\sigma = \max_j R_j / \bar{R}$，说明为何偏斜的代价是乘性，并据此解释「均衡机制的工作点应使 $\sigma$ 贴近 1 而非最小化 aux loss 数值」这一工程口径（提示：结合 models 4.5 §2.2 的「全局最小不在均匀」诚实边界）。
+4.（推导 · [30]）木桶的形式化：设层内各卡的计算与通信时间均正比于 $R_j$（系数 $t_e$ 与 $t_c$），证明该 MoE 层的墙上时间下界为 $\max_j R_j \cdot (t_e + t_c)$；定义偏斜度 $\sigma = \max_j R_j / \bar{R}$，说明为何偏斜的代价是乘性，并据此解释「均衡机制的工作点应使 $\sigma$ 贴近 1 而非最小化 aux loss 数值」这一工程口径（提示：结合 models 4.5 §2.2 的「全局最小不在均匀」诚实边界）。校验：偏斜度取 1 时，下界应退化为均衡时长。
 
 ## 参考
 

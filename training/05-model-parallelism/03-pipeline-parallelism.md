@@ -8,7 +8,9 @@
 
 stage 之间的通信是点对点（P2P）send/recv，不是集合通信。前向时，stage $i$ 收上一段发来的输入激活，算完发给下一段；反向时，收后一段传来的梯度，算完发回。每个 micro-batch 在每条边界上前向传一次激活、反向传一次梯度，各 $b \cdot T \cdot h$ 个元素（[Narayanan et al., 2021](../references.md)，arXiv:2104.04473，[A]，§3.2 的口径），bf16 下各 $2bTh$ bytes：
 
-**符号**： $b$：micro-batch 序列数； $T$：序列长； $h$：hidden 维。把这个数和 DP 对照着看：DP 每 step 每 rank 的 all-reduce 约 $4N$ bytes（4.4 §4），随参数量涨；PP 的边界通信与参数量 $N$ 无关，只随激活体积走。这就是「PP 适合跨节点、TP 留在节点内」这条组合规则的账面根源（5.5）。
+**符号**： $b$：micro-batch 序列数； $T$：序列长； $h$：hidden 维。把这个数和 DP 对照着看：DP 每 step 每 rank 的 all-reduce 约 $4N$ bytes（4.4 §4），随参数量涨；PP 的边界通信与参数量 $N$ 无关，只随激活体积走。
+
+> **提点**：「PP 适合跨节点、TP 留在节点内」这条组合规则（5.5）的账面根源就在上面的对照里：PP 的通信量与模型大小无关，DP 的通信量随模型大小涨。
 
 调度问题的形状由依赖结构决定。记 $F(i, j)$ 为 stage $i$ 上 micro-batch $j$ 的前向、 $B(i, j)$ 为其反向，则
 
@@ -18,7 +20,7 @@ $$
 
 **符号**： $\leftarrow$ 表示「依赖、必须晚于」。换句话说：一条 micro-batch 的前向沿 stage 正序推进，反向沿 stage 逆序回传。只跑一个 micro-batch 会发生什么？式 (1) 让任意时刻至多一个 stage 在工作， $p$ 台设备的利用率只有 $1/p$——这是 naive 模型并行的下场（GPipe 论文 Figure 2b 画的正是这个结构，[Huang et al., 2019](../references.md)，arXiv:1811.06965，[B]）。
 
-解法与 1.5 是同一个动作：把 batch 拆成 $m$ 个 micro-batch（梯度累加保证数学等价，1.5 式 (3)），让不同 stage 同时流不同的 micro-batch。**schedule（调度）要回答的问题只有一个：每个 stage 在每个时刻，算哪个 micro-batch 的前向还是反向**。本章余下部分给出四种显存/通信约束下的四个答案。先统一记法： $p$ 是 stage 数（PP 度数，spec §4.3 约定）， $m$ 是 micro-batch 数；单 micro-batch 在单 stage 上的前向耗时记为 $t_f$、反向耗时记为 $t_b$。所有推导先假设各 stage 时长均匀（均衡假设），§8 处理不均衡。一个数量关系后面会反复用到： $t_b \approx 2 t_f$，它是 1.1「反向 FLOPs ≈ 2× 前向」的直接推论。Megatron 论文明确其气泡推导不依赖这个系数（arXiv:2104.04473，Figure 3 注），下面的公式也都不含这个比值。
+解法与 1.5 是同一个动作：把 batch 拆成 $m$ 个 micro-batch（梯度累加保证数学等价，1.5 式 (3)），让不同 stage 同时流不同的 micro-batch。**schedule（调度）要回答的问题只有一个：每个 stage 在每个时刻，算哪个 micro-batch 的前向还是反向**。本章余下部分给出四种显存/通信约束下的四个答案。先统一记法： $p$ 是 stage 数（PP 度数，spec §4.3 约定）， $m$ 是 micro-batch 数；单 micro-batch 在单 stage 上的前向耗时记为 $t_f$、反向耗时记为 $t_b$。所有推导先假设各 stage 时长均匀（均衡假设），§8 处理不均衡。一个数量关系后面会反复用到： $t_b \approx 2 t_f$，它是 1.1「反向 FLOPs ≈ 2× 前向」的直接推论。Megatron 论文明确其气泡推导不依赖这个系数（arXiv:2104.04473，Figure 3 注），下面的公式也都不含这个比值。本章口径：时序图与模拟器统一用 4 个 stage、4 或 8 个 micro-batch 的小例子；数字例统一取 b = 1、T = 4096、h = 7168（DeepSeek-V3 的 hidden 维）。换口径处随文声明。
 
 ## 2. GPipe：全前向再全反向，与气泡公式
 
@@ -36,7 +38,7 @@ stage4   ·   ·   ·   F1  F2  F3  F4  B1  B2  B3  B4  ·   ·   ·
 flush：t = 14 之后统一参数更新（同步语义）
 ```
 
-**气泡推导（本章关键推导之一）**。只需追踪两个时刻。第一步，末段的前向。micro-batch $j$ 的前向到达 stage $p$ 之前要走 $p$ 段，而 stage $p$ 自己的 $m$ 个前向是连续的，所以 stage $p$ 的最后一个前向结束于
+**气泡推导（本章关键推导之一）**。路线：只追踪两个时刻——末段前向的结束时刻、stage 1 最后一个反向的结束时刻——由它们合出 makespan，再减去有效工作量即得气泡。第一步，末段的前向。micro-batch $j$ 的前向到达 stage $p$ 之前要走 $p$ 段，而 stage $p$ 自己的 $m$ 个前向是连续的，所以 stage $p$ 的最后一个前向结束于
 
 $$
 t_{\mathrm{F,end}} = (p - 1)\thinspace t_f + m \thinspace t_f \qquad (2)
@@ -66,9 +68,11 @@ $$
 \frac{t_{\mathrm{pb}}}{t_{\mathrm{id}}} = \frac{p - 1}{m}, \qquad t_{\mathrm{id}} = m \thinspace (t_f + t_b) \qquad (6)
 $$
 
-两个口径只差一件事：分母含不含气泡本身。式 (5) = 式 (6) ÷（1 + 式 (6)）。 $m \gg p$ 时两式都趋于 $(p-1)/m \to 0$。这是式 (5) 的全部信息：**消气泡靠的是 micro-batch 数对 stage 数的过采样**。GPipe 的经验规则是 $m \ge 4p$ 时气泡「几乎可忽略」（原文 §2.3 口径，并注明部分原因是重计算的反向可以提前调度、不必等浅层梯度）。代入式 (5) 看这个「可忽略」有多大： $m = 4p$ 时占比 $(p-1)/(5p-1)$，大 $p$ 极限恰为 20%——「可忽略」是工程判断，账面上是约 1/5 的空闲。
+两个口径只差一件事：分母含不含气泡本身。式 (5) = 式 (6) ÷（1 + 式 (6)）。 $m \gg p$ 时两式都趋于 $(p-1)/m \to 0$。这是式 (5) 的全部信息：**消气泡靠的是 micro-batch 数对 stage 数的过采样**（口径：这里指 m 相对 p 的倍数关系）。GPipe 的经验规则是 $m \ge 4p$ 时气泡「几乎可忽略」（原文 §2.3 口径，并注明部分原因是重计算的反向可以提前调度、不必等浅层梯度）。代入式 (5) 看这个「可忽略」有多大： $m = 4p$ 时占比 $(p-1)/(5p-1)$，大 $p$ 极限恰为 20%——「可忽略」是工程判断，账面上是约 1/5 的空闲。
 
-代价在显存。GPipe 把全部反向排在全部前向之后，所以每个 stage 必须为**全部 $m$ 个** in-flight micro-batch 保存供反向使用的激活：每 stage 峰值激活 $= m$ 份「单 micro-batch 单 stage 激活」。气泡要小（ $m$ 大）、显存要小（ $m$ 小），两者在 GPipe 上正面相撞。GPipe 的配套答案是 re-materialization（重计算，机制归 1.4）：只保存各 micro-batch 的 stage 边界输入，反向时重算段内激活。峰值由此降到 $m$ 份边界激活（每份 $2bTh$ bytes）加一段重算工作区——原文 §2.3 的口径是峰值激活从 $O(N_{\mathrm{seq}} L)$ 降到 $O(N_{\mathrm{seq}} + (L/K)(N_{\mathrm{seq}}/M))$（其记号 $N_{\mathrm{seq}}$ = mini-batch 大小、 $L$ = 层数、 $K$ = 段数、 $M$ = micro-batch 数）。重计算压低了显存的量级，但 $m$ 份边界激活这个乘数仍在。1F1B 要动的就是它。
+代价在显存。GPipe 把全部反向排在全部前向之后，所以每个 stage 必须为**全部 $m$ 个** in-flight micro-batch（前向已算完、反向未算的份数；精确定义在下一节）保存供反向使用的激活：每 stage 峰值激活 $= m$ 份「单 micro-batch 单 stage 激活」。气泡要小（ $m$ 大）、显存要小（ $m$ 小），两者在 GPipe 上正面相撞。GPipe 的配套答案是 re-materialization（重计算，机制归 1.4）：只保存各 micro-batch 的 stage 边界输入，反向时重算段内激活。峰值由此降到 $m$ 份边界激活（每份 $2bTh$ bytes）加一段重算工作区——原文 §2.3 的口径是峰值激活从 $O(N_{\mathrm{seq}} L)$ 降到 $O(N_{\mathrm{seq}} + (L/K)(N_{\mathrm{seq}}/M))$（其记号 $N_{\mathrm{seq}}$ = mini-batch 大小、 $L$ = 层数、 $K$ = 段数、 $M$ = micro-batch 数）。重计算压低了显存的量级，但 $m$ 份边界激活这个乘数仍在。1F1B 要动的就是它。
+
+> **坑**：只按气泡公式调大 micro-batch 数而不查显存，会在第一个 step 就 OOM。触发条件：GPipe 调度下每 stage 要存全部份数；规避：先算每 stage 的峰值激活，再定 micro-batch 数。
 
 ## 3. 1F1B：气泡不动，峰值激活从 $m$ 份降到 $\le p$ 份
 
@@ -92,7 +96,7 @@ stage4  ·   ·   ·   F1  B1  F2  B2  F3  B3  F4  B4  F5  B5  F6  B6  F7  B7  F
  块宽改变只伸缩绝对时长，气泡占比（式 (5)）与 in-flight 峰值（式 (7)）不变。）
 ```
 
-**峰值激活论证（本章关键推导之二）**。把 stage $i$ 在时刻 $t$ 的 in-flight 数定义为「前向已完成、反向尚未完成的 micro-batch 数」——这正是必须为反向保存激活的份数。逐相看这个数怎么变：
+**命题**（1F1B 峰值激活，本章关键推导之二）：1F1B 调度下，每个 stage 的峰值 in-flight 有界，且界随段深递减；全机峰值出现在首段，恰等于 stage 数。把 stage $i$ 在时刻 $t$ 的 in-flight 数定义为「前向已完成、反向尚未完成的 micro-batch 数」——这正是必须为反向保存激活的份数。**证明**（按相逐段枚举）：
 
 1. warmup 结束时，stage $i$ 的 in-flight 恰为 $p - i$（发了 $p - i$ 个 F、零个 B）；
 2. 稳态中每个「F 后接 B」对让 in-flight 先 +1 再 −1，净变化为零；峰值出现在稳态的 F 刚完成、B 未完成的瞬间： $p - i + 1$；
@@ -106,7 +110,7 @@ $$
 
 **符号**：峰值在 stage 1 取到 $p$。对照 GPipe 的每 stage $m$ 份：1F1B 把峰值激活从 $m$ 份压到 $\le p$ 份（Megatron 论文原话："activations to be stashed for $p$ or fewer microbatches, compared to $m$ microbatches for the GPipe schedule"）。当 $m \gg p$ ，这是数量级的差别——也正是 $m \gg p$ 这个气泡条件（§2）在显存上第一次变得可行。
 
-**气泡不变**。逐 stage 的空闲总量与 GPipe 相同： $t_{\mathrm{pb}} = (p-1)(t_f + t_b)$，式 (3) 的 makespan 不变（Megatron 论文原话："the time spent in the bubble is the same for this new schedule"）。论证走关键路径。makespan 由 stage 1 的最后一个反向 $B(1, m)$ 的完成时刻决定，它被两条链夹住：micro-batch $m$ 的全程链（stage 1 串行发 $m$ 个前向 $\ge m t_f$，再过正向 $p - 1$ 跳与反向 $p$ 跳），与 stage 1 自己的工作量（ $m(t_f + t_b)$ 的活，加首份反向到达前的等待）。1F1B 没有改变任何一条依赖边，只是把同一团空闲挪了位置：GPipe 里 stage 1 的空闲是中段一整块；1F1B 里 stage 1 的空闲仍在中段（等梯度回来），stage $p$ 的空闲则变成开局 $(p-1)\thinspace t_f$ 与末尾 $(p-1)\thinspace t_b$ 两段。§9 的 Megatron 代码与下面的模拟器，各自从实现与数值两头确认这笔账。
+**命题**（气泡不变）：1F1B 与 GPipe 的 makespan 相同，逐 stage 的空闲总量也相同。**证明**（要点，走关键路径）：逐 stage 空闲同为 $t_{\mathrm{pb}} = (p-1)(t_f + t_b)$，式 (3) 的 makespan 不变（Megatron 论文原话："the time spent in the bubble is the same for this new schedule"）。makespan 由 stage 1 的最后一个反向 $B(1, m)$ 的完成时刻决定，它被两条链夹住：micro-batch $m$ 的全程链（stage 1 串行发 $m$ 个前向 $\ge m t_f$，再过正向 $p - 1$ 跳与反向 $p$ 跳），与 stage 1 自己的工作量（ $m(t_f + t_b)$ 的活，加首份反向到达前的等待）。1F1B 没有改变任何一条依赖边，只是把同一团空闲挪了位置：GPipe 里 stage 1 的空闲是中段一整块；1F1B 里 stage 1 的空闲仍在中段（等梯度回来），stage $p$ 的空闲则变成开局 $(p-1)\thinspace t_f$ 与末尾 $(p-1)\thinspace t_b$ 两段。§9 的 Megatron 代码与下面的模拟器，各自从实现与数值两头确认这笔账。
 
 下面的离散步进模拟器（教学用，非优化实现）把式 (3)(4)(7) 变成可断言的事实：按式 (1) 的依赖与各 stage 的任务队列（GPipe = 全 F 后全 B；1F1B = warmup $p-i$ 个 F 后 F/B 交替）做事件模拟：
 
@@ -163,7 +167,7 @@ def simulate(p, m, tf, tb, schedule):
 # 峰值 in-flight：GPipe 各 stage [8, 8, 8, 8]，1F1B 各 stage [4, 3, 2, 1]
 ```
 
-两个读数把 §2-3 合拢：气泡相同（ $T$ 逐位相等）、峰值激活从 $m$ = 8 份降到 $\le p$ = 4 份且逐 stage 递减（stage $i$ 恰为 $p - i + 1$，式 (7) 取等）。练习 3 用它扫 $(p, m, t_f, t_b)$ 的网格。
+两个读数把 §2-3 合拢：气泡相同（ $T$ 逐位相等）、峰值激活从 $m$ = 8 份降到 $\le p$ = 4 份且逐 stage 递减（stage $i$ 恰为 $p - i + 1$，式 (7) 取等）。练习 2 用它扫 $(p, m, t_f, t_b)$ 的网格。
 
 ## 4. Interleaved 1F1B：气泡再除 $v$，通信乘 $v$
 
@@ -185,7 +189,7 @@ t_{\mathrm{pb}}^{\mathrm{int}} = \frac{(p - 1)\thinspace (t_f + t_b)}{v}, \qquad
 \text{气泡占比} = \frac{1}{v} \cdot \frac{p - 1}{m} \qquad (8)
 $$
 
-**符号**： $v$：每台设备的 model chunk 数（virtual pipeline size）。直观读法：同一批空闲被切成了 $v$ 倍细的颗粒，填充率不变，总时长缩短——等价于把气泡除了 $v$。
+**符号**： $v$：每台设备的 model chunk 数（virtual pipeline size）。直观读法：同一批空闲被切成了 $v$ 倍细的颗粒，填充率不变，总时长缩短——等价于把气泡除了 $v$。代入一组数：p = 8、v = 2、m = 32 时，气泡占比从 1F1B 的 7/32 ≈ 22% 降到约 11%。
 
 代价写在通信侧。原来相邻设备对之间只有 1 条边界，现在有 $v$ 条：device1↔device2 之间要传 chunk1→chunk2 与 chunk5→chunk6 两处的激活与梯度。每 micro-batch 的 P2P 消息数与字节数同步乘 $v$（原文原话："the amount of communication also increases by $v$"）。另有一条约束： $m$ 必须是 $p$ 的整数倍（原文 §2.2.2）。Megatron 实现里 interleaved 的 warmup 计数为 `2·(p − rank − 1) + (v − 1)·group_size`（§9）。
 
@@ -206,7 +210,7 @@ $$
 T_B + T_W = 2 \thinspace T_F, \qquad T_W < T_F < T_B \qquad (10)
 $$
 
-（论文 Table 1 的逐层账；手工调度的简化假设取 $T_F = T_B = T_W$，与 GPipe Figure 2c 的等时长画法同源。）
+（论文 Table 1 的逐层账；手工调度的简化假设取 $T_F = T_B = T_W$，与 GPipe Figure 2c 的等时长画法同源。）代入等时长假设下的一组数：一层前向耗时 1 ms 时，B 与 W 各 1 ms，全反向合计 2 ms——「反向约两倍于前向」这条账在拆分后的读法。
 
 **依赖论证（本章关键推导之三）**：式 (1) 的链式依赖只穿过 B—— $B(i-1, j)$ 需要 $B(i, j)$ 产出的 $g_x$。 $W(i, j)$ 的输入（ $g_y$ 与本段激活）在同 stage 的 $B(i, j)$ 完成时就全部就位，不再跨 stage。所以 **W 可以排在其对应 B 之后的任意空档里**，它是调度器手里的自由填充物。经典实现把 B 与 W 打包成一个 backward()：这在 DP 下无害（weight-grad 的通信可以与下一层反向重叠，4.1 §3），在 PP 下却人为加长了链上的串行段——stage $i-1$ 要等 $W(i)$ 也算完，才拿得到 $g_x$。拆开之后，链上只传 B 的时间，W 被挪去填气泡。
 
@@ -267,11 +271,11 @@ chunk 内：attention ─ all-to-all dispatch ─ MLP ─ all-to-all combine（+
 
 **符号**：激活列为单 micro-batch 单 stage 激活份数的系数。读法：双向对灌把「等首条梯度回来」的级差从 $p - 1$ 砍到 $p/2 - 1$（两端各走半程）；峰值激活 $p + 1$ 份，相对 1F1B 只多 $1/p$（论文原话："only increasing the peak activation memory by $\frac{1}{PP}$ times"）。两条工程注记（均原文口径）。其一，DualPipe 只要求 stage 数与 micro-batch 数能被 2 整除——对照 Chimera 要求 micro-batch 数被 stage 数整除，约束更松。其二，气泡与激活都不随 $m$ 增长——「大 batch 稀释气泡」的说法在这里失效，因为气泡本就不靠 $m$ 摊薄。
 
-V3 的训练配置把本章与 5.4 连成一套：PP16 × EP64（跨 8 节点）+ ZeRO-1 DP，2048 张 H800（论文 §3.2 配置段）。DualPipe 要藏的主要对象就是 EP 的 all-to-all（通信内核的细节——20/132 个 SM 专责通信、IB/NVLink 两段转发——归 5.4 §6 展开）。另有一个与 stage 均衡相关的部署决定：V3 把最浅若干层（含 embedding）与最深若干层（含 output head）放在**同一个 PP rank** 上，由此 embedding 与 output head 的参数与梯度可以和 MTP（Multi-Token Prediction，模型侧数学归 models 4.5 §6）模块物理共享，再省一份显存（论文 §3.2.3 口径）。
+V3 的训练配置把本章与 5.4 连成一套：PP16 × EP64（跨 8 节点）+ ZeRO-1 DP，2048 张 H800（论文 §3.2 配置段）。DualPipe 要藏的主要对象就是 EP 的 all-to-all（通信内核的细节——20/132 个 SM 专责通信、IB/NVLink 两段转发——归 5.4 的部署节展开）。另有一个与 stage 均衡相关的部署决定：V3 把最浅若干层（含 embedding）与最深若干层（含 output head）放在**同一个 PP rank** 上，由此 embedding 与 output head 的参数与梯度可以和 MTP（Multi-Token Prediction，模型侧数学归 models 4.5 §6）模块物理共享，再省一份显存（论文 §3.2.3 口径）。
 
 ## 7. 激活内存总账：五种调度一张表
 
-把 §2-6 的峰值激活放到同一张表上。记 $a$ = 单 micro-batch 单 stage 为反向保存的激活字节数。重计算策略 $\kappa$ 决定 $a$ 本身的大小（全存 / selective / full checkpoint 的逐算子账归 1.4），与调度正交叠加。ZB 的 $M_B$ 即 $a$ 在「B 所需激活」口径下的对应物， $M_W < M_B$ 是拆分后多留的小份：
+五种调度的峰值激活差多少？把 §2-6 的峰值激活放到同一张表上。记 $a$ = 单 micro-batch 单 stage 为反向保存的激活字节数。重计算策略 $\kappa$ 决定 $a$ 本身的大小（全存 / selective / full checkpoint 的逐算子账归 1.4），与调度正交叠加。ZB 的 $M_B$ 即 $a$ 在「B 所需激活」口径下的对应物， $M_W < M_B$ 是拆分后多留的小份：
 
 | 调度 | 峰值激活（全机最大） | 参数副本 | 气泡（等时长 $T_F = T_B = T_W$ 口径） | 额外约束 |
 | --- | --- | --- | --- | --- |
@@ -311,21 +315,21 @@ Zero Bubble 的官方实现是论文作者基于 Megatron-LM 的 fork（sail-sg/
 | GPipe | 式 (5)： $(p-1)/(m+p-1)$ | $m \thinspace a$ | 显存随 $m$ 涨；flush 同步语义 | [Huang et al., 2019]，[B] |
 | 1F1B | 同 GPipe（式 (4) 不变） | $\le p \thinspace a$（式 (7)） | warmup $p - i$ 个 F | [Narayanan et al., 2021]，[A] |
 | interleaved 1F1B | 再除 $v$（式 (8)） | $\le p \thinspace a$ 量级 | 通信 × $v$； $m$ 为 $p$ 整数倍 | 同上，§2.2.2 |
-| ZB-H1 / ZB-1p | $(p-1)(T_F{+}T_B{-}T_W)$，等时长下 = 1F1B 的 1/3 | $p \thinspace M_B$（不涨） | B/W 拆分； $M_W$ 暂存 | [Qi et al., 2024]，[A] |
-| ZB-H2 / ZB-2p | 等时长下 0；实测 < 1% | $(2p-1)\thinspace M_B$ / 上限 $2p \thinspace M_B$ | post-validation 旁路 optimizer 同步； $m$ 需够大 | 同上 |
+| ZB-H1 / ZB-1p | $(p-1)(T_F{+}T_B{-}T_W)$，等时长下 = 1F1B 的 1/3（练习 4） | $p \thinspace M_B$（不涨） | B/W 拆分； $M_W$ 暂存 | [Qi et al., 2024]，[A] |
+| ZB-H2 / ZB-2p | 等时长下 0；实测 < 1%（练习 4） | $(2p-1)\thinspace M_B$ / 上限 $2p \thinspace M_B$ | post-validation 旁路 optimizer 同步； $m$ 需够大 | 同上 |
 | ZB-V | 0（等时长） | $p \thinspace M_B$ | V 形双 chunk；等时长假设立场 | 同上，§6 |
-| DualPipe | $(p/2 - 1)(\mathrm{F\&B} + B - 3W)$ | $(p+1)\thinspace a$ | 参数 ×2； $p$ 、 $m$ 偶数；计算通信重叠 | [DeepSeek-AI, 2024]，[A] |
+| DualPipe | $(p/2 - 1)(\mathrm{F\&B} + B - 3W)$（§6） | $(p+1)\thinspace a$ | 参数 ×2； $p$ 、 $m$ 偶数；计算通信重叠 | [DeepSeek-AI, 2024]，[A] |
 | 边界通信 | 式 (11)：每 step 全链 $4(p-1)mbTh$ bytes | — | 与 $N$ 无关 ⇒ PP 跨节点 | §8 |
 
 ## 练习
 
-1.（推导）从式 (3) 出发完成三步：(a) 补全 stage $p$ 前向结束时刻 $(p-1)t_f + m t_f$ 的归纳（对 $j$ 归纳）；(b) 证明式 (5) 与式 (6) 的换算关系「式 (5) = 式 (6) / (1 + 式 (6))」；(c) 取 $p = 16$、 $m \in \lbrace 16, 32, 64, 128 \rbrace$ 算两口径的气泡占比各一排，并说明 GPipe「 $m \ge 4p$ 可忽略」在这两排数字里各自读到多少。
+1.（推导 · [20]）从式 (3) 出发完成三步：(a) 补全 stage $p$ 前向结束时刻 $(p-1)t_f + m t_f$ 的归纳（对 $j$ 归纳）；(b) 证明式 (5) 与式 (6) 的换算关系「式 (5) = 式 (6) / (1 + 式 (6))」；(c) 取 $p = 16$、 $m \in \lbrace 16, 32, 64, 128 \rbrace$ 算两口径的气泡占比各一排，并说明 GPipe「 $m \ge 4p$ 可忽略」在这两排数字里各自读到多少。校验：(c) 中 m = 64 一列，两口径应分别约 19% 与约 23%。
 
-2.（推导）1F1B 的峰值激活上界：把 §3 的论证形式化——设 stage $i$ 的 warmup 数为 $w_i$，稳态严格 F/B 交替，证明 (a) 任意时刻 in-flight $\le w_i + 1$；(b) 首条反向到达 stage 1 前的等待恰为 $(p-1)\thinspace t_b$（正文给出的到达时刻减去本段已排的前向时长）；(c) 说明为什么 $w_i$ 开大可以填掉这段等待但峰值同步上涨（warmup $= m$ 即 GPipe），以及 Megatron 代码 `total_stages - current_stage - 1` 对应正文哪个量。
+2.（代码 · [20]）先按正文的跨度公式写出各组参数下 T 的预测值，再跑通 §3 的模拟器核对：(a) 扫 $(t_f, t_b) \in \lbrace 1 \rbrace \times \lbrace 1, 2, 4 \rbrace$ 与 $(p, m) \in \lbrace 4, 8 \rbrace \times \lbrace 8, 16, 64 \rbrace$，验证式 (3) 与「GPipe 峰值 = $m$、1F1B 峰值 = $\min(p, m)$」全部成立；(b) 把 1F1B 的 warmup 强行减 1（ $w_i = p - i - 1$），观察 $T$ 是否变差、峰值是否变小，解释结果；(c) 在 GPipe 队列里把反向按 micro-batch 逆序排（B(m) 先做）， $T$ 变不变？为什么。校验：各组 T 恰等于 (m + p − 1)·(tf + tb) 的预测值。
 
-3.（代码）跑通 §3 的模拟器，完成三个实验：(a) 扫 $(t_f, t_b) \in \lbrace 1 \rbrace \times \lbrace 1, 2, 4 \rbrace$ 与 $(p, m) \in \lbrace 4, 8 \rbrace \times \lbrace 8, 16, 64 \rbrace$，验证式 (3) 与「GPipe 峰值 = $m$、1F1B 峰值 = $\min(p, m)$」全部成立；(b) 把 1F1B 的 warmup 强行减 1（ $w_i = p - i - 1$），观察 $T$ 是否变差、峰值是否变小，解释结果；(c) 在 GPipe 队列里把反向按 micro-batch 逆序排（B(m) 先做）， $T$ 变不变？为什么。
+3.（推导 · [30]）1F1B 的峰值激活上界：把 §3 的命题证明补全为形式化版本——设 stage $i$ 的 warmup 数为 $w_i$，稳态严格 F/B 交替，证明 (a) 任意时刻 in-flight $\le w_i + 1$；(b) 首条反向到达 stage 1 前的等待恰为 $(p-1)\thinspace t_b$（正文给出的到达时刻减去本段已排的前向时长）；(c) 说明为什么 $w_i$ 开大可以填掉这段等待但峰值同步上涨（warmup $= m$ 即 GPipe），以及 Megatron 代码 `total_stages - current_stage - 1` 对应正文哪个量。校验：(a) 的逐 stage 峰值在 p = 4、m = 8 下应为 4、3、2、1（与正文模拟器打印一致）。
 
-4.（推导 + 计算）ZB 的显存-气泡交换：(a) 由式 (9) 的依赖论证说明「 $W(i, j)$ 只需排在 $B(i, j)$ 之后」为什么是 B/W 可拆的充分条件（对照 $g_x$ 的链式位置）；(b) 在 $T_F = T_B = T_W$ 假设下，用总结表的三行公式验证 ZB-H1 气泡恰为 1F1B 的 1/3、ZB-H2 为 0；(c) 取 $p = 16$、 $M_W = 0.5 \thinspace M_B$，按 ZB 论文的 worker 公式算 ZB-H1 与 ZB-H2 各 worker 的峰值激活（以 $M_B$ 为单位），验证全机最大值分别为 $16 \thinspace M_B$ 与 $31 \thinspace M_B$ 并指出各自落在哪个 worker。
+4.（推导 + 计算 · [30]）ZB 的显存-气泡交换：(a) 由式 (9) 的依赖论证说明「 $W(i, j)$ 只需排在 $B(i, j)$ 之后」为什么是 B/W 可拆的充分条件（对照 $g_x$ 的链式位置）；(b) 在 $T_F = T_B = T_W$ 假设下，用总结表的三行公式验证 ZB-H1 气泡恰为 1F1B 的 1/3、ZB-H2 为 0；(c) 取 $p = 16$、 $M_W = 0.5 \thinspace M_B$，按 ZB 论文的 worker 公式算 ZB-H1 与 ZB-H2 各 worker 的峰值激活（以 $M_B$ 为单位），验证全机最大值分别为 $16 \thinspace M_B$ 与 $31 \thinspace M_B$ 并指出各自落在哪个 worker。校验：(c) 的两个最大值应落在同一个 worker 上。
 
 ## 参考
 

@@ -1,6 +1,6 @@
 # 5.5 组合策略与总账（Combining Strategies: The Grand Ledger）
 
-> 前四章把每种并行单独讲完了（到 5.4 为止）；本章把它们装进同一个集群：world size 固定时， $t, c, p, e, d$ 五个度数各取多少、谁放节点内、谁跨节点。论证分四步：先用 405B 实例算出 TP 与 PP 的通信强度差约一个数量级、且只有 TP 压在关键路径上；再给出 GPU 数乘积约束与 Megatron 的 group 树（rank 怎么分组）；然后对照 Llama-3 405B、DeepSeek-V3、Kimi K2、OLMo 2 四家的真实配置；最后把各维通信叠加成一次 step 的总账，落成一张吞吐-显存-通信三元权衡的决策流程图 | 前置：4.1（ring all-reduce 账）、4.2-4.4（ZeRO/FSDP 与统一账）、5.1-5.4（TP/SP/CP/PP/EP 各维推导）、models 4.5 §7（EP 每 token 通信上界） | 锚点：Megatron-LM `parallel_state.py`（[Shoeybi et al., 2019](../references.md)，arXiv:1909.08053，[A]）、Llama-3 herd（[Grattafiori et al., 2024](../references.md)，arXiv:2407.21783，[A]）、DeepSeek-V3（[DeepSeek-AI, 2024](../references.md)，arXiv:2412.19437，[A]）、Kimi K2（[Kimi Team, 2025](../references.md)，arXiv:2507.20534，[A]）、OLMo 2 + OLMo-core repo（[Team OLMo et al., 2025](../references.md)，arXiv:2501.00656，[A]）
+> 前四章把每种并行单独讲完了（到 5.4 为止）；本章把它们装进同一个集群：world size 固定时， $t, c, p, e, d$ 五个度数各取多少、谁放节点内、谁跨节点。论证分四步。先用 405B 实例算出 TP 与 PP 的通信强度差约一个数量级、且只有 TP 压在关键路径上。再给出 GPU 数乘积约束与 Megatron 的 group 树（rank 怎么分组）。然后对照 Llama-3 405B、DeepSeek-V3、Kimi K2、OLMo 2 四家的真实配置。最后把各维通信叠加成一次 step 的总账，落成一张吞吐-显存-通信三元权衡的决策流程图 | 前置：4.1（ring all-reduce 账）、4.2-4.4（ZeRO/FSDP 与统一账）、5.1-5.4（TP/SP/CP/PP/EP 各维推导）、models 4.5 §7（EP 每 token 通信上界） | 锚点：Megatron-LM `parallel_state.py`（[Shoeybi et al., 2019](../references.md)，arXiv:1909.08053，[A]）、Llama-3 herd（[Grattafiori et al., 2024](../references.md)，arXiv:2407.21783，[A]）、DeepSeek-V3（[DeepSeek-AI, 2024](../references.md)，arXiv:2412.19437，[A]）、Kimi K2（[Kimi Team, 2025](../references.md)，arXiv:2507.20534，[A]）、OLMo 2 + OLMo-core repo（[Team OLMo et al., 2025](../references.md)，arXiv:2501.00656，[A]）
 
 ## 1. 组合问题：五个度数，一个 world size
 
@@ -8,11 +8,11 @@
 
 Part 5 的四个维度就是对着这两堵墙来的：TP 沿宽度切权重与激活（5.1）；SP/CP 沿序列维切激活（5.2）；PP 沿深度切层（5.3）；EP 沿 expert 维切 MoE 权重（5.4）。组合问题由此成形：world size 固定时，五个度数各取多少、各自落在网络拓扑的哪一层。
 
-本章符号（全书约定）：并行度数 $t$（TP）、 $c$（CP）、 $p$（PP）、 $e$（EP）、 $d$（DP）； $b$ = micro-batch 条数， $s$ = 序列长， $h$ = hidden size， $L$ = 层数， $m$ = 每 optimizer step 的 micro-batch 数， $N$ = 参数量。另记 $\tau$ = 每 GPU 每 step 处理的 token 数（全局 tokens/batch 除以 $d$）， $L_p$ = 每个 PP stage 持有的层数（均匀划分下 $L/p$）——下文所有 per-step 公式都用这两个量写。
+本章符号（全书约定）：并行度数 $t$（TP）、 $c$（CP）、 $p$（PP）、 $e$（EP）、 $d$（DP）； $b$ = micro-batch 条数， $s$ = 序列长， $h$ = hidden size， $L$ = 层数， $m$ = 每 optimizer step 的 micro-batch 数， $N$ = 参数量。另记 $\tau$ = 每 GPU 每 step 处理的 token 数（全局 tokens/batch 除以 $d$）， $L_p$ = 每个 PP stage 持有的层数（均匀划分下 $L/p$）——下文所有 per-step 公式都用这两个量写。本章口径：算账实例统一用 Llama-3 405B 的 8192 GPU 配置（Table 4 第一行），其余系统的数字只在真实配置对照一节出现；五个度数的一组正例就是该配置——TP 8、CP 1、PP 16、EP 未开、DP 64。
 
 ## 2. 拓扑-带宽匹配：谁进节点，谁出节点
 
-放置规则的原料只有两档带宽。先把数字固定下来（均为公开规格或论文原文口径）：
+为什么有的并行必须留在节点内、有的可以放出去？答案由两档带宽决定：节点内 900 GB/s、跨节点 50 GB/s 这个量级差。先把数字固定下来（均为公开规格或论文原文口径）：
 
 | 链路 | 每 GPU 带宽 | 口径出处 |
 | --- | --- | --- |
@@ -22,11 +22,13 @@ Part 5 的四个维度就是对着这两堵墙来的：TP 沿宽度切权重与�
 
 读这张表要注意两处单位换算。跨节点一栏的 400 Gb/s 是 bits，折成字节是 50 GB/s；H100 的 900 GB/s 是 NVLink 的聚合约数。换算完看倍数：节点内与跨节点在 H100 这代差约 18 倍，在 H800 代只差 3.2 倍。同一个放置规则在两代硬件上的紧迫程度因此不同，§4 的 DSv3 配置与此直接相关。
 
+> **坑**：带宽的 bits 与 bytes 混读——把 400 Gb/s 当成 400 GB/s 会让通信预算虚增 8 倍，后面整章的账全错。本书统一折成字节（GB/s）再比较。
+
 ### 2.1 通信强度算例：Llama-3 405B 配置下 TP 与 PP 的对比
 
 TP 和 PP 各要多少带宽？拿真实配置算一遍就清楚了。取 herd 论文 Table 4 第一行（[A]）：8192 GPU、 $t = 8$、 $c = 1$、 $p = 16$、 $d = 64$、tokens/batch = 16M；模型几何 $L = 126$、 $h = 16384$（同论文 Table 3，4.4 练习 1 已引）。该配置下 step 时间约 11.6 s，由 MFU 口径反推（4.4 §5 的数字链）。
 
-先看 TP。它的通信推导归 5.1，这里只把结果代进来：每层前向有 2 次 all-reduce，分别在 attention 输出投影之后、MLP 第二投影之后；每次的消息体是 $[b, s, h]$ 的 bf16 激活，折合每 token 每次 $2h$ bytes。反向对称，再计 2 次。合计每 token 每层 $8h$ bytes。一个 GPU 只持有本 stage 的 $L_p \approx 126/16 \approx 8$ 层，所以每 GPU 每 step 的 TP 消息体总量为
+路线只有一步叠加：把每层的通信结论乘上本 stage 的层数与每 GPU 的 token 数，再折成带宽。先看 TP。它的通信推导归 5.1，这里只把结果代进来：每层前向有 2 次 all-reduce，分别在 attention 输出投影之后、MLP 第二投影之后；每次的消息体是 $[b, s, h]$ 的 bf16 激活，折合每 token 每次 $2h$ bytes。反向对称，再计 2 次。合计每 token 每层 $8h$ bytes。一个 GPU 只持有本 stage 的 $L_p \approx 126/16 \approx 8$ 层，所以每 GPU 每 step 的 TP 消息体总量为
 
 $$
 C_{\mathrm{TP}} = 8h \thinspace L_p \thinspace \tau = 8 \times 16384 \times 8 \times 262144 \approx 2.75 \times 10^{11}\ \text{bytes} \qquad (1)
@@ -42,13 +44,13 @@ $$
 C_{\mathrm{PP}} = 8h \thinspace \tau = 8 \times 16384 \times 262144 \approx 3.4 \times 10^{10}\ \text{bytes} \qquad (2)
 $$
 
-折成带宽约 3.0 GB/s，只占 50 GB/s 跨节点链路的 6%。注意式 (2) 里不含 $p$：stage 数翻倍，每个 GPU 仍然只接触自己的两个边界——PP 的通信量与切多深无关。对照式 (1)：TP 与 PP 的通信强度之比恰好是 $L_p$（本例约 8 倍），这还没算关键路径的差别——TP 的每字节都堵在前向反向的串行链上，PP 的字节可以被流水调度掩盖（5.3）。
+折成带宽约 3.0 GB/s，只占 50 GB/s 跨节点链路的 6%。**命题**（PP 通信量与 p 无关）：式 (2) 里不含 $p$。**证明**（要点）：每个 stage 只与相邻两个 stage 通信；stage 数翻倍时，每个 GPU 仍然只接触自己的两个边界，所以通信量与切多深无关。对照式 (1)：TP 与 PP 的通信强度之比恰好是 $L_p$（本例约 8 倍），这还没算关键路径的差别——TP 的每字节都堵在前向反向的串行链上，PP 的字节可以被流水调度掩盖（5.3）。
 
 DP 侧只登记量级。Llama-3 的 FSDP 用法是「切 optimizer 状态与梯度、前向后不再切参数」这一档——herd 论文 §3.3.2 原话是 "for model shards we do not reshard after forward computation"，即 ZeRO-2 同族。每 step 每 GPU 约 $4N$ bytes（4.4 §4 表）；405B 下约 $1.6 \times 10^{12}$ bytes。这个数字值得停一下：若全部平铺到 50 GB/s 的跨机链路，需要约 32 s，而实测 step ≈ 11.6 s（43% MFU）——账面对不上。论文没有披露其集合通信的拓扑组织方式；工程上的标准出路有两条，一是把 DP 集合通信做成分层、拓扑感知的形式（4.3 式 (1) 的 hybrid 口径是同族机制：跨机字节除以节点内度数），二是让梯度归约藏进反向（4.1 的 bucket overlap）。DP 放在最外层，靠的正是这个调度自由度：它的通信对延迟不敏感，又可以被层级化压缩。
 
 ### 2.2 放置规则
 
-四个维度的放置，按通信强度与延迟敏感性排序，逐条看：
+为什么 TP 必须进节点、PP 可以跨节点？上面算例的两个数——一个 41 GB/s、一个 3 GB/s——已经是答案的骨架。把四个维度按通信强度与延迟敏感性排序，逐条看：
 
 - **TP 进节点内**。通信强度 $8h L_p \tau$ / step，且逐层串行压在关键路径上。 $t$ ≤ 节点内 GPU 数因此是硬约束——herd 的 $t = 8$ 恰等于每节点 8 卡。
 - **PP 随便跨节点**。通信强度 $8h\tau$ / step，还能被调度掩盖；它的代价不在字节，在气泡（§5 表的结构成本列）。
@@ -58,7 +60,7 @@ DP 侧只登记量级。Llama-3 的 FSDP 用法是「切 optimizer 状态与梯�
 
 ## 3. GPU 数乘积公式与 group 树
 
-五个度数不是自由变量：乘积约束把它们固定在 world size 上。先看 dense 路径（attention 与非 expert 层）：
+world size 固定时，五个度数能随便取吗？不能——乘积约束把它们固定在 world size 上。先看 dense 路径（attention 与非 expert 层）：
 
 $$
 \mathrm{world} = t \cdot c \cdot p \cdot d \qquad (3)
@@ -70,15 +72,15 @@ $$
 \mathrm{world} = t' \cdot p \cdot e \cdot d_e, \qquad t \cdot c \cdot d = t' \cdot e \cdot d_e \qquad (4)
 $$
 
-第二式是两个网格共享同一个 world 的相容条件； $c = 1$ 且 $t' = t$ 时它退化为 $d = e \cdot d_e$——DP 域恰好是 EP × 剩余 DP。代码侧的情况（`megatron/core/parallel_state.py`，[A]，行级事实核实于 2026-11-17）：`initialize_model_parallel` 先算 `data_parallel_size = world_size // (tp × pp × cp)`，不能整除直接报错；再算 `expert_data_parallel_size = world_size // (etp × ep × pp)`；并断言两个生成器产出的 PP 组必须一致。式 (4) 的相容条件，在代码里就是这条断言。
+第二式是两个网格共享同一个 world 的相容条件； $c = 1$ 且 $t' = t$ 时它退化为 $d = e \cdot d_e$——DP 域恰好是 EP × 剩余 DP。代码侧的情况（`megatron/core/parallel_state.py`，[A]，行级事实核实于 2026-11-17）：`initialize_model_parallel` 先算 `data_parallel_size = world_size // (tp × pp × cp)`，不能整除直接报错；再算 `expert_data_parallel_size = world_size // (etp × ep × pp)`；并断言两个生成器产出的 PP 组必须一致。式 (4) 的相容条件，在代码里就是这条断言。代入一组真实数字：2048 张卡、16 路 PP 的 MoE 配置下，dense 网格给出 2048 = 16 × 128，expert 网格给出 2048 = 16 × 64 × 2，两式相容。
 
-度数定了，rank 的摆放还没定。同一个 $t = 8$，把 8 个连续 rank 编进一个 TP 组（同一节点内），和把 stride 为 512 的 8 个 rank 编进一组（跨 64 个节点），通信成本天差地别。Megatron 的摆放规则是混合进制分解：给定从内到外的维度顺序 $\sigma = (\nu_1, \nu_2, \ldots, \nu_k)$ 与各维度数 $n_1, \ldots, n_k$，
+度数定了，rank 的摆放还没定。同一个 $t = 8$，把 8 个连续 rank 编进一个 TP 组（同一节点内），和把 stride 为 512 的 8 个 rank 编进一组（跨 64 个节点），通信成本天差地别。Megatron 的摆放规则是混合进制分解——所谓混合进制分解，是指把 rank 号写成各维度坐标的变进制展开：给定从内到外的维度顺序 $\sigma = (\nu_1, \nu_2, \ldots, \nu_k)$ 与各维度数 $n_1, \ldots, n_k$，
 
 $$
 \mathrm{rank} = i_1 + i_2 \thinspace n_1 + i_3 \thinspace n_1 n_2 + \cdots + i_k \prod_{j \lt k} n_j, \qquad i_j \in [0, n_j) \qquad (5)
 $$
 
-**符号**： $i_j$ 是 rank 在第 $j$ 维上的坐标。维度 $\nu_j$ 的通信组，就是固定其余坐标、让 $i_j$ 取遍 $[0, n_j)$ 得到的 rank 集合。性质很直观：越靠内的维度 stride 越小， $\nu_1$ 的组由连续 rank 组成。
+**符号**： $i_j$ 是 rank 在第 $j$ 维上的坐标。维度 $\nu_j$ 的通信组，就是固定其余坐标、让 $i_j$ 取遍 $[0, n_j)$ 得到的 rank 集合。**命题**（内层组连续）：越靠内的维度 stride 越小， $\nu_1$ 的组由连续 rank 组成。**证明**（要点）：最内层维度的 stride 是空前缀积 1，第一个坐标取遍其范围即得连续整数区间；外层维度的 stride 是内层度数之积，至少为 2。完整形式化归练习 3。
 
 代码实现是 `parallel_state.py` 的 `generate_masked_orthogonal_rank_groups` 与 `RankGenerator` 类；前者 docstring 的 $[2, 3, 4]$ 算例按 tp-dp-pp 顺序展开同一公式。一处读源码注记：该 docstring 的 prose 举例写的是 order 'tp-pp-dp'，但它的式 (1) 进制链与 $[2, 3, 4]$ 算例都是 tp-dp-pp——源码自身表述不一致，以公式与算例为准。`initialize_model_parallel` 的默认顺序是 `order="tp-cp-ep-dp-pp"`，TP 最内、PP 最外。
 
@@ -105,7 +107,7 @@ herd Figure 5 原文实例：GPU0 与 GPU1 同 TP 组、与 GPU2 同 CP 组、
 
 ## 4. 真实配置走读对照
 
-先看总表，再逐家说理由（「—」 = 该维未用 / 未披露）：
+四家真实配置各开了哪几维？先看总表，再逐家说理由（「—」 = 该维未用 / 未披露）：
 
 | 系统 | world（GPU） | $t$ | $c$ | $p$ | $e$ | DP 家族 | 集群与网络 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -126,7 +128,7 @@ herd Figure 5 原文实例：GPU0 与 GPU1 同 TP 组、与 GPU2 同 CP 组、
 
 ## 5. 总通信账叠加表
 
-现在把各维的通信叠到一次 optimizer step、一张 GPU 上。先声明三条口径。第一，字节数按消息体口径、bf16（2 bytes/元素）；ring/all-to-all 的每 rank 实际搬运量要再乘 4.1 式 (2) 的 $2(\nu-1)/\nu$ 类因子，结论方向不变。第二， $b$、 $s$ 取该 rank 的本地口径——开 CP 时 $s$ 已经是 $s/c$。第三，各维作用在不同张量上、在不同 group 内发生，总账按加法叠加：同一根链路上的各维字节数相加，除以有效带宽，与该配置的单步计算时间比大小——这就是 4.4 §4 的通信-时间换算。
+一次 step 里，一张 GPU 总共要发多少字节？答案是把各维的通信叠到一次 optimizer step、一张 GPU 上相加。先声明三条口径。第一，字节数按消息体口径、bf16（2 bytes/元素）；ring/all-to-all 的每 rank 实际搬运量要再乘 4.1 式 (2) 的 $2(\nu-1)/\nu$ 类因子，结论方向不变。第二， $b$、 $s$ 取该 rank 的本地口径——开 CP 时 $s$ 已经是 $s/c$。第三，各维作用在不同张量上、在不同 group 内发生，总账按加法叠加：同一根链路上的各维字节数相加，除以有效带宽，与该配置的单步计算时间比大小——这就是 4.4 §4 的通信-时间换算。
 
 | 维度 | 每 GPU 每 step 字节数（消息体口径） | 结构成本 | 推导 |
 | --- | --- | --- | --- |
@@ -143,7 +145,7 @@ herd Figure 5 原文实例：GPU0 与 GPU1 同 TP 组、与 GPU2 同 CP 组、
 
 ## 6. 吞吐-显存-通信三元权衡：决策流程
 
-把式 (3)(4) 的乘积约束、§2 的放置规则、§5 的总账合到一起，就是下面这张选择流程图（DP 家族内部的 ZeRO/FSDP 深度选择归 4.4 §6，这里不重复）：
+度数怎么选？把式 (3)(4) 的乘积约束、§2 的放置规则、§5 的总账合到一起，就是下面这张选择流程图（DP 家族内部的 ZeRO/FSDP 深度选择归 4.4 §6，这里不重复）：
 
 ```
 输入：模型几何（N, L, h, head 数, expert 数, s_max）、world size、节点内/跨节点带宽
@@ -172,7 +174,7 @@ herd Figure 5 原文实例：GPU0 与 GPU1 同 TP 组、与 GPU2 同 CP 组、
 
 ## 7. 容错与弹性的并行含义
 
-组合度越高，单点故障的爆炸半径越大：TP/CP/PP 组内任何一张卡挂掉，整组停摆——组内是同步的串行依赖。world size 越大，单位时间内出故障的期望次数也越高。量级上可以参考 Llama-3 405B：54 天的训练快照记录了 466 次作业中断（47 次计划内维护、419 次意外），靠自动检出与快速恢复把有效训练时间占比做到 90% 以上（[Grattafiori et al., 2024](../references.md)，[A]，§3.3.4）。checkpoint 的并行度无关保存与弹性续训，归 7.4 讲。
+world size 翻倍，故障率跟着涨多少？组合度越高，单点故障的爆炸半径越大：TP/CP/PP 组内任何一张卡挂掉，整组停摆——组内是同步的串行依赖。world size 越大，单位时间内出故障的期望次数也越高。量级上可以参考 Llama-3 405B：54 天的训练快照记录了 466 次作业中断（47 次计划内维护、419 次意外），靠自动检出与快速恢复把有效训练时间占比做到 90% 以上（[Grattafiori et al., 2024](../references.md)，[A]，§3.3.4）。checkpoint 的并行度无关保存与弹性续训，归 7.4 讲。
 
 ## 总结
 
@@ -188,13 +190,13 @@ herd Figure 5 原文实例：GPU0 与 GPU1 同 TP 组、与 GPU2 同 CP 组、
 
 ## 练习
 
-1.（计算）world = 4096 H100（512 节点 × 8 卡），模型 $L = 80$、head 数 64：(a) 取 $t = 8$、 $p = 8$、 $c = 1$，求 $d$ 并按式 (3) 校验整除；(b) 同模型改 MoE、 $e = 32$、 $t' = 8$，按式 (4) 求 $d_e$ 并验证 $d = e \cdot d_e$（ $c = 1$）；(c) 若 naive/1F1B 气泡占比要求 ≤5%， $p = 8$ 时 $m$ 的下界是多少？
+1.（计算 · [20]）world = 4096 H100（512 节点 × 8 卡），模型 $L = 80$、head 数 64：(a) 取 $t = 8$、 $p = 8$、 $c = 1$，求 $d$ 并按式 (3) 校验整除；(b) 同模型改 MoE、 $e = 32$、 $t' = 8$，按式 (4) 求 $d_e$ 并验证 $d = e \cdot d_e$（ $c = 1$）；(c) 若 naive/1F1B 气泡占比要求 ≤5%， $p = 8$ 时 $m$ 的下界是多少？校验：(a) 四个度数的乘积应恰为 4096；(b) 两个网格的度数乘积都应等于 4096。
 
-2.（计算）把 §2.1 的 TP 算例改到 $t = 16$（跨 2 节点）：重算 $C_{\mathrm{TP}}$ 与 ring 口径的每 rank 字节数，除以 50 GB/s 跨节点带宽得到通信时间，与 11.6 s 的单步计算时间对比；说明「TP 开到 16」在带宽与关键路径两个角度各自为什么不成立（假设 NVLink 域仍是 8 卡）。
+2.（计算 · [20]）把 §2.1 的 TP 算例改到 $t = 16$（跨 2 节点）：重算 $C_{\mathrm{TP}}$ 与 ring 口径的每 rank 字节数，除以 50 GB/s 跨节点带宽得到通信时间，与 11.6 s 的单步计算时间对比；说明「TP 开到 16」在带宽与关键路径两个角度各自为什么不成立（假设 NVLink 域仍是 8 卡）。先按量级写下你的预测（通信时间会超过单步计算吗），再算。校验：消息体字节数与 t 无关（正文的 TP 通信公式不含 t）；ring 口径每 rank 字节数只涨约 7%——涨的不是字节，是它被压到跨节点链路上的事实。
 
-3.（推导）从式 (5) 出发，给定 order 为 tp-cp-ep-dp-pp、度数 $(t, c, e, d, p)$：写出任一 rank $r$ 的 DP 组内另一 rank $r'$ 的差 $r' - r$ 的形式（用坐标 $i_{\mathrm{dp}}$ 与 stride 表示）；证明同一 TP 组内的 rank 构成连续整数区间。再答：herd 的顺序 [TP, CP, PP, DP] 下，PP 组的 stride 是多少（用 $t, c$ 表示）？
+3.（推导 · [30]）从式 (5) 出发，给定 order 为 tp-cp-ep-dp-pp、度数 $(t, c, e, d, p)$：写出任一 rank $r$ 的 DP 组内另一 rank $r'$ 的差 $r' - r$ 的形式（用坐标 $i_{\mathrm{dp}}$ 与 stride 表示）；证明同一 TP 组内的 rank 构成连续整数区间（即正文「内层组连续」命题的完整形式化）。再答：herd 的顺序 [TP, CP, PP, DP] 下，PP 组的 stride 是多少（用 $t, c$ 表示）？
 
-4.（代码分析）读 `megatron/core/parallel_state.py` 的 `generate_masked_orthogonal_rank_groups` 与 `RankGenerator.get_ranks`：以 world = 16、 $(t, c, d, p) = (2, 2, 2, 2)$、order "tp-cp-dp-pp" 为输入，手推 `get_ranks("dp")` 与 `get_ranks("pp")` 的输出列表，与 §3 的 16 卡图对照；再说明 `initialize_model_parallel` 里 `data_parallel_size` 的计算位置对应式 (3) 的哪一步。
+4.（代码分析 · [30]）读 `megatron/core/parallel_state.py` 的 `generate_masked_orthogonal_rank_groups` 与 `RankGenerator.get_ranks`：以 world = 16、 $(t, c, d, p) = (2, 2, 2, 2)$、order "tp-cp-dp-pp" 为输入，手推 `get_ranks("dp")` 与 `get_ranks("pp")` 的输出列表，与 §3 的 16 卡图对照；再说明 `initialize_model_parallel` 里 `data_parallel_size` 的计算位置对应式 (3) 的哪一步。校验：任一维度的组数乘组大小都应等于 16——每个 rank 在每一维上恰好出现一次。
 
 ## 参考
 

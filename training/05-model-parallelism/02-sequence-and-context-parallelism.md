@@ -4,13 +4,13 @@
 
 ## 1. 序列维上还剩什么
 
-先看 5.1 §9 留下的账：TP 之后，每层激活里还有系数为 10 的一份冗余——两个 norm 的输入、dropout 掩码、残差流，完整 $[b, s, h]$ 在每卡各存一份。这些算子有一个共同点：逐位置（position-wise）。RMSNorm 对每个 token 的行内向量独立归一化（1.2 §5），dropout 逐元素，残差逐元素。逐位置算子对序列维没有任何耦合：第 $i$ 个位置的输出只依赖第 $i$ 个位置的输入。所以它们不仅可以沿宽度复制着算，也可以沿**序列**切开算——每张卡只持 $[b, s/t, h]$ 的一段，逐位置算子本地完成。这就是 SP 的全部动机。
+先看 5.1 §9 留下的账：TP 之后，每层激活里还有系数为 10 的一份冗余——两个 norm 的输入、dropout 掩码、残差流，完整 $[b, s, h]$ 在每卡各存一份。这些算子有一个共同点：逐位置（position-wise）。RMSNorm 对每个 token 的行内向量独立归一化（1.2 §5），dropout 逐元素，残差逐元素。逐位置算子对序列维没有任何耦合：第 $i$ 个位置的输出只依赖第 $i$ 个位置的输入。所以它们不仅可以沿宽度复制着算，也可以沿**序列**切开算——每张卡只持 $[b, s/t, h]$ 的一段，逐位置算子本地完成。所谓 sequence parallelism（SP），就是指这种把逐位置区段的激活沿序列维切给 TP 组各卡的做法。这就是 SP 的全部动机。
 
-真正切不动的是 attention。softmax 的归一化沿 key 位置维收缩（models 2.3 式 (4)），第 $i$ 个 query 要看全部 $j \le i$ 的 K/V；沿序列切开后，任何一段的 attention 都需要其他段的 K/V。这条耦合把「沿序列切」分成两个子问题：逐位置区段的切分（SP，§2）与 attention 本体的切分（CP，§3-5）。至此并行维度的拼图也齐了：batch 维归 DP（P4），宽度维归 TP（5.1），深度维归 PP（5.3）；序列维是激活账里最后一根可切的轴，而它恰是长上下文时代涨得最快的一根。记号沿用 5.1： $t$ = TP 度数、 $s$ = 序列长、 $b$ = 每卡 micro-batch 序列数、 $h$ = hidden；本章新增 $c$ = CP 度数（spec §4.3 约定）。
+真正切不动的是 attention。softmax 的归一化沿 key 位置维收缩（models 2.3 式 (4)），第 $i$ 个 query 要看全部 $j \le i$ 的 K/V；沿序列切开后，任何一段的 attention 都需要其他段的 K/V。这条耦合把「沿序列切」分成两个子问题：逐位置区段的切分（SP，§2）与 attention 本体的切分（CP，§3-5）。至此并行维度的拼图也齐了：batch 维归 DP（P4），宽度维归 TP（5.1），深度维归 PP（5.3）；序列维是激活账里最后一根可切的轴，而它恰是长上下文时代涨得最快的一根。记号沿用 5.1： $t$ = TP 度数、 $s$ = 序列长、 $b$ = 每卡 micro-batch 序列数、 $h$ = hidden；本章新增 $c$ = CP 度数（spec §4.3 约定）。本章口径：通信账以 bf16 激活消息为基准单位（消息量定义见上章）；数字实例集中在练习 3 的合成几何（题面注明），正文其余数字均是被引论文口径的转述。
 
 ## 2. SP：把 all-reduce 拆成 all-gather + reduce-scatter【关键推导】
 
-**机制**。SP 区段（norm、dropout、残差）的激活沿序列维切，每卡持 $[b, s/t, h]$。进入 TP 区段（QKV 列切）前，各卡需要完整 $[b, s, h]$，要把分片聚齐——沿 $s$ 做 all-gather。出 TP 区段（行切 + 归约）后，结果要落回序列分片形态——归约并沿 $s$ 散片。所以 5.1 的 f/g 换成一对 SP 变体：
+先立本节的问题：把复制区段沿序列切给各卡，进 TP 区段前要聚齐、出来要散回去——这两次搬运会不会白付通信？答案是不会，本节给出证明。**机制**。SP 区段（norm、dropout、残差）的激活沿序列维切，每卡持 $[b, s/t, h]$。进入 TP 区段（QKV 列切）前，各卡需要完整 $[b, s, h]$，要把分片聚齐——沿 $s$ 做 all-gather。出 TP 区段（行切 + 归约）后，结果要落回序列分片形态——归约并沿 $s$ 散片。所以 5.1 的 f/g 换成一对 SP 变体：
 
 $$
 g: \quad \text{前向 all-gather（沿 } s \text{）}, \quad \text{反向 reduce-scatter}; \qquad \bar{g}: \quad \text{前向 reduce-scatter}, \quad \text{反向 all-gather（沿 } s \text{）} \qquad (1)
@@ -18,7 +18,7 @@ $$
 
 **符号**： $g$ 占据 5.1 中 f 的位置（SP→TP 入口）， $\bar{g}$ 占据 5.1 中 g 的位置（TP→SP 出口）；归约均为求和语义（5.1 §3 注记）。命名用论文原记号（[Korthikanti et al., 2022](../references.md)，arXiv:2205.05198，§4.2.2 / Figure 5）——即论文的 g / ḡ。这里有一处必须点破的同名易混：此 $g$ 非 5.1 的 g。5.1 的 g 前向是 all-reduce（TP 区段出口），SP 的 g 前向是 all-gather（SP→TP 入口）；两个算子占据不同位置，后文一律按式 (1) 的口径使用。前向函数与 5.1 逐点恒等，原因各半：all-gather 只是把复制在各卡的同一份张量显式拼出（复制区段的各卡内容本就相同，gather 不改变数值）；reduce-scatter 求和后散片（TP-only 出口算子——5.1 的前向 all-reduce g——的全量输出在复制区段本来也要逐位置独立存在，散片只是不再复制）。反向由同一对算子的 backward 自动闭合，与 5.1 §3 的论证逐项同构。实现对照（NVIDIA/Megatron-LM repo `megatron/core/tensor_parallel/mappings.py`，核实于 2026-11-16）： `_GatherFromSequenceParallelRegion`（forward `_gather_along_first_dim` / backward `_reduce_scatter_along_first_dim`）即 $g$， `_ReduceScatterToSequenceParallelRegion`（forward reduce-scatter / backward all-gather）即 $\bar{g}$。
 
-**通信恒等**。逐块逐方向数每卡字节数。令 $M = 2bsh$ bytes 为完整激活的消息量（5.1 式 (9)）。4.1 §2.2 已经证明，ring 口径下 all-reduce = reduce-scatter + all-gather：一次 all-reduce 每卡收发 $2(t-1)/t \cdot M$；一次 all-gather 或 reduce-scatter 每卡各 $(t-1)/t \cdot M$。对照两种形态的一个块（attention 或 MLP）：
+**命题**（SP 通信恒等）：TP+SP 与 TP-only 每层每方向的每卡字节数严格相等。**证明路线**：把每次 all-reduce 按 ring 分解拆成两半，逐块逐方向对账——关键一步是上章已证的「all-reduce = reduce-scatter + all-gather」。下面逐块列账。令 $M = 2bsh$ bytes 为完整激活的消息量（5.1 式 (9)）。4.1 §2.2 已经证明，ring 口径下 all-reduce = reduce-scatter + all-gather：一次 all-reduce 每卡收发 $2(t-1)/t \cdot M$；一次 all-gather 或 reduce-scatter 每卡各 $(t-1)/t \cdot M$。对照两种形态的一个块（attention 或 MLP）：
 
 - **TP-only**：前向 1 次 all-reduce（g），每卡 $2(t-1)/t \cdot M$；反向 1 次（f），同量。
 - **TP+SP**：前向 1 次 all-gather（ $g$ ）+ 1 次 reduce-scatter（ $\bar{g}$ ），每卡 $2 \times (t-1)/t \cdot M$；反向对称（ $\bar{g}$ 的 backward all-gather + $g$ 的 backward reduce-scatter），同量。
@@ -36,15 +36,15 @@ $$
  每方向每块  2(t−1)/t·M                          2(t−1)/t·M   —— 恒等
 ```
 
-**换来的是什么**？复制区段的全部激活从 $[b, s, h]$ 缩到 $[b, s/t, h]$。落到 1.4 的逐算子账上，就是系数 10 的那一份被除以 $t$：TP-only 的 $sbh(10 + 24/t + 5as/(ht))$ 变为 TP+SP 的 $sbh(34 + 5as/h)/t$（[Korthikanti et al., 2022](../references.md)，arXiv:2205.05198，[A]，Table 2 口径）——定长项与 $s^{2}$ 项全部除 $t$。同一论文还有实测：selective 重算叠加 SP 后，重算开销从 4% 降到 530B / 1T 规模的 2%（1.4 §3 已引其 Figure 8 口径）。代价写在机制里：SP 把「复制区段各卡内容一致」从隐式性质变成了显式通信——all-gather 的出口处，各卡必须拿到逐位一致的全量张量。5.1 §3 的 RNG 同步注记（TP 组内共享种子）在这里是同一份纪律。
+**换来的是什么**？复制区段的全部激活从 $[b, s, h]$ 缩到 $[b, s/t, h]$。落到 1.4 的逐算子账上，就是系数 10 的那一份被除以 $t$：TP-only 的 $sbh(10 + 24/t + 5as/(ht))$ 变为 TP+SP 的 $sbh(34 + 5as/h)/t$（[Korthikanti et al., 2022](../references.md)，arXiv:2205.05198，[A]，Table 2 口径）——定长项与 $s^{2}$ 项全部除 $t$。同一论文还有实测：selective 重算叠加 SP 后，重算开销（口径：step 时间占比）从 4% 降到 530B / 1T 规模的 2%（1.4 §3 已引其 Figure 8 口径）。代价写在机制里：SP 把「复制区段各卡内容一致」从隐式性质变成了显式通信——all-gather 的出口处，各卡必须拿到逐位一致的全量张量。5.1 §3 的 RNG 同步注记（TP 组内共享种子）在这里是同一份纪律。
 
 一句边界：SP 与 TP 共用同一个进程组、同一个度数（沿 $s$ 切 $t$ 份）——它不是新的并行维度，而是 TP 在序列维上的激活回收。真正的新维度在下一节。
 
 ## 3. CP 与 Ring Attention：让 attention 也沿序列切
 
-长序列会把 attention 推成主账：scores 类中间量随 $s^{2}$ 涨（1.4 式 (1) 的 $5as/h$ 项），而 SP 帮不了 attention——softmax 的 key 维收缩把每段 query 绑在全部 key 上。context parallelism（CP）的回答是：开一个独立的 CP 组（度数 $c$ ），把整层输入沿 $s$ 切给 $c$ 张卡。逐位置算子照旧本地（与 SP 同构）；attention 靠**轮转 K/V** 让每段 query 看完全部 key。这就是 Ring Attention（[Liu et al., 2023](../references.md)，arXiv:2310.01889，[A]）。
+长序列会把 attention 推成主账：scores 类中间量随 $s^{2}$ 涨（1.4 式 (1) 的 $5as/h$ 项），而 SP 帮不了 attention——softmax 的 key 维收缩把每段 query 绑在全部 key 上。所谓 context parallelism（CP），是指把整层输入沿序列维切给一个独立进程组（度数 $c$ ）、attention 靠轮转 K/V 看完全部 key 的做法。具体地：开一个独立的 CP 组，把整层输入沿 $s$ 切给 $c$ 张卡。逐位置算子照旧本地（与 SP 同构）；attention 靠**轮转 K/V** 让每段 query 看完全部 key。这就是 Ring Attention（[Liu et al., 2023](../references.md)，arXiv:2310.01889，[A]）。
 
-**机制**。序列切成 $c$ 个连续块；rank $r$ 常驻 query 块 $Q_r$（ $[b, s/c, \ldots]$ ）与初始的 $K_r, V_r$。各卡排成环，每步把当前持有的 K/V 块发给下一卡、从上一卡收一块； $c - 1$ 步轮转后，每段 query 见过全部 $c$ 个 K/V 块。每步内做块间 attention 的**部分计算**，用 online softmax 状态累积：每行 query 维护三元组 $(m, \ell, O)$（当前最大值、当前指数和、当前未归一化输出），收到新块后按合并规则更新—— $m^{\mathrm{new}} = \max(m, m_{\mathrm{blk}})$，输出与指数和各乘相应的重缩放因子再加权相加。这条合并规则的结合律、以及「逐块合并 = 全量 softmax」的精确等价，已在 models 4.1 §5.2 完整推出（online softmax 引理）；此处只登记用法：**轮转是精确的**。 $c$ 步后每行的 $(m, \ell, O)$ 与一次性全量 attention 逐点相同（浮点求和顺序除外），没有任何近似项。数值稳定的 max 减法也一并继承：各块的 $m_{\mathrm{blk}}$ 只影响缩放因子，不进指数的自变量。
+**机制**。序列切成 $c$ 个连续块；rank $r$ 常驻 query 块 $Q_r$（ $[b, s/c, \ldots]$ ）与初始的 $K_r, V_r$。各卡排成环，每步把当前持有的 K/V 块发给下一卡、从上一卡收一块； $c - 1$ 步轮转后，每段 query 见过全部 $c$ 个 K/V 块。每步内做块间 attention 的**部分计算**，用 online softmax 状态累积：每行 query 维护三元组 $(m, \ell, O)$（当前最大值、当前指数和、当前未归一化输出），收到新块后按合并规则更新—— $m^{\mathrm{new}} = \max(m, m_{\mathrm{blk}})$，输出与指数和各乘相应的重缩放因子再加权相加。**命题**（轮转精确性）：这条合并规则的结合律、以及「逐块合并 = 全量 softmax」的精确等价，已在 models 4.1 §5.2 完整推出（online softmax 引理）；此处只登记用法：**轮转是精确的**。 $c$ 步后每行的 $(m, \ell, O)$ 与一次性全量 attention 逐点相同（浮点求和顺序除外），没有任何近似项。数值稳定的 max 减法也一并继承：各块的 $m_{\mathrm{blk}}$ 只影响缩放因子，不进指数的自变量。
 
 轮转图（ $c = 4$ ，✓ = 该步对该 rank 有贡献的块；causal 下打 ✗ 的块整块被 mask）：
 
@@ -64,11 +64,11 @@ $$
 C_{\mathrm{ring}} = 4 \thinspace b \thinspace s \thinspace a_{kv} \thinspace d_{\mathrm{head}} \cdot \frac{c-1}{c} \hspace{5mu} \approx \hspace{5mu} 4 \thinspace b \thinspace s \thinspace a_{kv} \thinspace d_{\mathrm{head}} \quad \text{bytes / 层 / 前向} \qquad (2)
 $$
 
-**符号**：系数 4 = 2 个张量（K、V）× 2 bytes（bf16）； $a_{kv}$：KV head 数。两个结构性质值得展开。其一，通信量与 $c$ 几乎无关（系数饱和到 1），而且是**点对点流水**而非阻塞集合通信：第 $i$ 步的收发可以与第 $i$ 步的块计算重叠。每步块计算量正比于 $(s/c)^{2}$、传输量正比于 $s/c$——块越大算术强度越高，长序列恰是 overlap 最友好的区间。其二，与 5.1 式 (10) 对照：MHA（ $a_{kv} = a$ ）下式 (2) 为 $4bsh(c-1)/c$，是 TP 每层前向通信（ $8bsh(t-1)/t$ ）的一半量级。换句话说，CP 用与 TP 同阶的通信换掉了 $s^{2}$ 项的显存。反向补一句： $\mathrm{d}K, \mathrm{d}V$ 块需沿环反向再轮转一圈（各块的反向贡献来自全部 query 块）， $\mathrm{d}Q$ 本地累积，通信量对称翻倍。
+**符号**：系数 4 = 2 个张量（K、V）× 2 bytes（bf16）； $a_{kv}$：KV head 数。两个结构性质值得展开。其一，通信量与 $c$ 几乎无关（系数饱和到 1），而且是**点对点流水**而非阻塞集合通信：第 $i$ 步的收发可以与第 $i$ 步的块计算重叠。每步块计算量正比于 $(s/c)^{2}$、传输量正比于 $s/c$——块越大算术强度越高，长序列恰是 overlap 最友好的区间。其二，与 5.1 式 (10) 对照：MHA（ $a_{kv} = a$ ）下式 (2) 为 $4bsh(c-1)/c$，是 TP 每层前向通信（ $8bsh(t-1)/t$ ）的一半量级。换句话说，CP 用与 TP 同阶的通信换掉了 $s^{2}$ 项的显存。代入练习 3 的合成几何（hidden 8192、MHA、序列长 131072、单序列、度数 16）算一遍：每卡每层前向约 4 GB——符号账立刻有了尺寸感。反向补一句： $\mathrm{d}K, \mathrm{d}V$ 块需沿环反向再轮转一圈（各块的反向贡献来自全部 query 块）， $\mathrm{d}Q$ 本地累积，通信量对称翻倍。
 
 **显存账与「近无限」的读法**。CP 每卡的 attention 常驻只有本段 Q 与当前轮到的 K/V 块，相关激活从 $O(s)$ 降到 $O(s/c)$ 加一块工作缓冲。scores 类 $s^{2}$ 中间量在 FlashAttention 内核下本就不物化（models 4.1）；CP 进一步把单块的算子内尺寸压到 $(s/c)^{2}$。论文标题里的 "near-infinite context" 说的就是这条线性：显存约束下，可训练的上下文长度随 $c$ 线性放大——每加一卡，序列就能再长一份 $s/c$。代价是式 (2) 的同阶通信与 ring 步进的同步开销。
 
-工程落地一句：每个「Q 块 × 收到的 K/V 块」的部分 attention 由支持分块 K/V 摄入的 FlashAttention 族 kernel 完成；online softmax 状态的合并（重缩放与累加）在 kernel 边界显式进行。块调度与 SRAM 驻留的 kernel 细节归 gpu 维度；训练栈侧的 CP 组配置走读归 6.2。
+> **提点**：工程落地——每个「Q 块 × 收到的 K/V 块」的部分 attention 由支持分块 K/V 摄入的 FlashAttention 族 kernel 完成；online softmax 状态的合并（重缩放与累加）在 kernel 边界显式进行。块调度与 SRAM 驻留的 kernel 细节归 gpu 维度；训练栈侧的 CP 组配置走读归 6.2。
 
 **归属边界**：ring 轮转与 online softmax 累积的机制出自 Ring Attention 原文；下一节的负载均衡修正（striped / zigzag）不在其中（[Liu et al., 2023](../references.md) 不含此项——出处勿张冠李戴）。指针一句：本章只管「长序列怎么切」；上下文窗口本身的训练期扩展（staged 拉长与 mid-training 配方一侧）归 7.5。
 
@@ -94,7 +94,7 @@ $$
 
 结果与 $r$ 无关，倾斜比精确等于 1。直觉一行：早块算得少、晚块算得多，首末互补配对后，任何 $r$ 的两块之和恒等于 $2c + 1$。总账核对： $\sum_r w_r = c \thinspace (2c + 1) \thinspace u^{\prime}$，恰为 $c$ 个 rank 各分一份。参数化的要点在「 $2c$ 个半块」而不是「每 rank 持两个 $c$ 等分整块」——后者的驻留显存与式 (2) 的收发量都要翻倍。半块口径下，每 rank 驻留序列总量仍为 $s/c$，式 (2) 的通信账一字不改；奇数 $c$ 也不存在「中间块无人配对」的问题—— $2c$ 恒为偶数，配对 $(r, \thinspace 2c-1-r)$ 总成立。ring 的重叠结构逐字保留。
 
-注记一句：直观的「跳过 ✗ 块」省的是 FLOPs，但会破坏 ring 的同步收发节奏（各 rank 轮转步数不一、收发错位，重叠结构垮掉）。两种修法的共同点是都不动 ring 机制本身，只改序列位置到 rank 的静态映射。
+> **坑**：causal 下「整块跳过 ✗」看似白省 FLOPs，触发后果是 ring 的同步收发节奏垮掉——各 rank 轮转步数不一、收发错位，重叠结构随之失效。所以两种修法的共同点是都不动 ring 机制本身，只改序列位置到 rank 的静态映射。
 
 ## 5. Ulysses：all-to-all 换维
 
@@ -106,7 +106,7 @@ $$
 C_{\mathrm{ulysses}} = \underbrace{6 \thinspace b \thinspace s \thinspace a \thinspace d_{\mathrm{head}}}_{\text{QKV 换维}} \cdot \frac{c-1}{c^{2}} \; + \; \underbrace{2 \thinspace b \thinspace s \thinspace a \thinspace d_{\mathrm{head}}}_{\text{attention 输出换回}} \cdot \frac{c-1}{c^{2}} \hspace{5mu} = \hspace{5mu} 8 \thinspace b \thinspace s \thinspace h \cdot \frac{c-1}{c^{2}} \hspace{5mu} \approx \hspace{5mu} \frac{8bsh}{c} \quad \text{bytes} \qquad (5)
 $$
 
-**符号**：末步用 MHA 口径 $h = a \cdot d_{\mathrm{head}}$。与式 (2) 对照，结构差异全在 $c$ 的指数上：Ring 每卡发送量饱和到常数 $4bsh$，Ulysses 随 $1/c$ **下降**。代价藏在消息粒度里：all-to-all 的单对消息是 $\Theta(bsh / c^{2})$， $c$ 翻倍单消息缩四倍，很快跌进延迟主导的区间（4.1 式 (3) 的 $\alpha$ 项）；而且 $c$ 不能超过 head 数 $a$——head 是换维的原子，GQA 下 KV 侧收紧到 $a_{kv}$（同 5.1 §8 的复制问题）。Ring 没有 head 约束：单步消息 $\Theta(bsh / c)$ 只随 $1/c$ 缩，块内计算 $\Theta((s/c)^{2})$ 保证长 $s$ 下始终压得住传输。所以两者的边界互补：Ulysses 适合 head 多、序列中长的 regime（消息还没缩到延迟地板，度数不必超过 head 数）；Ring 服务超长上下文—— $c$ 可以开大到序列本身的极限，KV cache 形态与 head 结构都不挡路。
+**符号**：末步用 MHA 口径 $h = a \cdot d_{\mathrm{head}}$。与式 (2) 对照，结构差异全在 $c$ 的指数上：Ring 每卡发送量饱和到常数 $4bsh$，Ulysses 随 $1/c$ **下降**。代价藏在消息粒度里：all-to-all 的单对消息是 $\Theta(bsh / c^{2})$， $c$ 翻倍单消息缩四倍，很快跌进延迟主导的区间（4.1 式 (3) 的 $\alpha$ 项）；而且 $c$ 不能超过 head 数 $a$——head 是换维的原子，GQA 下 KV 侧收紧到 $a_{kv}$（同 5.1 §8 的复制问题）。Ring 没有 head 约束：单步消息 $\Theta(bsh / c)$ 只随 $1/c$ 缩，块内计算 $\Theta((s/c)^{2})$ 保证长 $s$ 下始终压得住传输。所以两者的边界互补：Ulysses 适合 head 多、序列中长的 regime（消息还没缩到延迟地板，度数不必超过 head 数）；Ring 服务超长上下文—— $c$ 可以开大到序列本身的极限，KV cache 形态与 head 结构都不挡路。沿用上面那组合成几何：Ulysses 每卡每层前向约 500 MB，约为 Ring 的 1/8。
 
 GQA 注记：换维按 head 对齐时，共享同一组 KV 的 $g = a / a_{kv}$ 个 Q head 必须与该 KV head 落在同一 rank。也就是说，Ulysses 的切分原子是 KV head 族而非单 head： $c \le a_{kv}$ 时族内 Q head 随同搬迁； $c \gt a_{kv}$ 则只能复制 KV（与 5.1 §8 同一条边界），或退回 Ring。
 
@@ -138,9 +138,9 @@ GQA 注记：换维按 head 对齐时，共享同一组 KV 的 $g = a / a_{kv}$ 
 
 ## 练习
 
-1.（推导）SP 通信恒等的形式化：按 4.1 式 (2) 的 ring 口径，写出 all-gather 与 reduce-scatter 的每卡收发字节数（ $(t-1)/t \cdot M$ ），逐项对照 TP-only 的 f/g 对与 TP+SP 的 $g$ / $\bar{g}$ 对（式 (1) 的论文原记号）在一个 transformer 层前向 + 反向的通信序列，证明两者每卡总字节数严格相等；再指出两者的**消息步数**差多少，说明小消息 regime（ $s$ 短、 $t$ 大）下 SP 为什么会略慢。
-2.（推导）负载均衡两方案：(a) 补全式 (3) 的求和与比值；(b) 对 zigzag 参数化（ $2c$ 个 $s/(2c)$ 小块、rank $r$ 持 $\lbrace r, \thinspace 2c-1-r \rbrace$ ）证明式 (4) 的工作量恒等为 $(2c+1) \thinspace u^{\prime}$，验证 $c$ 为奇数时配对依然完好，并核对每 rank 驻留序列长度（ $s/c$ ）与式 (2) 通信账均不变；(c) striped 的均衡是近似口径：说明为什么每 rank 的可见块对数随条带变细（每 rank 条带数增加）收敛到均值（提示：causal 三角被步长 $c$ 的条带均匀采样），并比较两方案对 ring 收发与 mask 实现粒度的影响（块级配对 vs 位置级取余）。
-3.（计算）Ring vs Ulysses： $h = 8192$、 MHA $a = 64$、 $d_{\mathrm{head}} = 128$、 $s = 131072$、 $b = 1$：(a) 按式 (2)(5) 分别算 $c \in \lbrace 8, 16, 32 \rbrace$ 时每层前向每卡发送字节数；(b) 跨节点 IB 每卡 50 GB/s 下换算时间，并与单步块计算时间（按每卡有效 400 TFLOPS 折算 attention 块对 FLOPs）对照，判断各度数下谁能被重叠藏住；(c) Ulysses 在 $c = 32$ 时的单对消息字节数是多少，对照 4.1 式 (3) 的 $\alpha$ 项说明延迟地板何时接管。
+1.（推导 · [20]）SP 通信恒等的形式化：按 4.1 式 (2) 的 ring 口径，写出 all-gather 与 reduce-scatter 的每卡收发字节数（ $(t-1)/t \cdot M$ ），逐项对照 TP-only 的 f/g 对与 TP+SP 的 $g$ / $\bar{g}$ 对（式 (1) 的论文原记号）在一个 transformer 层前向 + 反向的通信序列，证明两者每卡总字节数严格相等；再指出两者的**消息步数**差多少，说明小消息 regime（ $s$ 短、 $t$ 大）下 SP 为什么会略慢。本题即本节通信恒等命题的证明闭环。校验：把度数设为 2 时，两种形态的每卡字节数应逐项相等（ring 系数在端点的自检）。
+2.（推导 · [30]）负载均衡两方案：(a) 补全式 (3) 的求和与比值；(b) 对 zigzag 参数化（ $2c$ 个 $s/(2c)$ 小块、rank $r$ 持 $\lbrace r, \thinspace 2c-1-r \rbrace$ ）证明式 (4) 的工作量恒等为 $(2c+1) \thinspace u^{\prime}$，验证 $c$ 为奇数时配对依然完好，并核对每 rank 驻留序列长度（ $s/c$ ）与式 (2) 通信账均不变；(c) striped 的均衡是近似口径：说明为什么每 rank 的可见块对数随条带变细（每 rank 条带数增加）收敛到均值（提示：causal 三角被步长 $c$ 的条带均匀采样），并比较两方案对 ring 收发与 mask 实现粒度的影响（块级配对 vs 位置级取余）。
+3.（计算 · [30]）Ring vs Ulysses： $h = 8192$、 MHA $a = 64$、 $d_{\mathrm{head}} = 128$、 $s = 131072$、 $b = 1$：(a) 按式 (2)(5) 分别算 $c \in \lbrace 8, 16, 32 \rbrace$ 时每层前向每卡发送字节数；(b) 跨节点 IB 每卡 50 GB/s 下换算时间，并与单步块计算时间（按每卡有效 400 TFLOPS 折算 attention 块对 FLOPs）对照，判断各度数下谁能被重叠藏住；(c) Ulysses 在 $c = 32$ 时的单对消息字节数是多少，对照 4.1 式 (3) 的 $\alpha$ 项说明延迟地板何时接管。先预测哪一列随度数下降、哪一列饱和，再算。校验：Ring 一列在度数翻倍时几乎不变，Ulysses 一列近似减半。
 
 ## 参考
 
