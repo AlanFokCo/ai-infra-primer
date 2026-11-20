@@ -16,7 +16,9 @@ SFT → RM → PPO 的三段链与 DPO 家族加起来，数据接口只有三�
 
 ## 2. Bradley-Terry：从随机效用到 $\sigma(r_w - r_l)$
 
-问题：标注员给的不是分数而是二选一——怎么把「 $y_w$ 优于 $y_l$ 」接到一个实值 reward 函数 $r(x, y)$ 上？回答是成对比较文献里的标准模型（[Bradley & Terry, 1952](../references.md)，Biometrika 39(3/4):324-345，无 arXiv，[B]），从随机效用（random utility）出发三步走完。
+问题：标注员给的不是分数而是二选一——怎么把「 $y_w$ 优于 $y_l$ 」接到一个实值 reward 函数 $r(x, y)$ 上？回答是成对比较文献里的标准模型（[Bradley & Terry, 1952](../references.md)，Biometrika 39(3/4):324-345，无 arXiv，[B]）。推导路线：先建随机效用模型，再算 Gumbel 差的闭式卷积，最后取 pairwise 特例——三步走完，关键一步是第二步的积分，它把噪声模型变成 sigmoid。
+
+**命题**（Bradley-Terry）。随机效用模型下，成对偏好概率等于 reward 差的 sigmoid。**证明**分三步。
 
 **第一步，效用模型**。假设每个候选回答的「被选中倾向」由一个带噪声的潜变量驱动：
 
@@ -38,9 +40,11 @@ $$
 P(y_w \succ y_l \mid x) = \Pr(U_w \gt U_l) = \Pr(\varepsilon_l - \varepsilon_w \lt r_w - r_l) = \sigma\big( r(x, y_w) - r(x, y_l) \big) \qquad (3)
 $$
 
-这就是 Bradley-Terry 模型：成对偏好概率 = sigmoid 作用于 reward 差。
+证毕——这就是 Bradley-Terry 模型：成对偏好概率 = sigmoid 作用于 reward 差。
 
-代入数字校准直觉。 $\Delta = r_w - r_l$ = 0.693 时 $P$ = 2/3：0.69 个 nat 的 reward 差对应 2:1 的胜率。 $\Delta$ = 2.2 时 $P$ ≈ 0.9。反向读：reward 的单位是 log-odds，差 1 nat 等于 odds（ $P / (1 - P)$）乘 $e$。这个量纲校准后面会反复用到：RM 输出的「分差」、DPO 里 $\beta$ 的语义（把策略对数比折算回 reward 的汇率），都是同一杆秤。
+代入数字校准直觉。 $\Delta = r_w - r_l$ = 0.693 时 $P$ = 2/3：0.69 个 nat 的 reward 差对应 2:1 的胜率。 $\Delta$ = 2.2 时 $P$ ≈ 0.9。反向读：reward 的单位是 log-odds，差 1 nat 等于 odds（ $P / (1 - P)$）乘 $e$。
+
+> **提点**：「reward 以 log-odds 为单位」这把尺后面会反复用到：RM 输出的「分差」、DPO 里 $\beta$ 的语义（把策略对数比折算回 reward 的汇率），都在同一杆秤上。
 
 **第三条路（outline）**：同一个式子可以从公理而非噪声模型推出。Luce 选择公理要求：任意候选集 $S$ 上的选择概率满足「两候选的比值与集合里其余成员无关」—— $P_S(y) / P_S(y') = w(y) / w(y')$， $w$ 为正值函数。归一化给出 $P_S(y) = w(y) / \sum_{y' \in S} w(y')$；取 $w = e^{r}$、 $S = \lbrace y_w, y_l \rbrace$，即退化回式 (3)。两条路的分工不同：Gumbel 路径给出生成机制（标注员是带噪效用最大化者），Luce 路径给出公理化刻画（选择一致性），它们在同一个 sigmoid 上会合。这条 outline 的意义在 P9：当偏好数据违反 Luce 公理时（位置偏置、标注噪声异质、候选集构成本身改变两两比值），式 (3) 的适配度就有明确的公理边界可查——RM 目标失配时，先回这里查假设。
 
@@ -56,7 +60,7 @@ $$
 \frac{\partial L}{\partial r_\theta(x, y_w)} = \sigma(\Delta) - 1 = -P(\text{模型当前判反}), \qquad \frac{\partial L}{\partial r_\theta(x, y_l)} = 1 - \sigma(\Delta) \qquad (5)
 $$
 
-**符号**：逐样本对 $r_w$ 的下压力恰是「模型此刻把这对判反的概率」——已经判对的样本（ $\Delta \gg 0$）梯度趋零，判反的样本满力拉动。难样本加权不是额外设计，是 sigmoid 损失的导数形态自带的（对照 3.1 §4 末 focal loss 的手工调制：那里要把这个性质显式乘进去，这里它是内生的）。
+**符号**：逐样本对 $r_w$ 的下压力恰是「模型此刻把这对判反的概率」——已经判对的样本（ $\Delta \gg 0$）梯度趋零，判反的样本满力拉动。难样本加权不是额外设计，是 sigmoid 损失的导数形态自带的（对照 3.1 §4 末 focal loss 的手工调制：那里要把这个性质显式乘进去，这里它是内生的）。代入整数感受这股力：Δ 取 2 时，r_w 方向的分力约为 −1/8；Δ 取 0 时恰为 −1/2——判得越错的样本拉力越大，从 2 到 0 放大了 4 倍。
 
 式 (4) 还有一条结构注记：它是 pairwise 接口上能写出的最简判别目标。把式 (4) 与 3.1 式 (1) 并排看。CE 是「词表 $V$ 类的分类」，BT 是「每对候选上的二分类」；两者的 logits 都只是 reward（或 logit）的差，归一化都靠 softmax / sigmoid 家族，梯度同为「预测 − 目标」形态（1.2 式 (5)）。后训练在数学上没有任何新算子，全部复用 P1-P3 的机制；新的是接口（什么进 loss）与采样语义（§5）。这也是本章只讲这两件事的原因。
 
@@ -64,13 +68,13 @@ $$
 
 ## 3. reward 的平移不可识别性
 
-式 (3) 只含 $r$ 的差。对任意只依赖 prompt 的函数 $c(x)$：
+**命题**（平移不可识别）。式 (3) 只含 $r$ 的差，所以对任意只依赖 prompt 的函数 $c(x)$，下式两端相等：
 
 $$
 \sigma\big( (r_w + c(x)) - (r_l + c(x)) \big) = \sigma(r_w - r_l) \qquad (6)
 $$
 
-也就是说， $r$ 与 $r + c(x)$ 产生**完全相同**的偏好分布。pairwise 数据对 reward 的识别只能到等价类 $[r] = \lbrace r + c(x) : c \text{ 任意} \rbrace$——逐 prompt 的加性常数是自由规范（gauge）。这不是病态边角，而是 BT 模型的结构性质：偏好数据只编码「同一 prompt 内谁比谁好」，任何关于「绝对多好」的信息都不在数据里。
+**证明**：左端展开，两个平移项逐项相消。也就是说， $r$ 与 $r + c(x)$ 产生**完全相同**的偏好分布。pairwise 数据对 reward 的识别只能到等价类 $[r] = \lbrace r + c(x) : c \text{ 任意} \rbrace$——逐 prompt 的加性常数是自由规范（gauge）。这不是病态边角，而是 BT 模型的结构性质：偏好数据只编码「同一 prompt 内谁比谁好」，任何关于「绝对多好」的信息都不在数据里。逆命题（相同的 BT 概率 ⇒ 只差逐 prompt 平移）留作练习 3。
 
 一个两 prompt 算例把这件事说透。设真实 reward 为 $r$：prompt $x_1$ 下 $r(x_1, a) = 2$、 $r(x_1, b) = 1$；prompt $x_2$ 下 $r(x_2, c) = 5$、 $r(x_2, d) = 4$。取 $c(x_1) = 10$、 $c(x_2) = -3$，则 $r' = r + c(x)$ 在两条 prompt 下给出逐位相同的偏好概率（ $\sigma(1)$ ≈ 0.731）。任何规模的 pairwise 数据都无法区分 $r$ 与 $r'$；但 $r'$ 之下，「 $x_1$ 的回答普遍好于 $x_2$ 的」这类跨 prompt 断言被整个翻转。数据里没有的东西，再多的数据也学不出来。
 
@@ -78,19 +82,19 @@ $$
 
 ## 4. 对比目标接口
 
-InfoNCE 的完整推导（batch 相似度矩阵上的双向 CE、温度参数化、uniformity 分析）归 models 6.2，此处只登记接口形态：
+对比目标与偏好目标差在哪？差在候选集合：偏好是两个候选，对比是一整个 batch。InfoNCE 的完整推导（batch 相似度矩阵上的双向 CE、温度参数化、uniformity 分析）归 models 6.2，此处只登记接口形态：
 
 $$
 L_{\mathrm{InfoNCE}} = -\frac{1}{B} \sum_{i=1}^{B} \log \frac{\exp(s_{ii})}{\sum_{j=1}^{B} \exp(s_{ij})} \qquad (7)
 $$
 
-**符号**： $s_{ij}$：anchor $i$ 与候选 $j$ 的相似度 logit（CLIP 口径为归一化内积除温度，models 6.2）； $B$：batch 大小。接口三元组是（anchor, positive, negatives），而负样本供给就是 batch 本身——「类别数」等于 batch 大小、随 batch 逐批漂移（models 6.2 §2 口径）。
+**符号**： $s_{ij}$：anchor $i$ 与候选 $j$ 的相似度 logit（CLIP 口径为归一化内积除温度，models 6.2）； $B$：batch 大小。接口三元组是（anchor, positive, negatives），而负样本供给就是 batch 本身——「类别数」等于 batch 大小、随 batch 逐批漂移（models 6.2 §2 口径）。代入一个真实口径：batch 取 32768 时，每个 anchor 面对 32767 个负样本。
 
 训练侧工程只有一句：负样本数即 batch 大小，跨卡训练时负样本池靠 all-gather 扩充（通信原语归 4.1；CLIP 的大 batch 口径归 models 6.2）。与 §2 的结构对照值得记一笔：BT 是两个候选上的对比，InfoNCE 是 $B$ 个候选上的对比——同一棵 softmax 树上的两片叶子。梯度同为 $p - e_y$ 形态（1.2 式 (5)、3.1 §1），数值纪律（logsumexp 稳定、fp32 保护）也整套沿用 3.1。后训练对对比目标的消费在 P9 主要不是直接作为策略目标，而是作为数据构造与评估工具（检索负样本、构造偏好对）——这里把接口登记清楚即可。
 
 ## 5. 在线 / 离线：目标对采样分布的依赖
 
-判据只有一条：看目标期望号下的采样分布是谁。
+怎么判定一个目标是 on-policy 还是 offline？判据只有一条：看目标期望号下的采样分布是谁。
 
 - **on-policy（在线）**：目标的期望取自当前策略 $\pi_\theta$（或与参数同步更新的 rollout 策略 $\pi_{\theta_{\mathrm{old}}}$）。参数每更新一次，旧样本的分布假设就失效，必须重采。
 - **off-policy**：数据来自旧策略或他策略，期望号下是 $\pi_{\theta_{\mathrm{old}}}$ 而非 $\pi_\theta$——需要重要性比校正或接受偏差（P8 展开）。
@@ -98,13 +102,13 @@ $$
 
 注意，判据落在「采样」而非「求值」上。offline 目标照样把 $\pi_\theta$ 当作函数反复查询——DPO 每步都要算 $\log \pi_\theta(y_w \mid x)$——它免除的只是「从 $\pi_\theta$ 生成新样本」这一个动作。这一个动作的存废决定系统形态：on-policy 目标必须配 rollout 基础设施（推理引擎、权重同步、staleness 管理，账归 8.5），offline 目标一台纯训练栈就够。
 
-三个实例把定义坐实。SFT： $`\mathbb{E}_{(x, y^{\ast}) \sim D}[-\log \pi_\theta(y^{\ast} \mid x)]`$， $\pi_\theta$ 只在被求值位置——offline。DPO：期望取自静态偏好集 $D$， $\pi_\theta$ 出现在 sigmoid 内部（§6 的走读）——offline。它不需要 rollout 引擎，这是它对 PPO 的工程折价所在。PPO：surrogate 的期望取自刚采的 rollout 批 $\pi_{\theta_{\mathrm{old}}}$， $\theta_{\mathrm{old}}$ 与 $\theta$ 只差若干次更新，陈旧性由 clip 管理——on-policy 口径（8.3 展开）；GRPO 的同 prompt 组采样同属此格（8.4）。
+三个实例把定义坐实，可当作三个正例。SFT： $`\mathbb{E}_{(x, y^{\ast}) \sim D}[-\log \pi_\theta(y^{\ast} \mid x)]`$， $\pi_\theta$ 只在被求值位置——offline。DPO：期望取自静态偏好集 $D$， $\pi_\theta$ 出现在 sigmoid 内部（§6 的走读）——offline。它不需要 rollout 引擎，这是它对 PPO 的工程折价所在。PPO：surrogate 的期望取自刚采的 rollout 批 $\pi_{\theta_{\mathrm{old}}}$， $\theta_{\mathrm{old}}$ 与 $\theta$ 只差若干次更新，陈旧性由 clip 管理——on-policy 口径（8.3 展开）；GRPO 的同 prompt 组采样同属此格（8.4）。
 
 一个边界情形值得登记：拒绝采样微调（RFT）每轮先用当前模型采样、筛分、再 SFT。单轮内部是 offline——数据采完即冻结，训练不再采样；跨轮看，数据分布随策略漂移，又带 on-policy 的味。按本章判据它落 offline：每一轮的目标函数里，没有以 $\pi_\theta$ 为采样分布的期望。「数据来自谁」与「目标期望取自谁」是两件事，分界定义只管后者（RFT 的完整形态归 9.4）。这条分界的全部用途在 P8 / P9：样本效率、staleness 校正、要不要为 rollout 单独养一个推理引擎，都先由「期望取自谁」决定（判据表归 9.4）。
 
 ## 6. 后训练目标一览与 TRL 接口走读
 
-把全部目标摆上同一张表（本章只立接口；定义章指针见末列）：
+七个目标各自要什么数据、要不要 rollout 引擎？把全部目标摆上同一张表（本章只立接口；定义章指针见末列）：
 
 | 目标 | 数据接口 | 采样分布 | on / off | 定义章 |
 | --- | --- | --- | --- | --- |
@@ -145,9 +149,11 @@ $$
 3. **损失**：`_compute_loss` 内 `chosen_logratios = chosen_logps - ref_chosen_logps`。默认 `loss_type="sigmoid"` 时 `loss = -F.logsigmoid(beta * delta_score)`；`delta_score = chosen_scores - rejected_scores`，默认 `f_divergence_type="reverse_kl"` 分支下 scores 即 logratios，`delta_score = chosen_logratios - rejected_logratios`。这正是式 (3) 的 BT 形式代入 DPO 重参数化后的样子（9.3 给出从 §3 式 (6) 到这行的完整链）。
 4. **数值纪律**：逐 token logp 走 fused LM head。训练器初始化时经 `add_fused_lm_head`（`trl/trainer/utils.py`）给模型打补丁，前向变为 `model(..., labels=labels, fused_lm_head=True).log_probs`：分 tile 过输出头、只产出 label 非 −100 位置的 log-prob，返回 `FusedCausalLMOutput`，全程不物化 $(B, T, V)$ logits（该函数 docstring 口径，TRL main 2026-11-17 核实；2026-10 前为 `selective_log_softmax` 的 gather 方案，库内演化注意版本）。此形态与 3.1 §3 的 FLCE「CE 前移进投影」同型：3.1 的 logsumexp 纪律在后训练栈里以 fused 形式再现。
 
+> **坑**：batch 布局必须是前半 chosen、后半 rejected。自定义 collator 若交错混排，chosen 与 rejected 的 logratio 会配错序列——不报错、loss 照常下降，但差分对象已经错配，目标函数静默换成另一个。规避：首个 batch 打印分界处的 `completion_mask` 核对。
+
 走读之外补两条机制注记。其一，chosen 与 rejected 拼进同一个 batch 不是收纳癖。两条序列共享 prompt 前缀，对半拼接让一次前向同时产出两支的 logp，kernel 利用率与显存占用都按一个 batch 计；`ref_logps.chunk(2, dim=0)` 的注释（"batch is [chosen, rejected]"）就是这个布局的断言。其二，序列级 logp 是对 completion 段**求和**而非求平均（源码 `sum(dim=1)` 口径）。长回答的总 logp 天然更低，DPO 目标因此对长度有隐式偏置；把求和换成平均正是 SimPO 的平均 logp 隐式 reward 的出发点之一（归 9.3 的家族对照）。接口层的归约选择（sum vs mean）在这里又一次改变目标语义，与 3.1 §1 的 mean 归约注记同源。
 
-显存与吞吐的接口账记一句：pairwise 接口让每个样本吃两次前向（chosen + rejected），ref 再计两次（或预计算摊掉）。batch 里 $B$ 个偏好对对应 $2B$ 条序列的前向，这是偏好目标相对 SFT 的固有折价；RL 目标（PPO / GRPO）的四模型驻留账更大，归 8.5，两笔账独立。
+显存与吞吐的接口账记一句：pairwise 接口让每个样本吃两次前向（chosen + rejected），ref 再计两次（或预计算摊掉）。batch 里 $B$ 个偏好对对应 $2B$ 条序列的前向，这是偏好目标相对 SFT 的固有折价（口径：同等偏好对数下，前向序列数的倍数）；RL 目标（PPO / GRPO）的四模型驻留账更大，归 8.5，两笔账独立。
 
 ## 总结
 
@@ -158,14 +164,14 @@ $$
 | 平移不可识别 | 式 (6) | 等价类 $[r] = \lbrace r + c(x) \rbrace$； $\log Z(x)$ 即 gauge，DPO 重参数化的数学支点（9.3）[A] |
 | InfoNCE 接口 | 式 (7) | （anchor, positive, batch 内负样本）；类别数 = batch 大小；推导归 models 6.2 |
 | on / off 分界 | 期望号下的采样分布 | on-policy = 期望取自 $\pi_\theta$；offline = $\pi_\theta$ 只在被求值函数里；判据表归 9.4 |
-| TRL DPO 接口 | 三键 + 对半拼批 | `prompt`/`chosen`/`rejected`；loss = $-\log \sigma(\beta \cdot \Delta\mathrm{logratio})$；fused LM head 与 3.1 FLCE 同型 |
+| TRL DPO 接口 | 三键 + 对半拼批 | `prompt`/`chosen`/`rejected`；loss = $-\log \sigma(\beta \cdot \Delta\mathrm{logratio})$；fused LM head 与 3.1 FLCE 同型（练习 4） |
 
 ## 练习
 
-1.（推导）补全式 (2)：写出代入 $s = e^{-t}$ 的完整两步（含积分限翻转）；再证对称形式 $P(y_l \succ y_w \mid x) = 1 - P(y_w \succ y_l \mid x)$，说明这条对称性为什么必须先验成立。
-2.（推导）平移不可识别的逆命题：设 $r$ 与 $r'$ 在全部 $(x, y_w, y_l)$ 上给出相同的 BT 概率，证明 $r'(x, y) - r(x, y)$ 只依赖 $x$（提示：固定 $x$，取三个候选两两配对，消去公共差）。
-3.（计算）取 $\Delta$ = 2.0 / 0.5 / 0.0，各算式 (4) 的逐样本损失与式 (5) 的梯度；据此解释 RM 训练为什么不需要显式的难样本挖掘模块。
-4.（代码）按 TRL 接口手搓最小 DPO step：构造两个偏好对，按 `DataCollatorForPreference` 的语义拼 `input_ids` 与 `completion_mask`，用一个小 LM 分别前向 policy 与冻结的 ref，gather 序列级 logp 并算出与 $-\log \sigma(\beta \cdot \Delta)$ 一致的 loss（教学用，非优化实现）；对照 TRL 的 batch 布局断言你的拼接顺序。
+1.（计算 · [10]）取 $\Delta$ = 2.0 / 0.5 / 0.0，各算式 (4) 的逐样本损失与式 (5) 的梯度；据此解释 RM 训练为什么不需要显式的难样本挖掘模块。校验：Δ = 0 处损失取到 log 2、梯度幅度取到 1/2；σ(2) 的值用 logistic 定义直接核。
+2.（推导 · [20]）补全式 (2)：写出代入 $s = e^{-t}$ 的完整两步（含积分限翻转）；再证对称形式 $P(y_l \succ y_w \mid x) = 1 - P(y_w \succ y_l \mid x)$，说明这条对称性为什么必须先验成立。
+3.（推导 · [20]）平移不可识别的逆命题（即上文命题的逆）：设 $r$ 与 $r'$ 在全部 $(x, y_w, y_l)$ 上给出相同的 BT 概率，证明 $r'(x, y) - r(x, y)$ 只依赖 $x$（提示：固定 $x$，取三个候选两两配对，消去公共差）。
+4.（代码 · [30]）按 TRL 接口手搓最小 DPO step：构造两个偏好对，按 `DataCollatorForPreference` 的语义拼 `input_ids` 与 `completion_mask`，用一个小 LM 分别前向 policy 与冻结的 ref，gather 序列级 logp 并算出与 $-\log \sigma(\beta \cdot \Delta)$ 一致的 loss（教学用，非优化实现）。先写出预测：两条偏好对的 loss 应逐条等于 −log σ(βΔ) 的手算值；再跑代码对照。校验：batch 布局与官方 collator 输出逐字段一致；loss 与手算值在 fp32 下容差 10⁻⁶。
 
 ## 参考
 
