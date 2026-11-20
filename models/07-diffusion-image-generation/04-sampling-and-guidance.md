@@ -35,6 +35,8 @@ return x_0
 
 一个贯穿全章的判别准则先记下来：**凡是只依赖边缘分布 $q(x_t \mid x_0)$ 的训练目标，都对前向链的联合结构不敏感**。 $L_{simple}$（7.2 式 (26)）的期望只经过 $x_t = \sqrt{\bar\alpha_t} x_0 + \sqrt{1-\bar\alpha_t}\thinspace \varepsilon$ 这一个边缘采样式，从没碰过转移核 $q(x_t \mid x_{t-1})$。这个观察是 DDIM 的立足点（§2），也是蒸馏可行的一半原因（§5）。
 
+本章口径：步数与 NFE 账一律以 1000 步训练出的模型为基准；质量数字不跨表转录，以各论文原表为准。
+
 ## 2. DDIM：同一批边缘分布的一族前向过程
 
 ### 2.1 关键观察：训练目标钉不住联合分布
@@ -53,7 +55,7 @@ $$
 
 ### 2.2 边缘匹配引理（归纳推导）
 
-要验证这个族合法，只需证明它对一切 $t$ 复现 DDPM 的边缘。用采样口径（7.2 §2.2 的同一约定）：设 $x_t = \sqrt{\bar\alpha_t}\thinspace x_0 + \sqrt{1-\bar\alpha_t}\thinspace \varepsilon$（归纳假设， $t = T$ 为基），按式 (1) 采 $x_{t-1}$：
+要验证这个族合法，只需证明它对一切 $t$ 复现 DDPM 的边缘。把这句话写成命题。**命题**（边缘匹配）：该前向族在每个时刻都复现 DDPM 的边缘分布。**证明**（归纳；路线：采样口径下逐层代入，关键一步是回传项恰好抽出已注入的全部噪声）：用采样口径（7.2 §2.2 的同一约定），设 $x_t = \sqrt{\bar\alpha_t}\thinspace x_0 + \sqrt{1-\bar\alpha_t}\thinspace \varepsilon$（归纳假设， $t = T$ 为基），按式 (1) 采 $x_{t-1}$：
 
 $$
 x_{t-1} = \sqrt{\bar\alpha_{t-1}}\thinspace x_0 + \sqrt{1 - \bar\alpha_{t-1} - \sigma_t^2}\cdot \varepsilon + \sigma_t\thinspace z, \qquad z \sim \mathcal{N}(0, I) \qquad (2)
@@ -93,7 +95,7 @@ $$
 
 式 (5) 的结构值得拆一眼：右端两项是「信号方向」与「噪声方向」在以 $\hat x_0$ 为新原点的坐标系里的重新配比，配比只由 $\bar\alpha_{t-1}$ 决定。轨迹完全确定——同一个 $x_T$ 永远生成同一张图。这带来两个工程性质：(i) **可逆与插值**：噪声种子 ↔ 图像是近似双射，可以做 latent 插值与图像反演（把真实图像正向推回噪声端）；(ii) **误差全是截断**：没有随机项帮忙平均掉模型误差，步数与误差的账是纯数值分析的账，§3 的求解器军备竞赛由此而来。
 
-一般取 $\sigma_t = \eta\thinspace \sqrt{\tilde\beta_t}$（ $\eta \in [0, 1]$）在两个端点之间滑动，DDIM 原文记 $\eta$； $\eta$ 是随机性滑杆，7.3 §7 末尾的「注噪量可调的逆时扩散族」是它的连续对应。
+一般取 $\sigma_t = \eta\thinspace \sqrt{\tilde\beta_t}$（ $\eta \in [0, 1]$）在两个端点之间滑动，DDIM 原文记 $\eta$；该取值的边缘合法性留作练习 1。 $\eta$ 是随机性滑杆，7.3 §7 末尾的「注噪量可调的逆时扩散族」是它的连续对应。
 
 **跳步子序列**。DDIM 与 ancestral 的决定性差异在：式 (5) 只用 $(\bar\alpha_t, \bar\alpha_{t-1})$ 两个端点量，从不依赖「 $t-1$ 是 $t$ 的相邻训练步」。于是可以任取子序列 $\lbrace\tau_1 < \tau_2 < \cdots < \tau_S\rbrace \subset \lbrace1, ..., T\rbrace$（ $S \ll T$），在子序列格点上直接跳：
 
@@ -107,7 +109,7 @@ $$
 
 ### 2.4 DDIM $\sigma = 0$ = PF-ODE 的一阶离散化（精确证明）
 
-「DDIM 确定性更新是 probability-flow ODE 的一阶离散」常被当口号引用，这里用指数积分把它证成一个恒等式，并顺手得到 §3 全部高阶求解器的母体。从 7.3 的 VP 型 PF-ODE（7.3 式 (21)）出发：
+**命题**（DDIM = PF-ODE 的一阶离散化）：DDIM 的确定性更新，与 PF-ODE 经指数积分、网络场取 0 阶逼近所得的步进逐项相同。这个命题常被当口号引用，这里用指数积分把它证成一个恒等式，并顺手得到 §3 全部高阶求解器的母体。**证明路线**：换半对数 SNR 坐标把 ODE 写成半线性形，线性项用积分因子闭式积分，再对网络场做最粗的左端点冻结——关键一步是坐标换元。从 7.3 的 VP 型 PF-ODE（7.3 式 (21)）出发：
 
 $$
 \frac{dx}{dt} = -\frac{1}{2}\thinspace \beta(t) \left[ x - \frac{\varepsilon_\theta(x, t)}{\sqrt{1 - \bar\alpha(t)}} \right] \qquad (7)
@@ -167,7 +169,7 @@ $$
 
 ### 3.1 从冻结到 Taylor：阶数怎么买到
 
-式 (10) 把问题规约为对 $\varepsilon_\theta(x_\lambda, \lambda)$ 在 $\lambda \in [\lambda_t, \lambda_s]$ 上做多好的插值。自然升级是把 0 阶换成 $\lambda_t$ 处的 Taylor 展开（DPM-Solver，[Lu et al., 2022](../references.md)，arXiv:2206.00927，[A]）：
+0 阶之上，误差再压一个量级要从哪里买？式 (10) 把问题规约为对 $\varepsilon_\theta(x_\lambda, \lambda)$ 在 $\lambda \in [\lambda_t, \lambda_s]$ 上做多好的插值。自然升级是把 0 阶换成 $\lambda_t$ 处的 Taylor 展开（DPM-Solver，[Lu et al., 2022](../references.md)，arXiv:2206.00927，[A]）：
 
 $$
 \varepsilon_\theta(x_\lambda, \lambda) = \sum_{k=0}^{K-1} \frac{(\lambda - \lambda_t)^k}{k!}\thinspace \varepsilon_\theta^{(k)}(x_t, \lambda_t) + O\left( (\lambda - \lambda_t)^K \right) \qquad (12)
@@ -183,7 +185,7 @@ $$
 
 **符号**：求和是「 $k$ 阶导数 $\times$ 闭式标量矩」的线性组合——高阶信息全部进入系数，不打乱更新结构。
 
-剩下的问题是怎么拿到 $\varepsilon_\theta^{(k)}$。有两条路，DPM-Solver 都用了。**(i) 多步法（multistep）**：把前若干步的网络评估值缓存下来，用有限差分组合出各阶导数的估计。历史评估免费复用，不增加 NFE——这是实际部署的主力形式（每步仍 1 次网络前向）。**(ii) 单步多阶段法**：在当前步内补采中间点（类似 Runge-Kutta 的级），每步 2-3 次 NFE 换更高的阶。 $K = 1$ 时式 (13) 退化为式 (11)，即 DDIM 是 DPM-Solver 的第 1 阶； $K = 2, 3$ 时每步误差降到 $O(\Delta\lambda^3)$、 $O(\Delta\lambda^4)$ 量级。
+剩下的问题是怎么拿到 $\varepsilon_\theta^{(k)}$。有两条路，DPM-Solver 都用了。**(i) 多步法（multistep）**：把前若干步的网络评估值缓存下来，用有限差分组合出各阶导数的估计。历史评估免费复用（口径：不增加任何网络评估，NFE 不变）——这是实际部署的主力形式（每步仍 1 次网络前向）。**(ii) 单步多阶段法**：在当前步内补采中间点（类似 Runge-Kutta 的级），每步 2-3 次 NFE 换更高的阶。 $K = 1$ 时式 (13) 退化为式 (11)，即 DDIM 是 DPM-Solver 的第 1 阶； $K = 2, 3$ 时每步误差降到 $O(\Delta\lambda^3)$、 $O(\Delta\lambda^4)$ 量级。
 
 结论性的账（出处即论文标题与摘要口径）：在 $K = 2$ 或 $3$、配合格点在 $\lambda$ 坐标下均匀或按经验规则放置时，CIFAR-10 / ImageNet 规模上 **10 次上下 NFE 即可逼近数百步 DDPM ancestral 的样本质量**，同预算下优于 1 阶 DDIM 跳步（[Lu et al., 2022](../references.md)，[A]，具体 FID 数字以原表为准——口径随数据集与评估协议而变，本章不跨表转录）。对照 7.3 §8 的 EDM Heun（预测-校正、每步 2 NFE、二阶）：Heun 把同样的二阶精度买在通用 ODE 框架里；DPM-Solver 则利用扩散 ODE 的半线性结构，把线性项精确积分掉、只对网络场展开。同样阶数下后者的有效精度更高，因为误差只作用于网络项而非整个向量场。
 
@@ -433,7 +435,9 @@ $$
 
 两个 score 的来源不对称，这是 DMD 的结构要点。**$s_{\mathrm{real}}$ 免费**：冻结的预训练教师经 score↔ε 换算（7.3 式 (9)）直接给出（把 fake 样本加噪到某 $t$、读教师 $\varepsilon_\theta$ 即得该噪声水平下的 real score）。**$s_{\mathrm{fake}}$ 要在线养**： $p_\psi$ 随训练时刻在变，没有现成 score，于是并行训一个小 score 网络，用标准 DSM（7.3 §3）在生成器当前输出上回归。生成器每更新一步，fake 分布变一点，fake score 网络跟着追。主循环是两者的交替优化。论文另配一项回归损失（在教师预生成的 $(z, x_0)$ ODE 配对上做 L2）作初始化与稳定器。成果口径：1 步生成、质量逼近多步教师（具体 FID 见原表）。
 
-**DMD2 注记**（[Yin et al., 2024](../references.md)，arXiv:2405.14867，[A]；官方实现 [tianweiy/DMD2](../references.md)，[A]）：改进两点——(i) 去掉对教师生成数据配对的回归依赖（免教师数据）；(ii) **在分布匹配梯度之外加 GAN 分支**（判别器分真伪、生成器梯度与之叠加）补偿大步数压缩下的细节损失。防张冠李戴：**GAN 分量属 DMD2，不属 DMD**（与约定页口径一致）。
+**DMD2 注记**（[Yin et al., 2024](../references.md)，arXiv:2405.14867，[A]；官方实现 [tianweiy/DMD2](../references.md)，[A]）：改进两点——(i) 去掉对教师生成数据配对的回归依赖（免教师数据）；(ii) **在分布匹配梯度之外加 GAN 分支**（判别器分真伪、生成器梯度与之叠加）补偿大步数压缩下的细节损失。
+
+> **坑**：写 DMD 相关文字或复现代码时，把 GAN 分支归到 DMD 名下——张冠李戴。**GAN 分量属 DMD2，不属 DMD**（与约定页口径一致）。
 
 ### 5.6 few-step 现状表
 
@@ -479,10 +483,10 @@ $$
 
 ## 练习
 
-1.（推导） $\eta$ 滑杆的合法性。证明：取 $\sigma_t = \eta \sqrt{\tilde\beta_t}$（ $\eta \in [0, 1]$ 任意），式 (1) 的前向族仍对所有 $t$ 复现边缘 $q(x_t \mid x_0) = \mathcal{N}(\sqrt{\bar\alpha_t} x_0, (1-\bar\alpha_t) I)$；并写出该取值下生成更新中 $\varepsilon_\theta$ 项的系数，验证 $\eta = 1$ 退回 DDPM ancestral（ $\tilde\beta_t$ 档）、 $\eta = 0$ 退回式 (5)。提示：只须重跑 §2.2 的方差求和。
-2.（推导）CFG 的 tilt 恒等。(a) 验证式 (18) 对应的有效 score 恰为 $\nabla_x \log q_w(x)$（式 (19) 的分布），归一化常数不进 score；(b) 证明 $w = 1$ 时 $q_w(x) = p(x \mid y)$；(c) 设 $p(y \mid x) \propto e^{-E(x, y)}$（能量形式），说明 $w$ 相当于该能量的逆温度，并由此解释「大 $w$ = 多样性换对齐」的统计力学读法。
-3.（计算）二阶矩的闭式。(a) 计算 $\int_{\lambda_t}^{\lambda_s} e^{-\lambda} (\lambda - \lambda_t)\thinspace d\lambda$ 的闭式（分部积分）；(b) 代入式 (13) 写出 $K = 2$ 的完整更新式，全部系数用 $\bar\alpha_t, \bar\alpha_s$ 表达；(c) 设格点在 $\lambda$ 坐标均匀、 $\Delta\lambda = \lambda_s - \lambda_t$，验证 $K = 2$ 的局部截断误差为 $O(\Delta\lambda^3)$。
-4.（代码）教学用，非优化实现：复用 7.2 练习 4 的二维 swiss-roll 迷你 DDPM。(a) 实现 DDIM 更新式 (5) 与 $\eta$ 滑杆（式 (1) 的生成版）；(b) 在 NFE ∈ {1000, 100, 20} 三档下对比 ancestral、DDIM $\eta = 1$、DDIM $\eta = 0$、DDIM 跳步（式 (6)，50 格点）的样本-数据协方差匹配误差，验证「低 NFE 下确定性占优」的曲线形状（§3.2）；(c) 加二分类条件（左月/右月），实现 CFG 式 (18)，扫 $w \in \lbrace1, 3, 7, 15\rbrace$，画出类内样本方差随 $w$ 的曲线——对应式 (20) 的范数膨胀与多样性塌缩。
+1.（推导 · [20]） $\eta$ 滑杆的合法性。证明：取 $\sigma_t = \eta \sqrt{\tilde\beta_t}$（ $\eta \in [0, 1]$ 任意），式 (1) 的前向族仍对所有 $t$ 复现边缘 $q(x_t \mid x_0) = \mathcal{N}(\sqrt{\bar\alpha_t} x_0, (1-\bar\alpha_t) I)$；并写出该取值下生成更新中 $\varepsilon_\theta$ 项的系数，验证 $\eta = 1$ 退回 DDPM ancestral（ $\tilde\beta_t$ 档）、 $\eta = 0$ 退回式 (5)。提示：只须重跑 §2.2 的方差求和。
+2.（推导 · [30]）CFG 的 tilt 恒等。(a) 验证式 (18) 对应的有效 score 恰为 $\nabla_x \log q_w(x)$（式 (19) 的分布），归一化常数不进 score；(b) 证明 $w = 1$ 时 $q_w(x) = p(x \mid y)$；(c) 设 $p(y \mid x) \propto e^{-E(x, y)}$（能量形式），说明 $w$ 相当于该能量的逆温度，并由此解释「大 $w$ = 多样性换对齐」的统计力学读法。
+3.（计算 · [30]）二阶矩的闭式。(a) 计算 $\int_{\lambda_t}^{\lambda_s} e^{-\lambda} (\lambda - \lambda_t)\thinspace d\lambda$ 的闭式（分部积分）；(b) 代入式 (13) 写出 $K = 2$ 的完整更新式，全部系数用 $\bar\alpha_t, \bar\alpha_s$ 表达；(c) 设格点在 $\lambda$ 坐标均匀、 $\Delta\lambda = \lambda_s - \lambda_t$，验证 $K = 2$ 的局部截断误差为 $O(\Delta\lambda^3)$。校验：(a) 的闭式在步长趋于零时归零；(b) 取 K = 1 时退化为正文的 DDIM 更新。
+4.（代码 · [40]）教学用，非优化实现：复用 7.2 练习 4 的二维 swiss-roll 迷你 DDPM。(a) 实现 DDIM 更新式 (5) 与 $\eta$ 滑杆（式 (1) 的生成版）；(b) 在 NFE ∈ {1000, 100, 20} 三档下对比 ancestral、DDIM $\eta = 1$、DDIM $\eta = 0$、DDIM 跳步（式 (6)，50 格点）的样本-数据协方差匹配误差，验证「低 NFE 下确定性占优」的曲线形状（§3.2）；(c) 加二分类条件（左月/右月），实现 CFG 式 (18)，扫 $w \in \lbrace1, 3, 7, 15\rbrace$，画出类内样本方差随 $w$ 的曲线——对应式 (20) 的范数膨胀与多样性塌缩。先写出 (b) 中四条曲线的排序预测，再跑实验对照。校验：(b) 的误差排序在低 NFE 档满足「确定性方法优于随机方法」；(c) 的类内方差曲线随 w 单调下降。
 
 ## 参考
 

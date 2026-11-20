@@ -32,7 +32,7 @@ p_0 = p_data                                  p_1 = N(0, I)
     ●──●──●                         边界条件只钉两端
 ```
 
-ODE 的解唯一性给出一条几何约束：过同一点 $(x, t)$ 只有一条轨迹，**轨迹互不相交**。于是整条流把噪声端与数据端之间的点一一配成对。生成因此是一个确定性映射：固定 $x_1$ 就固定了输出，插值、反演这类操作免费可得（对照 7.4 的 DDIM $\sigma = 0$ 同款性质）。这也标出了 FM 与随机采样式扩散的边界：ancestral sampling 的随机性对应 SDE 的扩散项（7.3），FM/ODE 视角天然是确定性的那一侧。
+**命题**（轨迹互不相交）：过同一点 $(x, t)$ 只有一条轨迹。**证明**：该 ODE 初值问题的解唯一，这是常微分方程的常规结论，本书不证。于是整条流把噪声端与数据端之间的点一一配成对。生成因此是一个确定性映射：固定 $x_1$ 就固定了输出，插值、反演这类操作免费可得（口径：「免费」指不新增网络评估次数，只是同一速度场上换个积分方向；对照 7.4 的 DDIM $\sigma = 0$ 同款性质）。这也标出了 FM 与随机采样式扩散的边界：ancestral sampling 的随机性对应 SDE 的扩散项（7.3），FM/ODE 视角天然是确定性的那一侧。
 
 与 7.1 §5 的离散 flow（Glow 式双射堆叠）对照一下。离散版把变量替换写成有限个可逆层的复合，每层要为 $\log|\det|$ 付出架构约束的代价。CNF 把它换成连续极限：层数趋于无穷、每层扰动趋于无穷小，变量替换公式相应地变成沿轨迹的一个积分（§2 的 trace 公式）。换来的架构自由度是实质性的： $u_t(x)$ 可以是任意神经网络（U-Net、DiT），不再需要可逆层设计。
 
@@ -44,9 +44,11 @@ $$
 
 **符号**： $\nabla \cdot$：散度， $\nabla \cdot F = \sum_{i=1}^{d} \partial F_i / \partial x_i$； $p_t u_t$：概率质量的通量。式 (3) 读法：某点密度的变化率 = 净流入量的负值——质量不生不灭，只随速度场搬运。式 (3) 是本章一切推导的基础设施：给定 $u_t$ 求 $p_t$ 是解这个偏微分方程，给定 $p_t$ 反推合法的 $u_t$（§3）也要过它。
 
+本章口径一句话：机制例子统一用低维玩具情形（两点数据集、二维散点），工程数字统一取 SD3 档（logit-normal 参数、shift 系数与分辨率随文标注）；两套之外不换口径。
+
 ## 2. 精确似然：trace 公式与成本账
 
-CNF 的卖点之一是精确似然可算。先看离散版的对照物再取连续极限。有限步变量替换（7.1 式 (4)）给出 $p_t(\psi_t(x)) = p_0(x) \thinspace |\det J_t(x)|^{-1}$，其中 $J_t = \partial \psi_t / \partial x$ 是 flow map 的 Jacobian。两侧取对数并对 $t$ 求导，需要 $J_t$ 的演化方程。对式 (1) 关于初值 $x$ 求导（交换 $\partial/\partial t$ 与 $\partial/\partial x$）：
+CNF 的精确似然到底能不能算、要付多少？先给结论：能算，但贵。推导路线：先看离散版的对照物再取连续极限——先给 flow map 的 Jacobian 立一个线性 ODE，再用 Jacobi 恒等式把对数行列式的导数收成散度，最后沿轨迹积分出精确似然。关键一步是 Jacobi 恒等式。有限步变量替换（7.1 式 (4)）给出 $p_t(\psi_t(x)) = p_0(x) \thinspace |\det J_t(x)|^{-1}$，其中 $J_t = \partial \psi_t / \partial x$ 是 flow map 的 Jacobian。两侧取对数并对 $t$ 求导，需要 $J_t$ 的演化方程。对式 (1) 关于初值 $x$ 求导（交换 $\partial/\partial t$ 与 $\partial/\partial x$）：
 
 $$
 \frac{d}{dt} J_t(x) = \frac{\partial u_t}{\partial x}\bigg|_{\psi_t(x)} J_t(x) \qquad (4)
@@ -54,7 +56,7 @@ $$
 
 **符号**： $\partial u_t / \partial x$：速度场在当前位置的 $d \times d$ Jacobian；式 (4) 是 $J_t$ 的线性 ODE，初值 $J_0 = I$。
 
-再用 Jacobi 恒等式（矩阵行列式对参数的导数公式；练习 1 推导）：对可逆矩阵值函数 $J(t)$， $\frac{d}{dt} \log |\det J| = \mathrm{tr}\left( J^{-1} \frac{dJ}{dt} \right)$。代入式 (4)（ $J^{-1}$ 与 $\partial u/\partial x \cdot J$ 的迹按循环性合并）：
+再用 Jacobi 恒等式（矩阵行列式对参数的导数公式；练习 2 推导）：对可逆矩阵值函数 $J(t)$， $\frac{d}{dt} \log |\det J| = \mathrm{tr}\left( J^{-1} \frac{dJ}{dt} \right)$。代入式 (4)（ $J^{-1}$ 与 $\partial u/\partial x \cdot J$ 的迹按循环性合并）：
 
 $$
 \frac{d}{dt} \log \left| \det J_t(x) \right| = \mathrm{tr}\left( \frac{\partial u_t}{\partial x}\bigg|_{\psi_t(x)} \right) = \nabla \cdot u_t\left( \psi_t(x) \right) \qquad (5)
@@ -107,12 +109,12 @@ $p_t$ 本身是无闭式的混合密度，而连续性方程式 (3) 里的 $u_t$
 
 ## 4. conditional FM 定理（完整推导）
 
-把上一节末尾的思路落成定义。对每个 $x_0$ 取定一族**条件概率路径** $p_t(x \mid x_0)$ 与一个**条件速度场** $u_t(x \mid x_0)$，要求：
+先回答一个更基本的问题：边际速度场算不出来，凭什么还能回归它？答案是把回归目标换到条件场上。把上一节末尾的思路落成定义。对每个 $x_0$ 取定一族**条件概率路径** $p_t(x \mid x_0)$ 与一个**条件速度场** $u_t(x \mid x_0)$，要求：
 
 - （C1）对每个 $x_0$，条件对满足连续性方程： $\partial_t p_t(x \mid x_0) + \nabla \cdot \left( p_t(x \mid x_0)\thinspace u_t(x \mid x_0) \right) = 0$；
 - （C2）端点正确： $p_0(x \mid x_0)$ 集中于 $x_0$（数据端退化）， $p_1(x \mid x_0) = \mathcal{N}(0, I)$ 且不依赖 $x_0$（噪声端统一）。
 
-条件速度场是设计出来的、闭式可算（§5 给出 Gaussian 族的显式公式）。**conditional FM 目标**直接回归它：
+正例与反例各给一个。正例：下一节的 Gaussian 族，两条要求都逐字可验。反例：让噪声端分布仍随来源数据点变化的任何取法——端点不统一，(C2) 破裂，不同来源的轨迹汇不到同一个噪声先验，边际场就无从定义。条件速度场是设计出来的、闭式可算（§5 给出 Gaussian 族的显式公式）。**conditional FM 目标**直接回归它：
 
 $$
 L_{CFM}(\theta) = \mathbb{E}_{t,\hspace{5mu} x_0 \sim p_{\mathrm{data}},\hspace{5mu} x \sim p_t(\cdot \mid x_0)} \left\Vert v_\theta(x, t) - u_t(x \mid x_0) \right\Vert^2 \qquad (9)
@@ -122,7 +124,7 @@ $$
 
 **定理（conditional FM，Lipman et al.）**： $\nabla_\theta L_{FM}(\theta) = \nabla_\theta L_{CFM}(\theta)$——用条件速度场回归与用不可解的边际速度场回归，梯度完全相同。
 
-证明分三步。
+证明分三步，全部技巧是期望交换。第一步定义边际速度场，并验证它确实生成同一族边际密度；第二步把两个损失的平方式各自展开成三块，第一块由期望积掉、第三块不含参数；第三步处理交叉项——关键枢纽是内积对速度场线性，后验平均可以提到内积之外。
 
 **第一步：定义边际速度场并验证它生成 $p_t$。** 定义
 
@@ -170,10 +172,12 @@ $$
 
 两点注记，防误读：
 
-- **定理管梯度、不管损失值**。 $L_{CFM}$ 比 $L_{FM}$ 多一个非负的差距项 $\mathbb{E}\thinspace\Vert u_t(x \mid x_0) - u_t(x)\Vert^2$（条件速度的方差，练习 2），所以它不再是速度的绝对拟合误差，不能用来横向比较两条路径的「学习难度」数值。
+- **定理管梯度、不管损失值**。**命题**（差距项）： $L_{CFM}$ 比 $L_{FM}$ 恰好多一个非负项 $\mathbb{E}\thinspace\Vert u_t(x \mid x_0) - u_t(x)\Vert^2$，即条件速度的方差；**证明**留作练习 1。所以它不再是速度的绝对拟合误差，不能用来横向比较两条路径的「学习难度」数值。
 - **最优解一致**。回归的逐点最优是条件期望：式 (9) 对固定 $(x, t)$ 的最小解为 $`v^{*}(x, t) = \mathbb{E}[u_t(x \mid x_0) \mid x_t = x]`$，由式 (10) 这正是 $u_t(x)$。容量无限时 CFM 学到的就是真边际场——与 7.2 里 $L_{simple}$ 的最优解 $`\varepsilon^{*}(x_t, t) = \mathbb{E}[\varepsilon \mid x_t]`$（从而复原真实后验均值与 score）是同一个「MSE 回归出条件期望」的机制。
 
-实现侧怎么用这个定理？每个训练样本只采一组 $(t, x_0, \varepsilon)$，算一个 $\Vert v_\theta - u_t(x \mid x_0)\Vert^2$——这是式 (13) 的单样本 Monte Carlo 估计。定理保证梯度无偏；方差全部来自条件速度的散布（练习 2 的分解项），batch 平均即消。另有一点值得记：定理对条件路径的唯一要求是 (C1)(C2)，Gaussian 只是闭式最方便的取法。任何能给出「可采样路径 + 可算条件速度」的设计（包括从配对数据出发的非高斯耦合）都落在同一框架内——这是 FM 被称为「路径设计框架」而非「某个具体模型」的原因。
+实现侧怎么用这个定理？每个训练样本只采一组 $(t, x_0, \varepsilon)$，算一个 $\Vert v_\theta - u_t(x \mid x_0)\Vert^2$——这是式 (13) 的单样本 Monte Carlo 估计。定理保证梯度无偏；方差全部来自条件速度的散布（练习 1 的分解项），batch 平均即消。
+
+> **提点**：定理对条件路径的唯一要求是 (C1)(C2)，Gaussian 只是闭式最方便的取法。任何能给出「可采样路径 + 可算条件速度」的设计（包括从配对数据出发的非高斯耦合）都落在同一框架内——这是 FM 被称为「路径设计框架」而非「某个具体模型」的原因。
 
 ## 5. Gaussian 条件路径： $u_t$ 的闭式
 
@@ -201,7 +205,9 @@ $$
 
 **符号**： $\dot\alpha_t, \dot\sigma_t$：对 $t$ 的导数。式 (17) 即 Gaussian 条件路径的速度场闭式——是 $x$ 与 $x_0$ 的仿射函数，无积分、无 score，完全可算。
 
-验证 (C1)。式 (17) 作为 $x$ 的 ODE（ $x_0$ 固定），右端对 $x$ 仿射，其 flow map 仍是仿射映射（仿射 ODE 的解对初值仿射）；仿射映射推高斯仍为高斯。直接核对端点之间任一 $t' \to t$ 的推送：解出 $x_t = \frac{\sigma_t}{\sigma_{t'}} x_{t'} + \left( \alpha_t - \frac{\sigma_t}{\sigma_{t'}} \alpha_{t'} \right) x_0$，把 $x_{t'} \sim \mathcal{N}(\alpha_{t'} x_0, \sigma_{t'}^2 I)$ 代入，均值 $\alpha_t x_0$、方差 $\sigma_t^2 I$，恰为式 (15)——(C1) 成立。一个实现细节：式 (17) 含 $1/\sigma_t$，在端点 $\sigma_0 = 0$ 处奇异；实现中 $t$ 采样避开 $0$ 或截断到 $\sigma_{\min}$，这不影响结论（端点邻域的测度为零）。
+验证 (C1)。式 (17) 作为 $x$ 的 ODE（ $x_0$ 固定），右端对 $x$ 仿射，其 flow map 仍是仿射映射（仿射 ODE 的解对初值仿射）；仿射映射推高斯仍为高斯。直接核对端点之间任一 $t' \to t$ 的推送：解出 $x_t = \frac{\sigma_t}{\sigma_{t'}} x_{t'} + \left( \alpha_t - \frac{\sigma_t}{\sigma_{t'}} \alpha_{t'} \right) x_0$，把 $x_{t'} \sim \mathcal{N}(\alpha_{t'} x_0, \sigma_{t'}^2 I)$ 代入，均值 $\alpha_t x_0$、方差 $\sigma_t^2 I$，恰为式 (15)——(C1) 成立。
+
+> **坑**：式 (17) 含 $1/\sigma_t$，在端点 $\sigma_0 = 0$ 处奇异——采样时刻取到端点即除零。规避：实现中 $t$ 采样避开 $0$ 或截断到 $\sigma_{\min}$。端点邻域的测度为零，这不影响结论。
 
 顺带把 §4 的最优解写成 score 形式备用。边际场是条件场的后验平均（式 (10)），而 $u_t(x \mid x_0)$ 经式 (17) 只通过 $x_0$ 依赖条件，故
 
@@ -219,7 +225,7 @@ $$
 
 ## 6. rectified flow：线性路径与目标速度 $\varepsilon - x_0$
 
-把 Gaussian 路径取到最简——线性插值（rectified flow，[Liu et al., 2022](../references.md)，arXiv:2209.03003，[A]；SD3 采用的正是这条路径）：
+Gaussian 族里最简的路径长什么样？把 Gaussian 路径取到最简——线性插值（rectified flow，[Liu et al., 2022](../references.md)，arXiv:2209.03003，[A]；SD3 采用的正是这条路径）：
 
 $$
 \alpha_t = 1 - t, \qquad \sigma_t = t \qquad \Longrightarrow \qquad x_t = (1 - t)\thinspace x_0 + t\thinspace \varepsilon \qquad (20)
@@ -271,6 +277,8 @@ def rf_sample(v_net, shape, K):
     return x
 ```
 
+代入步数看账：K 取 8 时，一次生成共 8 次网络评估；K 翻到 64，评估次数同步翻到 64——NFE 就是 K 本身，没有隐式开销。
+
 一句防误读：式 (21) 的「直线、恒速」是**条件轨迹**的性质（固定端点对 $(x_0, \varepsilon)$）。不同端点对的直线互相交叉，边际场 $u_t(x) = \mathbb{E}[\varepsilon - x_0 \mid x_t = x]$ 在交叉处取后验平均——学到的 ODE 轨迹仍然弯曲，只是比 VP 路径弯得少（§10 的账）。进一步拉直靠 reflow（用当前模型自产 $(x_0, \hat\varepsilon)$ 配对再训一轮），属 7.4 蒸馏语境。
 
 ```
@@ -298,6 +306,8 @@ $$
 $$
 
 **符号**：一一对应 $t \leftrightarrow t'$； $t = 0 \leftrightarrow \bar\alpha = 1$（数据端）、 $t = 1 \leftrightarrow \bar\alpha = 0$（噪声端）。SNR 相等的两个时刻上，两条路径的边际分布 $p_t$ 逐点相同——「DDPM 的 $t'$ 时刻」与「rectified flow 的 $t$ 时刻」是同一张加噪图，只是钟走得不一样。
+
+代入中点自检：t 取一半时，分子 (1−t)² 与分母两项各为 1/4，右端恰为 1/2——中点对应 DDPM 侧 ᾱ 的半山腰，两边的噪声档位在此对齐。
 
 **参数化层：目标互转。** 在 SNR 匹配的时刻，DDPM 回归 $\varepsilon$、RF 回归 $\varepsilon - x_0$，给定 $x_t$ 后二者线性互表。由式 (20) 把 $x_t$ 写成 $x_t = x_0 + t(\varepsilon - x_0)$，直接读出
 
@@ -359,7 +369,7 @@ $$
 
 ## 9. diffusion↔FM 统一表
 
-§5-§7 的换算落成一张表。两列是同一 Gaussian 条件路径族式 (15) 的两种取点；任意一行都可经 §7 的映射互相推出。
+两列坐标到底是不是同一个东西？§5-§7 的换算落成一张表，逐行对照。两列是同一 Gaussian 条件路径族式 (15) 的两种取点；任意一行都可经 §7 的映射互相推出。
 
 | 对象 | DDPM（VP 扩散，7.2） | rectified flow / FM（本章） |
 | --- | --- | --- |
@@ -380,7 +390,7 @@ $$
 
 ## 10. FM 的工程优势：直轨迹 → 少步求解 → 蒸馏友好
 
-把式 (23) 的 Euler 步与精确解比较。ODE $\dot x = v(x, t)$ 的单步局部截断误差为
+直轨迹到底能省几步？把式 (23) 的 Euler 步与精确解比较，曲率账就出来了。ODE $\dot x = v(x, t)$ 的单步局部截断误差为
 
 $$
 x(t - h) - \left( x(t) - h\thinspace v(x(t), t) \right) = \frac{h^2}{2}\thinspace \ddot x(\xi) = \frac{h^2}{2}\left( \partial_t v + (v \cdot \nabla)\thinspace v \right)(\xi) \qquad (32)
@@ -418,10 +428,10 @@ rectified flow 在这条账上的优势来自目标结构。条件目标 $\varep
 
 ## 练习
 
-1.（推导）补全式 (5) 的矩阵引理：对可逆 $J(t)$，证明 $\frac{d}{dt} \log |\det J| = \mathrm{tr}(J^{-1} \frac{dJ}{dt})$（提示：对 $\det J = \exp(\mathrm{tr} \log J)$ 求导，或用 $\det(I + \delta M) = 1 + \delta\thinspace \mathrm{tr} M + O(\delta^2)$ 做一阶展开）；再由式 (4) 推出式 (5)，并说明为什么式 (6) 的积分符号是「加散度」而非「减散度」（注意 $\log p_t = \log p_0 - \log|\det J_t|$ 的符号链）。
-2.（推导）证明 CFM 与 FM 的损失差恰为条件速度的方差： $`L_{CFM}(\theta) - L_{FM}(\theta) = \mathbb{E}_{t, x \sim p_t}\left[ \mathbb{E}\left[ \Vert u_t(x \mid x_0) - u_t(x)\Vert^2 \mid x_t = x \right] \right]`$（提示：对 $\Vert v - u_c\Vert^2$ 在条件期望下用「均值 + 偏差」分解 $u_c = u_t(x) + (u_c - u_t(x))$，交叉项归零）。由此说明：(a) 差距与 $\theta$ 无关（定理的另一证法）；(b) 为什么 $L_{CFM}$ 的数值不能跨路径比较。
-3.（计算）logit-normal 与 shift 的网格账：(a) 由式 (28) 证明 $m = 0, s = 1$ 时 $\pi_{ln}(t)$ 关于 $t = 1/2$ 对称，并算 $\pi_{ln}(0.5)$、 $\pi_{ln}(0.1)$、 $\pi_{ln}(0.9)$ 的相对比例，与均匀分布对比中段权重；(b) 验证式 (29)：由 $\log \mathrm{SNR} = -2\thinspace\mathrm{logit}(t)$ 推出其分布参数；(c) 取 $s = 3$，计算 $t' = st/(1 + (s-1)t)$ 在 $t \in \lbrace0.1, 0.3, 0.5, 0.7, 0.9\rbrace$ 的值，画（或描述）平移前后 $t$ 网格的偏移方向。
-4.（代码）教学用，非优化实现：二维 two-moons 数据上的 rectified flow。(a) 用 §6 的 `rf_loss` 训练一个小型 MLP（ $t$ 经 sinusoidal embedding 拼接输入）， $t$ 均匀采样；(b) 用 `rf_sample` 分别取 $K \in \lbrace1, 2, 8, 64\rbrace$ 采样，与数据散点对比——观察 $K = 1$ 的样本落在何处（提示：直线外推的端点偏差 = 边际轨迹的弯曲量）；(c) 把 $t$ 采样换成 logit-normal $(0, 1)$（式 (27)），固定 $K = 8$ 比较样本质量；(d) 选做：实现一轮 reflow——用 (a) 的模型从 $\varepsilon$ 生成 $\hat x_0$，以 $(\hat x_0, \varepsilon)$ 为新端点对重训，再比较 $K = 1$。
+1.（推导 · [20]）证明 CFM 与 FM 的损失差恰为条件速度的方差： $`L_{CFM}(\theta) - L_{FM}(\theta) = \mathbb{E}_{t, x \sim p_t}\left[ \mathbb{E}\left[ \Vert u_t(x \mid x_0) - u_t(x)\Vert^2 \mid x_t = x \right] \right]`$（提示：对 $\Vert v - u_c\Vert^2$ 在条件期望下用「均值 + 偏差」分解 $u_c = u_t(x) + (u_c - u_t(x))$，交叉项归零）。由此说明：(a) 差距与 $\theta$ 无关（定理的另一证法）；(b) 为什么 $L_{CFM}$ 的数值不能跨路径比较。
+2.（推导 · [30]）补全式 (5) 的矩阵引理：对可逆 $J(t)$，证明 $\frac{d}{dt} \log |\det J| = \mathrm{tr}(J^{-1} \frac{dJ}{dt})$（提示：对 $\det J = \exp(\mathrm{tr} \log J)$ 求导，或用 $\det(I + \delta M) = 1 + \delta\thinspace \mathrm{tr} M + O(\delta^2)$ 做一阶展开）；再由式 (4) 推出式 (5)，并说明为什么式 (6) 的积分符号是「加散度」而非「减散度」（注意 $\log p_t = \log p_0 - \log|\det J_t|$ 的符号链）。
+3.（计算 · [30]）logit-normal 与 shift 的网格账：(a) 由式 (28) 证明 $m = 0, s = 1$ 时 $\pi_{ln}(t)$ 关于 $t = 1/2$ 对称，并算 $\pi_{ln}(0.5)$、 $\pi_{ln}(0.1)$、 $\pi_{ln}(0.9)$ 的相对比例，与均匀分布对比中段权重；(b) 验证式 (29)：由 $\log \mathrm{SNR} = -2\thinspace\mathrm{logit}(t)$ 推出其分布参数；(c) 取 $s = 3$，计算 $t' = st/(1 + (s-1)t)$ 在 $t \in \lbrace0.1, 0.3, 0.5, 0.7, 0.9\rbrace$ 的值，画（或描述）平移前后 $t$ 网格的偏移方向。先写出你对 (c) 偏移方向的预判再代入数值。校验：(a) 的对称性意味着密度在中点两侧等距点上相等，与你的数值互验；(c) 令 shift 系数退到 1 时应得到恒等网格。
+4.（代码 · [40]）教学用，非优化实现：二维 two-moons 数据上的 rectified flow。(a) 用 §6 的 `rf_loss` 训练一个小型 MLP（ $t$ 经 sinusoidal embedding 拼接输入）， $t$ 均匀采样；(b) 用 `rf_sample` 分别取 $K \in \lbrace1, 2, 8, 64\rbrace$ 采样，与数据散点对比——观察 $K = 1$ 的样本落在何处（提示：直线外推的端点偏差 = 边际轨迹的弯曲量）；(c) 把 $t$ 采样换成 logit-normal $(0, 1)$（式 (27)），固定 $K = 8$ 比较样本质量；(d) 选做：实现一轮 reflow——用 (a) 的模型从 $\varepsilon$ 生成 $\hat x_0$，以 $(\hat x_0, \varepsilon)$ 为新端点对重训，再比较 $K = 1$。动手前先写出你对各档样本形态的预测，再跑采样对照。校验：(b) 最大档样本的类中心距应与数据散点同量级（视觉核对即可）；(d) 最小档的端点偏差应小于 (b) 的最小档。
 
 ## 参考
 

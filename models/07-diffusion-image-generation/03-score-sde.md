@@ -4,7 +4,7 @@
 
 ## 1. score：密度景观的坡度，也是采样的接口
 
-分数函数（score function）定义为对数密度对数据本身的梯度：
+不知道密度本身，能不能知道「密度往哪边涨」？所谓分数函数（score function），是指对数密度对数据本身的梯度：
 
 $$
 s(x) = \nabla_x \log p(x) \qquad (1)
@@ -12,7 +12,7 @@ $$
 
 **符号**： $x \in \mathbb{R}^d$：数据向量（图像拉直，CIFAR-10 规模 $d = 3072$）； $s(x) \in \mathbb{R}^d$：与 $x$ 同 shape 的向量场。
 
-两个直接性质决定它的工程地位。**(i) 归一化常数被消掉**。任何能量式模型 $p(x) = \tilde p(x) / Z$ 的 score 是 $s(x) = \nabla_x \log \tilde p(x)$——配分函数 $Z$ 是常数，梯度下消失。密度只知道「形状」不知道「归一化」的模型，score 照样可算。**(ii) 几何上它是密度景观的坡度**： $s(x)$ 指向 $\log p$ 上升最快的方向，模长是坡的陡度。数据流形附近 score 大致指向流形（把离流形的点拉回去），低密度区之间 score 把样本推向最近的 mode。
+两个直接性质决定它的工程地位。**(i) 归一化常数被消掉**。任何能量式模型 $p(x) = \tilde p(x) / Z$ 的 score 是 $s(x) = \nabla_x \log \tilde p(x)$——配分函数 $Z$ 是常数，梯度下消失。密度只知道「形状」不知道「归一化」的模型，score 照样可算。**(ii) 几何上它是密度景观的坡度**： $s(x)$ 指向 $\log p$ 上升最快的方向，模长是坡的陡度。数据流形附近 score 大致指向流形（把离流形的点拉回去），低密度区之间 score 把样本推向最近的 mode。正例：标准高斯的 score 是输入取负，处处指向原点——正是把样本拉回高密度区的方向。
 
 score 还是采样的接口：给定任意可评估的向量场 $s(x)$，Langevin 动力学 $x \leftarrow x + \eta\thinspace s(x) + \sqrt{2\eta}\thinspace z$（ $z \sim \mathcal{N}(0, I)$， $\eta$ 为步长）在 $s = \nabla \log p$ 时以 $p$ 为平稳分布。也就是说，**只要拿到 score，采样问题就解了**——不需要会算 $p(x)$ 本身。本章的全部工作可以概括成一句话：7.2 训出来的 $\varepsilon_\theta$ 换一层皮就是 score（§3），而 score 喂给的动力学不止 Langevin 一种——SDE 框架给出完整菜单（§4-§7）。
 
@@ -24,9 +24,11 @@ $$
 
 **符号**： $q(x_t \mid x_0)$：人为给定的高斯加噪核（7.2 §2.2 的闭式解）； $q_t$：数据分布被加噪涂抹后的第 $t$ 时刻边缘密度——未知（依赖 $p_{\mathrm{data}}$），但样本可采（采 $x_0$ 再加噪）。
 
+本章口径：维度数字一律取 CIFAR-10 规格 d = 3072；时间一律用连续坐标，离散下标只在与上一章对账时出现。
+
 ## 2. score matching：目标很直白，梯度拿不到
 
-学 score 的自然目标是最小二乘回归——分数匹配（score matching）：
+学 score 最自然的目标是什么？最小二乘回归——分数匹配（score matching）：
 
 $$
 J_{\mathrm{SM}}(\theta) = \frac{1}{2}\thinspace \mathbb{E}_{x \sim p_{\mathrm{data}}} \left\Vert s_\theta(x) - \nabla_x \log p_{\mathrm{data}}(x) \right\Vert^2 \qquad (2)
@@ -64,7 +66,7 @@ $$
 
 ## 3. Denoising score matching：Vincent 等价性定理（完整推导）
 
-对固定时刻 $t$，真 score 回归目标是
+上一节的困境——回归靶未知——怎么破？对固定时刻 $t$，真 score 回归目标是
 
 $$
 J_t(\theta) = \frac{1}{2}\thinspace \mathbb{E}_{q_t(x_t)} \left\Vert s_\theta(x_t, t) - \nabla_{x_t} \log q_t(x_t) \right\Vert^2 \qquad (4)
@@ -80,13 +82,13 @@ $$
 
 **符号**：期望对联合分布取：先采数据 $x_0$，再经高斯核采 $x_t$——每一步都可执行。
 
-**Vincent 定理**（[Vincent, 2011](../references.md)，DOI 10.1162/NECO_a_00142，[A]；原文对一般加噪核证明，此处按本书记号重述）：两个目标只差一个与 $\theta$ 无关的常数，
+**命题**（Vincent 定理；[Vincent, 2011](../references.md)，DOI 10.1162/NECO_a_00142，[A]；原文对一般加噪核证明，此处按本书记号重述）：两个目标只差一个与 $\theta$ 无关的常数，
 
 $$
 J_t(\theta) = J_{\mathrm{DSM},t}(\theta) + C_t \qquad (6)
 $$
 
-因而 $\nabla_\theta J_t = \nabla_\theta J_{\mathrm{DSM},t}$：**对条件 score 回归，等价于对真（边缘）score 回归**。证明的关键是一条恒等式加一次期望换序，逐步展开。
+因而 $\nabla_\theta J_t = \nabla_\theta J_{\mathrm{DSM},t}$：**对条件 score 回归，等价于对真（边缘）score 回归**。**证明**（路线：一条条件 score 恒等式加一次期望换序，分三步——恒等式、交叉项相等、常数收尾），逐步展开。
 
 **第一步：条件 score 恒等式**——边缘 score 是条件 score 的后验均值：
 
@@ -121,7 +123,7 @@ $$
 C_t = \frac{1}{2}\thinspace \mathbb{E}_{q_t} \left\Vert \nabla \log q_t \right\Vert^2 - \frac{1}{2}\thinspace \mathbb{E}_{p_{\mathrm{data}}\thinspace q} \left\Vert \nabla \log q(x_t \mid x_0) \right\Vert^2
 $$
 
-两项都不含 $\theta$（第一项是未知但固定的 Fisher 信息量，第二项对高斯核闭式可算）。式 (6) 成立。 $\square$
+两项都不含 $\theta$（第一项是未知但固定的 Fisher 信息量，第二项对高斯核闭式可算）。式 (6) 成立。 $\square$ 两处细节的严格化留作练习 2。
 
 定理有两个直接推论值得单独点出。**(i) 最优解一致**： $J_{\mathrm{DSM},t}$ 的最小值点同样是 $s_\theta = \nabla \log q_t$。原因是回归目标即条件期望：最小二乘回归的最优解是对输入的条件均值，此处即式 (7) 右端。所以 DSM 不是近似目标，而是同一目标的随机实现——每个样本的回归靶是「给定 $x_0$ 时确定的那个箭头」， $x_0$ 的随机性在期望里平均成真 score。**(ii) 样本可采**：式 (5) 的期望只需采 $(x_0, x_t)$ 对。训练循环与 7.2 §4.4 完全同构：每个样本一次前向一次回归，没有式 (3) 的 $d$ 次 backward。
 
@@ -133,7 +135,7 @@ $$
 
 **符号**：第二步代入采样式 $x_t = \sqrt{\bar\alpha_t} x_0 + \sqrt{1 - \bar\alpha_t}\thinspace \varepsilon$（7.2 §2.2 的采样式）； $\varepsilon$：该样本实际注入的噪声。
 
-式 (8) 是 DSM 的关键福利：**回归靶是注入噪声的线性函数，训练时免费可得**。结合最优解条件 $s_\theta(x_t, t) = \mathbb{E}\left[ -\varepsilon / \sqrt{1 - \bar\alpha_t} \mid x_t \right]$ 与 7.2 的 $\varepsilon_\theta$（回归 $\mathbb{E}[\varepsilon \mid x_t]$ 的同一个条件期望），读出两种参数化的精确换算：
+式 (8) 是 DSM 的关键福利：**回归靶是注入噪声的线性函数，训练时免费可得**（口径：回归靶随采样式当场给出，不增加网络评估与存储）。结合最优解条件 $s_\theta(x_t, t) = \mathbb{E}\left[ -\varepsilon / \sqrt{1 - \bar\alpha_t} \mid x_t \right]$ 与 7.2 的 $\varepsilon_\theta$（回归 $\mathbb{E}[\varepsilon \mid x_t]$ 的同一个条件期望），读出两种参数化的精确换算：
 
 $$
 s_\theta(x_t, t) = -\frac{\varepsilon_\theta(x_t, t)}{\sqrt{1 - \bar\alpha_t}} \qquad \Longleftrightarrow \qquad \varepsilon_\theta(x_t, t) = -\sqrt{1 - \bar\alpha_t}\hspace{5mu} s_\theta(x_t, t) \qquad (9)
@@ -223,7 +225,7 @@ $$
 
 ## 5. 逆时 SDE：Anderson 定理
 
-生成是时间的反演。Anderson 定理（结论级陈述，本书引自 [Song et al., 2021](../references.md)，arXiv:2011.13456，[A] 的转述）：若前向过程由 $dx = f\thinspace dt + g\thinspace dW$（ $t: 0 \to 1$）生成，则把轨迹时间倒转（ $t: 1 \to 0$）得到的过程仍是 Itô 扩散，满足**逆时 SDE**（reverse-time SDE）：
+生成是时间的反演。把轨迹倒过来走，需要知道什么额外信息？Anderson 定理（结论级陈述，本书引自 [Song et al., 2021](../references.md)，arXiv:2011.13456，[A] 的转述）：若前向过程由 $dx = f\thinspace dt + g\thinspace dW$（ $t: 0 \to 1$）生成，则把轨迹时间倒转（ $t: 1 \to 0$）得到的过程仍是 Itô 扩散，满足**逆时 SDE**（reverse-time SDE）：
 
 $$
 dx = \left[ f(x, t) - g(t)^2\thinspace \nabla_x \log p_t(x) \right] dt + g(t)\hspace{5mu} d\bar W \qquad (17)
@@ -319,7 +321,7 @@ $$
 
 ## 7. 统一视角：一个网络，一族采样器
 
-把 §4-§6 装进一张图。三条动力学共享同一边缘密度族 $\lbrace p_t\rbrace_{t \in [0,1]}$，共享同一个学习对象 $s_\theta$（或经式 (9) 换算的 $\varepsilon_\theta$）：
+三条动力学共享同一边缘密度族 $\lbrace p_t\rbrace_{t \in [0,1]}$，共享同一个学习对象 $s_\theta$（或经式 (9) 换算的 $\varepsilon_\theta$）。把 §4-§6 装进一张图：
 
 ```
                  前向 SDE（固定，无参数，加噪 t: 0 → 1）
@@ -406,10 +408,10 @@ EDM 的结论是机制性的：schedule、参数化、权重、求解器在方�
 
 ## 练习
 
-1.（推导）补全 Vincent 定理的两处细节：(a) 严格写出式 (7) 推导中「梯度与积分交换」所需的条件，并验证高斯核满足；(b) 证明式 (6) 的常数 $C_t$ 对高斯核等于 $`\frac{1}{2}\mathbb{E}_{q_t}\Vert\nabla\log q_t\Vert^2 - \frac{d}{2(1-\bar\alpha_t)}`$，从而确认 $J_t \le J_{\mathrm{DSM},t}$ 恒成立（条件期望收缩 $L^2$ 模长： $\mathbb{E}\Vert\mathbb{E}[c \mid x_t]\Vert^2 \le \mathbb{E}\Vert c\Vert^2$）。
-2.（推导）一维闭式全链。设 $p_{\mathrm{data}} = \mathcal{N}(0, 1)$，VE-SDE 取 $\sigma^2(t) = t$。(a) 写出 $q_t$、真 score $s(x, t)$ 与 PF-ODE $dx/dt$；(b) 从 $t = 1$ 到 $t = 0$ 解出 ODE 轨迹 $x(t)$，验证 $x(1) \sim q_1$ 时 $x(0) \sim p_{\mathrm{data}}$；(c) 用式 (23) 核算该轨迹上 $\log p_0$ 与 $\log q_1$ 的差，与散度积分逐项对上。
-3.（计算）linear schedule（7.2 §2.3， $T = 1000$， $\beta_1 = 10^{-4}$、 $\beta_T = 0.02$）下，连续化 $\beta(t) = T \beta_{\lceil tT \rceil}$。(a) 用式 (14) 的积分近似计算 $\bar\alpha(0.5)$ 与 $\bar\alpha(1.0)$，与 7.2 §2.3 表的离散值（ $\bar\alpha_{500} = 0.0786$、 $\bar\alpha_{1000} = 4.04 \times 10^{-5}$）比较相对误差；(b) 由式 (26) 算 $t = 0.5$ 处的 EDM $\sigma$，并给出该 $\sigma$ 下 preconditioning 三个系数的数值（ $\sigma_d = 0.5$）。
-4.（代码）教学用，非优化实现：二维 two-moons 数据上的 DSM + 双采样器对照。(a) 用式 (5)(8) 训练 score MLP（ $t$ 经 sinusoidal embedding 注入，VP 核 $\beta(t)$ 线性）；(b) 同一网络分别跑逆时 SDE 的 Euler–Maruyama（式 (24)）与 PF-ODE 的 Euler（式 (21)），在 100 / 1000 NFE 两档下对比样本散布；(c) 选 5 个数据点沿 PF-ODE 正向积分回 $t = 1$，用式 (23)（二维可精确求迹）报告 $\log p_0$，并与直方图密度估计对照。
+1.（计算 · [20]）linear schedule（7.2 §2.3， $T = 1000$， $\beta_1 = 10^{-4}$、 $\beta_T = 0.02$）下，连续化 $\beta(t) = T \beta_{\lceil tT \rceil}$。(a) 用式 (14) 的积分近似计算 $\bar\alpha(0.5)$ 与 $\bar\alpha(1.0)$，与 7.2 §2.3 表的离散值（ $\bar\alpha_{500} = 0.0786$、 $\bar\alpha_{1000} = 4.04 \times 10^{-5}$）比较相对误差；(b) 由式 (26) 算 $t = 0.5$ 处的 EDM $\sigma$，并给出该 $\sigma$ 下 preconditioning 三个系数的数值（ $\sigma_d = 0.5$）。校验：(a) 的相对误差应在个位数百分比内，超限先查积分近似的步长；(b) 三个系数的数值都落在 0 与 1 之间。
+2.（推导 · [30]）补全 Vincent 定理的两处细节：(a) 严格写出式 (7) 推导中「梯度与积分交换」所需的条件，并验证高斯核满足；(b) 证明式 (6) 的常数 $C_t$ 对高斯核等于 $`\frac{1}{2}\mathbb{E}_{q_t}\Vert\nabla\log q_t\Vert^2 - \frac{d}{2(1-\bar\alpha_t)}`$，从而确认 $J_t \le J_{\mathrm{DSM},t}$ 恒成立（条件期望收缩 $L^2$ 模长： $\mathbb{E}\Vert\mathbb{E}[c \mid x_t]\Vert^2 \le \mathbb{E}\Vert c\Vert^2$）。
+3.（推导 · [30]）一维闭式全链。设 $p_{\mathrm{data}} = \mathcal{N}(0, 1)$，VE-SDE 取 $\sigma^2(t) = t$。(a) 写出 $q_t$、真 score $s(x, t)$ 与 PF-ODE $dx/dt$；(b) 从 $t = 1$ 到 $t = 0$ 解出 ODE 轨迹 $x(t)$，验证 $x(1) \sim q_1$ 时 $x(0) \sim p_{\mathrm{data}}$；(c) 用式 (23) 核算该轨迹上 $\log p_0$ 与 $\log q_1$ 的差，与散度积分逐项对上。
+4.（代码 · [40]）教学用，非优化实现：二维 two-moons 数据上的 DSM + 双采样器对照。(a) 用式 (5)(8) 训练 score MLP（ $t$ 经 sinusoidal embedding 注入，VP 核 $\beta(t)$ 线性）；(b) 同一网络分别跑逆时 SDE 的 Euler–Maruyama（式 (24)）与 PF-ODE 的 Euler（式 (21)），在 100 / 1000 NFE 两档下对比样本散布；(c) 选 5 个数据点沿 PF-ODE 正向积分回 $t = 1$，用式 (23)（二维可精确求迹）报告 $\log p_0$，并与直方图密度估计对照。先写出 (b) 中两种采样器在 100 NFE 档的散布对比预测，再跑实验对照。校验：(b) 同 NFE 下确定性采样器的协方差匹配误差应更小；(c) 的散度积分与直方图估计在网格加密时相互逼近。
 
 ## 参考
 

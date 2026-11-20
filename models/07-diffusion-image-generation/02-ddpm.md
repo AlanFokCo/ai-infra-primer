@@ -36,7 +36,7 @@ $$
 
 **符号**： $\alpha_t, \beta_t, \bar\alpha_t$ 在 §2.1 定义； $\mu_\theta, \sigma_t$ 在 §3 定义。
 
-训练侧一次前向就能拿到任意 $t$ 的监督信号（类似 1.1 teacher forcing 的并行性）；生成侧则必须串行走完 $T$ 步，每步一次网络评估。这个「训练并行、采样串行」的不对称，正是 7.4 整章（采样器与蒸馏）存在的根本原因。先记账：DDPM 原生采样 = 1000 次 NFE（network function evaluations）。
+训练侧一次前向就能拿到任意 $t$ 的监督信号（类似 1.1 teacher forcing 的并行性）；生成侧则必须串行走完 $T$ 步，每步一次网络评估。这个「训练并行、采样串行」的不对称，正是 7.4 整章（采样器与蒸馏）存在的根本原因。先记账：DDPM 原生采样 = 1000 次 NFE。所谓 NFE（network function evaluations），是指采样全程的网络前向总次数，本书自此作为扩散采样成本的统一计账单位。
 
 把 DDPM 与 6.3 的 VAE 逐项摆在一起，后面的推导每一步行了什么棋都有对应物：
 
@@ -50,11 +50,13 @@ $$
 
 固定后验不是偷工减料：它换来两条解析性质——任意 $t$ 的边缘闭式（§2.2）与以 $x_0$ 为条件的反向闭式（§3.2），前者让训练可并行，后者给反向均值提供了精确的回归靶。学习的全部自由度被集中到 $\mu_\theta$ 一个函数上，这是 DDPM 数学干净的根源。
 
+本章口径：数值例一律取 DDPM 原文配置——CIFAR-10（32 × 32 × 3，d = 3072）、T = 1000，schedule 以 linear 为主、cosine 为对照，正文不再另换口径。
+
 ## 2. 前向过程与闭式解
 
 ### 2.1 单步转移与方差保持（VP）设计
 
-前向过程是固定的高斯马尔可夫链：
+一条人为给定的加噪链要满足什么条件，训练才可行？前向过程是固定的高斯马尔可夫链：
 
 $$
 q(x_t \mid x_{t-1}) = \mathcal{N}\left( \sqrt{1 - \beta_t}\thinspace x_{t-1},\ \beta_t I \right) \qquad (1)
@@ -82,7 +84,7 @@ $v = 1$ 是不动点： $\mathrm{Var}(x_t) = 1 - \beta_t + \beta_t = 1$。数据
 
 ### 2.2 闭式解：高斯卷积递推（逐步展开）
 
-训练需要 $q(x_t \mid x_0)$：直接从 $x_0$ 跳到第 $t$ 步的边缘分布。它是 $t$ 个高斯转移的复合，逐层卷积；用采样式展开最干净。先把式 (1) 重参数化（6.3 §2.5 的同一技巧）：
+训练需要 $q(x_t \mid x_0)$：直接从 $x_0$ 跳到第 $t$ 步的边缘分布。它是 $t$ 个高斯转移的复合，逐层卷积；用采样式展开最干净。先把目标写成命题。**命题**（前向闭式）：任意一步的边缘分布仍是高斯，信号系数是累计保留率的平方根，噪声方差是 1 减累计保留率。**证明路线**：归纳——单步重参数化后，用独立高斯和引理逐层合并噪声，关键一步是方差相加。先把式 (1) 重参数化（6.3 §2.5 的同一技巧）：
 
 $$
 x_t = \sqrt{\alpha_t}\thinspace x_{t-1} + \sqrt{\beta_t}\thinspace z_t, \qquad z_t \sim \mathcal{N}(0, I) \qquad (3)
@@ -223,7 +225,7 @@ $$
 
 ### 3.2 后验 $q(x_{t-1} \mid x_t, x_0)$：Bayes + 配方（完整推导）
 
-训练目标（§4）需要的不是 $q(x_{t-1} \mid x_t)$，而是**以 $x_0$ 为条件的后验（posterior）** $q(x_{t-1} \mid x_t, x_0)$——它闭式可算，将充当反向均值 $\mu_\theta$ 的回归靶。对联合分布 $q(x_{t-1}, x_t \mid x_0)$ 用 Bayes：
+训练目标（§4）需要的不是 $q(x_{t-1} \mid x_t)$，而是**以 $x_0$ 为条件的后验（posterior）** $q(x_{t-1} \mid x_t, x_0)$——它闭式可算，将充当反向均值 $\mu_\theta$ 的回归靶。推导路线：Bayes 把后验写成两个已知高斯的乘积，然后配方——从二次项系数读方差、从一次项系数读均值；关键一步是用马尔可夫性消掉分子里多余的条件。对联合分布 $q(x_{t-1}, x_t \mid x_0)$ 用 Bayes：
 
 $$
 q(x_{t-1} \mid x_t, x_0) = \frac{q(x_t \mid x_{t-1}, x_0)\thinspace q(x_{t-1} \mid x_0)}{q(x_t \mid x_0)} \qquad (11)
@@ -318,13 +320,15 @@ $$
 
 这个恒等式是 §4.2 把 KL 项化成 $\varepsilon$ 回归的枢纽。
 
-式 (18) 的更新结构值得多看一眼： $\mu_\theta$ 是「 $x_t$ 本身（缩放 $1/\sqrt{\alpha_t}$）减去沿噪声预测方向的一步修正」。网络从不直接输出 $x_{t-1}$，而是输出「 $x_t$ 里哪部分是噪声」：输入与输出的主干由恒等通路承担，网络只学残差。这与 2.1 残差连接的设计同源——恒等主干保住信号，学习集中在修正项上。反向一步「当前值减修正项」的形状，也是 7.4 全部 ODE 求解器（DDIM、DPM-Solver）更新式的离散原型。
+式 (18) 的更新结构值得多看一眼： $\mu_\theta$ 是「 $x_t$ 本身（缩放 $1/\sqrt{\alpha_t}$）减去沿噪声预测方向的一步修正」。网络从不直接输出 $x_{t-1}$，而是输出「 $x_t$ 里哪部分是噪声」：输入与输出的主干由恒等通路承担，网络只学残差。
+
+> **提点**：「当前值减修正项」的形状与 2.1 的残差连接同源——恒等主干保住信号，学习集中在修正项上。它也是 7.4 全部 ODE 求解器（DDIM、DPM-Solver）更新式的离散原型。
 
 ## 4. ELBO 分解与 $L_{simple}$
 
 ### 4.1 ELBO 三项分解（完整推导）
 
-训练目标是 $\log p_\theta(x_0)$ 的变分下界。DDPM 是层级 latent 模型，ELBO 工具与 6.3 完全相同（6.3 式 (3)(4)）：以固定后验 $q(x_{1:T} \mid x_0)$ 为变分分布，
+1000 层 latent 的变分上界，怎么化成能跑的训练目标？路线：先对两条链各自做因子分解，再用 Bayes 把前向因子改写成后验、让分子分母条件对齐，伸缩相消后按变量依赖把多层期望压回单层——关键一步是后验改写。训练目标是 $\log p_\theta(x_0)$ 的变分下界。DDPM 是层级 latent 模型，ELBO 工具与 6.3 完全相同（6.3 式 (3)(4)）：以固定后验 $q(x_{1:T} \mid x_0)$ 为变分分布，
 
 $$
 -\log p_\theta(x_0) \le \mathbb{E}_{q(x_{1:T} \mid x_0)}\left[ \log \frac{q(x_{1:T} \mid x_0)}{p_\theta(x_{0:T})} \right] =: L_{\mathrm{vlb}} \qquad (20)
@@ -479,7 +483,7 @@ def training_loss(eps_net, x0, abar, T=1000):
 
 ### 5.1 $\varepsilon$ / $x_0$ / $v$ 三种预测参数化的等价换算
 
-式 (6) 里 $(x_0, \varepsilon)$ 线性互表，网络回归哪个都行；第三个选择是两者的旋转组合。**三种参数化**（约定页口径）：
+网络到底该预测噪声、预测数据，还是别的什么？式 (6) 里 $(x_0, \varepsilon)$ 线性互表，回归哪个都行；第三个选择是两者的旋转组合。**三种参数化**（约定页口径）：
 
 - **$x_0$-prediction**：网络 $\hat x_{0,\theta}(x_t, t)$ 直接回归数据。与 $\varepsilon$-prediction 经式 (16) 互转： $\hat x_0 = (x_t - \sqrt{1 - \bar\alpha_t}\thinspace \varepsilon_\theta) / \sqrt{\bar\alpha_t}$。
 - **$\varepsilon$-prediction**：本书默认，式 (18)(26)。
@@ -513,7 +517,7 @@ $$
 | $\varepsilon$（ $L_{simple}$） | $\lVert e \rVert^2$ | 两端均匀 |
 | $v$ | $`\lVert e \rVert^2 / \bar\alpha_t = \lVert e \rVert^2 (1 + 1/\mathrm{SNR}_t)`$ | $t \to 0$ 端 $\approx \varepsilon$-loss； $t \to T$ 端 $\approx x_0$-loss——各取两者在该端较平的一侧 |
 
-**术语防混**：iDDPM 的 hybrid objective 里也有一个写作 $v$ 的量，那是**方差对数插值系数**（式 (30)），均值仍走 $\varepsilon$-参数化。它与式 (27) 的 v-prediction 同名不同物，引用文献时勿混（约定页已锁此口径：v-prediction 归 Salimans & Ho）。
+> **坑**：对照 iDDPM 与 v-prediction 两路文献时，把两个 v 当成一个东西——同名不同物：iDDPM 的 hybrid objective 里写作 $v$ 的量是**方差对数插值系数**（式 (30)），均值仍走 $\varepsilon$-参数化；式 (27) 的 v-prediction 是另一物。规避：约定页已锁此口径，v-prediction 归 Salimans & Ho。
 
 ### 5.2 $\sigma_t$ 的选择： $\beta_t$ vs $\tilde\beta_t$ vs 学习
 
@@ -572,10 +576,10 @@ t:   [B] ──sinusoidal─┘
 
 ## 练习
 
-1.（推导）跳步边缘分布。用 §2.2 的引理式 (4) 与归纳法证明：对 $s < t$， $q(x_t \mid x_s) = \mathcal{N}(\sqrt{\bar\alpha_t / \bar\alpha_s}\thinspace x_s,\ (1 - \bar\alpha_t / \bar\alpha_s)\thinspace I)$。提示：把 $x_s$ 当作「新的 $x_0$」，注意累计保留率变成比值。这个结果在 7.4 的跳步采样（DDIM）里直接复用。
-2.（推导）补全 §3.2 的 $d$ 维细节：(a) 写出式 (12) 的 $d$ 维版本并验证归一化常数确实给出式 (14) 的方差；(b) 验证 $\tilde\beta_t \le \beta_t$ 与 $\tilde\beta_t \le 1 - \bar\alpha_{t-1}$（后验方差不超过任何一个母方差）；(c) 证明 $\tilde\mu_t$ 的两系数满足：当 $x_t = \sqrt{\bar\alpha_t} x_0 + \sqrt{1 - \bar\alpha_t}\thinspace \varepsilon$ 代回， $\mathbb{E}[\tilde\mu_t \mid x_0] \to x_0$ 于 $t \to 1$。
-3.（计算）linear schedule（式 (7)， $T = 1000$）下：(a) 计算 $\bar\alpha_{500}$ 与 $`\mathrm{SNR}_{500}`$（dB），对照 §2.3 表；(b) 计算 $w_{500}$（式 (25)）并与 $w_1, w_T$ 比较，说明严格 ELBO 的权重分布形状；(c) 同一 $t$，cosine schedule 的 $\bar\alpha_t$ 是多少？两条曲线在哪个 $t$ 附近 $\mathrm{SNR}$ 差距最大？
-4.（代码）教学用，非优化实现：二维 swiss-roll 数据上的迷你 DDPM。(a) 按式 (7) 预计算 $\lbrace\beta_t, \alpha_t, \bar\alpha_t\rbrace$ 三张表；(b) 用本节 `training_loss` 训练一个 4 层 MLP（ $t$ 经 sinusoidal embedding 拼接输入）；(c) 按 §4.4 采样算法生成 1000 点，与数据散点对比；(d) 对照实验： $\sigma_t^2 = \beta_t$ vs $\tilde\beta_t$（式 (29)），观察样本散布差异。
+1.（推导 · [20]）跳步边缘分布。用 §2.2 的引理式 (4) 与归纳法证明：对 $s < t$， $q(x_t \mid x_s) = \mathcal{N}(\sqrt{\bar\alpha_t / \bar\alpha_s}\thinspace x_s,\ (1 - \bar\alpha_t / \bar\alpha_s)\thinspace I)$。提示：把 $x_s$ 当作「新的 $x_0$」，注意累计保留率变成比值。这个结果在 7.4 的跳步采样（DDIM）里直接复用。
+2.（推导 · [30]）补全 §3.2 的 $d$ 维细节：(a) 写出式 (12) 的 $d$ 维版本并验证归一化常数确实给出式 (14) 的方差；(b) 验证 $\tilde\beta_t \le \beta_t$ 与 $\tilde\beta_t \le 1 - \bar\alpha_{t-1}$（后验方差不超过任何一个母方差）；(c) 证明 $\tilde\mu_t$ 的两系数满足：当 $x_t = \sqrt{\bar\alpha_t} x_0 + \sqrt{1 - \bar\alpha_t}\thinspace \varepsilon$ 代回， $\mathbb{E}[\tilde\mu_t \mid x_0] \to x_0$ 于 $t \to 1$。
+3.（计算 · [30]）linear schedule（式 (7)， $T = 1000$）下：(a) 计算 $\bar\alpha_{500}$ 与 $`\mathrm{SNR}_{500}`$（dB），对照 §2.3 表；(b) 计算 $w_{500}$（式 (25)）并与 $w_1, w_T$ 比较，说明严格 ELBO 的权重分布形状；(c) 同一 $t$，cosine schedule 的 $\bar\alpha_t$ 是多少？两条曲线在哪个 $t$ 附近 $\mathrm{SNR}$ 差距最大？校验：(a) 的两个数值与正文 schedule 表 t = 500 行一致。
+4.（代码 · [40]）教学用，非优化实现：二维 swiss-roll 数据上的迷你 DDPM。(a) 按式 (7) 预计算 $\lbrace\beta_t, \alpha_t, \bar\alpha_t\rbrace$ 三张表；(b) 用本节 `training_loss` 训练一个 4 层 MLP（ $t$ 经 sinusoidal embedding 拼接输入）；(c) 按 §4.4 采样算法生成 1000 点，与数据散点对比；(d) 对照实验： $\sigma_t^2 = \beta_t$ vs $\tilde\beta_t$（式 (29)），观察样本散布差异。先写出你对 (c) 采样点云形态的预测，再跑代码对照。校验：(b) 的损失曲线整体下行；(c) 的采样点云沿 swiss-roll 的螺旋带分布。
 
 ## 参考
 

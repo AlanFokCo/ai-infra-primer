@@ -24,7 +24,7 @@ $$
 | f16 latent | $32^2 = 1024$ | — | $256$ | $1/16\times$ |
 | f32 latent | $16^2 = 256$ | $8192$（ $c=32$，DC-AE） | $64$ | $1/256\times$ |
 
-两个方向的收益同时成立：(i) **训练与采样的每步成本**按 $f^2$（conv 部分）到 $f^4$（attention 部分）下降；(ii) latent 已经够小，**全分辨率堆 attention 变得可行**——像素空间做不到的全程全局感受野，在 $64^2$ 的网格上是默认配置。autoencoder 的训练是一次性开销，训好后被任意多轮扩散实验复用（摊销），解码只在采样结束时跑一次。
+两个方向的收益同时成立：(i) **训练与采样的每步成本**按 $f^2$（conv 部分）到 $f^4$（attention 部分）下降；(ii) latent 已经够小，**全分辨率堆 attention 变得可行**——像素空间做不到的全程全局感受野，在 $64^2$ 的网格上是默认配置。autoencoder 的训练是一次性开销（口径：训练算力账，不含解码推理），训好后被任意多轮扩散实验复用（摊销），解码只在采样结束时跑一次。
 
 把这笔账挂到 7.2 立的成本结构上读更清楚。扩散的采样是串行的（7.2 §1：训练并行、采样串行），总成本 = 步数 × 每步前向。步数由 solver 决定（7.4），每步前向由工作空间决定——latent 压缩砍的是后者，与前者正交，两个杠杆可以叠乘。训练目标本身一行不改：7.2 的 $L_{simple}$ 与 7.5 的 $L_{RF}$ 把 $x_0$ 换成 $z_0$ 原样成立，CFG（7.4）同样原样适用——**latent 化对扩散数学是透明的**，全部代价集中在 autoencoder 的重建质量这一处（下一段的 $f$ 消融）。LDM 论文里像素空间的 LDM-1（ $f = 1$）对照组证实了这一点：同预算下它的 FID 差于 f4/f8 档。省下来的位点不是白省的——扩散在像素空间要为感知冗余付容量税。
 
@@ -48,6 +48,8 @@ $$
 
 一句约定桥接：按 W4 约定页，扩散语境下建模对象统一记 $x_0$；本章它具体化为 latent，故记 $z_0$（缩放后的干净 latent）， $z_t$ 为其加噪版。7.2/7.5 的全部公式把 $x_0$ 换成 $z_0$ 原样成立。
 
+本章口径一句话：分辨率举例统一取两档——256 档（ImageNet 类条件，DiT 原文口径）与 1024 档（SD3、SANA、FLUX 的系统口径）；latent 通道数、patch 与模型档随文标注，此外不换口径。
+
 ## 2. Scaling factor：0.18215 的单位方差化数学
 
 6.3 式 (24) 已经立过这个常数： $z' = s \cdot z$， $s = 0.18215$，出处是 CompVis/stable-diffusion 的 `configs/stable-diffusion/v1-inference.yaml`（W3 锁定，勿重查）。本节补它在扩散语境下的精确含义：**错误的 latent 尺度等价于悄悄平移整条 noise schedule**。
@@ -70,7 +72,9 @@ $$
 
 数值自检： $1/0.18215 \approx 5.49$，与实测 $\hat\sigma_z$ 互倒（6.3 §7.1）。SD3/FLUX 世代的 16 通道 VAE 同机制、另加一个 shift 项（scale 0.3611 / shift 0.1159，FLUX 代码实测口径，6.3 §7.2）——机制不变：把 latent 的逐分量均值与方差都固定到标定点上。
 
-这个常数不是模型结构的一部分，是**分布标定**——但它回答了一个真实的工程问题：换 VAE（f8 4ch → f8 16ch → f32 32ch）时，扩散侧不需要重调 schedule，只要重测 $\hat\sigma_z$、换 $s$。
+> **提点**：这个常数不是模型结构的一部分，是**分布标定**——但它回答了一个真实的工程问题：换 VAE（f8 4ch → f8 16ch → f32 32ch）时，扩散侧不需要重调 schedule，只要重测 $\hat\sigma_z$、换 $s$。
+
+> **坑**：换 VAE 而不同步换 scaling factor，等于把整条 schedule 平移之后还按原标定调参——生成质量静默劣化、无任何报错。规避：换 VAE 必重测 latent 逐分量标准差，并同步更新缩放与 decode 侧的除法。
 
 ## 3. 条件注入三机制（加第四个：调制）
 
@@ -99,7 +103,7 @@ $$
 | in-context 拼接 | 整条序列 | $\approx 0$（条件 embedding） | $N^2 \to (N+M)^2$ | 逐层更新（双向） | DiT 消融对照路 |
 | adaLN(-Zero) 调制 | 不进序列，调 LN | 每 block 一个调制 MLP | $\approx 0$ | 静态全局向量 | DiT / MMDiT 的时间与 pooled 条件 |
 
-DiT 论文对 (a)(c)(d) 与朴素 adaLN 做了同主干四路消融（论文原表口径）：adaLN-Zero（(d) 的零初始化版）FID 最好且几乎免费——cross-attention 每层多付一组投影与 $O(NM)$ 的 attention，in-context 把序列拉长，两者都没换来质量。这个结论直接决定了 DiT 系主干把「时间/全局条件全走调制、文本条件另议」的格局。
+DiT 论文对 (a)(c)(d) 与朴素 adaLN 做了同主干四路消融（论文原表口径）：adaLN-Zero（(d) 的零初始化版）FID 最好且几乎免费（口径：不多付逐层算力，参数增量也可忽略）——cross-attention 每层多付一组投影与 $O(NM)$ 的 attention，in-context 把序列拉长，两者都没换来质量。这个结论直接决定了 DiT 系主干把「时间/全局条件全走调制、文本条件另议」的格局。
 
 ## 4. Text encoder：从 CLIP 到 T5 的选择依据
 
@@ -176,13 +180,13 @@ $$
 
 **符号**： $\gamma_i, \beta_i, \alpha_i \in \mathbb{R}^{d}$：由 $c$ 经调制 MLP 回归的 scale / shift / gate； $\mathrm{LN}$ 无可学仿射（其参数职能被 $\gamma, \beta$ 接管）。DiT 原文等价写法是 $\gamma \odot \mathrm{LN} + \beta$，此处取 $1+\gamma$ 使 $\gamma = 0$ 对应恒等，两者差一个参数化平移。
 
-**零初始化推导。** 把调制 MLP 的最后一层线性层零初始化，则训练起点处 $\gamma_i = \beta_i = \alpha_i = 0$，逐条代入式 (8)： $(1+0)\odot\mathrm{LN}(x) + 0 = \mathrm{LN}(x)$，而
+**命题**（adaLN-Zero 的恒等起点）：把调制 MLP 的最后一层线性层零初始化，则每个 DiT block 在初始化时严格等于 identity。**证明**（逐条代入）：零初始化使训练起点处 $\gamma_i = \beta_i = \alpha_i = 0$，代入式 (8)： $(1+0)\odot\mathrm{LN}(x) + 0 = \mathrm{LN}(x)$，而
 
 $$
 x' = x + 0 \odot \mathrm{MSA}(\mathrm{LN}(x)) = x, \qquad x'' = x' \qquad (9)
 $$
 
-即**每个 DiT block 在初始化时严格等于 identity**。端到端看：patchify 后过 $L$ 个恒等 block，末端层同样零初始化，整网输出恒为零。初始预测 $\hat\varepsilon \equiv 0$，初始 $L_{simple} = \mathbb{E}\Vert\varepsilon\Vert^2 =$ 元素个数（每元素恰为 1）——损失从一个良定义的标定点出发，没有随机初始化调制系数造成的尺度冲击。梯度侧的对价同样明确：残差通路全程恒等，反向梯度从末端层无衰减直达每个 block 的调制参数（2.7 Pre-LN 残差通路的同款论证）。 $\alpha_i$ 从零开始的每一次更新都在「开通」一条子通路——网络深度是被逐 block 学出来的，而不是初始化时就全额承担。DiT 论文的同主干消融（论文原表口径）：adaLN-Zero 优于非零初始化 adaLN、优于 cross-attention 与 in-context（§3 表），且调制参数的代价是每 block 一个 $d \to 6d$ 的 MLP——这笔参数账到 §8 的 PixArt-α 还要再算一次。
+残差支路被零 gate 关掉，只剩恒等，命题成立；变体与梯度侧分析即练习 3。端到端看：patchify 后过 $L$ 个恒等 block，末端层同样零初始化，整网输出恒为零。初始预测 $\hat\varepsilon \equiv 0$，初始 $L_{simple} = \mathbb{E}\Vert\varepsilon\Vert^2 =$ 元素个数（每元素恰为 1）——损失从一个良定义的标定点出发，没有随机初始化调制系数造成的尺度冲击。梯度侧的对价同样明确：残差通路全程恒等，反向梯度从末端层无衰减直达每个 block 的调制参数（2.7 Pre-LN 残差通路的同款论证）。 $\alpha_i$ 从零开始的每一次更新都在「开通」一条子通路——网络深度是被逐 block 学出来的，而不是初始化时就全额承担。DiT 论文的同主干消融（论文原表口径）：adaLN-Zero 优于非零初始化 adaLN、优于 cross-attention 与 in-context（§3 表），且调制参数的代价是每 block 一个 $d \to 6d$ 的 MLP——这笔参数账到 §8 的 PixArt-α 还要再算一次。
 
 ### 6.3 DiT scaling：Gflops ↔ FID 的对数线性
 
@@ -214,7 +218,7 @@ $$
 Z \leftarrow Z + \alpha_z \odot O_z W_O^{z}, \qquad Y \leftarrow Y + \alpha_y \odot O_y W_O^{y} \qquad (12)
 $$
 
-**符号**： $W_O^{z}, W_O^{y}$：两流各自的 attention 输出投影； $\alpha_z, \alpha_y$：两流各自的 adaLN gate（式 (8) 同款零初始化）。（两流各自的 MLP 子层同构续上，式 (8) 形状。）走读锚点：Stability-AI/sd3.5 的 `mmditx.py`（双流 QKV 与拼接 attention）[A]。一个结构性细节：网络出口只有图像流。 $Z$ 经末端 adaLN 与线性层回归速度 $v_\theta$（7.5 的 rectified flow 目标）； $Y$ 从头到尾只被读、不出图——它在每个 block 被更新的全部意义，是让下一个 block 的图像 token 读到更贴合当前去噪状态的文本表示。文本流是手段，不是产出。
+**符号**： $W_O^{z}, W_O^{y}$：两流各自的 attention 输出投影； $\alpha_z, \alpha_y$：两流各自的 adaLN gate（与 adaLN-Zero 同款零初始化）。（两流各自的 MLP 子层同构续上，式 (8) 形状。）走读锚点：Stability-AI/sd3.5 的 `mmditx.py`（双流 QKV 与拼接 attention）[A]。一个结构性细节：网络出口只有图像流。 $Z$ 经末端 adaLN 与线性层回归速度 $v_\theta$（7.5 的 rectified flow 目标）； $Y$ 从头到尾只被读、不出图——它在每个 block 被更新的全部意义，是让下一个 block 的图像 token 读到更贴合当前去噪状态的文本表示。文本流是手段，不是产出。
 
 ```
    Z ∈ R[N,d]（图像 latent token）        Y ∈ R[M,d]（文本 token）
@@ -233,7 +237,7 @@ $$
    Y ← Y + αy·Oy·Wy_out ；Y ← Y + αy'·MLP_y(adaLN_y(Y))
 ```
 
-**账与性质。** 交叉项开销 $2NM$ 与 cross-attention 路线的 $NM$ 同量级；真正多付的是文本流每 block 的 QKV/MLP（ $O(Md^2)$）与 $M^2$ 自注意力——买的是 $Y$ 的逐层更新。另一个不显然的性质：softmax 的分母在图文共 $N+M$ 个 key 上联合归一，图像 token 分给文本的注意力权重与文本 token 自身的存在感直接竞争——「条件强度」本身变成一个被注意力几何化的可学量，而不只是投影矩阵里的静态权重。
+**账与性质。** 交叉项开销 $2NM$ 与 cross-attention 路线的 $NM$ 同量级；真正多付的是文本流每 block 的 QKV/MLP（ $O(Md^2)$）与 $M^2$ 自注意力——买的是 $Y$ 的逐层更新。代入 1024 档数字定位量级：图像流 token 数为 4096（f8 latent 128×128、patch 取 2），图像自块约 1680 万对；文本流每多一个 token，交叉两块合计多付约 8192 对——文本侧的增量相对图像自块是小头。另一个不显然的性质：softmax 的分母在图文共 $N+M$ 个 key 上联合归一，图像 token 分给文本的注意力权重与文本 token 自身的存在感直接竞争——「条件强度」本身变成一个被注意力几何化的可学量，而不只是投影矩阵里的静态权重。
 
 SD3 系统的完整配方至此闭环：MMDiT 主干 + rectified flow 目标（7.5 式 (22)，回归 $\varepsilon - z_0$）+ logit-normal $t$ 采样（7.5 式 (27)）+ 分辨率相关 shift（7.5 式 (30)）+ §4 的三 text encoder。训练侧走读锚点另有 Stability-AI/generative-models 的 `sgm/modules/diffusionmodules/` [A]。
 
@@ -251,11 +255,11 @@ $$
 \left| \frac{\hat{q}^{\top} \hat{k}}{\sqrt{d_h}} \right| \le \frac{\Vert\hat{q}\Vert\thinspace \Vert\hat{k}\Vert}{\sqrt{d_h}} = \sqrt{d_h} \qquad (14)
 $$
 
-（Cauchy-Schwarz。）logit 的幅度上界被固定在 $\sqrt{d_h}$（ $d_h = 64$ 时约 8），与权重尺度解耦——失稳通道从源头关闭。实现见 sd3.5 `mmditx.py` 的 QK-norm 选项 [A]。
+**命题**（logit 上界）：归一化后每个 logit 的幅度被固定在 $\sqrt{d_h}$ 以内（ $d_h = 64$ 时约 8），与权重尺度解耦。**证明**：上式即 Cauchy-Schwarz 不等式。失稳通道从源头关闭。实现见 sd3.5 `mmditx.py` 的 QK-norm 选项 [A]。
 
 ### 7.3 FLUX 的 double→single stream 变体 [C] 与 multi-aspect bucketing
 
-FLUX（[black-forest-labs/flux](../references.md)，[C]——官方推理代码公开、HF 权重 gated，只述已披露信息）在 MMDiT 骨架上做了一个结构变体：前段是 double-stream block（式 (10)-(12) 同构，图文各自参数），后段切换为 single-stream block——两流 token 拼接后**共用**一套 QKV/MLP 参数。读法：双流分工在前段学成之后，后段退回参数共享的 in-context 形态（§3 (c)），参数与算力省一份；文本侧为 CLIP-L pooled + T5 序列（[C]，已披露口径）。
+FLUX（[black-forest-labs/flux](../references.md)，[C]——官方推理代码公开、HF 权重 gated，只述已披露信息）在 MMDiT 骨架上做了一个结构变体：前段是 double-stream block（与 MMDiT 三式同构，图文各自参数），后段切换为 single-stream block——两流 token 拼接后**共用**一套 QKV/MLP 参数。读法：双流分工在前段学成之后，后段退回参数共享的 in-context 形态（§3 (c)），参数与算力省一份；文本侧为 CLIP-L pooled + T5 序列（[C]，已披露口径）。
 
 **multi-aspect bucketing。** 高分辨率 T2I 训练要覆盖从竖图到横图的全长宽比，而 attention 成本随 token 数平方变。工程惯例（无单一出处）：把数据集按长宽比分桶，每个 batch 只装同一桶的样本（同形同 size），于是无 padding 浪费、per-sample FLOPs 按桶可预测；位置编码对变长网格做插值（6.1 的 2D 位置编码族），NaViT 式 packing（6.1）是免桶的替代路线。SD3/FLUX 世代的多分辨率训练都建立在这类调度上。
 
@@ -263,7 +267,7 @@ FLUX（[black-forest-labs/flux](../references.md)，[C]——官方推理代码�
 
 ### 8.1 PixArt-α：把 DiT 系统的训练账单拆成三段
 
-PixArt-α（[Chen et al., 2023](../references.md)，arXiv:2310.00426，[A]）的前提是 §6.3 的 scaling 曲线反过来读：既然质量由算力决定，就把每一份算力花在刀刃上。三阶段训练，每段各由一个消融背书（论文原表口径）：
+PixArt-α（[Chen et al., 2023](../references.md)，arXiv:2310.00426，[A]）的前提是前文 DiT scaling 的曲线反过来读：既然质量由算力决定，就把每一份算力花在刀刃上。三阶段训练，每段各由一个消融背书（论文原表口径）：
 
 1. **像素依赖预训练**：先在 ImageNet 类别条件任务上训 DiT 主干（ $z_0$ 空间、无文本）。自然图像的低层统计（纹理、边缘、局部结构）与文本无关，不该占用文图数据的算力；消融显示该阶段加速后续文图收敛。
 2. **文图对齐**：换上 Flan-T5-XXL text encoder（约 4.3B 参数，论文原文口径）并把标签条件头换成文本条件；关键变量是 caption 质量——用 LLaVA 重写的高密度 caption 替代原生 alt-text，消融显示对齐质量的上限由 caption 信息量决定（§4 的 T5 论据在此落地）。
@@ -277,7 +281,7 @@ SANA（[Xie et al., 2024](../references.md)，arXiv:2410.10629，[A]；官方实
 
 **杠杆一：更深的压缩。** 换 6.3 §7.3 的 DC-AE（[Chen et al., 2024](../references.md)，arXiv:2410.10733，[A]）， $f = 32$： $1024^2$ 图像的 latent 只有 $32 \times 32 = 1024$ 个位点（f8 下同图为 $128^2 = 16384$——16 倍差距），patchify 取 $p = 1$，token 数 $N = 1024$。
 
-**杠杆二：更便宜的序列混合。** DiT block 里的 softmax attention 换成 linear attention（4.3 的机制直接进扩散）：特征映射取 $\phi = \mathrm{ReLU}$，保留归一化分母，结合律重排
+**杠杆二：更便宜的序列混合（口径：序列混合的 FLOPs 更低）。** DiT block 里的 softmax attention 换成 linear attention（4.3 的机制直接进扩散）：特征映射取 $\phi = \mathrm{ReLU}$，保留归一化分母，结合律重排
 
 $$
 O_i = \frac{\phi(Q_i) \left( \sum_{j=1}^{N} \phi(K_j)^{\top} V_j \right)}{\phi(Q_i) \left( \sum_{j=1}^{N} \phi(K_j)^{\top} \right)}, \qquad \phi = \mathrm{ReLU} \qquad (15)
@@ -285,9 +289,9 @@ $$
 
 **符号**：式 (15) 即 SANA 论文 Eq. (1)（2026-11-12 经 ar5iv 原文核实）：分子的共享项 $\sum_j \phi(K_j)^{\top} V_j \in \mathbb{R}^{d_h \times d_h}$ 与分母的共享项 $\sum_j \phi(K_j)^{\top} \in \mathbb{R}^{d_h}$ 全序列各算一次、被全部 query 复用——省力的来源是共享与重排，分母并不省。非因果双向场景下左序为 $4N^2 d_h$、右序为 $4N d_h^2$（本书 $2mnk$ 口径，分母与逐 query 读出为低阶项），交叉点 $N = d_h$； $N = 1024$、 $d_h = 64$ 时 attention 项省约 16 倍——4.3 式 (4) 的账从 LLM 原样搬到 DiT。占 block 总 FLOPs 的比例用式 (7) 估（ $d = 1152$ 档）：f8 下 $1024^2$ 图（ $N = 4096$）attention 项约占 37%，f32 下（ $N = 1024$）约 13%——两个杠杆是乘性的：先靠 DC-AE 把 $N$ 压下来，再靠 linear attention 把剩下的二次项抹掉。
 
-删掉 softmax 丢掉的是局部归纳偏置（softmax 的锐化天然倾向近邻）。SANA 的补偿是 **Mix-FFN**：FFN 换成 inverted residual block + $3\times3$ depthwise conv + GLU 的组合，把局部混合职责从 attention 挪给卷积——conv 的 $3\times3$ 邻域混合是逐 token 常数成本，不进式 (7) 的二次项。论文消融（Table 8/12 口径）把这条因果链锁定：self-attention 直接换 linear attention 会掉 FID 与 CLIP Score，Mix-FFN 把损失补回。同一份消融还证实了 NoPE：零填充 $3\times3$ 卷积隐式携带位置信息，SANA 是首个完全去掉位置编码的 DiT，论文报告无质量损失。text encoder 用 Gemma-2-2B（decoder-only LM 的表示直接作条件，§4 的「纯文本监督密度」论据的又一实例）；训练目标为 FM 线性路径（7.5 式 (22)），采样配论文提出的 Flow-DPM-Solver（7.4 指数积分族在速度场坐标下的对应物：直轨迹 → 大步长）。DC-AE 的深压缩还带来一条隐性收益： $1024^2$ 的训练可以在原生分辨率端到端进行（latent 只有 $32^2$），免掉「低分辨率预训练 + 高分辨率微调」课程的一个档。系统账（论文口径）：SANA-0.6B 在 $1024^2$ 上对标大其约 20 倍的 FLUX 级系统，笔记本 GPU 单图 0.88s（FP16，论文 Table 5），吞吐高约两个数量级。
+删掉 softmax 丢掉的是局部归纳偏置（softmax 的锐化天然倾向近邻）。SANA 的补偿是 **Mix-FFN**：FFN 换成 inverted residual block + $3\times3$ depthwise conv + GLU 的组合，把局部混合职责从 attention 挪给卷积——conv 的 $3\times3$ 邻域混合是逐 token 常数成本，不进式 (7) 的二次项。论文消融（Table 8/12 口径）把这条因果链锁定：self-attention 直接换 linear attention 会掉 FID 与 CLIP Score，Mix-FFN 把损失补回。同一份消融还证实了 NoPE：零填充 $3\times3$ 卷积隐式携带位置信息，SANA 是首个完全去掉位置编码的 DiT，论文报告无质量损失。text encoder 用 Gemma-2-2B（decoder-only LM 的表示直接作条件，即前文「纯文本监督密度」论据的又一实例）；训练目标为 FM 线性路径（7.5 式 (22)），采样配论文提出的 Flow-DPM-Solver（7.4 指数积分族在速度场坐标下的对应物：直轨迹 → 大步长）。DC-AE 的深压缩还带来一条隐性收益： $1024^2$ 的训练可以在原生分辨率端到端进行（latent 只有 $32^2$），免掉「低分辨率预训练 + 高分辨率微调」课程的一个档。系统账（论文口径）：SANA-0.6B 在 $1024^2$ 上对标大其约 20 倍的 FLUX 级系统，笔记本 GPU 单图 0.88s（FP16，论文 Table 5），吞吐高约两个数量级。
 
-把 §6-§8 合起来看，效率线的全部动作只有三个，且都不改动扩散数学骨架：更深的 latent 压缩（f8 → f32）、更便宜的序列混合（softmax → linear）、更聪明的训练课程（三阶段 + weak-to-strong）。
+> **提点**：把 §6-§8 合起来看，效率线的全部动作只有三个，且都不改动扩散数学骨架：更深的 latent 压缩（f8 → f32）、更便宜的序列混合（softmax → linear）、更聪明的训练课程（三阶段 + weak-to-strong）。
 
 ## 总结
 
@@ -296,23 +300,23 @@ $$
 | latent 账 | 式 (1)；f8 位点削减 $f^2 = 64\times$ | 感知压缩（AE）与语义生成（diffusion）两阶段分工；LDM 消融：LDM-{4–16} 拉平、LDM-1 慢、LDM-32 限质，f4/f8 最佳 |
 | scaling factor | $s = 1/\hat\sigma_z = 0.18215$，式 (2)(3) | 错误尺度 = log-SNR 轴平移 $2\ln\sigma_z$；单位方差化保 schedule 语义 |
 | cross-attention | 式 (4) | 文本作 K/V、静态只读；§3 四路对比表，DiT 消融：adaLN-Zero 最优 |
-| text encoder | CLIP pooled+sequence vs T5 | T5 强在数据规模、逐 token 监督、长尾覆盖；Imagen：放 text encoder 收益 > 放 U-Net；SD3 去 T5 掉复杂 prompt |
+| text encoder | CLIP pooled+sequence vs T5 | T5 强在数据规模、逐 token 监督、长尾覆盖；Imagen：放 text encoder 收益 > 放 U-Net；SD3 去 T5 掉复杂 prompt（§4） |
 | U-Net block | 式 (5)(6) | ResBlock 加法/FiLM 注入时间；spatial transformer = self + cross + GEGLU |
 | DiT patchify | 式 (7)： $24Nd^2 + 4N^2d$ | $p$ 减半 → $N \times 4$、attention 项 $\times 16$；S/B/L/XL = 33M/130M/458M/675M |
 | adaLN-Zero | 式 (8)(9) | 六系数调制、gate 零初始化 ⇒ 每 block identity 起步、初始损失良定义、残差通路全程恒等 |
-| DiT scaling | FID 对数线性随 Gflops 降 | XL/2-G FID 2.27 vs LDM-4 3.60（ImageNet $256^2$，论文口径） |
+| DiT scaling | FID 对数线性随 Gflops 降 | XL/2-G FID 2.27 vs LDM-4 3.60（ImageNet $256^2$，论文口径，§6.3） |
 | MMDiT 联合 attention | 式 (10)(11)(12) | 双流各自 QKV/MLP/adaLN； $S$ 的 $2\times2$ 分块， $S_{yz}$ = 文本逐层被图像修正 |
 | QK-norm | 式 (13)(14) | per-head RMSNorm ⇒ logit 上界 $\sqrt{d_h}$，与权重尺度解耦 |
-| FLUX 变体 [C] | double → single stream | 前段双流分工、后段参数共享（已披露口径） |
-| PixArt-α | 三阶段 + adaLN-single | adaLN 调制占 DiT 参数约 27% → single 版压至常数级（论文口径）；训练成本约 SD1.5 的 12%（论文口径） |
+| FLUX 变体 [C] | double → single stream | 前段双流分工（式 (10) 同构）、后段参数共享（已披露口径） |
+| PixArt-α | 三阶段 + adaLN-single | adaLN 调制占 DiT 参数约 27%（式 (8) 的调制层）→ single 版压至常数级（论文口径）；训练成本约 SD1.5 的 12%（论文口径） |
 | SANA | 式 (15) + DC-AE f32 | $N = 1024$ @ $1024^2$；ReLU linear attention（分子/分母共享项，分母保留）省 attention 项约 $16\times$；Mix-FFN 补局部性并带来 NoPE |
 
 ## 练习
 
-1.（计算）latent 与 patchify 联合账：对 $1024^2$ 图像、 $d = 1152$ 的主干，分别取 (a) f8 + $p=2$、(b) f8 + $p=1$、(c) f32 + $p=1$（SANA 档），算 $N$、单 block 前向 FLOPs（式 (7)， $2mnk$ 口径）与 attention 项占比；再算 (c) 换 ReLU linear attention（式 (15)， $d_h = 64$）后 attention 项的降幅倍数。验证交叉点 $N = d_h$ 的推导（非因果、两侧满算）。
-2.（推导）scaling factor 的另一视角：设 v-prediction（7.2 式 (27)）目标 $v = \sqrt{\bar\alpha_t}\thinspace\varepsilon - \sqrt{1-\bar\alpha_t}\thinspace z_0$。若 latent 未缩放（ $\mathrm{Var}(z_0) = \sigma_z^2 \ne 1$），把 $z_t$ 用真实方差展开，求网络在最优解处回归的目标与名义 $v$ 的偏差；由此说明 $s = 1/\hat\sigma_z$ 同时修正了前向边际与回归目标两处。
-3.（推导）adaLN-Zero 的恒等起点：在式 (8) 下证明 (a) 零初始化时全网络输出恒为零（设末端层同样零初始化）；(b) 初始 $L_{simple}$ 等于 $z_0$ 的元素个数；(c) 若把 gate 改为随机初始化（小方差），反向一阶分析中 $\partial L / \partial \alpha_i$ 与残差通路梯度的相对尺度如何变化——为什么零初始化更稳。
-4.（推导 + 代码）MMDiT 联合 attention：把式 (11) 的 softmax 按行展开，证明文本流的输出 $O_y$ 恰等于「以图像为 K/V 的 cross-attention 与文本自注意力的 softmax 混合」（写出分母合并的形式）；再用教学用 PyTorch（非优化实现）写出单个 MMDiT block 的前向（两流各 4 个投影 + 拼接 attention + 拆回），并在 $N = 256$、 $M = 77$、 $d = 768$ 上验证输出 shape 与参数计数。
+1.（推导 · [20]）scaling factor 的另一视角：设 v-prediction（7.2 式 (27)）目标 $v = \sqrt{\bar\alpha_t}\thinspace\varepsilon - \sqrt{1-\bar\alpha_t}\thinspace z_0$。若 latent 未缩放（ $\mathrm{Var}(z_0) = \sigma_z^2 \ne 1$），把 $z_t$ 用真实方差展开，求网络在最优解处回归的目标与名义 $v$ 的偏差；由此说明 $s = 1/\hat\sigma_z$ 同时修正了前向边际与回归目标两处。
+2.（计算 · [30]）latent 与 patchify 联合账：对 $1024^2$ 图像、 $d = 1152$ 的主干，分别取 (a) f8 + $p=2$、(b) f8 + $p=1$、(c) f32 + $p=1$（SANA 档），算 $N$、单 block 前向 FLOPs（式 (7)， $2mnk$ 口径）与 attention 项占比；再算 (c) 换 ReLU linear attention（式 (15)， $d_h = 64$）后 attention 项的降幅倍数。验证交叉点 $N = d_h$ 的推导（非因果、两侧满算）。先预测三档 attention 项占比的排序再算。校验：三档的 token 数之比应为 4:16:1。
+3.（推导 · [30]）adaLN-Zero 的恒等起点：在式 (8) 下证明 (a) 零初始化时全网络输出恒为零（设末端层同样零初始化）；(b) 初始 $L_{simple}$ 等于 $z_0$ 的元素个数；(c) 若把 gate 改为随机初始化（小方差），反向一阶分析中 $\partial L / \partial \alpha_i$ 与残差通路梯度的相对尺度如何变化——为什么零初始化更稳。
+4.（推导 + 代码 · [30]）MMDiT 联合 attention：把式 (11) 的 softmax 按行展开，证明文本流的输出 $O_y$ 恰等于「以图像为 K/V 的 cross-attention 与文本自注意力的 softmax 混合」（写出分母合并的形式）；再用教学用 PyTorch（非优化实现）写出单个 MMDiT block 的前向（两流各 4 个投影 + 拼接 attention + 拆回），并在 $N = 256$、 $M = 77$、 $d = 768$ 上验证输出 shape 与参数计数。写代码前先预测参数量的量级，再逐项数。校验：拆回后两流 shape 各回原尺寸；参数计数与手算一致。
 
 ## 参考
 

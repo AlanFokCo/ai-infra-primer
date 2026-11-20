@@ -28,6 +28,8 @@ DDPM 的默认配置从纯噪声采出一张图要 1000 次网络前向（[Ho et
 
 记号约定在此登记一次，本 Part 全部章节遵守（与 7.2 及锚点 SD3 的口径一致）：**$x_0$ = 数据端、 $t = 1$ = 纯噪声端；前向过程（加噪）方向 $t: 0 \to 1$，反向过程（采样）方向 $t: 1 \to 0$**；噪声 $\varepsilon \sim \mathcal{N}(0, I)$； $\alpha_t = 1 - \beta_t$、 $\bar\alpha_t = \prod_{s \le t} \alpha_s$。扩散语境下「建模对象 $x_0$」按场景指像素或 6.3 的 latent $z$，7.6 展开这条分工。五个家族里只有扩散与 FM 需要这条时间轴约定，其余四节只用通用概率记号；7.5 另附 FM 原文献的约定映射框，本章不提前引入。
 
+本章口径：涉及具体数字的跑例统一取 256 × 256 图像经 f16 离散 tokenizer 切成的 256-token 网格，正文示例与练习 3 共用；练习 2 的行列式账另用 32 × 32 × 4 latent 口径，题面自带。
+
 ## 2. AR：精确似然与顺序采样
 
 AR 家族的训练目标在 1.1 已经推完：链式法则给出联合分布的精确分解 $p(x_{1:T}) = \prod_t p(x_t \mid x_{\lt t})$（1.1 式 (3)），训练就是极大似然
@@ -42,14 +44,14 @@ $$
 
 - **优化什么**：精确似然。 $\log p_\theta(x)$ 逐位相加即得，没有近似项、没有下界缝隙。
 - **怎么采样**：祖先采样（ancestral sampling，1.1 §8）——从 bos 出发逐位置采 $x_t \sim p_\theta(\cdot \mid x_{\lt t})$， $T$ 步严格串行，第 $t$ 步必须等前 $t-1$ 步落地。一张 $256 \times 256$ 图像经 f16 离散 tokenizer 切成 $16 \times 16 = 256$ 个 token，就是 256 次串行前向；训练侧靠教师强制（teacher forcing）一次前向并行算完全部 $T$ 个位置，训练并行、生成串行的不对称由此而来（1.1 §4）。
-- **似然**：精确且便宜，评估一个样本只要一次前向。
+- **似然**：精确且便宜（口径：评估一个样本只要一次前向）。
 - **mode 行为**：MLE 优化的是 $\mathrm{KL}(p_{data} \Vert p_\theta)$（1.1 式 (6)），数据里出现的每个 mode 都必须分到概率，否则 $\log p_\theta \to -\infty$ 的惩罚无界——行为是全覆盖（mean-seeking）。
 
 AR 进图像的前置工序是离散化：连续像素必须先经 6.3 的 VQ 族 tokenizer 变成 codebook 下标网格，图像才成为「词表 $K$、长度 $hw$ 的序列」，与文本同构。代价是生成质量先被 tokenizer 的重建上限卡一道（6.3 §1 的账）。收益是与 LLM 的原生可组合性：同一套 decoder-only 主干、同一个 next-token 目标，图像只是另一种语言。这条线连同 raster 顺序之外的选择（next-scale、mask-predict）在 7.7 展开。
 
 ## 3. VAE：只给似然的下界
 
-VAE 的目标在 6.3 已完整推导，此处只登记结论。潜变量模型 $p_\theta(x) = \int p_\theta(x \mid z)\thinspace p(z)\thinspace dz$ 的高维积分不可解，引入摊销后验 $q_\phi(z \mid x)$ 后得到证据下界
+精确似然算不出来时，能不能退而求其次、优化它的一个下界？VAE 的目标在 6.3 已完整推导，此处只登记结论。潜变量模型 $p_\theta(x) = \int p_\theta(x \mid z)\thinspace p(z)\thinspace dz$ 的高维积分不可解，引入摊销后验 $q_\phi(z \mid x)$ 后得到证据下界
 
 $$
 \log p_\theta(x) \ge \underbrace{\mathbb{E}_{q_\phi(z \mid x)}\left[ \log p_\theta(x \mid z) \right]}_{\text{recon}} - \mathrm{KL}\left( q_\phi(z \mid x)\thinspace \Vert\thinspace p(z) \right) = \mathrm{ELBO}(\theta, \phi; x) \qquad (2)
@@ -78,7 +80,7 @@ $$
 
 四坐标：
 
-- **优化什么**：minimax 目标。式 (3) 从头到尾没有出现 $p_\theta(x)$——密度从未被显式表示，更没有似然梯度。固定 $G$ 时最优判别器有闭式，代回后 $G$ 端等价于最小化一个 JS 散度（练习 1 推导），这就是 GAN 与「距离 $p_{data}$」之间全部的联系。
+- **优化什么**：minimax 目标。式 (3) 从头到尾没有出现 $p_\theta(x)$——密度从未被显式表示，更没有似然梯度。**命题**（最优判别器）：固定 $G$ 时，该目标的最优判别器有闭式；代回后， $G$ 端等价于最小化一个 JS 散度。**证明**：留作练习 1。这就是 GAN 与「距离 $p_{data}$」之间全部的联系。
 - **怎么采样**：一次前向， $z \to G(z)$，与 VAE 同为最快一档。
 - **似然**：不存在，连下界都没有。
 - **mode 行为**：**模式坍缩（mode dropping）**——式 (3) 只奖励「生成的样本骗过 $D$」，不奖励「覆盖 $p_{data}$ 的全部 mode」； $G$ 把全部质量堆到少数几个逼真 mode 上时， $D$ 拿不出任何梯度去惩罚那些缺席的 mode，因为没有一项损失在度量覆盖度。
@@ -97,7 +99,7 @@ $$
 
 式 (4) 的两项都必须可算，这把架构设计卡进一条窄缝： $f_\theta$ 必须双射（维度不变、可逆）、且每层 Jacobian 的 $\log|\det|$ 必须便宜。稠密层的行列式是 $O(d^{3})$，图像维度下不可行；Glow（[Kingma & Dhariwal, 2018](../references.md)，arXiv:1807.03039，[A]）的代表性解法是 invertible $1 \times 1$ convolution：把通道混合写成每个空间位置共享的一个 $c \times c$ 矩阵。这样一来，全图的 $\log|\det|$ 坍缩成 $hw \cdot \log|\det W|$——一次行列式计算服务所有空间位置（练习 2 算这笔账）。
 
-双射还附带一个其他家族没有的副产品：编码方向 $z = f_\theta(x)$ 免费。任何真实样本都能精确反演回 latent，并读出自己的似然。插值、属性编辑在 $z$ 空间是精确的坐标操作，不是近似投影。对比之下：VAE 的 encoder 只给近似后验；GAN 连 encoder 都没有，要反演一个真实样本，得额外做优化或训一个编码器。
+双射还附带一个其他家族没有的副产品：编码方向 $z = f_\theta(x)$ 免费（口径：不另训 encoder、不做逐样本优化，一次反向映射即得）。任何真实样本都能精确反演回 latent，并读出自己的似然。插值、属性编辑在 $z$ 空间是精确的坐标操作，不是近似投影。对比之下：VAE 的 encoder 只给近似后验；GAN 连 encoder 都没有，要反演一个真实样本，得额外做优化或训一个编码器。
 
 四坐标：
 
@@ -224,10 +226,10 @@ $$
 
 ## 练习
 
-1.（推导）固定 $G$，证明式 (3) 的最优判别器为 $`D^{*}(x) = p_{data}(x) / \big(p_{data}(x) + p_g(x)\big)`$（提示： $V$ 对 $D(x)$ 逐点取极值）；代回 $`V(D^{*}, G)`$，证明 $\min_G$ 端等价于最小化 $2 \cdot \mathrm{JSD}(p_{data} \Vert p_g) - \log 4$。用该结论解释 mode dropping 为何不被惩罚：JSD 有界（ $\le \log 2$）， $p_g$ 放弃一个 mode 至多付出有界代价，对比 MLE 中 $\log p_\theta \to -\infty$ 的无界惩罚。
-2.（计算）Flow 的行列式账： $32 \times 32 \times 4$ 的 latent（f8），比较 (a) 稠密双射层 $d = 4096$， $\log|\det|$ 一次 $O(d^{3})$；(b) Glow 的 invertible $1 \times 1$ conv：单矩阵 $W \in \mathbb{R}^{4 \times 4}$，全图 $\log|\det| = 32 \cdot 32 \cdot \log|\det W|$。各算一次前向中行列式项的标量运算量级，并说明 (b) 把什么计算换成了什么。
-3.（计算）采样总账： $256 \times 256$ 图像经 f16 tokenizer 得 256 个 token。AR 顺序采样 256 步（KV cache 下第 $t$ 步只算 1 个新 token），diffusion 以 NFE = 20 计、每步处理全部 256 个 latent 位置。比较两者的「网络处理 token 总数」量级；再指出这个账忽略了哪两个使比较不严格的因素（提示：每步的计算深度、序列并行性）。
-4.（分析）三个场景各选一个家族并给机制理由：(a) 工业质检的异常检测，需要逐样本精确 $\log p(x)$；(b) 与现有 LLM 共享主干的图文统一生成；(c) 端侧实时预览，只允许 1-2 次网络前向。说明每个选择放弃了什么。
+1.（推导 · [20]）固定 $G$，证明式 (3) 的最优判别器为 $`D^{*}(x) = p_{data}(x) / \big(p_{data}(x) + p_g(x)\big)`$（提示： $V$ 对 $D(x)$ 逐点取极值）；代回 $`V(D^{*}, G)`$，证明 $\min_G$ 端等价于最小化 $2 \cdot \mathrm{JSD}(p_{data} \Vert p_g) - \log 4$。用该结论解释 mode dropping 为何不被惩罚：JSD 有界（ $\le \log 2$）， $p_g$ 放弃一个 mode 至多付出有界代价，对比 MLE 中 $\log p_\theta \to -\infty$ 的无界惩罚。
+2.（计算 · [20]）Flow 的行列式账： $32 \times 32 \times 4$ 的 latent（f8），比较 (a) 稠密双射层 $d = 4096$， $\log|\det|$ 一次 $O(d^{3})$；(b) Glow 的 invertible $1 \times 1$ conv：单矩阵 $W \in \mathbb{R}^{4 \times 4}$，全图 $\log|\det| = 32 \cdot 32 \cdot \log|\det W|$。各算一次前向中行列式项的标量运算量级，并说明 (b) 把什么计算换成了什么。校验：(b) 的逐位置行列式个数等于 latent 的空间位置数 1024。
+3.（计算 · [30]）采样总账： $256 \times 256$ 图像经 f16 tokenizer 得 256 个 token。AR 顺序采样 256 步（KV cache 下第 $t$ 步只算 1 个新 token），diffusion 以 NFE = 20 计、每步处理全部 256 个 latent 位置。比较两者的「网络处理 token 总数」量级；再指出这个账忽略了哪两个使比较不严格的因素（提示：每步的计算深度、序列并行性）。校验：两个总账之比应能分解为「步数比 × 每步处理位置数比」两个因子。
+4.（分析 · [30]）三个场景各选一个家族并给机制理由：(a) 工业质检的异常检测，需要逐样本精确 $\log p(x)$；(b) 与现有 LLM 共享主干的图文统一生成；(c) 端侧实时预览，只允许 1-2 次网络前向。说明每个选择放弃了什么。
 
 ## 参考
 
