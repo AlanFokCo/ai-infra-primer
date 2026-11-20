@@ -4,7 +4,7 @@
 
 ## 1. 总账：单卡显存的五项分解
 
-Part 4 的前三章各算了账的一个切片：4.1 给出「全量复制 + all-reduce」的基线，4.2 把三态逐阶切分，4.3 给出 unshard 暂态。把它们合起来，单卡峰值显存是五项之和：
+单卡峰值显存究竟花在哪几处？Part 4 的前三章各算了账的一个切片：4.1 给出「全量复制 + all-reduce」的基线，4.2 把三态逐阶切分，4.3 给出 unshard 暂态。把它们合起来，单卡峰值显存是五项之和。本章口径：显存数字统一按 GiB（2^30 bytes）读，模型规模取 7B / 70B / 405B / 1T 四档，精度取 bf16 参数与梯度加 fp32 master 与矩估计；例外处随文声明。五项之和为：
 
 $$
 M_{\mathrm{gpu}} = \underbrace{M_{\mathrm{param}} + M_{\mathrm{grad}} + M_{\mathrm{opt}}}_{\text{三态，切分深度的函数}} + \underbrace{M_{\mathrm{act}}(\kappa)}_{\text{checkpointing 策略的函数}} + M_{\mathrm{buf}} \qquad (1)
@@ -12,7 +12,7 @@ $$
 
 **符号**： $N$：参数量； $d$：DP 度数（本书全书约定）； $\kappa$：重计算策略标记（不重算 / selective / full，1.4 的口径）； $M_{\mathrm{buf}}$：通信与框架 buffer（all-gather 输出缓冲、NCCL workspace、allocator 碎片）。三态各项按策略取值（bf16 参数与梯度、fp32 master 与 fp32 矩估计的参考配置，即 models 1.2 式 (8) 的 $16N$ 分解；矩估计降精度时按 $(4+2c)N$ 口径换系数，系数定义见 models 1.2 式 (8)，BF16 矩估计实例见 1.3 §4）：
 
-式 (1) 的五项按时间结构分两类。常驻项（三态的分片部分）在整个 step 内不变。暂态项（FSDP 的 unshard 全量参数与梯度、激活、buffer）在 step 内起伏，峰值出现在反向经过第一个通信组的时刻——4.3 §3 的时序图就是这个峰值的来源。 $M_{\mathrm{buf}}$ 不进公式，理由不是它小，而是它由实现决定：DDP 的梯度 bucket（默认按 25 MiB 分桶，4.1 走读）、FSDP 的 all-gather 输出缓冲（已计入暂态项）、NCCL 每个 communicator 的固定 workspace、allocator 圆整与碎片都在其中。工程上按 GiB 级安全余量对待；临界判定时它决定成败（§3 的算例）。
+式 (1) 的五项按时间结构分两类。所谓常驻项，是指在整个 step 内不变的占用（三态的分片部分）。所谓暂态项，是指只在 step 的某个区间存在、用完即释放的占用（FSDP 的 unshard 全量参数与梯度、激活、buffer）；峰值出现在反向经过第一个通信组的时刻——4.3 §3 的时序图就是这个峰值的来源。 $M_{\mathrm{buf}}$ 不进公式，理由不是它小，而是它由实现决定：DDP 的梯度 bucket（默认按 25 MiB 分桶，4.1 走读）、FSDP 的 all-gather 输出缓冲（已计入暂态项）、NCCL 每个 communicator 的固定 workspace、allocator 圆整与碎片都在其中。工程上按 GiB 级安全余量对待；临界判定时它决定成败（§3 的算例）。代入一个数：7B 模型在 DDP 基线下三态合计约 104 GiB，单张 H100 已经装不下——分片存在的理由就在这里，逐项字节数在下一节展开。
 
 | 策略 | $M_{\mathrm{param}}$ | $M_{\mathrm{grad}}$ | $M_{\mathrm{opt}}$ | 三态合计 | 暂态 |
 | --- | --- | --- | --- | --- | --- |
@@ -41,6 +41,8 @@ $$
 ## 3. 装得下判定：三张卡与临界算例
 
 GPU 侧先定口径：H100 SXM 标称 80 GB HBM3，H200 141 GB HBM3e，B200 192 GB HBM3e（厂商公开规格；标称容量按 GiB = $2^{30}$ bytes 读，与上表同单位）。判定规则：三态 + 暂态 + 激活预算 $\le$ 标称容量，并为 buffer 与碎片留余量。只看三态静态账的初判如下：
+
+> **坑**：把标称的 80 GB 当十进制 GB（10^9 bytes）读，会凭空多出约 7% 的余量——临界判定直接翻转。本章统一按 GiB 读。
 
 | 模型 | 策略 @ $d$ | 三态（GiB） | H100 (80) | H200 (141) | B200 (192) |
 | --- | --- | --- | --- | --- | --- |
@@ -86,10 +88,10 @@ GPU 侧先定口径：H100 SXM 标称 80 GB HBM3，H200 141 GB HBM3e，B200 192 
 
 字节数要换成时间才有意义，换算是带宽除法。以 7B、全局 batch 400 万 token 为例（梯度通信约 $28 \times 10^{9}$ bytes ≈ 26.1 GiB）：
 
-- $d$=8 单节点内：NVLink 域约 900 GB/s（H100 节点内公开规格），通信下界约 31 ms。该 $d$ 下每 GPU 分到 50 万 token，每步计算 $6N \times 5 \times 10^{5} \approx 2.1 \times 10^{16}$ FLOPs，按 400 TFLOPS 有效吞吐约 52 s。通信只占计算的 0.06%，overlap 毫无压力。
+- $d$=8 单节点内：NVLink 域约 900 GB/s（H100 节点内公开规格），通信下界约 31 ms。该 $d$ 下每 GPU 分到 50 万 token，每步计算 $6N \times 5 \times 10^{5} \approx 2.1 \times 10^{16}$ FLOPs，按 400 TFLOPS 有效吞吐（口径：实测可持续的单卡 FLOPS，不是峰值）约 52 s。通信只占计算的 0.06%，overlap 毫无压力。
 - $d$=512（64 节点）：每 GPU 约 7800 token，计算时间缩到约 0.82 s。通信量不变（ $28 \times 10^{9}$ bytes）。跨节点 IB 按每 GPU 400 Gb/s = 50 GB/s 计——OLMo 2 的 Jupiter 集群就是每 8 卡节点配 8 张 400 Gb/s 网卡（[Team OLMo et al., 2025](../references.md)，arXiv:2501.00656，[A]，§6.1）——通信约 0.56 s。藏不住的话，占 step 的 68%。
 
-这就是「DP 通信随度数显性化」的机制：全局 batch 固定时，每 GPU 计算量随 $d$ 反比下降，而通信量 $\approx 4N$ 与 $d$ 无关。扩到某个度数，通信必然顶到计算前面。Llama-3 的实测记录正是这个机制：16K GPU 配置把 DP 组从 64 扩到 128，为保全局 tokens/batch 不变，每 DP 组的 batch 从 32 降到 16，MFU 从 43% 掉到 41%（[Grattafiori et al., 2024](../references.md)，[A]，§3.3.2）。ZeRO-3 的 ×1.5 与 hybrid 的 $1/d_s$ 两档，就是这条曲线上的两个修正手柄。
+**命题**（通信显性化）：全局 batch 固定时，DP 家族的每 GPU 通信量与 $d$ 无关，每 GPU 计算量随 $d$ 反比下降；所以存在一个度数，越过它通信时间就顶到计算前面。**证明**（要点）：通信量公式不含该度数（上表）；计算量等于全局 token 数乘每 token FLOPs、再除以 $d$；两式相除即见交点存在。Llama-3 的实测记录正是这个机制：16K GPU 配置把 DP 组从 64 扩到 128，为保全局 tokens/batch 不变，每 DP 组的 batch 从 32 降到 16，MFU 从 43% 掉到 41%（[Grattafiori et al., 2024](../references.md)，[A]，§3.3.2）。ZeRO-3 的 ×1.5 与 hybrid 的 $1/d_s$ 两档，就是这条曲线上的两个修正手柄。
 
 通信账还有一条只在大尺度出现的修正：集合通信的有效带宽随参与 rank 数下降。原因是 straggler 与网络干涉——全局尺度的 all-reduce 达不到小组的效率。FSDP 论文用它论证 hybrid sharding 的另一重收益：复制组的 all-reduce 只在小世界内运行，实测好过全局尺度（[Zhao et al., 2023](../references.md)，[A]，§3.2.2）。前面的换算用的是名义带宽；大度数下的实际通信时间要把这个折扣乘回去。它不改变字节账，只改变字节 ÷ 带宽的时间账。
 
@@ -97,13 +99,13 @@ GPU 侧先定口径：H100 SXM 标称 80 GB HBM3，H200 141 GB HBM3e，B200 192 
 
 ## 5. MFU：定义与三家口径
 
-MFU（model FLOPs utilization）的分子分母各是一个约定：
+MFU 是怎么算的，为什么各家的数字不能直接比？因为它的分子分母各是一个约定。MFU（model FLOPs utilization）定义为
 
 $$
 \mathrm{MFU} = \frac{\text{有效吞吐（FLOP/s）}}{\text{硬件峰值（FLOP/s）}} = \frac{6N \cdot \text{每 GPU 每秒 token 数}}{P_{\mathrm{peak}}} \qquad (2)
 $$
 
-**符号**：分子按模型 FLOPs 口径计：每 token $6N$（dense；MoE 换 $N_{\mathrm{act}}$，models 1.2 式 (5)），不含重计算多付的前向。这里有一个直接的后果：full checkpoint 下硬件实际执行约 $8N$/token，而 MFU 分子仍记 $6N$——开重算时 MFU 系统性低估硬件占用，差额恰为那 1/3。分母取所用精度的 dense 峰值；sparse 峰值是营销口径的 2 倍，不作分母。该口径源自 Chowdhery et al. 的用法，Llama-3 herd 论文标注沿用（[Grattafiori et al., 2024](../references.md)，[A]，§3.3.2）。
+**符号**：分子按模型 FLOPs 口径计：每 token $6N$（dense；MoE 换 $N_{\mathrm{act}}$，models 1.2 式 (5)），不含重计算多付的前向。这里有一个直接的后果：full checkpoint 下硬件实际执行约 $8N$/token，而 MFU 分子仍记 $6N$——开重算时 MFU 系统性低估硬件占用，差额恰为那 1/3。分母取所用精度的 dense 峰值；sparse 峰值是营销口径的 2 倍，不作分母。反例：拿 sparse 峰值当分母，同一训练的 MFU 会凭空放大一倍——dense 之外没有合法分母。该口径源自 Chowdhery et al. 的用法，Llama-3 herd 论文标注沿用（[Grattafiori et al., 2024](../references.md)，[A]，§3.3.2）。
 
 **Llama-3：直报 BF16 MFU**。herd 论文 Table 4 给出 405B 预训练三个阶段的逐配置数字（[A]）：
 
@@ -123,9 +125,11 @@ MFU 到 100% 之间的差额由什么构成？三家各给出一块拼图。Llam
 
 横向比较任何两家的 MFU 之前，先核对四个口径开关。第一，分子取 $N$ 还是 $N_{\mathrm{act}}$——MoE 模型两者差一个数量级以上。第二，分子含不含重算 FLOPs——full checkpoint 差 4/3。第三，分母取 dense 还是 sparse 峰值——差 2 倍。第四，分母按哪个精度档——BF16 与 FP8 再差 2 倍。此外，MFU 的时间平均窗口（逐阶段报还是全程平均、含不含 warmup 与评估间隙）各家不一。四个开关全部对齐之前，「A 家 MFU 比 B 家高 5 个点」不构成命题。
 
+> **坑**：引用别家 MFU 而不核对分母的精度档——同一训练按两档峰值算出的 MFU 差一倍。规避：先过一遍上面的四个口径开关。
+
 ## 6. DP / ZeRO / FSDP 家族决策树
 
-把式 (1) 与 §4 的账落成选择流程（仅限 DP/ZeRO/FSDP 家族；与 TP/PP/EP 的组合决策归 5.5）：
+给定模型、卡型与集群，分片选哪一档？把式 (1) 与 §4 的账落成选择流程（仅限 DP/ZeRO/FSDP 家族；与 TP/PP/EP 的组合决策归 5.5）：
 
 ```
 三态 + 激活 + buffer 装进单卡？（式 (1) 逐项代入）
@@ -156,18 +160,18 @@ MFU 到 100% 之间的差额由什么构成？三家各给出一块拼图。Llam
 | 主题 | 公式 / 数值 | 要点 |
 | --- | --- | --- |
 | 五项总账 | 式 (1) | 三态（切分深度的函数）+ 激活（ $\kappa$ 的函数）+ buffer |
-| 三态静态表 | DP $16N$；Z1 $4N{+}12N/d$；Z2 $2N{+}14N/d$；Z3 $16N/d$ | Z1/Z2 的地板是 $2N$；Z3 无地板；1T @ 1024 = 14.6 GiB（ZeRO 论文 16 TB / 1024 口径） |
+| 三态静态表（第 2 节） | DP $16N$；Z1 $4N{+}12N/d$；Z2 $2N{+}14N/d$；Z3 $16N/d$ | Z1/Z2 的地板是 $2N$；Z3 无地板；1T @ 1024 = 14.6 GiB（ZeRO 论文 16 TB / 1024 口径） |
 | 装得下判定 | §3 表（H100 80 / H200 141 / B200 192 GiB） | 70B Z3@8 对 H200 是临界算例：140.3 对 141，工程上按放不下处理 |
-| 每 step 通信 | DP/Z1/Z2 ≈ $4N$；Z3/FSDP ≈ $6N$；hybrid 跨机 $2M/d_s$ | 通信量与 $d$ 无关、计算量随 $d$ 反比降 ⇒ 扩度必撞通信；累积 ÷ $m$；fp32 归约梯度项翻倍 |
+| 每 step 通信（第 4 节） | DP/Z1/Z2 ≈ $4N$；Z3/FSDP ≈ $6N$；hybrid 跨机 $2M/d_s$ | 通信量与 $d$ 无关、计算量随 $d$ 反比降 ⇒ 扩度必撞通信；累积 ÷ $m$；fp32 归约梯度项翻倍 |
 | MFU | 式 (2)： $6N \cdot$ tok/s ÷ dense 峰值 | Llama-3 直报 38–43%（隐含峰值 ≈989–1000 TFLOPS）；DeepSeek-V3 反推 ≈35%（BF16 峰值口径）/ ≈17%（FP8 口径），论文未报；OLMo 2 不报；比较前先核对四个口径开关 |
 | 决策树 | §6 | 同能装下取浅分片；可行 $d$ 区间 = 显存下界 × 通信上界；跨家族组合归 5.5 |
 
 ## 练习
 
-1.（计算）按 §3 的方法补全 405B 的临界分析：取 126 层、hidden 16384 的几何（Llama-3 405B，herd 论文 Table 3）， $d$=64、逐层包装、 $n_{\mathrm{pf}} = 1$、micro-batch 4096×1、full checkpoint，算三态 + 暂态 + 激活的合计（GiB），判定 H100 80 GiB 与 H200 141 GiB 上的余量，并给出 $M_{\mathrm{buf}}$ 可占的上界。
-2.（推导）从 4.1 的 ring all-reduce 量与 4.2 的取回时序出发，重推 §4 表中 ZeRO-3 行的 $6N$（说明三次通信各自的内容与字节系数），并证明「ZeRO-1/2 与 DP 通信量相同」在 reduce-scatter + all-gather 分解下逐步成立。
-3.（计算）通信显性化点：7B、全局 batch 400 万 token、有效吞吐 400 TFLOPS、跨机带宽 50 GB/s，求 DP 通信恰好等于计算时间的度数 $d^{\ast}$（通信按 $4N$、与 $d$ 无关）；再把策略换成 ZeRO-3 重算 $d^{\ast}$，解释差异。
-4.（计算）MFU 口径换算：DeepSeek-V3 的每万亿 token 180K H800 GPU-hours，(a) 用 $6N_{\mathrm{act}}$ 反推每 GPU 有效 FLOPS 并对 989 TFLOPS 求 MFU；(b) 若该训练的 checkpointing 策略相当于多付 1/3 前向，硬件口径的实际占用（硬件 FLOPs ÷ 峰值）是多少？(c) 同一份数据若被某第三方按 FP8 峰值 1979 TFLOPS 引用，MFU 变成多少——说明三个数字为何都「对」。
+1.（计算 · [20]）按 §3 的方法补全 405B 的临界分析：取 126 层、hidden 16384 的几何（Llama-3 405B，herd 论文 Table 3）， $d$=64、逐层包装、 $n_{\mathrm{pf}} = 1$、micro-batch 4096×1、full checkpoint，算三态 + 暂态 + 激活的合计（GiB），判定 H100 80 GiB 与 H200 141 GiB 上的余量，并给出 $M_{\mathrm{buf}}$ 可占的上界。校验：三态项与第 2 节表中 405B 行、d=64 格一致。
+2.（计算 · [20]）通信显性化点：7B、全局 batch 400 万 token、有效吞吐 400 TFLOPS、跨机带宽 50 GB/s，求 DP 通信恰好等于计算时间的度数 $d^{\ast}$（通信按 $4N$、与 $d$ 无关）；再把策略换成 ZeRO-3 重算 $d^{\ast}$，解释差异。校验：把求得的度数代回，两档的通信时间与计算时间应分别相等。
+3.（推导 · [30]）从 4.1 的 ring all-reduce 量与 4.2 的取回时序出发，重推 §4 表中 ZeRO-3 行的 $6N$（说明三次通信各自的内容与字节系数），并证明「ZeRO-1/2 与 DP 通信量相同」在 reduce-scatter + all-gather 分解下逐步成立。校验：三项之和与第 4 节表的 ZeRO-3 行一致。
+4.（计算 · [30]）MFU 口径换算：DeepSeek-V3 的每万亿 token 180K H800 GPU-hours，(a) 用 $6N_{\mathrm{act}}$ 反推每 GPU 有效 FLOPS 并对 989 TFLOPS 求 MFU；(b) 若该训练的 checkpointing 策略相当于多付 1/3 前向，硬件口径的实际占用（硬件 FLOPs ÷ 峰值）是多少？(c) 同一份数据若被某第三方按 FP8 峰值 1979 TFLOPS 引用，MFU 变成多少——说明三个数字为何都「对」。校验：(a) 与第 5 节正文反推出的约 35% 一致；(c) 恰为 (a) 的一半。
 
 ## 参考
 

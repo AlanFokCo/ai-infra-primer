@@ -2,6 +2,8 @@
 
 > 4.1 结尾留下一笔账：DDP 每 rank 复制全量模型状态 $16N$ bytes，卡越多浪费越大。ZeRO 的回答是把三类状态按 DP 域逐阶切片：先切优化器状态（ZeRO-1），再切梯度（ZeRO-2），最后切参数（ZeRO-3）。本章逐阶推导各自省什么、付什么——ZeRO-1/2 与 DP 通信量严格相等的论证、ZeRO-3 参数取回时序与通信 ×1.5 的推导；再看 ZeRO-Offload / Infinity 怎样把状态搬去 CPU/NVMe（PCIe 下界与聚合带宽的账），ZeRO++ 怎样把跨节点通信 $3M$ 压到 $0.75M$ ；最后走读 DeepSpeed 官方实现（`deepspeed/runtime/zero/` 的文件级结构），并给一张各阶 × 模型规模 × 卡数的配置决策表 | 前置：4.1（ring all-reduce 账、DDP 冗余）、1.3（混合精度三件套）、1.4（激活账——本章不碰）、models 1.2（ $16N$ 三态分解，式 (8)） | 锚点：ZeRO 论文（[Rajbhandari et al., 2020](../references.md)，arXiv:1910.02054，[A]）、ZeRO-Offload（[Ren et al., 2021](../references.md)，arXiv:2101.06840，[A]）、ZeRO-Infinity（[Rajbhandari et al., 2021](../references.md)，arXiv:2104.07857，[A]）、ZeRO++（[Wang et al., 2023](../references.md)，arXiv:2306.10209，[A]）、deepspeedai/DeepSpeed repo（[A]，机制级走读）
 
+本章口径：参数量记 N、DP 度数记 d、Adam 混合精度（论文记 K = 12）；通信量以 bf16 元素计，显存以字节计；标尺数字与论文 Table 1 同行同值，练习与决策表换更大规模仅为外推核对。
+
 ## 1. 冗余在哪：DP 的三态全量复制
 
 bf16 混合精度 + AdamW 下，一个 rank 要常驻的模型状态有四笔：bf16 工作参数 $2N$ 、bf16 梯度 $2N$ 、fp32 master 参数 $4N$ 、fp32 一阶/二阶矩估计 $8N$ ，合计 $16N$ bytes。这个分解与逐项对账表已在 models 1.2 式 (8) 交付，本章只登记结论，不重复推导；激活是另一笔独立的账（随 $B \cdot T$ 线性），归 1.4。先对齐记号。ZeRO 论文用 $\Psi$ 记参数量、用 $K$ 记优化器状态的字节乘数：Adam 混合精度下 $K = 12$ （fp32 master 4 + 矩估计 4 + 4），模型状态总量写成 $(4 + K)\Psi = 16\Psi$ bytes。这与本书记号的 $16N$ 是同一件事（[Rajbhandari et al., 2020](../references.md)，arXiv:1910.02054，[A]，§3；论文假设 fp16 + fp32 master，bf16 字节数相同）。
@@ -21,7 +23,7 @@ ZeRO 论文还有 ZeRO-R 一支：激活切片（ $P_a$ ）、临时缓冲定容
 
 ## 2. ZeRO-1（ $P_{os}$ ）：切优化器状态
 
-**机制**（论文 §5.1）：把优化器状态（fp32 master、 $m$ 、 $v$ ）均分成 $d$ 份，rank $r$ 只存第 $r$ 份，也只负责更新对应的 $1/d$ 参数分区。一个 step：
+ZeRO-1 切哪一笔、怎么切？先答机制（论文 §5.1）：把优化器状态（fp32 master、 $m$ 、 $v$ ）均分成 $d$ 份，rank $r$ 只存第 $r$ 份，也只负责更新对应的 $1/d$ 参数分区。一个 step：
 
 1. 各 rank 本地前向反向，得到全量本地梯度（参数仍全量持有，前向反向不需要别人的状态）；
 2. 梯度归约：rank $r$ 只需要**自己分区**的平均梯度——梯度通信从 all-reduce 换成 reduce-scatter，各 rank 收到自己分区对应的平均梯度块；
@@ -36,7 +38,7 @@ $$
 
 **符号**： $12N$ = fp32 master $4N$ + 两阶矩 $8N$ （ $K = 12$ 口径）； $d$ ：DP 度数。 $d$ 大时 $`\mathrm{Mem}_1 \approx 4N`$ ，相对 DP 的 $16N$ 省 4 倍（论文 Figure 1 / §5.1 的 4x）。代入数字核对：7.5B @ $d = 64$ 时， $4 \times 7.5 + 12 \times 7.5 / 64 = 30 + 1.4 = 31.4$ GB，与论文 Table 1 逐项一致。
 
-**通信量论证（本节的关键推导）**。基线 DP 的梯度 all-reduce，在带宽最优实现（ring）下本身就是「reduce-scatter + all-gather」两段（4.1 §2.2），每 rank 合计移动 $2(d-1)/d \cdot N \approx 2N$ 个元素。ZeRO-1 的第 2 步恰好就是一次 reduce-scatter（每 rank 约 $N$ 个元素），第 4 步恰好就是一次 all-gather（同样约 $N$ 个元素）。两个集合操作与基线逐一同构，所以**每 rank 通信量严格相等**。区别只有一个：第二阶段搬运的内容从「归约后的梯度」换成了「更新后的参数」（同为 bf16、同 $N$ 个元素，字节数相同）。这就是论文 §7.2.1 的结论： $P_{os}$ 与 $P_{os+g}$ 「same communication volume as DP」。DP 用通信搬梯度，ZeRO-1 用同样的通信搬参数——通信预算一文未涨，换来的是优化器状态显存 $\div d$ 。
+**命题**（ZeRO-1 通信不变，本节的关键推导）：ZeRO-1 每 rank 每 step 的通信量与 DP 基线严格相等。**证明**（要点）：基线 DP 的梯度 all-reduce，在带宽最优实现（ring）下本身就是「reduce-scatter + all-gather」两段（4.1 §2.2），每 rank 合计移动 $2(d-1)/d \cdot N \approx 2N$ 个元素。ZeRO-1 的第 2 步恰好就是一次 reduce-scatter（每 rank 约 $N$ 个元素），第 4 步恰好就是一次 all-gather（同样约 $N$ 个元素）。两个集合操作与基线逐一同构，所以**每 rank 通信量严格相等**。区别只有一个：第二阶段搬运的内容从「归约后的梯度」换成了「更新后的参数」（同为 bf16、同 $N$ 个元素，字节数相同）。形式化留作练习 3。这就是论文 §7.2.1 的结论： $P_{os}$ 与 $P_{os+g}$ 「same communication volume as DP」。DP 用通信搬梯度，ZeRO-1 用同样的通信搬参数——通信预算一文未涨，换来的是优化器状态显存 $\div d$ 。
 
 ```
        前向反向      梯度归约             本地更新          参数同步
@@ -59,7 +61,7 @@ $$
 
 $d$ 大时 $\approx 2N$ ，相对 DP 省 8 倍（论文 §5.2 的 8x）；代入数字：7.5B @ $d = 64$ 时， $15 + 14 \times 7.5/64 = 15 + 1.64 = 16.6$ GB（Table 1 一致）。通信量与 ZeRO-1 逐项相同：reduce-scatter 照发、参数 all-gather 照发。变的只是非己梯度块的**驻留时间**，从整个 step 缩到 bucket 粒度。论文把这一步的桶化与 AMP 优化器的梯度桶化做了对照：两者都在 bucket 粒度上 overlap 通信与计算；ZeRO-2 更进一步，在分区边界上做的是归约（reduce-scatter）而非 all-reduce，归约完即释放，overlap 与省显存一举两得。一个口径注记：梯度以 bf16 还是 fp32 参与归约是另一个轴（DeepSpeed 的 `communication_data_type` 可调）；本章的账按 bf16 梯度 $2N$ 口径，与 1.3 的混合精度配置一致。
 
-ZeRO-1 与 ZeRO-2 合起来，回答了「为什么前两阶通信免费」。原因在于：DP 的一次 all-reduce 本来就可以拆成 reduce-scatter + all-gather 两次各 $N$ 元素的通信。ZeRO 做的只是让这两段通信分别落在「梯度归约」与「参数同步」两个本来就需要的事件上，并把第二段的内容换成更新后的参数。通信模式一字未改，显存已经从 $16N$ 降到 $\approx 2N$ 。
+ZeRO-1 与 ZeRO-2 合起来，回答了「为什么前两阶通信免费」（口径：与 DP 相比未新增一字节通信，显存省在驻留时间）。原因在于：DP 的一次 all-reduce 本来就可以拆成 reduce-scatter + all-gather 两次各 $N$ 元素的通信。ZeRO 做的只是让这两段通信分别落在「梯度归约」与「参数同步」两个本来就需要的事件上，并把第二段的内容换成更新后的参数。通信模式一字未改，显存已经从 $16N$ 降到 $\approx 2N$ 。
 
 ## 4. ZeRO-3（+ $P_p$ ）：再切参数
 
@@ -84,11 +86,11 @@ ZeRO-3 把参数本体也切掉：rank $r$ 只**常驻**自己的 $2N/d$ bf16 �
 
 反向为什么必须再见一次参数？1.2 的 matmul 反向给出答案：层 $Y = XW$ 的反向需要 $\partial L / \partial X = G W^{\top}$ 与 $\partial L / \partial W = X^{\top} G$ 两个同形 matmul，输入梯度的计算离不开全量 $W$ 。所以反向不是「顺手用到」参数，而是每层梯度计算的硬输入。前向用完即弃的参数，反向只能重新 gather。这就是时序图上第二次 AG 的来源，也是 ×1.5 里那 0.5 的构成。
 
-**峰值显存注记**： $16N/d$ 是常驻口径。任一时刻还要加上当前计算层的全量参数与预取中的下一层——这部分**不随 $d$ 缩**。模型存在特大单层时，这项会露头；配套的工程手段是层内再切（ZeRO-Infinity 的 memory-centric tiling，§5.2）或按参数粒度的分片管理（FSDP 的 flat-param 语义，归 4.3）。峰值公式的完整推导归 4.3 与 4.4 的总账。
+> **坑**：ZeRO-3 的 $16N/d$ 只是常驻口径——触发条件：模型存在特大单层，或预取中的层尚未释放；现象：峰值显存在常驻之上还要加当前计算层的全量参数与预取中的下一层，这部分**不随 $d$ 缩**。规避：层内再切（ZeRO-Infinity 的 memory-centric tiling，§5.2）或按参数粒度的分片管理（FSDP 的 flat-param 语义，归 4.3）；峰值公式的完整推导归 4.3 与 4.4 的总账。
 
 ### 4.2 通信量推导：×1.5 从哪来
 
-逐项数一个 step 内每 rank 的通信量（以 bf16 元素计，参数与梯度同为 $N$ 个元素）：
+**命题**（ZeRO-3 通信上限）：ZeRO-3 每 rank 的通信量不超过 DP 基线的一倍半。**证明**：逐项数一个 step 内每 rank 的通信量（以 bf16 元素计，参数与梯度同为 $N$ 个元素）：
 
 1. **前向参数 all-gather**：全模型的每个参数在前向中恰好被 gather 一次 → 约 $N$ 个元素；
 2. **反向参数 all-gather**：反向再需要一遍全量参数（逆序）→ 再 $N$ 个元素；
@@ -105,7 +107,9 @@ $$
 
 ### 4.3 为什么 ZeRO-3 只多付一次 gather
 
-把 ZeRO-3 与 ZeRO-1 摆在一起对照，1.5 的结构就透明了。ZeRO-1 的参数 all-gather 发生在 optimizer step 之后、下个前向之前：一次把 $N$ 个元素推齐，并让每 rank **常驻**全量。ZeRO-3 不付这一次，代价是前向与反向各付一次按需 gather——账面从 $2N$ 变 $3N$ ，多出来的 $N$ 就是「反向需要再看一遍参数」的价格。而前向那次 gather 与 ZeRO-1 的「更新后 all-gather」在语义上是同一件事（让每个 rank 拿到非己参数的可读副本），区别只在时机（用时取 vs 更新后推）与驻留（用完即弃 vs 常驻）。这个对照说明，ZeRO 三阶不是三个算法，而是同一条「状态随用随取」光谱上的三个档：切得越狠，常驻越少、临时通信越多。到 ZeRO-3，常驻压到 $16N/d$ ，通信停在 1.5 倍封顶。
+把 ZeRO-3 与 ZeRO-1 摆在一起对照，1.5 的结构就透明了。ZeRO-1 的参数 all-gather 发生在 optimizer step 之后、下个前向之前：一次把 $N$ 个元素推齐，并让每 rank **常驻**全量。ZeRO-3 不付这一次，代价是前向与反向各付一次按需 gather——账面从 $2N$ 变 $3N$ ，多出来的 $N$ 就是「反向需要再看一遍参数」的价格。而前向那次 gather 与 ZeRO-1 的「更新后 all-gather」在语义上是同一件事（让每个 rank 拿到非己参数的可读副本），区别只在时机（用时取 vs 更新后推）与驻留（用完即弃 vs 常驻）。到 ZeRO-3，常驻压到 $16N/d$ ，通信停在 1.5 倍封顶。
+
+> **提点**：ZeRO 三阶不是三个算法，而是同一条「状态随用随取」光谱上的三个档：切得越狠，常驻越少、临时通信越多。
 
 ### 4.4 与 gradient accumulation 的交互：参数通信恒不摊薄
 
@@ -218,13 +222,13 @@ for layer in reversed(layers):                  # 反向
 
 ## 练习
 
-1.（推导）ZeRO-1 通信不变性的形式化：设参数均分为 $d$ 个连续分区，按 4.1 式 (2) 的 ring 口径逐项展开，证明「梯度 reduce-scatter + 更新后参数 all-gather」与「梯度 all-reduce」在每 rank 通信字节数上严格相等；并说明第二段的内容从梯度换成参数为什么不改字节数（注意两者 dtype 的口径）。再答：ZeRO-2 相对 ZeRO-1 为什么不可能再降通信量？
+1.（计算 · [20]） $N = 70 \times 10^{9}$ 、bf16、Adam 混合精度（ $K = 12$ ）、 $d = 64$ ：(a) 算 DP / ZeRO-1 / ZeRO-2 / ZeRO-3 的每 rank 模型状态字节数（GB，SI 口径）；(b) 对照 80 GB 显存、激活与缓冲预留 20 GB，判定各阶可行性；(c) 同模型改 $d = 8$ 重算，从哪一阶开始撞墙？(d) 用论文 Table 1 的 7.5B @ $d = 64$ 三个数字（31.4 / 16.6 / 1.88 GB）反向验证式 (1)(2) 与 $16N/d$ 。校验：(d) 的三个数字与论文 Table 1 同行一致。
 
-2.（计算） $N = 70 \times 10^{9}$ 、bf16、Adam 混合精度（ $K = 12$ ）、 $d = 64$ ：(a) 算 DP / ZeRO-1 / ZeRO-2 / ZeRO-3 的每 rank 模型状态字节数（GB，SI 口径）；(b) 对照 80 GB 显存、激活与缓冲预留 20 GB，判定各阶可行性；(c) 同模型改 $d = 8$ 重算，从哪一阶开始撞墙？(d) 用论文 Table 1 的 7.5B @ $d = 64$ 三个数字（31.4 / 16.6 / 1.88 GB）反向验证式 (1)(2) 与 $16N/d$ 。
+2.（计算 · [20]）Offload 的 batch 下界：单 GPU、GPU↔CPU 双向带宽 32 GB/s，模型 $N = 10^{10}$ 。(a) 每 step $4N$ bytes 搬运的下限时间是多少？(b) 设该卡有效算力 $10^{14}$ FLOPS、训练每 token 约 $6N$ FLOPs，让搬运时间不超过 step 计算时间的最小每卡 batch tokens 数是多少？(c) 把这个数放进 1.5 式 (5) 的等效 batch 口径，说明 offload 为什么总与大 batch / gradient accumulation 绑定。校验：(a) 的秒数与正文 PCIe 段的估计同值。
 
-3.（推导）ZeRO-3 的峰值显存修正：设模型最大单层参数为 $N_{\max}$ 、预取深度 1 层，论证每 rank 峰值模型状态显存约为 $16N/d + 4N_{\max}$ bytes（当前层 + 预取层的全量 bf16 参数），代入 $N = 128 \times 10^{9}$ 、 $d = 64$ 、 $N_{\max} = 3 \times 10^{8}$ 给出数值；说明为什么论文 Table 1 的 $16N/d$ 口径在大 $d$ 下仍大致正确，以及什么样的模型结构会让修正项露头。
+3.（推导 · [30]）ZeRO-1 通信不变性的形式化：设参数均分为 $d$ 个连续分区，按 4.1 式 (2) 的 ring 口径逐项展开，证明「梯度 reduce-scatter + 更新后参数 all-gather」与「梯度 all-reduce」在每 rank 通信字节数上严格相等；并说明第二段的内容从梯度换成参数为什么不改字节数（注意两者 dtype 的口径）。再答：ZeRO-2 相对 ZeRO-1 为什么不可能再降通信量？
 
-4.（计算）Offload 的 batch 下界：单 GPU、GPU↔CPU 双向带宽 32 GB/s，模型 $N = 10^{10}$ 。(a) 每 step $4N$ bytes 搬运的下限时间是多少？(b) 设该卡有效算力 $10^{14}$ FLOPS、训练每 token 约 $6N$ FLOPs，让搬运时间不超过 step 计算时间的最小每卡 batch tokens 数是多少？(c) 把这个数放进 1.5 式 (5) 的等效 batch 口径，说明 offload 为什么总与大 batch / gradient accumulation 绑定。
+4.（推导 · [30]）ZeRO-3 的峰值显存修正：设模型最大单层参数为 $N_{\max}$ 、预取深度 1 层，论证每 rank 峰值模型状态显存约为 $16N/d + 4N_{\max}$ bytes（当前层 + 预取层的全量 bf16 参数），代入 $N = 128 \times 10^{9}$ 、 $d = 64$ 、 $N_{\max} = 3 \times 10^{8}$ 给出数值；说明为什么论文 Table 1 的 $16N/d$ 口径在大 $d$ 下仍大致正确，以及什么样的模型结构会让修正项露头。
 
 ## 参考
 

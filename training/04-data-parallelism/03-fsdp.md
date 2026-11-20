@@ -4,7 +4,7 @@
 
 ## 1. 语义对齐：FSDP = ZeRO-3 的 PyTorch 实现
 
-FSDP 与 ZeRO-3 是什么关系？FSDP 论文（[Zhao et al., 2023](../references.md)，arXiv:2304.11277，[A]）§3.2.1 自己给出了对照口径：full sharding 策略在 ring 算法下的通信量是 DDP 的 1.5 倍。4.2 从 ZeRO-3 的取回时序推出的是同一个 ×1.5：前向 all-gather 一次、反向再 all-gather 一次、反向结束前 reduce-scatter 一次，共三次 $M$ 级通信，对应 DDP 的两次。两套系统实现同一算法：参数、梯度、optimizer state 三态都分片；前向用完即释放；反向重新取回再归约。差异全部在工程侧——分片粒度、通信调度、内存管理与 API 形态。本章讲的就是这些工程差异。
+FSDP 与 ZeRO-3 是什么关系？FSDP 论文（[Zhao et al., 2023](../references.md)，arXiv:2304.11277，[A]）§3.2.1 自己给出了对照口径：full sharding 策略在 ring 算法下的通信量是 DDP 的 1.5 倍。4.2 从 ZeRO-3 的取回时序推出的是同一个 ×1.5：前向 all-gather 一次、反向再 all-gather 一次、反向结束前 reduce-scatter 一次，共三次 $M$ 级通信，对应 DDP 的两次。两套系统实现同一算法：参数、梯度、optimizer state 三态都分片；前向用完即释放；反向重新取回再归约。差异全部在工程侧——分片粒度、通信调度、内存管理与 API 形态。本章讲的就是这些工程差异。本章口径：数字实例统一取 7B 模型、bf16 参数与梯度；用到其他口径时随文声明。
 
 语义对齐可以精确到配置项：FSDP1 用 `ShardingStrategy` 枚举表达切分深度；FSDP2 把它折叠成 `fully_shard` 的一个参数 `reshard_after_forward`；DeepSpeed 侧的对应物是 ZeRO 的阶。映射表如下（出自 TorchTitan 仓库的 FSDP 迁移文档 `torchtitan/distributed/FSDP.md`，[PyTorch, pytorch/torchtitan repo](../references.md)，教学参照 + 官方实现）：
 
@@ -18,19 +18,25 @@ FSDP 与 ZeRO-3 是什么关系？FSDP 论文（[Zhao et al., 2023](../reference
 
 表中第二行有个要点。 `reshard_after_forward=False` 时，参数在前向结束后保持全量驻留，反向就不必再 all-gather 一次。通信退回 $2\Psi$，与 DDP 同量级；代价是参数显存一点不省。Llama-3 405B 的 FSDP 用的正是这一档：分片 optimizer 态与梯度，但参数不在前向后重分片——原文「model shards we do not reshard after forward computation to avoid an extra all-gather communication during backward passes」（[Grattafiori et al., 2024](../references.md)，arXiv:2407.21783，[A]，§3.3.2）。分片深度换通信量，这条权衡从论文配置表一路延伸到生产配置。
 
-分片范围用一个变量统一表达：sharding factor $F$，即分片组的大小。 $F = 1$ 时退化为全复制——梯度只做 all-reduce，就是 DDP。 $F$ 等于全局度数时是全分片。介于两者之间叫 hybrid sharding：参数在大小为 $F$ 的组内分片，在 $W/F$ 个组之间复制。梯度归约也分两步走：先在分片组内 reduce-scatter，再在复制组间 all-reduce 分片后的梯度；结合律保证两步合起来等价于一次全局归约。把分片组收进节点内之后，跨机流量就有一笔明确的账。设模型大小 $M$（元素数口径）、全局度数 $W$、分片组大小 $G$，论文给出每 GPU 的跨机流量为
+分片范围用一个变量统一表达：sharding factor $F$，即分片组的大小。 $F = 1$ 时退化为全复制——梯度只做 all-reduce，就是 DDP。 $F$ 等于全局度数时是全分片。介于两者之间叫 hybrid sharding：参数在大小为 $F$ 的组内分片，在 $W/F$ 个组之间复制。梯度归约也分两步走：先在分片组内 reduce-scatter，再在复制组间 all-reduce 分片后的梯度。
+
+**命题**（两阶段归约等价）：先分片组内 reduce-scatter、再复制组间 all-reduce 分片梯度，与一次全局归约的结果相同。**证明**（要点）：全局求和按分片组做加法分解，结合律直接给出；通信路径的差别不改写数值。
+
+把分片组收进节点内之后，跨机流量就有一笔明确的账。设模型大小 $M$（元素数口径）、全局度数 $W$、分片组大小 $G$，论文给出每 GPU 的跨机流量为
 
 $$
 2 M \thinspace \frac{W - 1}{G \thinspace W} \qquad (1)
 $$
 
-**符号**： $W$：全局并行度数（本书其余章记 $d$，此处保留论文记号以便对照）； $G$：分片组大小（同前述 $F$）； $M$：参数量。对照项：全复制的跨机流量是 $2M(W-1)/W$，全分片是 $3M(W-1)/W$。全分片的总流量更高，但 hybrid 形态的跨机流量反而更低，约为全复制的 $1/G$——因为 all-gather 与 reduce-scatter 都留在节点内走 NVLink，跨机只剩复制组的 all-reduce（量级 $2M/G$）。这就是「分片组贴节点边界」这条放置规则的算术依据（论文 §3.2.2）。本书全书约定 DP 度数为 $d$；式 (1) 在其余章节出现时，读作 $W \to d$、 $G \to d_s$。
+**符号**： $W$：全局并行度数（本书其余章记 $d$，此处保留论文记号以便对照）； $G$：分片组大小（同前述 $F$）； $M$：参数量。对照项：全复制的跨机流量是 $2M(W-1)/W$，全分片是 $3M(W-1)/W$。全分片的总流量更高，但 hybrid 形态的跨机流量反而更低，约为全复制的 $1/G$——因为 all-gather 与 reduce-scatter 都留在节点内走 NVLink，跨机只剩复制组的 all-reduce（量级 $2M/G$）。这就是「分片组贴节点边界」这条放置规则的算术依据（论文 §3.2.2）。代入一个数：分片组 8 卡（一个节点）、全局 512 卡时，跨机流量降到全复制的约 1/8；总流量不变，只是换了位置。本书全书约定 DP 度数为 $d$；式 (1) 在其余章节出现时，读作 $W \to d$、 $G \to d_s$。
 
 ## 2. FlatParameter：FSDP1 的分片粒度
 
 FSDP1 的通信单元不是单个 `nn.Parameter`，而是一个 FSDP unit（一组子模块）的全部参数揉成的一个一维张量。揉法分三步：各参数先 flatten，再 concat，右端补零到能被分片度数整除；然后切成等长的 $F$ 块，每 rank 持有一块。这就是论文 §3.2 的 flatten-concat-chunk 算法；实现在 `torch/distributed/fsdp/_flat_param.py` 的 `FlatParameter` 与 `FlatParamHandle`（路径核实于 2026-11-17）。padding 的上界是 $F-1$ 个元素，可忽略。梯度继承同一套 unsharded/sharded 形状，原参数的存储由 FlatParameter 持有。
 
-为什么不干脆让每个参数自己成为一个通信单元？论文 §3 的实测给了硬数字：固定总通信量约 $2^{30}$ 个 fp32 元素，改变单次 all-gather 的大小——单次量跌破 33M 元素后，总通信时间开始快速上升。原因在集合通信的启动与延迟项：消息太小，固定开销摊不薄。把一层的十几个参数合成一个 FlatParameter，集合通信次数从 $O(\text{参数个数})$ 降到 $O(\text{unit 数})$，每次通信的消息就足够大。「flat」的全部理由在这里：不是数学需要，是 NCCL 的粒度-效率曲线需要。
+为什么不干脆让每个参数自己成为一个通信单元？论文 §3 的实测给了硬数字：固定总通信量约 $2^{30}$ 个 fp32 元素，改变单次 all-gather 的大小——单次量跌破 33M 元素后，总通信时间开始快速上升。原因在集合通信的启动与延迟项（口径：指每次集合通信的固定成本，与消息字节数无关的部分）：消息太小，固定开销摊不薄。把一层的十几个参数合成一个 FlatParameter，集合通信次数从 $O(\text{参数个数})$ 降到 $O(\text{unit 数})$，每次通信的消息就足够大。
+
+> **提点**：「flat」的理由不在数学，在 NCCL 的粒度-效率曲线——消息越大，启动与延迟的固定成本摊得越薄。删掉这条，分片语义一个字不变，变的只有吞吐。
 
 粒度还是显存旋钮，方向相反：unit 切得越细，unshard 暂态越小（§3），但集合通信次数越多、吞吐越差。论文称之为 FSDP 的 memory-throughput trade-off；控制手段就是用户怎么把子模块划成 unit。FSDP1 的旋钮是 `auto_wrap_policy`，例如按模块类型把每个 transformer block 包成一个 unit，实现见 `torch/distributed/fsdp/_wrap_utils.py` 与 `wrap.py`。FSDP2 删掉了这个包装层（它不是 wrapper，见 §5）：「逐 block 调一次 `fully_shard`」就是 auto_wrap 的全部语义，策略退回为用户代码里的一个 for 循环。
 
@@ -38,7 +44,7 @@ FlatParameter 的代价留到 §5 结算，这里先记两条。第一，单个�
 
 ## 3. unshard 时序与峰值显存（关键推导）
 
-FULL_SHARD 下，每个 FSDP unit 的参数在一个 step 里经历同一条生命周期。把 4.2 的 ZeRO-3 取回时序搬到「逐 unit」粒度，unit $\ell$ 的状态机如下：
+单卡峰值显存出现在一个 step 的哪一刻？答案藏在每个 FSDP unit 的参数生命周期里。路线：先把一个 unit 的参数生命周期逐拍排开（时序图），再把峰值时刻显存里的全部占用按「常驻 + 暂态」两笔加总——关键一步是认出峰值出现在反向途中。所谓常驻，是指在整个 step 内不变的占用；所谓暂态，是指只在某个区间存在、用完即释放的占用。FULL_SHARD 下，每个 FSDP unit 的参数在一个 step 里经历同一条生命周期。把 4.2 的 ZeRO-3 取回时序搬到「逐 unit」粒度，unit $\ell$ 的状态机如下：
 
 ```
                  常驻（全 step）：分片参数 2N/d + 分片梯度 2N/d + optimizer 态 12N/d
@@ -72,11 +78,13 @@ CPU offload 是式 (2) 的另一个变体：分片参数常驻 CPU 内存，unsh
 
 **前向的发行速度障碍**。eager 模式的 host 开销不小，CPU 逐个 unit 发 all-gather 的速度可能赶不上 GPU 消费的速度。对静态图，FSDP 允许沿用上一 iteration 的前向顺序，提前显式预取下一个 all-gather（forward prefetching）。
 
-FSDP2 在这两处都收紧了口径（迁移文档）。反向 prefetch 不再是选项：`BACKWARD_PRE` 被固定为唯一行为，因为 `BACKWARD_POST` 在嵌套模块情形会错误预取（文档注记）。前向 prefetch 在迁移文档成文时标注为「under discussion」，以当前实现为准。把「正确但只有专家会开的开关」变成「唯一路径」，是 FSDP2 整体设计的缩影。
+FSDP2 在这两处都收紧了口径（迁移文档）。反向 prefetch 不再是选项：`BACKWARD_PRE` 被固定为唯一行为，因为 `BACKWARD_POST` 在嵌套模块情形会错误预取（文档注记）。前向 prefetch 在迁移文档成文时标注为「under discussion」，以当前实现为准。
+
+> **提点**：把「正确但只有专家会开的开关」变成「唯一路径」，是 FSDP2 整体设计的缩影——API 表面积缩小，正确性不再依赖用户记得开哪个开关。
 
 ## 5. FSDP2：per-param DTensor 的重写
 
-FSDP2 的官方说明在 pytorch/torchtitan repo 的 `torchtitan/distributed/FSDP.md`（教学参照 + 官方实现；FSDP2 无独立论文）。重写动机落在 FlatParameter 上：参数揉成一团之后，逐参数行为（冻结、精度转换）难以表达，组合性差；state dict 逻辑膨胀且需要额外通信。重写后的语义变化逐条如下：
+FSDP2 为什么要把 FlatParameter 拆掉重写？官方说明在 pytorch/torchtitan repo 的 `torchtitan/distributed/FSDP.md`（教学参照 + 官方实现；FSDP2 无独立论文），动机落在 FlatParameter 上：参数揉成一团之后，逐参数行为（冻结、精度转换）难以表达，组合性差；state dict 逻辑膨胀且需要额外通信。重写后的语义变化逐条如下：
 
 - **分片表示**：每个 `nn.Parameter` 独立成为一个 DTensor（distributed tensor），沿 dim-0 分片，不再有 FlatParameter。DTensor 的意思是：张量逻辑上完整，物理上按维度切到多卡。`model.named_parameters()` 返回的名字不变，optimizer 与梯度裁剪看到的都是 DTensor——`nn.utils.clip_grad_norm_` 直接可用；FSDP1 则必须用专门的 `FSDP.clip_grad_norm_()` 才能算分片范数。
 - **state dict 免通信**：`model.state_dict()` 直接返回分片的 DTensor 字典，不触发集合通信（FSDP1 默认 full state dict、需 all-gather）；checkpoint 的存取与并行度解耦因此落在 DTensor 层（分布式 checkpoint 归 7.4）。
@@ -90,13 +98,15 @@ FSDP2 的官方说明在 pytorch/torchtitan repo 的 `torchtitan/distributed/FSD
 
 ## 6. 与 DDP 的 API 兼容面
 
-FSDP1 的 `FullyShardedDataParallel` 与 DDP（4.1）同为 nn.Module wrapper：包一层就完成并行化，构造参数换成 sharding 策略、auto wrap、mixed precision 等。FSDP2 连 wrapper 都不是，`fully_shard` 只是模块级标注。但「模型代码零改动、外层加并行」的 DDP 体验仍然保留，靠两点：逐 block 调用不改动模块源码；根模块再调一次 `fully_shard`，兜住 block 之外的参数（embedding、输出头、norm——凡是没有被内层 `fully_shard` 认领的参数，都归根模块的通信组）。
+换成 FSDP 之后，原来 DDP 的用法还成立吗？FSDP1 的 `FullyShardedDataParallel` 与 DDP（4.1）同为 nn.Module wrapper：包一层就完成并行化，构造参数换成 sharding 策略、auto wrap、mixed precision 等。FSDP2 连 wrapper 都不是，`fully_shard` 只是模块级标注。但「模型代码零改动、外层加并行」的 DDP 体验仍然保留，靠两点：逐 block 调用不改动模块源码；根模块再调一次 `fully_shard`，兜住 block 之外的参数（embedding、输出头、norm——凡是没有被内层 `fully_shard` 认领的参数，都归根模块的通信组）。
 
 两处不兼容必须知道。第一，FSDP1 的 FlatParameter 会把参数改名（`flat_param`）：不经过 `state_dict_type` 转换，checkpoint 与非 FSDP 代码互不相认。FSDP2 不改名，state dict 直接是分片形态，这一类问题随之消失；代价是下游（推理侧加载、部分微调工具）必须认识 DTensor，或者用 `full_tensor()` 收拢。第二，分片语义对 optimizer 有硬约束：optimizer 必须在 `fully_shard` 之后构造，因为它拿到的是分片后的参数/DTensor。先建 optimizer 再分片，optimizer state 会按全量参数分配，分片失效。这条顺序约束在两个版本里都存在——它是「分片改写了参数身份」的直接后果。
 
+> **坑**：先构造 optimizer、后调 `fully_shard`——optimizer state 按全量参数分配，分片静默失效，不显式报错。规避：全部 `fully_shard` 调用完成之后再建 optimizer。
+
 ## 7. 代码走读：`_fully_shard/` 与 TorchTitan 接线
 
-FSDP2 的实现集中在 pytorch/pytorch repo 的 `torch/distributed/fsdp/_fully_shard/`（[PyTorch, pytorch/pytorch repo](../references.md)，教学参照 + 官方实现；以下路径与符号名核实于 2026-11-17，经 GitHub contents API）：
+官方实现的代码长什么样？FSDP2 的实现集中在 pytorch/pytorch repo 的 `torch/distributed/fsdp/_fully_shard/`（[PyTorch, pytorch/pytorch repo](../references.md)，教学参照 + 官方实现；以下路径与符号名核实于 2026-11-17，经 GitHub contents API）：
 
 - `_fully_shard.py`：`fully_shard` 入口，签名含 `mesh`、`reshard_after_forward: bool | int | None`、`shard_placement_fn`、`mp_policy`、`offload_policy`、`ignored_params`；另有 `FSDPModule`（动态换类的注入侧）与 `UnshardHandle`（手动 unshard 的句柄）。docstring 原文即本章 §3 的时序：初始化分片 → forward pre-hook all-gather → forward hook 释放（若 reshard）→ backward hook 再 all-gather、用后释放参数并 reduce-scatter 梯度。
 - `_fsdp_param.py`：`FSDPParam`，单个参数的分片视图，持有分片 DTensor 与 unsharded 形状的元数据。`alloc_storage` / `free_storage` 是 §5 说的「确定性显存管理」的落点：unsharded 存储显式分配、显式释放，不依赖 `recordStream` 的隐式生命周期。
@@ -136,20 +146,20 @@ for x, y in loader:
 
 | 主题 | 公式 / 口径 | 要点 |
 | --- | --- | --- |
-| 语义对齐 | FSDP full shard = ZeRO-3，通信 ×1.5（两实现同源） | 策略映射表：`reshard_after_forward` 三档 ↔ FSDP1 枚举 ↔ ZeRO 阶 |
-| FlatParameter | flatten-concat-chunk，padding $\le F-1$ | 合并通信应对 33M 元素效率悬崖；粒度 = 显存-吞吐旋钮 |
+| 语义对齐 | FSDP full shard = ZeRO-3，通信 ×1.5（两实现同源） | 策略映射表：`reshard_after_forward` 三档 ↔ FSDP1 枚举 ↔ ZeRO 阶（第 1 节） |
+| FlatParameter | flatten-concat-chunk，padding $\le F-1$ | 合并通信应对 33M 元素效率悬崖；粒度 = 显存-吞吐旋钮（第 2 节） |
 | 峰值显存 | 式 (2)： $16N/d + 2P_u(2+n_{\mathrm{pf}}) + M_{\mathrm{act}} + M_{\mathrm{buf}}$ | 常驻 ÷ $d$，暂态由 unit 粒度与 prefetch 深度决定 |
-| prefetch | 反向：先 AG( $\ell-1$ ) 后 RS( $\ell$ ) | 单 NCCL 流的排序障碍；顺序 = 前向序的逆，逐 iteration 现记；FSDP2 固定 BACKWARD_PRE |
-| FSDP2 | per-param DTensor（dim-0） | 无 FlatParameter；state dict 免通信；无 `recordStream`、无 CPU 同步；7B/8×H100 峰值 −7%（迁移文档口径） |
-| 混合精度 | `MixedPrecisionPolicy` 四字段 | 存原 dtype、算 `param_dtype`、归约 `reduce_dtype`；后者改梯度通信字节系数 |
-| 兼容面 | optimizer 须在分片后构造 | FSDP2 非 wrapper（`@contract` 换类）；`clip_grad_norm_` 直接吃 DTensor |
+| prefetch | 反向：先 AG( $\ell-1$ ) 后 RS( $\ell$ )（第 4 节） | 单 NCCL 流的排序障碍；顺序 = 前向序的逆，逐 iteration 现记；FSDP2 固定 BACKWARD_PRE |
+| FSDP2 | per-param DTensor（dim-0）（第 5 节） | 无 FlatParameter；state dict 免通信；无 `recordStream`、无 CPU 同步；7B/8×H100 峰值 −7%（迁移文档口径） |
+| 混合精度 | `MixedPrecisionPolicy` 四字段（第 5 节） | 存原 dtype、算 `param_dtype`、归约 `reduce_dtype`；后者改梯度通信字节系数 |
+| 兼容面 | optimizer 须在分片后构造（第 6 节） | FSDP2 非 wrapper（`@contract` 换类）；`clip_grad_norm_` 直接吃 DTensor |
 
 ## 练习
 
-1.（推导）补全式 (2) 的暂态项：按 §3 时序逐拍列出反向经过 unit $\ell$ 时显存里的全部参数/梯度张量（含相邻 unit 的预取），验证系数 $(2 + n_{\mathrm{pf}})$；再说明若 `reshard_after_forward=False`，式 (2) 的哪几项如何变化，由此解释 Llama-3 配置的显存-通信取舍（其 DP 组内参数全量驻留）。
-2.（计算）70B 模型、 $d = 64$、逐 block 包装（ $L = 80$）、 $n_{\mathrm{pf}} = 1$：按式 (2) 计算常驻与暂态两项（GiB），并给出 H100 80 GiB 上 $M_{\mathrm{act}} + M_{\mathrm{buf}}$ 的余量；若把包装粒度改为每 4 层一个 unit，暂态项变为多少。
-3.（推导）hybrid sharding 的跨机流量：从「分片组内完成 all-gather 与 reduce-scatter、复制组间只对分片梯度做 all-reduce」出发，推式 (1)（论文口径 $2M(W-1)/(GW)$ ），并验证 $G = 1$ 与 $G = W$ 两个端点分别回到全复制与「跨机流量趋零」的极限；说明为什么端点 $G = W$ 与全分片的总流量 $3M(W-1)/W$ 不矛盾（提示：式 (1) 计量的是跨机部分）。
-4.（代码）教学用：把 §7 的骨架改成 `reshard_after_forward=False`，在 2 卡上跑同一个 step，用 `torch.cuda.max_memory_allocated` 对照两档的峰值差，验证式 (2) 中常驻项参数从 $2N/d$ 变 $2N$ 的预测；再把 `reduce_dtype` 改为 `torch.float32`，观察梯度通信字节数的翻倍（用 `torch.profiler` 的通信算子记录）。
+1.（计算 · [10]）70B 模型、 $d = 64$、逐 block 包装（ $L = 80$）、 $n_{\mathrm{pf}} = 1$：按式 (2) 计算常驻与暂态两项（GiB），并给出 H100 80 GiB 上 $M_{\mathrm{act}} + M_{\mathrm{buf}}$ 的余量；若把包装粒度改为每 4 层一个 unit，暂态项变为多少。校验：常驻项与下一章三态静态表的 70B 行、d=64 格一致。
+2.（推导 · [20]）补全式 (2) 的暂态项：按 §3 时序逐拍列出反向经过 unit $\ell$ 时显存里的全部参数/梯度张量（含相邻 unit 的预取），验证系数 $(2 + n_{\mathrm{pf}})$；再说明若 `reshard_after_forward=False`，式 (2) 的哪几项如何变化，由此解释 Llama-3 配置的显存-通信取舍（其 DP 组内参数全量驻留）。
+3.（推导 · [30]）hybrid sharding 的跨机流量：从「分片组内完成 all-gather 与 reduce-scatter、复制组间只对分片梯度做 all-reduce」出发，推式 (1)（论文口径 $2M(W-1)/(GW)$ ），并验证 $G = 1$ 与 $G = W$ 两个端点分别回到全复制与「跨机流量趋零」的极限；说明为什么端点 $G = W$ 与全分片的总流量 $3M(W-1)/W$ 不矛盾（提示：式 (1) 计量的是跨机部分）。
+4.（代码 · [30]）教学用：先按正文峰值显存公式写下两档峰值差的预测值；再把 §7 的骨架改成 `reshard_after_forward=False`，在 2 卡上跑同一个 step，用 `torch.cuda.max_memory_allocated` 对照两档的峰值差，验证式 (2) 中常驻项参数从 $2N/d$ 变 $2N$ 的预测；再把 `reduce_dtype` 改为 `torch.float32`，观察梯度通信字节数的翻倍（用 `torch.profiler` 的通信算子记录）。校验：fp32 归约档的梯度通信字节数恰为 bf16 档的 2 倍；两档峰值差约等于参数全量与分片之差。
 
 ## 参考
 
