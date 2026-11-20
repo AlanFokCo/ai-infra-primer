@@ -4,7 +4,7 @@
 
 ## 1. mask 的数学：加性形式与 $-\infty$ 的极限语义
 
-1.1 式 (8) 把可见性压缩成一个矩阵 $M \in \lbrace0, -\infty\rbrace^{T \times T}$ ，在 softmax 之前以加法进入 score：
+「不许看未来」怎么写成数学？1.1 式 (8) 把可见性压缩成一个矩阵 $M \in \lbrace0, -\infty\rbrace^{T \times T}$ ，在 softmax 之前以加法进入 score：
 
 $$
 \alpha_{ij} = \frac{\exp\left(s_{ij} + M_{ij}\right)}{\sum_{l=1}^{T} \exp\left(s_{il} + M_{il}\right)} \qquad (1)
@@ -30,9 +30,13 @@ $$
 
 **极限语义与实现**。 $-\infty$ 是数学写法，实现里有两种等价物。一是真正的 `float("-inf")`：IEEE 语义下 $-\infty$ 减有限数仍是 $-\infty$ ， $\exp(-\infty) = 0$ 精确成立。二是一个足够大的负哨兵（ $-10^{9}$ 量级，或 dtype 最小值）。哨兵方案下 $s_{ij} + M_{ij}$ 仍是约 $-10^{9}$ 的有限数，经 2.3 式 (10) 的 max 减法后 $\exp$ 下溢到精确的 0——bf16 下 $\exp(-100)$ 已是机器 0，哨兵与真 $-\infty$ 在浮点输出上不可区分。哨兵取 dtype 最小值（bf16 / fp32 约 $-3.4 \times 10^{38}$ 、fp16 为 $-65504$ ）结论相同：有限 score 加上它仍压在 dtype 下界附近（bf16 / fp32 为 $-10^{38}$ 量级、fp16 为 $-6.6 \times 10^{4}$ 量级），max 减法后照旧下溢为 0。与真 $-\infty$ 唯一的行为差异在全掩行：哨兵方案不产 NaN，而是静默退化为均匀分布，因此更依赖对角线恒可见来防呆。max 减法本身与 mask 兼容：行最大值只可能出现在可见列（可见列有限、被掩列为 $-\infty$ ），减去它不改变任何被掩列的零值。真正的边界条件只有一个：若某行可见集为空，分母为 0、max 为 $-\infty$ ，整行产出 NaN。causal mask 的对角线恒可见（ $M_{ii} = 0$ ），每行至少看见自己，空集不会出现。2.3 §8 教学代码里 `torch.triu(..., diagonal=1)` 的偏移量 1 就是「保留下三角含对角线」的含义；偏移写错一格——对角线也被屏蔽，或向右多放一格——分别对应 NaN 与泄漏（第 7 节）。
 
+> **坑**：哨兵掩码的失效模式是静默的。触发条件：用有限大负数当哨兵，且某一行被全掩（可见集为空）；现象：不产 NaN 报错，而是悄悄退化为均匀分布——该行 attend 到全部位置，数值上完全看不出来。规避：causal mask 的对角线恒可见正是结构层的防呆；手写 mask 时，构造完检查每行可见集非空。
+
+本章口径：cache 与 FLOPs 账的实例取 8B 锚点（32 层、KV 头 8 个、head 维 128、窗口 131072）与 70B 对照，OLMo-2-7B 作 MHA 对照锚点，精度一律 bf16。练习第 1 题换 Qwen3-8B 口径，题面自带字段值。
+
 ## 2. 三种 mask ↔ 三种 objective
 
-1.1 第 7 节把训练目标统一为 $(x', M, \ell)$ 三元组： $x'$ 是实际输入、 $M$ 决定可见性、 $\ell$ 决定哪些位置计损失。三个 objective 的 mask 行并排对照（矩阵实例 $T$ = 4 已在 1.1 式 (8) 后给出，此处不重复）：
+三种 objective 的差别落在哪一维？1.1 第 7 节把训练目标统一为 $(x', M, \ell)$ 三元组： $x'$ 是实际输入、 $M$ 决定可见性、 $\ell$ 决定哪些位置计损失。三个 objective 的 mask 行并排对照（矩阵实例 $T$ = 4 已在 1.1 式 (8) 后给出，此处不重复）：
 
 | objective | $x'$ | $M$ 的结构 | 可见集 $V(i)$ | $\ell$ | 可自回归生成 |
 | --- | --- | --- | --- | --- | --- |
@@ -54,7 +58,7 @@ $$
 
 ## 3. 自回归生成：prefill 一次 + decode 循环
 
-训练时 teacher forcing 一次前向并行打全部位置（1.1 §4）；生成时未来不存在，只能串行。标准服务形态把一次生成拆成两阶段：
+生成时未来不存在，推理怎么组织？训练时 teacher forcing 一次前向并行打全部位置（1.1 §4）；生成只能串行。标准服务形态把一次生成拆成两阶段：
 
 ```
 输入：prompt token ids x_1..x_{T_p}，模型 f_θ，采样器 sample(·)
@@ -81,9 +85,11 @@ $$
 
 **符号**： $N$ ：参与 matmul 的参数量（1.2 式 (2) 口径）； $L$ ：层数； $d$ ：stream 宽度。第二步用了 $\sum_t t = T(T+1)/2$ 与 $\sum_t t^{2} = T(T+1)(2T+1)/6$ 。
 
-attention 项随 $T^{3}$ 涨。代入 Llama-3.1-8B（ $N \approx 6.98 \times 10^{9}$ 层参数口径、 $L$ = 32、 $d$ = 4096，[Llama-3.1-8B config](../references.md)，[A]）生成满窗 $T$ = 131072：attention 项约 $2.0 \times 10^{20}$ FLOPs。按 1.2 §9 推出的 $3.3 \times 10^{14}$ FLOPS 有效吞吐，这相当于单卡跑约 7 天。而第 4 节的 cache 把同一生成压到 $4.5 \times 10^{15}$ FLOPs（式 (8) 的 attention 项）。式 (5) 就是 cache 要消灭的对象。
+attention 项随 $T^{3}$ 涨。代入 Llama-3.1-8B（ $N \approx 6.98 \times 10^{9}$ 层参数口径、 $L$ = 32、 $d$ = 4096，[Llama-3.1-8B config](../references.md)，[A]）生成满窗 $T$ = 131072：attention 项约 $2.0 \times 10^{20}$ FLOPs。按 1.2 §9 推出的 $3.3 \times 10^{14}$ FLOPS 有效吞吐（口径：可持续实测吞吐而非峰值，逐卡测量方法归 gpu 维度），这相当于单卡跑约 7 天。而第 4 节的 cache 把同一生成压到 $4.5 \times 10^{15}$ FLOPs（式 (8) 的 attention 项）。式 (5) 就是 cache 要消灭的对象。
 
 ## 4. KV cache 从零推导
+
+为什么 decode 每步只需要算当前这一个 token？因为历史位置的 K/V 可以存下来反复用。本节把这句话从零推出来：先展开 decode 步的 attention，再证历史量不可变，然后回答为什么只存 K/V 不存 Q，最后给读写模式与总账。
 
 ### 4.1 decode 步 $t$ 的 attention 展开
 
@@ -176,7 +182,7 @@ mask 的偏移量值得看一眼：带 cache 的 prefill 块（chunked prefill�
 
 ## 5. cache size 公式：逐项账与实例
 
-把 §4.4 的 cache 形态数成字节。每层的 K、V 各是 $[B, H_{kv}, T, D]$ 个元素，共 $L$ 层，每元素 $b$ 字节：
+KV cache 占多少显存，由哪几个因子决定？把 §4.4 的 cache 形态数成字节。每层的 K、V 各是 $[B, H_{kv}, T, D]$ 个元素，共 $L$ 层，每元素 $b$ 字节：
 
 $$
 \mathrm{Mem}_{\mathrm{KV}} = 2 \cdot L \cdot H_{kv} \cdot d_{\mathrm{head}} \cdot T \cdot B \cdot b \text{ bytes} \qquad (9)
@@ -207,7 +213,7 @@ $$
 
 ## 6. prefill vs decode：算术强度分野与 roofline 入口
 
-1.2 §10 已把「每 token 前向 $2N$ FLOPs、权重读一遍 $2N$ bytes」放在一起；本节把它接到 prefill / decode 两阶段上，并补上 cache 项。算术强度（arithmetic intensity） $I$ = FLOPs ÷ 访存字节数。屋顶线模型（roofline model）给出的吞吐上限 = $\min($ 峰值算力 $,\ I \times$ 带宽 $)$ ，分界线（ridge point）= 峰值算力 ÷ 带宽；现代加速器的取值在 $10^{2}$ FLOP/byte 量级（逐卡数字与测量方法归 gpu 维度）。
+两个阶段，谁受算力限制、谁受带宽限制？1.2 §10 已把「每 token 前向 $2N$ FLOPs、权重读一遍 $2N$ bytes」放在一起；本节把它接到 prefill / decode 两阶段上，并补上 cache 项。算术强度（arithmetic intensity） $I$ = FLOPs ÷ 访存字节数。屋顶线模型（roofline model）给出的吞吐上限 = $\min($ 峰值算力 $,\ I \times$ 带宽 $)$ ，分界线（ridge point）= 峰值算力 ÷ 带宽；现代加速器的取值在 $10^{2}$ FLOP/byte 量级（逐卡数字与测量方法归 gpu 维度）。
 
 **prefill**： $T_p$ 个 token 一次前向，FLOPs = $2NT_p + 2LT_p^{2}d$ ；权重只从显存读一遍（ $2N$ bytes），激活读写随 $T_p$ 线性、在长 prompt 下被 matmul 摊销：
 
@@ -239,7 +245,7 @@ $B$ 小时权重项主导分母， $I \approx B$ ——这是 1.2 §10「拼命�
 
 ## 7. teacher forcing 与 causality：无泄漏论证
 
-1.1 §4 的 teacher forcing 用一次并行前向打全部 $T$ 个位置的 loss；§3 的生成是串行的。训练-推理一致性需要一个保证：并行前向的第 $t$ 个 logits 不能偷看 $x_{>t}$ 。若 $q_\theta(x_t | \cdot)$ 的条件里混进 $x_t$ 自身，loss 可以抄答案降到 0 而模型什么也没学——训练目标直接退化。
+并行打全部位置的 loss，会不会偷看未来？1.1 §4 的 teacher forcing 用一次并行前向打全部 $T$ 个位置的 loss；§3 的生成是串行的。训练-推理一致性需要一个保证：并行前向的第 $t$ 个 logits 不能偷看 $x_{>t}$ 。若 $q_\theta(x_t | \cdot)$ 的条件里混进 $x_t$ 自身，loss 可以抄答案降到 0 而模型什么也没学——训练目标直接退化。
 
 **命题（无泄漏）**。causal mask 式 (3) 下，并行前向满足：对任意 $t$ ， $z_t = f(x_{\le t})$ ，即第 $t$ 个位置的 logits 是前缀的函数；且它与串行 decode 第 $t$ 步（cache 口径）的 logits 是同一数学对象。
 
@@ -261,14 +267,14 @@ $B$ 小时权重项主导分母， $I \approx B$ ——这是 1.2 §10「拼命�
 | decode 复杂度 | $2NT + 2LT^{2}d$ ，式 (8) | 与并行前向 FLOPs 恒等；省的是重算与墙钟，不是 FLOPs |
 | cache size | $2 L H_{kv} d_{\mathrm{head}} T B b$ ，式 (9) | 8B @128K = 16 GiB；70B = 40 GiB；MHA 反事实 64 GiB；MQA（ $H_{kv}$ = 1）2 GiB |
 | 算术强度 | prefill $\approx T_p$ 式 (10)；decode 式 (11)(12) | decode $I \approx 1\text{–}2.5 \ll$ ridge ⇒ memory-bound；batch 收益被 cache 读取封顶 |
-| teacher forcing | 无泄漏命题 | 并行第 $t$ 位 logits ≡ 串行第 $t$ 步；exposure bias 另属 training |
+| teacher forcing | 无泄漏命题（第 7 节） | 并行第 $t$ 位 logits ≡ 串行第 $t$ 步；exposure bias 另属 training |
 
 ## 练习
 
-1.（推导）把 §4.2 的归纳证明补全为逐算子版本：对 (a) RMSNorm、(b) FFN、(c) 残差加、(d) 带 causal mask 的 attention，分别写出「位置 $s$ 的输出只依赖 $x_{\le s}$ 」的一步论证，并指明哪一步用到了 mask。再把 mask 换成 prefix-LM 的块状 $M$（前缀长 $p$ ），重述命题：哪些位置的 stream 在「续写区继续变长」时保持不变，哪些会变？
-2.（计算）Qwen3-8B 口径（ $L$ = 36、 $H_{kv}$ = 8、 $d_{\mathrm{head}}$ = 128、原生窗口 $T$ = 40960、bf16；参数量按 config 字段约 $8.2 \times 10^{9}$ ）：(a) $B$ = 1 满窗 cache 多少 GiB？(b) $B$ = 32 时 cache 与权重各占多少，一张 80 GB 卡能否同时装下权重与这批 cache？(c) 若该模型改用 MHA（ $H_{kv}$ = 32），(a) 的数字变多少？
-3.（计算）decode 强度的 batch 曲线：Llama-3.1-8B、 $t$ = 131072 下用式 (12) 算 $B \in \lbrace1, 4, 16, 64\rbrace$ 的 $I$ ；设 ridge point $R$ = 200 FLOP/byte，存不存在使 decode 转为 compute-bound 的 $B$ ？把 $t$ 换成 4096 重算同一组 $B$ ，结论怎么变？由此解释「凑 batch」的收益随上下文长度衰减。
-4.（代码）基于 2.3 §8 的教学 MHA 与本章 §4.4 的 cache 版 forward：(a) 组装一个两层玩具模型（ $d$ = 128、 $H$ = 4），验证「带 mask 的并行前向第 $t$ 位输出」与「带 cache 的逐 token 串行 decode 第 $t$ 步输出」allclose（fp32、容差 $10^{-5}$ ）——§7 命题的可执行形式；(b) 扫 $T \in \lbrace128, 256, 512, 1024\rbrace$ ，对朴素 decode（每步重算前缀）与 cache decode 分别计时，在 log-log 坐标下验证每步成本从随 $t^{2}$ 涨到随 $t$ 涨的斜率变化。
+1.（计算 · [20]）Qwen3-8B 口径（ $L$ = 36、 $H_{kv}$ = 8、 $d_{\mathrm{head}}$ = 128、原生窗口 $T$ = 40960、bf16；参数量按 config 字段约 $8.2 \times 10^{9}$ ）：(a) $B$ = 1 满窗 cache 多少 GiB？(b) $B$ = 32 时 cache 与权重各占多少，一张 80 GB 卡能否同时装下权重与这批 cache？(c) 若该模型改用 MHA（ $H_{kv}$ = 32），(a) 的数字变多少？校验：(a) 的总量 = 每 token 增量 × 窗口长度，增量由 config 的层数、KV 头数、head 维三个字段推出；(c) 应恰为 (a) 的 4 倍。
+2.（推导 · [30]）把 §4.2 的归纳证明补全为逐算子版本：对 (a) RMSNorm、(b) FFN、(c) 残差加、(d) 带 causal mask 的 attention，分别写出「位置 $s$ 的输出只依赖 $x_{\le s}$ 」的一步论证，并指明哪一步用到了 mask。再把 mask 换成 prefix-LM 的块状 $M$（前缀长 $p$ ），重述命题：哪些位置的 stream 在「续写区继续变长」时保持不变，哪些会变？
+3.（计算 · [30]）decode 强度的 batch 曲线：Llama-3.1-8B、 $t$ = 131072 下用式 (12) 算 $B \in \lbrace1, 4, 16, 64\rbrace$ 的 $I$ ；设 ridge point $R$ = 200 FLOP/byte，存不存在使 decode 转为 compute-bound 的 $B$ ？把 $t$ 换成 4096 重算同一组 $B$ ，结论怎么变？由此解释「凑 batch」的收益随上下文长度衰减。校验：B = 1 时退化为正文的无 batch 强度式；同一组 B 下，短窗一行的强度应整体高于满窗一行。
+4.（代码 · [30]）基于 2.3 §8 的教学 MHA 与本章 §4.4 的 cache 版 forward：(a) 组装一个两层玩具模型（ $d$ = 128、 $H$ = 4），验证「带 mask 的并行前向第 $t$ 位输出」与「带 cache 的逐 token 串行 decode 第 $t$ 步输出」allclose（fp32、容差 $10^{-5}$ ）——§7 命题的可执行形式；(b) 扫 $T \in \lbrace128, 256, 512, 1024\rbrace$ ，对朴素 decode（每步重算前缀）与 cache decode 分别计时，在 log-log 坐标下验证每步成本从随 $t^{2}$ 涨到随 $t$ 涨的斜率变化。动手前先写预测：两种 decode 的每步成本各随前缀长度怎么涨、依据是哪两条总账；实测斜率与预测不符时，检查计时是否混入了每步拼接的拷贝开销。校验：(a) 的两种执行方式在 fp32 下 allclose，容差见题面。
 
 ## 参考
 

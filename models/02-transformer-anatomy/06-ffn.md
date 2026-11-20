@@ -16,6 +16,8 @@ $$
 
 层内分工也在这里定型：attention 子层对 value 做的是凸组合（2.3 式 (2)），跨位置混合，但逐位置的产出只有加权平均一种形态；FFN 给每个位置一次独立的非线性变换，是层内逐 token 表达能力的来源。体量账 2.1 §4 已算过： $W_1$、 $W_2$ 合计 $2\thinspace d\thinspace d_{\mathrm{ff}}$，取 $d_{\mathrm{ff}} = 4d$ 即每层 $8d^{2}$，占标准形层参数 $12d^{2}$ 的 $2/3$——整机参数的大头不在 attention 而在 FFN。这 $2/3$ 买了什么，§4 的记忆视角给出一个有证据的回答。
 
+口径声明：本章的参数与 FLOPs 算账一律落在 d = 4096 的三家锚点上（OLMo-2、Qwen3、Llama 三家，字段值见对照表）；原文的 512 维工作点只在追溯 4d 惯例出处时出现。
+
 计算与内存侧的体量同样由 $d_{\mathrm{ff}}$ 决定：per-token FFN FLOPs $= 4\thinspace d\thinspace d_{\mathrm{ff}}$（标准形下 $16d^{2}$；SwiGLU 三矩阵为 $6\thinspace d\thinspace d_{\mathrm{ff}}$，见 1.2 §7）；激活账上 SwiGLU 每层每 token 要存门路、值路、乘积三份 $d_{\mathrm{ff}}$ 维向量（ $3\thinspace d_{\mathrm{ff}}$ 个元素，Llama-3.1-8B 即 43008 个，见 1.2 §8）。FFN 中间量是反向传播前显存里的大头之一，也是激活检查点（training 维度）要权衡的那笔账。
 
 shape 走读（标准形）：
@@ -36,6 +38,8 @@ FFN(x)  [B, T, d]                    ← 残差加回 stream
 现代配方对式 (1) 的两处改动构成本章主线：激活 $\sigma$ 从 ReLU 换到 SwiGLU，矩阵从两个变三个（§2–§3）；bias 从标配变没有——Llama-3.1-8B 的 FFN 三个线性层全部 bias=False（transformers repo modeling_llama.py 的 `LlamaMLP`，[HuggingFace, modeling_llama.py](../references.md)，[A]），GPT-2 的 bias=True 是老配方（[Radford et al., 2019](../references.md)，[W]）。本章以下按无 bias 的现代形书写。
 
 ## 2. 激活 I：ReLU → GELU
+
+激活函数要回答的问题：在两层投影之间放一个什么形状的非线性。先看两代标量激活——硬门 ReLU 与软门 GELU，以及后者的两个数值近似。
 
 ### 2.1 ReLU 的硬门
 
@@ -70,6 +74,8 @@ $$
 
 GPT-2 的 config 写着 activation = gelu_new（[Radford et al., 2019](../references.md)，[W]，config 口径）——HF 实现中 gelu_new 即 tanh 近似。
 
+> **坑**：复现或对照实验里把 gelu_new 当精确 GELU 用——两者是 tanh 近似与原式的关系，逐点有差、尾部可测；同一实验的两边必须用同一变体，否则差异会被误记到结构对比上。
+
 logistic 近似引出本章后半程的接口函数：
 
 $$
@@ -79,6 +85,8 @@ $$
 **符号**： $\sigma(x) = 1/(1 + e^{-x})$：sigmoid； $\beta$：门的陡度系数。对照 logistic 近似： $`\mathrm{GELU} \approx \mathrm{Swish}_{1.702}`$——两者几乎同一函数，差别只在 $\beta$。「 $x$ 乘一个 $(0,1)$ 的门」这一公共形式正是 GLU 族要推广的对象：下一步是把门从 $x$ 的逐元素函数换成另一路独立投影。
 
 ## 3. 激活 II：GLU 族与 SwiGLU
+
+能不能让「门开多大」与「读出什么」由两路独立参数分别学？GLU 族就是这条路线。本节的另一笔账是三矩阵结构下中间维怎么换算才不超预算。
 
 ### 3.1 门控乘积的结构
 
@@ -187,6 +195,8 @@ class SwiGLUFFN(nn.Module):                # 式 (6)：d → d_ff → d
 
 ## 4. FFN 作为 key-value 记忆
 
+FFN 那三分之二的层参数到底买了什么？本节给一个有证据的回答：把两层 MLP 逐隐单元展开，它就是一张键值记忆表。
+
 ### 4.1 Geva 分解：把两层 MLP 读成一张记忆表
 
 两矩阵无 bias FFN 可以逐隐单元展开。记 $W_1$ 的第 $i$ 列为 $k_i \in \mathbb{R}^{d}$、 $W_2$ 的第 $i$ 行为 $v_i \in \mathbb{R}^{d}$，则 $`(xW_1)_i = k_i \cdot x`$，矩阵乘逐列逐行展开：
@@ -216,7 +226,7 @@ $$
 \mathrm{SwiGLU}(x) = \sum_{i=1}^{d_{\mathrm{ff}}'} \underbrace{\mathrm{Swish}_{1}(g_i \cdot x)\thinspace (u_i \cdot x)}_{c_i(x)}\hspace{5mu} v_i \qquad (10)
 $$
 
-**符号**： $g_i$、 $u_i$： $W$、 $V$ 的第 $i$ 列； $v_i$： $W_2$ 的第 $i$ 行； $c_i(x)$：门与线性响应的乘积。记忆视角不被三矩阵结构破坏——「取出量」从单级匹配升级为「匹配 × 内容」两级。
+**符号**： $g_i$、 $u_i$： $W$、 $V$ 的第 $i$ 列； $v_i$： $W_2$ 的第 $i$ 行； $c_i(x)$：门与线性响应的乘积。记忆视角不被三矩阵结构破坏——「取出量」从单级匹配升级为「匹配 × 内容」两级。条目数也不随结构改变：每层仍按中间维计——本章的宽 FFN 锚点每层 14336 条、全机 458752 条。三矩阵改的是取出系数的形式，不是记忆容量。
 
 ### 4.2 证据链：稀疏激活、模式分层、value 的词表投影
 
@@ -240,16 +250,16 @@ $$
 | GELU | $x\thinspace\Phi(x)$，式 (2)(3) | $\mathrm{Bernoulli}(\Phi(x))$ 随机门的期望；唯一驻点 $`x^{*} \approx -0.75`$； $`\approx \mathrm{Swish}_{1.702}`$；GPT-2 gelu_new = tanh 近似 [W] |
 | SwiGLU | $`(\mathrm{Swish}_1(xW) \odot xV)W_2`$，式 (5)(6) | 门控三作用：数据依赖开关、双路梯度（式 (7)）、rank-1 二次型；同参同算力优于 ReLU / GELU 基线 [B] |
 | 等参数规则 | $3d\thinspace d_{\mathrm{ff}}' = 2d\thinspace d_{\mathrm{ff}}$ ⟹ $d_{\mathrm{ff}}' = 8d/3$，式 (8) | $d = 4096$ → 10922.67；参数与 FLOPs 同一条件确定；4.5 / Part 5 复用 |
-| 三家对账 | OLMo-2 11008（≈2.69d，43×256）/ Qwen3 12288（3d）/ Llama-3.1 14336（3.5d） | FFN 占层 67% / 78% / 81%；规则是起点非铁律；16384 = 两矩阵宽度直搬，被共同否决 |
+| 三家对账 | OLMo-2 11008（≈2.69d，43×256）/ Qwen3 12288（3d）/ Llama-3.1 14336（3.5d） | FFN 占层 67% / 78% / 81%；规则是起点非铁律；16384 = 两矩阵宽度直搬，被共同否决；重算见练习 2 |
 | FFN = KV 记忆 | $\mathrm{FFN}(x) = \sum_i \sigma(k_i \cdot x)\thinspace v_i$，式 (9)(10) | $d_{\mathrm{ff}} \times L$ 条参数化记忆（Llama-3.1-8B 458752 条）；稀疏激活、模式分层、value→词表分布 [B] |
 | MoE 预告 | $n$ expert、top-$`k`$ 路由 | 等 FLOPs 换容量；DeepSeek-V3：256+1、top-8、671B/37B [A] → 4.5 |
 
 ## 练习
 
-1.（推导）把式 (8) 一般化：两矩阵 FFN 中间维 $\alpha d$、GLU-FFN 中间维 $\beta d$，等参数等 FLOPs 给出 $\beta = 2\alpha/3$（验证 $\alpha = 4 \to \beta = 8/3$）。再计入 bias：两矩阵带 $b_1, b_2$、三矩阵带三个 bias 时等式怎么改？说明为什么 $d \gg 1$ 时结论不变。
-2.（计算）Qwen3-8B（ $L = 36$、 $d = 4096$、 $d_{\mathrm{ff}} = 12288$、GQA $H_{kv} = 8$）：以 $d^{2}$ 为单位算每层 attention 与 FFN 参数、FFN 占层比、层参数对 $12Ld^{2}$ 的偏差；若 $d_{\mathrm{ff}}$ 改为 11008，层参数与 FFN 占层比各变多少？
-3.（推导）(a) 从随机门定义 $\mathrm{GELU}(x) = \mathbb{E}[x \cdot m]$、 $m \sim \mathrm{Bernoulli}(\Phi(x))$ 推出式 (2)；(b) 推式 (3)，并数值验证 $`x^{*} \approx -0.75`$ 是唯一驻点（提示：分 $x \ge 0$ 与 $x < 0$ 讨论 $\Phi(x) + x\phi(x)$ 的符号）；(c) 由此解释「软门消掉硬死区」的精确含义——消掉的是梯度恒零的区间，不是梯度小的区域。
-4.（推导 + 代码）(a) 从 $\mathrm{FFN}(x) = \sigma(xW_1)W_2$ 推出式 (9)，写明 $k_i$、 $v_i$ 与两矩阵的行/列对应；(b) 基于 §3.4 的教学 SwiGLUFFN，用随机 $x$ 在 fp64 下验证式 (10)：forward 输出与显式求和 $\sum_i c_i(x)\thinspace v_i$ allclose；(c) 可选：加载 OLMo-2-7B 开放权重（[A]），取一批真实输入统计某层 $|c_i|$，画激活质量的累积分布曲线，验证 §4.2 第一条。
+1.（推导 · [20]）把式 (8) 一般化：两矩阵 FFN 中间维 $\alpha d$、GLU-FFN 中间维 $\beta d$，等参数等 FLOPs 给出 $\beta = 2\alpha/3$（验证 $\alpha = 4 \to \beta = 8/3$）。再计入 bias：两矩阵带 $b_1, b_2$、三矩阵带三个 bias 时等式怎么改？说明为什么 $d \gg 1$ 时结论不变。
+2.（计算 · [30]）先预测再算：动笔前先猜——中间维从 12288 收到 11008，FFN 占层比往哪边动、动多少个百分点？Qwen3-8B（ $L = 36$、 $d = 4096$、 $d_{\mathrm{ff}} = 12288$、GQA $H_{kv} = 8$）：以 $d^{2}$ 为单位算每层 attention 与 FFN 参数、FFN 占层比、层参数对 $12Ld^{2}$ 的偏差；若 $d_{\mathrm{ff}}$ 改为 11008，层参数与 FFN 占层比各变多少？校验：全部输入字段与 Qwen3-8B config 一致；占层比的分子分母用同一组数重算两遍应相合。
+3.（推导 · [30]）(a) 从随机门定义 $\mathrm{GELU}(x) = \mathbb{E}[x \cdot m]$、 $m \sim \mathrm{Bernoulli}(\Phi(x))$ 推出式 (2)；(b) 推式 (3)，并数值验证 $`x^{*} \approx -0.75`$ 是唯一驻点（提示：分 $x \ge 0$ 与 $x < 0$ 讨论 $\Phi(x) + x\phi(x)$ 的符号）；(c) 由此解释「软门消掉硬死区」的精确含义——消掉的是梯度恒零的区间，不是梯度小的区域。
+4.（推导 + 代码 · [30]）(a) 从 $\mathrm{FFN}(x) = \sigma(xW_1)W_2$ 推出式 (9)，写明 $k_i$、 $v_i$ 与两矩阵的行/列对应；(b) 基于 §3.4 的教学 SwiGLUFFN，用随机 $x$ 在 fp64 下验证式 (10)：forward 输出与显式求和 $\sum_i c_i(x)\thinspace v_i$ allclose；(c) 可选：加载 OLMo-2-7B 开放权重（[A]），取一批真实输入统计某层 $|c_i|$，画激活质量的累积分布曲线，验证 §4.2 第一条。校验：(b) 的 allclose 按题面 fp64 口径；(c) 的条目总数应等于中间维，本章宽 FFN 口径下全机 458752 条。
 
 ## 参考
 

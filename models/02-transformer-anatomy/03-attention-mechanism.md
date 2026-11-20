@@ -4,7 +4,7 @@
 
 ## 1. 检索直觉：argmax 不可导，softmax 可导
 
-attention 的骨架是一套按内容查表的检索结构。给定查询向量 $q$ 与 $T$ 个候选键 $k_1, \ldots, k_T$（各配一个值 $v_s$），最直接的检索是硬选择：
+查表检索怎么变成可训练、可求导的组件？attention 的骨架是一套按内容查表的检索结构。给定查询向量 $q$ 与 $T$ 个候选键 $k_1, \ldots, k_T$（各配一个值 $v_s$），最直接的检索是硬选择：
 
 $$
 j^{\ast } = \mathrm{arg\thinspace max}_{s} \hspace{5mu} \langle q, k_s \rangle, \qquad o = v_{j^{\ast }} \qquad (1)
@@ -23,6 +23,8 @@ $$
 **符号**： $\tau > 0$：温度（temperature）； $p = (p_1, \ldots, p_T) \in \Delta^{T-1}$：注意力权重（attention weights）， $\Delta^{T-1}$ 为概率单纯形（1.1 式 (1)）。
 
 两个极限把式 (1)(2) 焊在一起。 $\tau \to 0^{+}$ 时， $p$ 收敛到 argmax 上的 one-hot（并列则均分），式 (2) 退回式 (1)。 $\tau \to \infty$ 时， $p$ 趋于均匀分布，输出退化为全部 value 的平均，检索消失。中间温度的行为用三个 score 走一遍： $\langle q, k_s \rangle = (2.0, 0.5, -1.0)$、 $\tau = 1$ 时 $p = (0.786, 0.175, 0.039)$。第一名拿走约 79%，另两名仍分到非零权重， $\partial o / \partial q$ 因此处处存在且非零。softmax 就是可导的 argmax。剩下唯一的问题是 $\tau$ 取多少。第 3 节的方差推导给出答案 $\tau = \sqrt{d_k}$ ——这个答案不是调参调出来的，是算出来的。
+
+本章口径：数值算例统一取 8B 锚点的 MHA 口径——head 数 32、head 维 128、stream 宽 4096；OLMo-2-7B 同值作对照。DeepSeek-V3 只在第 5 节出现一次，作为 head 维与 stream 维解耦的反例。
 
 ## 2. QKV 投影与 scaled dot-product attention
 
@@ -63,7 +65,7 @@ score 的另一种读法值得登记： $\langle q_t, k_s \rangle = x_t^{\top} W
 
 ## 3. $\sqrt{d_k}$ 完整推导链
 
-论文对缩放的全部说明只有一句话： $d_k$ 较大时点积的量级变大，把 softmax 推进梯度极小的区域，因此除以 $\sqrt{d_k}$（[Vaswani et al., 2017](../references.md)，arXiv:1706.03762，[A]，§3.2.1）。本节把这句话展开成逐步可验的链条，分四段：方差 → 饱和 → Jacobian → 梯度消失。
+为什么除数恰好是头维的平方根？论文对缩放的全部说明只有一句话： $d_k$ 较大时点积的量级变大，把 softmax 推进梯度极小的区域，因此除以 $\sqrt{d_k}$（[Vaswani et al., 2017](../references.md)，arXiv:1706.03762，[A]，§3.2.1）。本节把这句话展开成逐步可验的链条，分四段：方差 → 饱和 → Jacobian → 梯度消失。
 
 ### 3.1 第一步： $\mathrm{Var}(q \cdot k) = d_k$
 
@@ -133,7 +135,7 @@ $$
 
 ## 4. softmax 的数值稳定：max 减法
 
-1.1 §2 留了一个兑现点：实现里先减 $\max_j z_j$ 再取 $\exp$。不变性是一行恒等式——对任意常数 $c$：
+手写 softmax 为什么会算出 NaN？1.1 §2 留了一个兑现点：实现里先减 $\max_j z_j$ 再取 $\exp$。不变性是一行恒等式——对任意常数 $c$：
 
 $$
 \mathrm{softmax}(z - c)_i = \frac{e^{z_i - c}}{\sum_j e^{z_j - c}} = \frac{e^{-c} \thinspace e^{z_i}}{e^{-c} \sum_j e^{z_j}} = \mathrm{softmax}(z)_i \qquad (10)
@@ -141,9 +143,11 @@ $$
 
 取 $c = \max_j z_j$：平移后最大 logit 为 0，全部 $e^{z_j - c} \le 1$ 不溢出，分母 $\ge 1$ 不除零。不减的代价是实打实的：fp32 与 bf16 的指数位同为 8 位、上限约 $3.4 \times 10^{38}$，而 $e^{88} \approx 1.7 \times 10^{38}$ 已经贴顶， $e^{89}$ 溢出成 inf；fp16 上限 65504， $z \approx 11.1$ 即溢出——§3.2 中未缩放 score 的一个标准差（11.3）就够。inf 经归一化成 $\inf / \inf = \mathrm{NaN}$，一步毒化整个 batch。反方向（ $z_j - c$ 很负）只是下溢到 0、丢一个本就趋零的权重，无害。生产代码在数值上更进一步：OLMo 2 的 eager attention 把 score 升到 fp32 再过 softmax（第 8 节），融合 kernel 内部同法。
 
+> **坑**：手写 attention 忘了先减最大值，是 NaN 的经典入口。触发条件：logit 超出所用 dtype 的指数上限（fp16 只有 65504，score 到十几就溢出）；现象：exp 产出 inf，归一化后 inf 除以 inf 变 NaN，一步毒化整个 batch 的梯度。规避：任何 softmax 实现都先减行最大值（上面的不变性保证数学等价），生产栈再把 score 升 fp32 过 softmax。
+
 ## 5. Multi-head attention：拆分、合并与参数账
 
-单头把 score 限制在一个 rank-$`d_k`$ 双线性型里（§2）。multi-head attention（MHA）并排 $H$ 个独立投影组，再把输出拼回 $d$ 维（[Vaswani et al., 2017](../references.md)，arXiv:1706.03762，[A]，§3.2.2）：
+一个低秩透镜看不够，怎么办？并排多摆几个。单头把 score 限制在一个 rank-$`d_k`$ 双线性型里（§2）。multi-head attention（MHA）并排 $H$ 个独立投影组，再把输出拼回 $d$ 维（[Vaswani et al., 2017](../references.md)，arXiv:1706.03762，[A]，§3.2.2）：
 
 $$
 \mathrm{head}_h = \mathrm{Attention}\left(X W_h^{Q}, X W_h^{K}, X W_h^{V}\right), \qquad \mathrm{MHA}(X) = \mathrm{concat}\left(\mathrm{head}_1, \ldots, \mathrm{head}_H\right) W^{O} \qquad (11)
@@ -172,7 +176,7 @@ Q, K, V [B, T, 4096] ──view──► [B, T, 32, 128] ──transpose──�
 
 ## 6. Permutation equivariance：attention 本身不知道顺序
 
-本节证明一个贯穿后文的结构性质：不含位置信息时，attention 对输入序列的置换是等变的——打乱输入顺序，输出原样跟着打乱，内容不变。
+把输入序列打乱顺序，输出会怎样？答案是原样跟着打乱、内容不变——本节证明这个贯穿后文的结构性质：不含位置信息时，attention 对输入序列的置换是等变的。
 
 记 $\pi$ 为 $\lbrace1, \ldots, T\rbrace$ 的置换， $P_\pi \in \lbrace0, 1\rbrace^{T \times T}$ 为对应的置换矩阵（permutation matrix）， $`(P_\pi)_{ij} = 1 \Leftrightarrow j = \pi(i)`$，即 $`(P_\pi X)_{i,:} = X_{\pi(i),:}`$（第 $i$ 行取原第 $\pi(i)$ 行）。置换矩阵正交： $P_\pi^{\top} P_\pi = I$。
 
@@ -206,7 +210,7 @@ $$
 
 ## 7. 复杂度账：FLOPs 两项与 $O(T^{2})$ 内存
 
-逐层、逐序列（ $B$ = 1）、MHA 标准形（ $H d_k = d$），按 1.2 的 $2mnk$ 口径：
+一层 attention 花多少 FLOPs、占多少内存？逐层、逐序列（ $B$ = 1）、MHA 标准形（ $H d_k = d$），按 1.2 的 $2mnk$ 口径：
 
 - **投影项**（随 $T$ 线性）： $W_q, W_k, W_v, W_o$ 四次 $[T, d] \times [d, d]$ matmul，各 $2Td^{2}$，合计 $8Td^{2}$——这笔进 1.2 的 $2N$ 参数账。
 - **attention 本体项**（随 $T$ 平方）： $QK^{\top}$ 每头 $2T^{2} d_k$、 $H$ 头合计 $2T^{2} d$； $PV$ 同额。full（双向）共 $4T^{2} d$；causal 只需下三角、减半为 $2T^{2} d$（即 2.1 §5 三指标表的那一行、1.2 式 (6) 的单层口径）。
@@ -221,7 +225,7 @@ $$
 
 两项的交叉点：causal 口径 $2T^{2}d = 8Td^{2}$ 得 $T = 4d$；full 口径得 $T = 2d$。 $d$ = 4096 时分别为 16384 与 8192。现代训练序列长度（数万）已越过交叉点：长序列 regime 下 attention 本体主导每层 FLOPs，且占比随 $T$ 增长。代入 Llama-3.1-8B 口径验证： $T$ = 4096 时本体 $1.4 \times 10^{11}$ vs 投影 $5.5 \times 10^{11}$（本体占 20%）； $T$ = 131072 时本体 $1.4 \times 10^{14}$ vs 投影 $1.8 \times 10^{13}$（本体 89%）。这是 Part 4 全部省算工作的瞄准点（4.1 精确加速、4.2 稀疏、4.3 线性化）。注意与 2.1 §5 的 $T = d$ 交叉点区分：那是 attention 与 recurrent 两种层型的对比，此处是 attention 内部两项的对比。
 
-softmax 自身的逐元素开销（exp、归一化）为每头 $O(T^{2})$，相对 matmul 项是低阶；但它的内存不是低阶：
+softmax 自身的逐元素开销（口径：exp 与归一化这类逐元素运算的 FLOPs 与访存，不含 matmul）为每头 $O(T^{2})$，相对 matmul 项是低阶；但它的内存不是低阶：
 
 **内存账（ $O(T^{2})$ 的物化形态）**。朴素实现把 scores 与概率矩阵各存一份 $[B, H, T, T]$，反向传播要用。bf16（2 字节 / 元素）下单层单序列共 $4 H T^{2}$ 字节。代入 $H$ = 32：
 
@@ -235,7 +239,7 @@ softmax 自身的逐元素开销（exp、归一化）为每头 $O(T^{2})$，相�
 
 ## 8. 手写实现与 F.scaled_dot_product_attention 对照
 
-教学版（教学用，非优化实现：显式物化 $[B,H,T,T]$ 两张矩阵，无 kernel 融合）：
+这套公式写成代码是什么样？先看教学版（教学用，非优化实现：显式物化 $[B,H,T,T]$ 两张矩阵，无 kernel 融合）：
 
 ```python
 import torch
@@ -301,15 +305,15 @@ assert torch.allclose(mha(x), o_ref, atol=1e-5, rtol=1e-5)  # 容差口径：CPU
 | $\sqrt{d_k}$ 链 | $\mathrm{Var}(q \cdot k) = d_k$（式 (5)–(7)）→ 饱和（ $d_k$ = 128、 $T$ = 4096 时 $p_{\max} \approx 0.8\text{–}0.94$，中位 key 权重 $\sim 10^{-18}$）→ $J = \mathrm{diag}(p) - pp^{\top}$（式 (8)）→ $\partial L / \partial z_j = p_j (g_j - \bar{g})$（式 (9)） | 假设 (A1) 是初始化口径；幂次 $1/2$ 唯一；训练中 logit 增长归 2.7 |
 | 数值稳定 | max 减法不变性，式 (10) | fp32/bf16 在 $z \approx 88$ 溢出、fp16 在 $z \approx 11$ 溢出；生产侧 fp32 softmax |
 | multi-head | 式 (11)；参数 $4d^{2}$ 与 $H$ 无关 | $H$ 个 rank-$`d_k`$ 透镜并行；scores 内存 $\propto H$ |
-| 置换等变 | $\mathrm{Attention}(P_\pi Q, P_\pi K, P_\pi V) = P_\pi \thinspace \mathrm{Attention}(Q, K, V)$ | 无位置信息的整机等变 ⇒ 位置编码必要 → 2.5 |
+| 置换等变 | $\mathrm{Attention}(P_\pi Q, P_\pi K, P_\pi V) = P_\pi \thinspace \mathrm{Attention}(Q, K, V)$ | 无位置信息的整机等变 ⇒ 位置编码必要（第 6 节，证明目标见练习 2）→ 2.5 |
 | 复杂度 | $8Td^{2} + 2T^{2}d$（causal），式 (12)；scores+probs $4HT^{2}$ 字节 | 交叉点 $T = 4d$； $T$ = 131072 时单层 2 TiB → FlashAttention（4.1） |
 
 ## 练习
 
-1.（推导）(A1) 的相关推广：设 $(q_i, k_i)$ 跨 $i$ 独立、同分布为零均值联合高斯， $\mathbb{E}[q_i^{2}] = \mathbb{E}[k_i^{2}] = 1$， $\mathbb{E}[q_i k_i] = \rho$。用 Isserlis 公式（二元高斯四阶矩 $\mathbb{E}[q^{2} k^{2}] = 1 + 2\rho^{2}$）证明 $\mathbb{E}[q \cdot k] = d_k \rho$、 $\mathrm{Var}(q \cdot k) = d_k (1 + \rho^{2})$。据此说明：(a) 方差量级仍是 $\Theta(d_k)$， $\sqrt{d_k}$ 的幂次结论不变；(b) 均值 $d_k \rho$ 随 $(t, s)$ 对而异、不是行内公共平移——这正是训练要塑造的结构。
-2.（推导）(a) 补全第 6 节第二步的引理：对任意 $S \in \mathbb{R}^{T \times T}$ 与置换矩阵 $P_\pi$， $\mathrm{softmax}(P_\pi S P_\pi^{\top}) = P_\pi \thinspace \mathrm{softmax}(S) \thinspace P_\pi^{\top}$（逐元素验证分母与列序无关）。(b) 证明 multi-head（式 (11) 的 concat + $W^{O}$）保持置换等变。(c) 举反例说明加 causal mask 后命题对逆序置换失效。
-3.（计算）Llama-3.1-8B 口径（ $H$ = 32、 $d_k$ = 128、 $d$ = 4096、bf16、MHA 标准形）：(a) $T$ = 32768 时单层 scores+probs 的字节数；(b) 求 causal 口径下 attention 本体 FLOPs 超过投影 FLOPs 的最小 $T$；(c) $H$ 加倍、 $d_k$ 减半（ $d$ 不变），投影 FLOPs、本体 FLOPs、scores 内存各如何变化？由此说明「head 数」这个旋钮调的到底是哪笔账。
-4.（代码）运行第 8 节教学版与 `F.scaled_dot_product_attention` 的等价性断言；固定 $d$，扫 $T \in \lbrace1024, 2048, 4096, 8192\rbrace$，用 `torch.cuda.max_memory_allocated` 记录教学版峰值显存，在 log-log 坐标下验证 $O(T^{2})$ 斜率（应接近 2），并解释 SDPA 版在同一扫描下为何近似线性。
+1.（推导 · [20]）(A1) 的相关推广：设 $(q_i, k_i)$ 跨 $i$ 独立、同分布为零均值联合高斯， $\mathbb{E}[q_i^{2}] = \mathbb{E}[k_i^{2}] = 1$， $\mathbb{E}[q_i k_i] = \rho$。用 Isserlis 公式（二元高斯四阶矩 $\mathbb{E}[q^{2} k^{2}] = 1 + 2\rho^{2}$）证明 $\mathbb{E}[q \cdot k] = d_k \rho$、 $\mathrm{Var}(q \cdot k) = d_k (1 + \rho^{2})$。据此说明：(a) 方差量级仍是 $\Theta(d_k)$， $\sqrt{d_k}$ 的幂次结论不变；(b) 均值 $d_k \rho$ 随 $(t, s)$ 对而异、不是行内公共平移——这正是训练要塑造的结构。
+2.（推导 · [30]）(a) 补全第 6 节第二步的引理：对任意 $S \in \mathbb{R}^{T \times T}$ 与置换矩阵 $P_\pi$， $\mathrm{softmax}(P_\pi S P_\pi^{\top}) = P_\pi \thinspace \mathrm{softmax}(S) \thinspace P_\pi^{\top}$（逐元素验证分母与列序无关）。(b) 证明 multi-head（式 (11) 的 concat + $W^{O}$）保持置换等变。(c) 举反例说明加 causal mask 后命题对逆序置换失效。
+3.（计算 · [30]）Llama-3.1-8B 口径（ $H$ = 32、 $d_k$ = 128、 $d$ = 4096、bf16、MHA 标准形）：(a) $T$ = 32768 时单层 scores+probs 的字节数；(b) 求 causal 口径下 attention 本体 FLOPs 超过投影 FLOPs 的最小 $T$；(c) $H$ 加倍、 $d_k$ 减半（ $d$ 不变），投影 FLOPs、本体 FLOPs、scores 内存各如何变化？由此说明「head 数」这个旋钮调的到底是哪笔账。校验：(a) 的结果与第 7 节内存表的 32768 行一致；(b) 的答案就是正文给出的交叉点口径。
+4.（代码 · [30]）运行第 8 节教学版与 `F.scaled_dot_product_attention` 的等价性断言；固定 $d$，扫 $T \in \lbrace1024, 2048, 4096, 8192\rbrace$，用 `torch.cuda.max_memory_allocated` 记录教学版峰值显存，在 log-log 坐标下验证 $O(T^{2})$ 斜率（应接近 2），并解释 SDPA 版在同一扫描下为何近似线性。动手前先写预测：教学版峰值随序列长度的斜率与 SDPA 版各是多少、依据是哪笔账；实测与预测不符时，指出是哪一项假设没成立。校验：等价性断言在 fp32 下通过；教学版 log-log 斜率接近 2。
 
 ## 参考
 

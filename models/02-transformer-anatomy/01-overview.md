@@ -6,6 +6,8 @@
 
 先看一个具体的东西：Llama-3.1-8B 的 config.json。它的有效字段约十个： $L=32$、 $d=4096$、 $H_q=32$、 $H_{kv}=8$、 $d_{\mathrm{ff}}=14336$、 $V=128256$ 等（[Llama-3.1-8B config](../references.md)，[A]）。这十个整数唯一决定了 $8.03 \times 10^{9}$ 个参数的组织方式，也唯一决定了一次 forward 的全部张量形状。本章结束时，每个字段在结构图里的位置都是确定的（第 8 节逐字段映射）。
 
+本章口径：结构图、shape 走读与参数账一律取这台 8B 机器的 config 数值，OLMo-2-7B 只作对照锚点。例外有一处：第 6 节的信息瓶颈算例取 GPT-2 词表，只为取一个中等词表量级。
+
 先把全景画出来。decoder-only 架构是一次 forward 中依次执行的 tensor 变换组合：
 
 ```
@@ -37,7 +39,7 @@ q_θ(· | x_{<t}) ∈ Δ^{V-1}     ← 1.1 式 (1) 的值域
 
 ## 2. Residual stream：形式化与总线视角
 
-现代 decoder-only 的逐层递推，用 Llama-3.1 的标准配方（RMSNorm + Pre-LN）写出；OLMo 2 的 norm 位置变体在式 (1) 之后注记：
+一层的输出如何变成下一层的输入？答案是一条逐层递推，用 Llama-3.1 的标准配方（RMSNorm + Pre-LN）写出；OLMo 2 的 norm 位置变体在式 (1) 之后注记：
 
 $$
 \begin{aligned}
@@ -70,7 +72,7 @@ $$
 
 ## 3. 一次 forward 的完整 shape 走读
 
-全书 shape 统一 $[B, T, H, D]$ 记法： $B$ = batch 中的序列数， $T$ = 序列长度， $H$ = head 数， $D$ = 每 head 维（即 1.2 的 $d_{\mathrm{head}}$ ）。MHA / GQA 标准形下 $d = H_q D$ 。逐行走读（Llama-3.1-8B 数值： $d=4096$、 $H_q=32$、 $H_{kv}=8$、 $D=128$、 $d_{\mathrm{ff}}=14336$、 $V=128256$）：
+一次 forward 里每个张量的形状是什么？先固定记法：全书 shape 统一 $[B, T, H, D]$ ， $B$ = batch 中的序列数， $T$ = 序列长度， $H$ = head 数， $D$ = 每 head 维（即 1.2 的 $d_{\mathrm{head}}$ ）。MHA / GQA 标准形下 $d = H_q D$ 。逐行走读（Llama-3.1-8B 数值： $d=4096$、 $H_q=32$、 $H_{kv}=8$、 $D=128$、 $d_{\mathrm{ff}}=14336$、 $V=128256$）：
 
 | 步 | 运算 | 输入 shape | 输出 shape | 数值实例 |
 | --- | --- | --- | --- | --- |
@@ -99,7 +101,7 @@ shape 注记：步 5–6 的 scores 习惯写作 $[B, H_q, T, T]$ ——head 维
 
 ## 4. 参数量标尺： $12Ld^{2}$ 推导与对账
 
-估算口径取标准形：MHA（ $H_{kv} = H_q$ ）+ 两矩阵 FFN（ $d_{\mathrm{ff}} = 4d$ ），bias 与 norm 参数为 $O(Ld)$ 低阶项忽略。逐项：
+一台机器的参数量，能不能只用层数、宽度、词表三个整数估出来？能。估算口径取标准形：MHA（ $H_{kv} = H_q$ ）+ 两矩阵 FFN（ $d_{\mathrm{ff}} = 4d$ ），bias 与 norm 参数为 $O(Ld)$ 低阶项忽略。逐项：
 
 - attention 四个投影 $W_Q, W_K, W_V, W_O \in \mathbb{R}^{d \times d}$ ：每层 $4d^{2}$ ；
 - FFN 两矩阵 $W_1 \in \mathbb{R}^{d \times 4d}$ 、 $W_2 \in \mathbb{R}^{4d \times d}$ ：每层 $8d^{2}$ 。
@@ -140,7 +142,7 @@ Llama-3.1-8B 的两处偏离一负一正：GQA 省 $1.5d^{2}$ ，宽 FFN 加 $2.
 
 ## 5. 设计约束三指标：为什么是 attention
 
-Transformer 原文用三个指标给序列建模层打分（[Vaswani et al., 2017](../references.md)，arXiv:1706.03762，[A]，Table 1；原文序列长度记 $n$ ，本书统一记 $T$ ）：
+为什么是 attention 而不是 recurrence？Transformer 原文用三个指标给序列建模层打分（[Vaswani et al., 2017](../references.md)，arXiv:1706.03762，[A]，Table 1；原文序列长度记 $n$ ，本书统一记 $T$ ）：
 
 | 指标 | self-attention | recurrent |
 | --- | --- | --- |
@@ -162,7 +164,7 @@ Transformer 原文用三个指标给序列建模层打分（[Vaswani et al., 201
 
 ## 6. Recurrence 的两个数学代价
 
-把三指标表右列展开成机制。recurrent 层
+三指标表右列是怎么来的？把该列展开成机制。recurrent 层
 
 $$
 h_t = f\left(h_{t-1}, x_t; \theta\right), \qquad h_t \in \mathbb{R}^{d_h} \qquad (5)
@@ -178,7 +180,7 @@ $$
 
 ## 7. 三种架构形态（结构侧，细节 → Part 3）
 
-同一套 residual stream + attention 组件，按可见性 mask $M$（1.1 第 7 节）与连接方式的不同，组装成三种形态：
+同一套组件能组装出几种机器？三种。按可见性 mask $M$（1.1 第 7 节）与连接方式的不同，同一套 residual stream + attention 组件组装成三种形态：
 
 ```
 encoder-only              encoder-decoder                     decoder-only
@@ -200,7 +202,7 @@ BERT 家族                 T5 / Transformer 原文（翻译）        GPT、Lla
 
 ## 8. 锚点走读：Llama-3.1-8B config.json ↔ 结构图
 
-逐字段映射（[Llama-3.1-8B config](../references.md)，[A]）：
+config.json 的每个字段对应结构图的哪一处？逐字段映射（[Llama-3.1-8B config](../references.md)，[A]）：
 
 | config 字段 | 值 | 结构图中的位置 | 本书展开 |
 | --- | --- | --- | --- |
@@ -223,18 +225,18 @@ BERT 家族                 T5 / Transformer 原文（翻译）        GPT、Lla
 | --- | --- | --- |
 | 架构二分 | attention 跨位置，其余逐位置 | 全景图的读法，式 (1) |
 | residual stream | $x$ ← $x + f(\mathrm{LN}(x))$（Pre-LN） | 只加不覆盖；展开式 $x^{(L)} = x^{(0)} + \sum a_\ell + \sum f_\ell$ 是 4.7 的前提，式 (1)(2) |
-| shape 记法 | $[B, T, H, D]$， $d = H_q D$ | 唯一 $T^{2}$ 对象：scores $[B, H_q, T, T]$ |
+| shape 记法 | $[B, T, H, D]$， $d = H_q D$ | 唯一 $T^{2}$ 对象：scores $[B, H_q, T, T]$（第 3 节） |
 | 参数量标尺 | $N \approx 12Ld^{2}$（attn $4d^{2}$ + FFN $8d^{2}$），总 $+2Vd$（untied） | Llama-3.1-8B 恰好 $13Ld^{2}$，OLMo-2-7B $12.06d^{2}$/层，式 (3)(4) |
-| 设计三指标 | attention $O(T^{2}d), O(1), O(1)$ vs recurrent $O(Td^{2}), O(T), O(T)$ | Transformer 原文 Table 1；交叉点 $T = d$ |
-| recurrence 两代价 | 关键路径长 $T$；容量 $\approx 32 d_h$ bits 对需求 $t \log_{2} V$ | 不可并行 + 信息瓶颈，式 (5) |
-| 三种形态 | encoder-only / encoder-decoder / decoder-only | mask 与连接方式的差异；细节 → Part 3 |
+| 设计三指标 | attention $O(T^{2}d), O(1), O(1)$ vs recurrent $O(Td^{2}), O(T), O(T)$ | Transformer 原文 Table 1；交叉点 $T = d$（第 5 节） |
+| recurrence 两代价 | 关键路径长 $T$；容量 $\approx 32 d_h$ bits 对需求 $t \log_{2} V$ | 不可并行 + 信息瓶颈，式 (5)（第 6 节） |
+| 三种形态 | encoder-only / encoder-decoder / decoder-only | mask 与连接方式的差异（第 7 节）；细节 → Part 3 |
 
 ## 练习
 
-1.（计算）用 OLMo-2-7B 的 config 数值（ $L=32$、 $d=4096$、 $d_{\mathrm{ff}}=11008$、MHA、 $V=100352$、untied）逐项重算每层参数与总参数，验证层参数对 $12Ld^{2}$ 的偏差在 1% 以内；再对 Llama-3.1-8B 验证层参数恰好为 $13Ld^{2}$ ，以 $d^{2}$ 为单位分解 GQA 与 $d_{\mathrm{ff}}=3.5d$ 各自的贡献（方向与大小）。
-2.（计算）设计约束第一行：固定 $d=4096$ ，求每层计算量上 self-attention（causal， $2T^{2}d$ ）追平 recurrent（ $2Td^{2}$ ）的 $T$ ；再把 recurrent 换成「隐状态维 $d_h = d/2$ 」的窄隐状态变体，交叉点怎么移动？由此说明「 $T$ 小则 recurrent 省计算」的结论对宽度假设有多敏感。
-3.（推导）从式 (1) 推出展开式 (2)，写明 $a_\ell$ 、 $f_\ell$ 的定义；据此说明：(a) 输出是 $2L+1$ 个 $d$ 维向量之和；(b) 「把第 $k$ 层 FFN 置零」等价于从和中删去一项 $f_k$ ——为什么这正对应 activation patching 的可行性（一句话，细节在 4.7）；(c) 若把 Pre-LN 换成 Post-LN（ $x$ ← $\mathrm{LN}(x + f(x))$ ），式 (2) 的纯加法展开还成立吗？给出理由。
-4.（计算 + 论证）recurrence 信息瓶颈的账： $d_h = 4096$ 、fp16 存储（16 bit/维）、 $V = 50257$（GPT-2 词表）：求使 $t \log_{2} V > 16 \thinspace d_h$ 成立的最小整数 $t$ ；指出该上界账的两个漏洞（fp16 是工程选择而非数学限制；自然语言冗余使实际熵率远低于 $\log_{2} V$ ），并说明为什么该论证仍能正确预测长上下文下的检索失败（提示：容量与 $t$ 无关这一点没有变）。
+1.（计算 · [20]）用 OLMo-2-7B 的 config 数值（ $L=32$、 $d=4096$、 $d_{\mathrm{ff}}=11008$、MHA、 $V=100352$、untied）逐项重算每层参数与总参数，验证层参数对 $12Ld^{2}$ 的偏差在 1% 以内；再对 Llama-3.1-8B 验证层参数恰好为 $13Ld^{2}$ ，以 $d^{2}$ 为单位分解 GQA 与 $d_{\mathrm{ff}}=3.5d$ 各自的贡献（方向与大小）。校验：两台机器的层参数与总参数，与本章第 4 节对账表的对应行逐项一致。
+2.（计算 · [20]）设计约束第一行：固定 $d=4096$ ，求每层计算量上 self-attention（causal， $2T^{2}d$ ）追平 recurrent（ $2Td^{2}$ ）的 $T$ ；再把 recurrent 换成「隐状态维 $d_h = d/2$ 」的窄隐状态变体，交叉点怎么移动？由此说明「 $T$ 小则 recurrent 省计算」的结论对宽度假设有多敏感。校验：把求得的交叉点代回两侧表达式，两边应得同一数值。
+3.（计算 + 论证 · [20]）recurrence 信息瓶颈的账： $d_h = 4096$ 、fp16 存储（16 bit/维）、 $V = 50257$（GPT-2 词表）：求使 $t \log_{2} V > 16 \thinspace d_h$ 成立的最小整数 $t$ ；指出该上界账的两个漏洞（fp16 是工程选择而非数学限制；自然语言冗余使实际熵率远低于 $\log_{2} V$ ），并说明为什么该论证仍能正确预测长上下文下的检索失败（提示：容量与 $t$ 无关这一点没有变）。校验：求得的答案是使不等式成立的最小整数——把它减 1 代回，不等式应不成立。
+4.（推导 · [30]）从式 (1) 推出展开式 (2)，写明 $a_\ell$ 、 $f_\ell$ 的定义；据此说明：(a) 输出是 $2L+1$ 个 $d$ 维向量之和；(b) 「把第 $k$ 层 FFN 置零」等价于从和中删去一项 $f_k$ ——为什么这正对应 activation patching 的可行性（一句话，细节在 4.7）；(c) 若把 Pre-LN 换成 Post-LN（ $x$ ← $\mathrm{LN}(x + f(x))$ ），式 (2) 的纯加法展开还成立吗？给出理由。
 
 ## 参考
 

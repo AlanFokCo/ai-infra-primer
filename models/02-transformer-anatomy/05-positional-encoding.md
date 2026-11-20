@@ -25,7 +25,11 @@
 
 注入点这一维先展开，它决定位置信息的信息流形态。stream 加性方案只在第 0 层注入一次：位置向量与 token embedding 叠加在同一组基上，后续层要学着把两者分开读；位置信号还得在 $L$ 层残差流的反复改写中「存活」到最后一层。attention 内方案相反：RoPE 在每层 attention 重新旋转，bias 在每层 score 重新加。位置每层重新注入，不占 stream 容量。代价是位置信号进不了 FFN——2.1 §1 的二分法里 FFN 逐位置工作，它对位置的全部感知只能来自 attention 的输出。两条路线没有对错，但失败的部位不同：前者死在信号被 stream 稀释与窗口越界，后者死在 score 先验的形状不合任务。
 
+口径声明：本章的 RoPE 频率与波长算例一律取 base = 10000、128 维（64 个频率通道）这一组；sinusoidal 部分沿用原文的 512 维工作点；锚点 config 的真实 base 只在对照表与周期覆盖账处代入，逐处写明出处。
+
 ## 2. 绝对位置编码：sinusoidal 与 learned absolute
+
+绝对位置方案回答同一个问题：位置向量从哪里来、以什么形式进 stream。一支用闭式公式现算，一支用查找表存学出来的值。
 
 ### 2.1 sinusoidal：频率几何级数
 
@@ -58,7 +62,7 @@ $$
 \begin{bmatrix} PE(pos+k, 2i) \\ PE(pos+k, 2i+1) \end{bmatrix} = \begin{bmatrix} \cos(\omega_i k) & \sin(\omega_i k) \\ -\sin(\omega_i k) & \cos(\omega_i k) \end{bmatrix} \begin{bmatrix} PE(pos, 2i) \\ PE(pos, 2i+1) \end{bmatrix} \qquad (3)
 $$
 
-全维写法： $PE(pos+k) = M_k \thinspace PE(pos)$， $M_k$ 是每通道一块的块对角矩阵，与 $pos$ 无关。注意这个 2×2 块正是旋转 $-\omega_i k$ 的矩阵——块对角旋转的雏形在这里已经出场：sinusoidal 的 $M_k$ 与 §4 RoPE 的 $R_m$ 是同一种对象、同一套频率 schedule，差别只在作用位置（stream 里的 PE vs attention 里的 q/k）。RoPE 就是把「PE 内部可被线性推移」升级为「q/k 直接被逐位置旋转」。
+全维写法： $PE(pos+k) = M_k \thinspace PE(pos)$， $M_k$ 是每通道一块的块对角矩阵，与 $pos$ 无关。注意这个 2×2 块正是旋转 $-\omega_i k$ 的矩阵——块对角旋转的雏形在这里已经出场：sinusoidal 的 $M_k$ 与 §4 RoPE 的 $R_m$ 是同一种对象、同一套频率 schedule，差别只在作用位置（stream 里的 PE vs attention 里的 q/k）。RoPE 就是把「PE 内部可被线性推移」升级为「q/k 直接被逐位置旋转」。代入一个具体相位看这条矩阵：通道相位推进四分之一周期（90°）时，两维取值从（正弦, 余弦）换成（余弦, 负正弦）——位置平移就这样被翻译成一次线性变换。
 
 推论（PE 内积的相对性）。两个位置的 PE 内积：
 
@@ -113,6 +117,8 @@ slope 是公比 $2^{-8/H}$ 的几何级数： $h = 1$ 时 $m_1 = 2^{-8/H}$，斜
 为什么 train short / test long 能成立？机制上分三层。(a) $b(\Delta) = -m_h \Delta$ 没有查表边界：测试时更大的 $\Delta$ 只是同一直线上的更大自变量，函数形态不变——不像 T5 落末桶，也不像 learned absolute 越界。(b) 模型在窗内学到的是「logit ≈ 内容项 − $m_h \Delta$」的校准。外延时内容项的分布没变，惩罚项按同一线性率继续压低远处 key，softmax 归一化后，有效感受野自动收缩回训练尺度。(c) 代数字走一遍：最小 slope $2^{-8}$ 的头在 $L$ = 1024 窗内的惩罚跨度是 $1024 \times 2^{-8} = 4$ nat；外推到 4096 时跨度 16 nat，最远 key 被压到相对 $e^{-12}$ 量级。行为是平滑过渡到「该头只看近处」，而非数值崩溃。论文实测 1024 训练窗外推 2048+ 的 perplexity，与从头训练长窗的 sinusoidal 基线相当（[A]）。
 
 ## 4. RoPE：内积不变性的完整推导
+
+RoPE 是本章的推导主线，也是现役开源 LLM 的默认位置方案。构造链分四段：先写出「score 只含相对位移」的目标方程，再在 2 维解出旋转，然后块对角推广到全维，最后落到频率 schedule、实现与变体。
 
 ### 4.1 目标形式化：造一个让 score 只含 $m - n$ 的变换
 
@@ -189,13 +195,15 @@ $$
 \langle R_m\thinspace q,\ R_n\thinspace k \rangle = \langle q,\ R_{n-m}\thinspace k \rangle = \sum_{j=0}^{d/2-1} \left[ \left( q_{2j} k_{2j} + q_{2j+1} k_{2j+1} \right) \cos\left( (n-m)\theta_j \right) + \left( q_{2j+1} k_{2j} - q_{2j} k_{2j+1} \right) \sin\left( (n-m)\theta_j \right) \right] \qquad (13)
 $$
 
-**证明**。第一等式： $\langle R_m q, R_n k \rangle = q^{\top} R_m^{\top} R_n\thinspace k = q^{\top} R_{-m} R_n\thinspace k = q^{\top} R_{n-m}\thinspace k$，逐步用块对角继承的正交性与群性质。第二等式： $R_{n-m}$ 块对角，内积按块分解为各 2 维块内积之和；第 $j$ 块上是 $\langle q_j, R\left((n-m)\theta_j\right) k_j \rangle$，以 $\varphi = (n-m)\theta_j$ 代入式 (11) 得该块贡献；对 $j$ 求和即式 (13)。∎
+**证明**。路线两步：先用正交性与群性质把两次旋转并成一次相对旋转，再按块分解成 2 维块内积之和、逐块套上文的 2 维展开式。第一等式： $\langle R_m q, R_n k \rangle = q^{\top} R_m^{\top} R_n\thinspace k = q^{\top} R_{-m} R_n\thinspace k = q^{\top} R_{n-m}\thinspace k$，逐步用块对角继承的正交性与群性质。第二等式： $R_{n-m}$ 块对角，内积按块分解为各 2 维块内积之和；第 $j$ 块上是 $\langle q_j, R\left((n-m)\theta_j\right) k_j \rangle$，以 $\varphi = (n-m)\theta_j$ 代入式 (11) 得该块贡献；对 $j$ 求和即式 (13)。∎
 
-式 (13) 右端只含 $n - m$——式 (8) 达成，且 $g$ 是显式的：内容提供每块两个系数（同址内积与交叉内积），位置以 $\cos/\sin\left((n-m)\theta_j\right)$ 逐频率调制。一个内积变成 $d/2$ 个频率通道的加权和；score 对绝对位置平移不变——全体位置同加常数 $c$， $m - n$ 不变，score 逐点不变。
+式 (13) 右端只含 $n - m$——式 (8) 达成，且 $g$ 是显式的：内容提供每块两个系数（同址内积与交叉内积），位置以 $\cos/\sin\left((n-m)\theta_j\right)$ 逐频率调制。一个内积变成 $d/2$ 个频率通道的加权和；score 对绝对位置平移不变——全体位置同加常数 $c$， $m - n$ 不变，score 逐点不变。代入整数位置看平移不变：100 与 200 之间的 score，同 1100 与 1200 之间的 score 逐项相等——差值相同则打分相同，与绝对位置无关。
 
 实现注记： $R_m$ 是 $d \times d$ 但只有 $2d$ 个非零元，任何实现都不物化它——预存 cos/sin 两张表、逐对套用式 (9) 的坐标公式即可（§4.8），时间与内存都从 $O(d^{2})$ 降到 $O(d)$。
 
 应用位置与接缝： $q_m = R_m (W^{Q} u_m)$、 $k_n = R_n (W^{K} u_n)$， $v$ 不旋转；score $= \langle q_m, k_n \rangle / \sqrt{d_{\mathrm{head}}}$，mask 照旧加在 score 上（2.4 式 (1)）。 $v$ 为什么不旋转？位置只需要决定「谁被注意」，而 attention 权重已经携带全部相对位置结构； $v$ 是被交付的内容，保持位置盲，内容读出才不随平移改变。两条兼容性注记。其一， $R_m$ 正交 ⟹ $\lVert R_m q \rVert = \lVert q \rVert$：旋转只改方向不改范数，2.3 §3 的 $\mathrm{Var}(q \cdot k) = d_k$ 方差账与 $\sqrt{d_k}$ 缩放结论原样成立，RoPE 不重排 score 的量级预算。其二，旋转在写 KV cache 之前完成：cache 里存的是已旋转的 $k_n$（2.4 §4.2 的不可变性不受影响），decode 第 $t$ 步的 $q$ 必须按全局绝对位置 $t$ 旋转，position_ids 不能按 decode 窗内局部计数。
+
+> **坑**：decode 时给 q 的旋转用窗内局部位置（position_ids 从 0 重新起数）——cache 里的 k 按全局位置存，q 却按局部位置转，相对相位整体错乱，长生成质量断崖。position_ids 必须携带全局绝对位置。
 
 ### 4.4 复数视角：旋转 = 乘 $e^{im\theta}$
 
@@ -296,7 +304,7 @@ def rope_half_split(x, cos, sin):
 
 一个不注入任何位置编码的 decoder-only Transformer 并非位置盲。2.3 §6 的等变命题以「无 mask」为前提，而 causal mask（2.4 式 (3)）已经把位置锚进计算图：第 $t$ 行恰好看见 $t$ 个 key。换句话说，带 causal mask 的 attention 对一般置换本就不再等变——mask 自身就是位置敏感对象，等变命题的前提条件已被架构自己破坏。机制展开：设各位置 value 近似同分布（均值 $\mu$、方差 $\sigma^{2}$），均匀 attention 下位置 $t$ 的输出是 $t$ 个 value 的均值，其方差 $\sigma^{2} / t$ 随 $t$ 单调衰减。「输出的尺度与集中度」本身就是 $t$ 的可读签名，行归一化的分母里也明着含 $t$。第一层即可学出「均分 attention、从响应幅度读出 $1/t$」式的计数电路，位置信息沿层逐层加工。Kazemnejad et al. 在 decoder-only 设置下系统扫描了 NoPE 与各显式编码（[Kazemnejad et al., 2023](../references.md)，arXiv:2305.19466，[B]）：NoPE 在训练窗内与显式方案相当，在其扫描的长度泛化设置（训练窗截断、paraphrase 检索外推等）中不落下风。causal 结构自带的位置信号足以支撑位置行为。
 
-边界同样清楚。其一，双向（encoder）场景没有 causal mask，NoPE 不适用——该结论只属于 decoder-only。其二，计数信号是「长度」而非「内容寻址的相对位移」：表达「向左 3 位」这类量需网络从计数特征里二次构造，RoPE 则把它免费固定在 score 上（式 (13)）。其三，该论文无官方代码（[B]），结论的外推范围以其实验设置为准。现实坐标：本章四个锚点 config（Llama-3.1 / OLMo-2 / Qwen3 / DeepSeek-V3）全部带 rope_theta 字段，无一家走 NoPE。NoPE 的定位是诊断性对照组：它标出「架构白送的位置信号」这条下限，显式编码的收益都应在它之上衡量。
+边界同样清楚。其一，双向（encoder）场景没有 causal mask，NoPE 不适用——该结论只属于 decoder-only。其二，计数信号是「长度」而非「内容寻址的相对位移」：表达「向左 3 位」这类量需网络从计数特征里二次构造，RoPE 则把它免费固定在 score 上（式 (13)）——「免费」的口径：不新增参数、不增加逐位置计算量。其三，该论文无官方代码（[B]），结论的外推范围以其实验设置为准。现实坐标：本章四个锚点 config（Llama-3.1 / OLMo-2 / Qwen3 / DeepSeek-V3）全部带 rope_theta 字段，无一家走 NoPE。NoPE 的定位是诊断性对照组：它标出「架构白送的位置信号」这条下限，显式编码的收益都应在它之上衡量。
 
 ## 6. RoPE 的外推失败：预告（→ 4.6）
 
@@ -316,24 +324,24 @@ rope_scaling = { type: "yarn", factor: 40.0, beta_fast: 32, beta_slow: 1,
 | --- | --- | --- |
 | 必要性 | 2.3 §6 置换等变推论 | 位置信息必须外部注入；三维自由度：注入点 / 参照系 / 外推 |
 | sinusoidal | $PE(pos, 2i) = \sin(pos / 10000^{2i/d})$，式 (1) | 频率几何级数； $PE(pos+k) = M_k PE(pos)$（式 (3)）； $\langle PE(m), PE(n) \rangle = \sum_i \cos\omega_i(m-n)$（式 (4)） |
-| learned absolute | 查表 $P \in \mathbb{R}^{T_{\max} \times d}$ | 外推 = 索引越界，未定义；GPT-2 $1024 \times 768$ [W] |
+| learned absolute | 查表 $P \in \mathbb{R}^{T_{\max} \times d}$ | 外推 = 索引越界，未定义；GPT-2 $1024 \times 768$ [W]；与公式型方案的外推对照见练习 3 |
 | T5 bias | $b(i-j)$ 查表，32 桶 log 分桶，式 (6) | 0–7 精确、8–128 对数、 $>128$ 落末桶；跨层共享 |
 | ALiBi | $-m_h (i - j)$， $m_h = 2^{-8h/H}$，式 (7) | 零参数直线；外推 = 同一直线延自变量，感受野自动收缩 |
 | RoPE 主命题 | $\langle R_m q, R_n k \rangle = \langle q, R_{n-m} k \rangle$，式 (13) | 2D 旋转（引理 i–iii）→ 块对角（式 (12)）→ 复数相位（式 (15)）；score 平移不变 |
 | 频率与波长 | $\theta_j = base^{-2j/d}$、 $\lambda_j = 2\pi \cdot base^{2j/d}$，式 (16) | Llama-3.1 base = 5×10⁵（ $\lambda_{\max} \approx 2.6 \times 10^{6}$）、Qwen3 10⁶、DeepSeek-V3 10⁴（32 通道） |
-| 周期覆盖账 | $\lambda_j > W$ ⟺ 通道 $j$ 窗内转不满一圈 | base 10⁴ / $d$ 128 / $W$ 4096：18/64 通道不满圈 → 外推失败机制 |
-| 远程衰减 | $\sum_j h_j e^{i\Delta\theta_j}$ 去相 | 平均行为非定理；对照 ALiBi 的显式直线 |
+| 周期覆盖账 | $\lambda_j > W$ ⟺ 通道 $j$ 窗内转不满一圈 | base 10⁴ / $d$ 128 / $W$ 4096：18/64 通道不满圈 → 外推失败机制；重算见练习 3 |
+| 远程衰减 | $\sum_j h_j e^{i\Delta\theta_j}$ 去相 | 平均行为非定理；对照 ALiBi 的显式直线；score 位移结构的代码验证见练习 4 |
 | partial RoPE | 式 (17)：128 nope + 64 rope | DeepSeek-V3 [A]；nope 部分使 MLA 的 W_UK 吸收可行（→ 4.1） |
-| 两实现 | half-split（HF Llama `rotate_half`）/ interleaved（RoFormer 系） | 差一个维度排列；权重行序跟随约定 |
-| NoPE | 无显式编码 | causal mask 的计数级信号；decoder-only 限定；[B] |
+| 两实现 | half-split（HF Llama `rotate_half`）/ interleaved（RoFormer 系） | 差一个维度排列；权重行序跟随约定；等价性验证见练习 4 |
+| NoPE | 无显式编码 | causal mask 的计数级信号；decoder-only 限定；[B]；显式编码一侧的对照验证见练习 4 |
 | 外推失败 | 慢通道角度出训练域 | PI / NTK / YaRN → 4.6；DeepSeek-V3 rope_scaling 块：factor 40 × 4096 = 163840 |
 
 ## 练习
 
-1.（推导）补全式 (4) 的求和恒等式，并证明 sinusoidal 下 $\lVert PE(pos) \rVert^{2} = d/2$ 为常数（与 $pos$ 无关）——即 PE 落在半径 $\sqrt{d/2}$ 的球面上。
-2.（推导）从式 (8) 反推 RoPE 的形式：设 $f(q, m)$ 对 $q$ 线性且保范。(a) 取 $m = n$ 推出 $f(\cdot, m)$ 必须正交；(b) 记 $R_m = f(\cdot, m) f(\cdot, 0)^{-1}$，证明 $R_0 = I$、 $R_m^{\top} = R_{-m}$、 $R_a R_b = R_{a+b}$，即 $\lbrace R_m\rbrace$ 是一元正交群；(c) 由此说明「按位置旋转」（块对角 2D 旋转）是式 (8) 的自然解族。这就是 RoPE 论文的推导路径。
-3.（计算）base = 10000、 $d$ = 128、窗口 $W$ = 2048：多少通道在窗内转不满一圈？把 base 抬到 50000 重算（解 $2\pi \cdot base^{j/64} > W$ 的 $j$ 范围）。再算 Qwen3-8B（base = $10^{6}$、 $W$ = 40960）窗内不满圈的通道数，并解释「抬 base 对齐窗口」的含义。
-4.（代码）(a) 验证 §4.8 两实现等价：随机 $x \in [B, H, T, d]$，构造维度排列 $\sigma$，断言 `rope_half_split(perm(x)) == perm(rope_interleaved(x))` 到浮点精度。(b) 验证式 (13) 的平移不变性：随机 $q, k$（ $d$ = 128、base = 10000），扫 $(m, n) \in [0, 64)^{2}$ 网格，检查 score 矩阵的 Toeplitz 性—— $s_{m,n}$ 只依赖 $m - n$（每条对角线上数值一致到 $10^{-5}$）。
+1.（推导 · [20]）补全式 (4) 的求和恒等式，并证明 sinusoidal 下 $\lVert PE(pos) \rVert^{2} = d/2$ 为常数（与 $pos$ 无关）——即 PE 落在半径 $\sqrt{d/2}$ 的球面上。
+2.（推导 · [30]）从式 (8) 反推 RoPE 的形式：设 $f(q, m)$ 对 $q$ 线性且保范。(a) 取 $m = n$ 推出 $f(\cdot, m)$ 必须正交；(b) 记 $R_m = f(\cdot, m) f(\cdot, 0)^{-1}$，证明 $R_0 = I$、 $R_m^{\top} = R_{-m}$、 $R_a R_b = R_{a+b}$，即 $\lbrace R_m\rbrace$ 是一元正交群；(c) 由此说明「按位置旋转」（块对角 2D 旋转）是式 (8) 的自然解族。这就是 RoPE 论文的推导路径。
+3.（计算 · [30]）先预测再算：动笔前先猜——base 抬高时，窗内转不满一圈的通道数变多还是变少？base = 10000、 $d$ = 128、窗口 $W$ = 2048：多少通道在窗内转不满一圈？把 base 抬到 50000 重算（解 $2\pi \cdot base^{j/64} > W$ 的 $j$ 范围）。再算 Qwen3-8B（base = $10^{6}$、 $W$ = 40960）窗内不满圈的通道数，并解释「抬 base 对齐窗口」的含义。校验：三处代入的输入字段与 Qwen3-8B config 的 rope_theta、max_position_embeddings 一致；不满圈通道数必介于 0 与通道总数之间，越界即算错。
+4.（代码 · [30]）(a) 验证 §4.8 两实现等价：随机 $x \in [B, H, T, d]$，构造维度排列 $\sigma$，断言 `rope_half_split(perm(x)) == perm(rope_interleaved(x))` 到浮点精度。(b) 验证式 (13) 的平移不变性：随机 $q, k$（ $d$ = 128、base = 10000），扫 $(m, n) \in [0, 64)^{2}$ 网格，检查 score 矩阵的 Toeplitz 性—— $s_{m,n}$ 只依赖 $m - n$（每条对角线上数值一致到 $10^{-5}$）。校验：(a) 可与 transformers 的 modeling_llama.py 中 `rotate_half` 的行为对拍（同一输入同一输出）；(b) 的 Toeplitz 偏差应落在题面给定容差内，超差先查配对约定是否弄反。
 
 ## 参考
 

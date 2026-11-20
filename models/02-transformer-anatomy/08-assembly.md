@@ -83,6 +83,8 @@ logits z [B, T, V]  ──softmax──►  q_θ(· | x_{<t})
 
 **变体注记（对照锚点，归属严格按 2.7 §9）**。OLMo-2-7B 不是 Pre-LN：norm 在子层输出侧（reordered）， $x \leftarrow x + \mathrm{RMSNorm}(f(x))$（[Team OLMo et al., 2025](../references.md)，arXiv:2501.00656，[A]）；其 attention 另在 q/k 投影后各过一次 RMSNorm（QK-norm 全维变体，`modeling_olmo2.py` 的 `q_norm` / `k_norm`，[HuggingFace, modeling_olmo2.py](../references.md)，[A]）。logit 稳定器各家不同：Llama-3.1 无（仅 $1/\sqrt{D}$ 缩放）；Gemma 2 用 soft-capping（attn 50.0 / final 30.0，无 QK-norm）；Gemma 3 以 QK-norm 取代 soft-capping，且每个子层前后各一次 RMSNorm。这些替换都只动式 (1)(2) 的局部，动不了整机骨架。
 
+口径声明：本章全部算账、走读与代码默认取主锚点（Llama 8B 档）的 config 数值；OLMo-2-7B 只作对照锚点，出现处自带字段值。
+
 ## 2. config.json ↔ 公式映射表（逐字段）
 
 Llama-3.1-8B 的 config.json 逐字段映射到式 (1)–(4) 的符号（数值：[Llama-3.1-8B config](../references.md)，[A]）：
@@ -109,6 +111,8 @@ Llama-3.1-8B 的 config.json 逐字段映射到式 (1)–(4) 的符号（数值�
 注：rms_norm_eps 的 Llama-3.1-8B 字段值本书未独立核实（HF gated repo，W1 research pass 口径）；已核实的对照值是 Qwen3-8B 与 OLMo-2-7B 的 $10^{-6}$（各 config 条目，[A]）。
 
 读表三条规矩。其一，**导出字段与显式字段分开**：head_dim 在该 config 中不出现、按 $d / H_q$ 导出；新版 modeling 代码允许它被显式覆盖（§8 误解一）。其二，**缺省字段按默认理解**：attention_dropout 等训练侧字段不进推理公式。其三，**每个结构字段都能在公式里找到对应位置**——反过来，读一个陌生模型的 config 时，把每个字段在这张表里对号入座，五个整数（ $L, d, H_q, H_{kv}, d_{\mathrm{ff}}$）加 $V$ 就锁定了参数量与 FLOPs 账（§5、§6），剩下的是 norm 摆放与 logit 稳定器两个不进 config 标准字段的配方差异（§1 末表）。这张字典表是 5.6「30 分钟拆解新模型」checklist 的字段级底稿。
+
+> **坑**：读陌生 config 时拿 hidden_size 整除 num_attention_heads 硬算 head_dim——若该模型把 head_dim 写成显式字段且与整除值不等，投影形状、参数账、RoPE 通道数会连环错。先查显式字段，再整除。
 
 把同一张表套到对照锚点上走一遍，验证它的可迁移性。OLMo-2-7B（[OLMo-2-7B config](../references.md)，[A]）： $L = 32$、 $d = 4096$、 $H_q = H_{kv} = 32$、 $d_{\mathrm{ff}} = 11008$、 $V = 100352$、rope_theta = 500000、rms_norm_eps = $10^{-6}$、attention_bias = false、tie = false。式 (2) 里唯一的结构变化是 $g(h)$ 退化为恒等映射（ $H_q / H_{kv} = 1$，每头各配一对 K/V，MHA 标准形）；式 (3) 不变，只是 $d_{\mathrm{ff}}$ 收窄到 $2.69d$。这一步 mapping 能直接读出的是参数与 FLOPs 账的变化（§6 练习口径）；读不出的是两件事——norm 摆在子层输出侧（reordered）与 q/k 投影后的两次 RMSNorm——它们不写进 config 的任何标准字段，只能去 `modeling_olmo2.py`（[A]）里看 `Olmo2DecoderLayer.forward` 的接线顺序与 `Olmo2Attention` 的 `q_norm` / `k_norm`。这就是本表的能力边界，也是它的用法：config 管「形状与账」，modeling 代码管「接线与归一化位置」，两边各读一遍才算读完一个模型。
 
@@ -358,7 +362,11 @@ mask 的组装同样在模型级完成一次：`LlamaModel.forward` 依据 atten
 | attention 后端 | 手写物化 scores | `ALL_ATTENTION_FUNCTIONS` 派发到 sdpa / flash / flex |
 | 生产钩子 | 无 | 初始化方案、张量并行切分、梯度检查点、量化 |
 
-走读的读法：官方代码里凡是不出现在式 (1)–(4) 的部分，都可以归入上表后四行——数值精度、内存管理、算子派发、分布式。公式与实现之间隔着的就是这四层工程，不多不少。术语注：表中「张量并行」（tensor parallelism）指把单层权重矩阵按行/列切分到多张卡、行并行 GEMM 的尾部需要一次 all-reduce 合并部分和的分布式方案；其系统展开属 cluster 维度，本书只用到「每层 all-reduce 次数」这一账面量（§7）。核对方式也是现成的：把 §3 教学版与该文件并排打开，逐类对照上表七行；任何一行对不上，要么是你读漏了生产钩子，要么是 modeling 代码升级改了接线——后者值得停下来查 commit，因为接线变化就是配方变化（§1 变体注记的各家差异在代码里就体现为这些行）。
+走读的读法：官方代码里凡是不出现在式 (1)–(4) 的部分，都可以归入上表后四行——数值精度、内存管理、算子派发、分布式。公式与实现之间隔着的就是这四层工程，不多不少。
+
+> **提点**：表中「张量并行」（tensor parallelism）指把单层权重矩阵按行/列切分到多张卡、行并行 GEMM 的尾部需要一次 all-reduce 合并部分和的分布式方案；其系统展开属 cluster 维度，本书只用到「每层 all-reduce 次数」这一账面量（§7）。
+
+核对方式也是现成的：把 §3 教学版与该文件并排打开，逐类对照上表七行；任何一行对不上，要么是你读漏了生产钩子，要么是 modeling 代码升级改了接线——后者值得停下来查 commit，因为接线变化就是配方变化（§1 变体注记的各家差异在代码里就体现为这些行）。
 
 ## 5. 单层单 token FLOPs 全算
 
@@ -463,7 +471,7 @@ $$
 | 整机公式 | 式 (1)–(4)：Pre-LN 两子层 + GQA/RoPE/SwiGLU 全下标 | 接口是「归一化读、加法写」；组件可替换、骨架不动 |
 | config ↔ 公式 | §2 逐字段表 | 五个整数（ $L, d, H_q, H_{kv}, d_{\mathrm{ff}}$）+ $V$ 锁定全部账；5.6 checklist 底稿 |
 | minimal 实现 | §3 约 150 行 | 教学用，非优化实现；参数断言 = 式 (6) 可执行形式 |
-| 官方走读 | modeling_llama.py：`LlamaRMSNorm` / `LlamaAttention` / `LlamaMLP` / `LlamaDecoderLayer` | cos/sin 逐前向由 inv_freq × position_ids 现算、各层共享；fp32 归约；算子派发 |
+| 官方走读 | modeling_llama.py：`LlamaRMSNorm` / `LlamaAttention` / `LlamaMLP` / `LlamaDecoderLayer` | cos/sin 逐前向由 inv_freq × position_ids 现算、各层共享；fp32 归约；算子派发；动手对照见练习 3 |
 | FLOPs 全算 | 式 (5)；matmul 行 $4.36 \times 10^{8}$/层/ token | 低阶项占 0.09%（ $\sim d$ 因子）；整机 $2N + 2Vd \approx 1.50 \times 10^{10}$ |
 | 参数对账 | 式 (6)(7)： $8030261248$ | norm 增益 $(2L+1)d = 266240$ 入账才到个位；速算与精算分工 |
 | 并行块 | 式 (8)： $x \leftarrow x + \mathrm{Attn}(\mathrm{Norm}(x)) + \mathrm{FFN}(\mathrm{Norm}(x))$ | 恒等通路保留（2.7 式 (8) 逐字成立）；省 GEMM 发射与 all-reduce，不省 FLOPs |
@@ -471,10 +479,10 @@ $$
 
 ## 练习
 
-1.（计算）MHA 反事实对账：把 Llama-3.1-8B 的 num_key_value_heads 改为 32（其余字段不动），用式 (6) 重算 $N_{\mathrm{total}}$；「8B」名称是否还成立？再把 intermediate_size 改回等参数规则的最小 256 倍数（2.6 §3.2），两个改动叠加后总参数是多少？（提示：attention 项回到 $4d^{2}$，FFN 回到 $3d \times 11008$。）
-2.（计算）用 Qwen3-8B config（ $L = 36$、 $d = 4096$、 $H_q = 32$、 $H_{kv} = 8$、 $D = 128$、 $d_{\mathrm{ff}} = 12288$、 $V = 151936$、untied，[Qwen3-8B config](../references.md)，[A]）重做 §5 的全表与 §6 的对账：单层 matmul FLOPs、整机 per-token 前向（含输出头）、 $N_{\mathrm{total}}$ 精确值；验证层参数 $= 11.5 d^{2} \times 36$ 与 $2N$ 闭环。
-3.（代码）在 §3 教学版上：(a) 把 `DecoderBlock` 改成式 (8) 的并行形，断言参数量不变、同输入下输出改变；(b) 参考 2.4 §4.4 给 `GQAAttention` 加 cache，验证「带 mask 的并行前向第 $t$ 位 logits」与「逐 token decode 第 $t$ 步 logits」allclose（fp32、容差 $10^{-5}$）——2.4 §7 命题的整机版；(c) 用 §3 的断言方法对 Qwen3-8B 的 config（练习 2）核对 `sum(p.numel())`。
-4.（推导）并行块的梯度：写出式 (8) 的残差展开式，并证明 2.7 式 (8) 的恒等项对它逐字成立（指明 norm 位置是前提）；再写出串行形（式 (1)）中 $f_{\ell}$ 对 $x^{(\ell-1)}$ 的完整 Jacobian 路径（含经 attention 输出的间接项），说明并行形恰好删掉这一项——「block 内复合深度 $2L \to L$」的精确含义。
+1.（计算 · [20]）先预测再算：两个改动叠加前，先猜总参数落在 8B 之上还是之下。MHA 反事实对账：把 Llama-3.1-8B 的 num_key_value_heads 改为 32（其余字段不动），用式 (6) 重算 $N_{\mathrm{total}}$；「8B」名称是否还成立？再把 intermediate_size 改回等参数规则的最小 256 倍数（2.6 §3.2），两个改动叠加后总参数是多少？（提示：attention 项回到 $4d^{2}$，FFN 回到 $3d \times 11008$。）校验：逐项与正文参数账的五处参数住处一一对应，无项漏算。
+2.（计算 · [30]）用 Qwen3-8B config（ $L = 36$、 $d = 4096$、 $H_q = 32$、 $H_{kv} = 8$、 $D = 128$、 $d_{\mathrm{ff}} = 12288$、 $V = 151936$、untied，[Qwen3-8B config](../references.md)，[A]）重做 §5 的全表与 §6 的对账：单层 matmul FLOPs、整机 per-token 前向（含输出头）、 $N_{\mathrm{total}}$ 精确值；验证层参数 $= 11.5 d^{2} \times 36$ 与 $2N$ 闭环。校验：全部输入字段与 Qwen3-8B config 一致；层参数拆解后每一项都能指回单个 config 字段。
+3.（代码 · [30]）在 §3 教学版上：(a) 把 `DecoderBlock` 改成式 (8) 的并行形，断言参数量不变、同输入下输出改变；(b) 参考 2.4 §4.4 给 `GQAAttention` 加 cache，验证「带 mask 的并行前向第 $t$ 位 logits」与「逐 token decode 第 $t$ 步 logits」allclose（fp32、容差 $10^{-5}$）——2.4 §7 命题的整机版；(c) 用 §3 的断言方法对 Qwen3-8B 的 config（练习 2）核对 `sum(p.numel())`。校验：(b) 的容差取题面给定值；(c) 与 Qwen3-8B config.json 逐字段一致。
+4.（推导 · [30]）并行块的梯度：写出式 (8) 的残差展开式，并证明 2.7 式 (8) 的恒等项对它逐字成立（指明 norm 位置是前提）；再写出串行形（式 (1)）中 $f_{\ell}$ 对 $x^{(\ell-1)}$ 的完整 Jacobian 路径（含经 attention 输出的间接项），说明并行形恰好删掉这一项——「block 内复合深度 $2L \to L$」的精确含义。
 
 ## 参考
 

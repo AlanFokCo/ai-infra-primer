@@ -6,6 +6,8 @@
 
 先登记「为什么必须有归一化」这个问题本身。2.1 式 (2) 说 stream 是 $2L+1$ 个向量之和。前向看，没有归一化时 stream 的二阶矩随层数漂移（§5.2 的随机游走口径给出 $\Theta(\sqrt{L})$ 增长），logits 的尺度跟着漂；反向看，本章 §5 的引理会证明归一化 Jacobian 的增益反比于输入范数。归一化器就是 stream 上的自动增益控制（automatic gain control）：前向把输出二阶矩固定在 $\sqrt{d}$，反向按输入范数自动缩放梯度。本章全部结果都挂在这两条上。
 
+口径声明：本章的尺度代入一律取 d = 4096；深度对照写明 L 取值（32、128、1000 三层档，分别对应现役开源模型、深度对照与 DeepNorm 的极端验证）；toy 维数只为手算演示，逐处标注。
+
 层归一化（LayerNorm）对单个位置的特征向量做归一化（[Ba et al., 2016](../references.md)，arXiv:1607.06450，[B]）。取 $x \in \mathbb{R}^{d}$（residual stream 在某一位置上的切片，2.1 式 (1) 的逐位置口径）：
 
 $$
@@ -13,6 +15,8 @@ $$
 $$
 
 **符号**： $\mu, \sigma^{2}$：沿特征维 $d$ 的均值与方差（实现中加 $\epsilon$ 防除零）； $\gamma, \beta \in \mathbb{R}^{d}$：逐特征可学增益（gain）与偏置； $\odot$：逐分量乘； $\hat{x}$：归一化核，满足 $`\sum_i \hat{x}_i = 0`$、 $\lVert \hat{x} \rVert_{2} = \sqrt{d}$。
+
+代入一个 4 维 toy（口径声明的 toy 档）把这条公式走到底：`x = (0, 0, 4, 4)` 的均值为 2、方差为 4、标准差为 2，归一化核为 `(-1, -1, 1, 1)`，其范数恰为 2——正是「根号 d」在 d = 4 时的值。
 
 LN 对上游表达施加两个精确的不变性（invariance），它影响优化几何的结构来源就在这里。
 
@@ -22,7 +26,7 @@ $$
 \mu' = \alpha \mu + c, \qquad \sigma' = \alpha \sigma, \qquad \hat{x}' = \frac{\alpha x + c \cdot 1_d - \alpha \mu - c}{\alpha \sigma} = \hat{x} \qquad (2)
 $$
 
-归一化核原样不动，LN 输出完全不变：整体缩放与整体平移被商掉。
+归一化核原样不动，LN 输出完全不变：整体缩放与整体平移被商掉。同一 toy 验证：全体乘 3 再加 100 得 `(100, 100, 112, 112)`，均值为 106、标准差为 6，归一化核仍是 `(-1, -1, 1, 1)`——缩放与平移被完全商掉。
 
 **不变性二（上游权重矩阵的重参数化）**。设 LN 的输入来自线性层 $h = W x$（ $W \in \mathbb{R}^{d \times n}$）。两个参数方向不改变函数值：
 
@@ -36,7 +40,7 @@ $$
 
 ## 2. 为什么序列建模不用 BatchNorm
 
-批归一化（BatchNorm）的统计轴是 batch × 位置：对每个特征通道 $i$，
+卷积网络的默认归一化是 BatchNorm，序列建模为什么不用它？先把它的统计量写出来看。批归一化（BatchNorm）的统计轴是 batch × 位置：对每个特征通道 $i$，
 
 $$
 \mu_{i}^{\mathrm{BN}} = \frac{1}{BT} \sum_{b=1}^{B} \sum_{t=1}^{T} x_{b,t,i}, \qquad \left( \sigma_{i}^{\mathrm{BN}} \right)^{2} = \frac{1}{BT} \sum_{b=1}^{B} \sum_{t=1}^{T} \left( x_{b,t,i} - \mu_{i}^{\mathrm{BN}} \right)^{2} \qquad (4)
@@ -64,13 +68,13 @@ LN 把统计轴换成特征维 $d$： $\mu, \sigma$ 只在单位置的 $d$ 个�
 
 ## 3. RMSNorm：去掉 re-centering 丢了什么
 
-RMSNorm 把 LN 的两步统计砍成一步（[Zhang & Sennrich, 2019](../references.md)，arXiv:1910.07467，[B]）：
+去掉减均值这一步，归一化还剩多少效力？RMSNorm 把 LN 的两步统计砍成一步（[Zhang & Sennrich, 2019](../references.md)，arXiv:1910.07467，[B]）：
 
 $$
 \mathrm{RMSNorm}(x) = \gamma \odot \frac{x}{\mathrm{RMS}(x)}, \qquad \mathrm{RMS}(x) = \sqrt{\frac{1}{d} \sum_{i=1}^{d} x_i^{2} + \epsilon} \qquad (5)
 $$
 
-**符号**： $\epsilon > 0$：数值稳定项（Qwen3-8B 与 OLMo-2-7B 的 rms_norm_eps 均为 $10^{-6}$，各 config 条目 [A]）。归一化后 $\lVert x / \mathrm{RMS}(x) \rVert_{2} = \sqrt{d}$，与 LN 相同。
+**符号**： $\epsilon > 0$：数值稳定项（Qwen3-8B 与 OLMo-2-7B 的 rms_norm_eps 均为 $10^{-6}$，各 config 条目 [A]）。归一化后 $\lVert x / \mathrm{RMS}(x) \rVert_{2} = \sqrt{d}$，与 LN 相同。同一 toy 对照：`x = (0, 0, 4, 4)` 的平方均值为 8，RMS 为根号 8，归一化结果不再是零均值——减均值那一步的缺席直接可见。
 
 两者的代数距离可以写成一行。由方差恒等式 $\sigma^{2} = \frac{1}{d}\sum_i x_i^{2} - \mu^{2} = \mathrm{RMS}(x)^{2} - \mu^{2}$（忽略 $\epsilon$），式 (1) 的核可改写为
 
@@ -119,7 +123,7 @@ $$
 
 ## 5. Pre-LN vs Post-LN：Xiong et al. 梯度分析（本章主线）
 
-两种摆放方式（逐位置、单个子层、省略 $\gamma, \beta$）：
+LN 放在残差加法之后还是之前，梯度行为差多少？先把两种摆放写出来对照（逐位置、单个子层、省略 $\gamma, \beta$）：
 
 $$
 \text{Post-LN:} \quad x_{l+1} = \mathrm{LN}\left( x_l + f_l(x_l) \right); \qquad \text{Pre-LN:} \quad x_{l+1} = x_l + f_l\left( \mathrm{LN}(x_l) \right) \qquad (9)
@@ -142,7 +146,7 @@ Pre-LN:   输出端 ████████████████ 输入端  
 
 ### 5.1 引理：LN 的 Jacobian 谱范数
 
-对式 (1) 的归一化核 $\hat{x} = (x - \mu)/\sigma$ 求 Jacobian。记 $P = I - \frac{1}{d} 1_d 1_d^{\top}$（向零均值子空间的投影矩阵， $\lVert P \rVert = 1$）。由商的求导法则，并用 $\partial \mu / \partial x = 1_d / d$、 $\partial \sigma / \partial x = (x - \mu)/(d\sigma)$：
+对式 (1) 的归一化核 $\hat{x} = (x - \mu)/\sigma$ 求 Jacobian。路线：先按商的求导法则把 Jacobian 写出来，再读它的特征结构——两个被零化的方向、其余方向上的统一缩放，谱范数由缩放给出。记 $P = I - \frac{1}{d} 1_d 1_d^{\top}$（向零均值子空间的投影矩阵， $\lVert P \rVert = 1$）。由商的求导法则，并用 $\partial \mu / \partial x = 1_d / d$、 $\partial \sigma / \partial x = (x - \mu)/(d\sigma)$：
 
 $$
 J_{\mathrm{LN}}(x) = \frac{\partial \hat{x}}{\partial x} = \frac{1}{\sigma} \left( P - \frac{1}{d} \hat{x} \hat{x}^{\top} \right) \qquad (10)
@@ -154,7 +158,7 @@ $$
 \lVert J_{\mathrm{LN}}(x) \rVert_{2} = \frac{1}{\sigma} = \frac{\sqrt{d}}{\lVert x - \mu \rVert} = O\left( \frac{\sqrt{d}}{\lVert x \rVert} \right) \qquad (11)
 $$
 
-末步在「均值相对范数可忽略」的常见情形下成立。**LN 的反向增益反比于输入范数**——stream 越粗，归一化把梯度压得越狠。这个反比就是两种摆放梯度分叉的全部机关。
+末步在「均值相对范数可忽略」的常见情形下成立。**LN 的反向增益反比于输入范数**——stream 越粗，归一化把梯度压得越狠。这个反比就是两种摆放梯度分叉的全部机关。代入数字看这条反比：d = 4096 时根号 d 为 64；输入范数 64 时增益为 1，输入范数 640 时增益压到十分之一。「越粗越压」不是修辞，是这条等式的直接代入。
 
 把 RMSNorm 的 Jacobian 并排写： $J_{\mathrm{RMS}}(x) = \mathrm{RMS}(x)^{-1} \left( I - \bar{x}\bar{x}^{\top}/d \right)$（ $\bar{x} = x / \mathrm{RMS}(x)$）。它只杀 $\bar{x}$ 一个方向（rank $d-1$）；LN 多杀 $1_d$ 方向（rank $d-2$）——§3「丢了什么」在谱语言下的版本：被减均值吃掉的那一格正是 DC 方向。谱范数结论两者一致： $\lVert J \rVert = O(\sqrt{d}/\lVert x \rVert)$，故 §5.3 的骨架对 RMSNorm 逐字成立。
 
@@ -286,6 +290,8 @@ def rmsnorm(x, weight, eps=1e-6):             # x: [B, T, d]；教学用，非�
 
 官方 `LlamaRMSNorm.forward` 与这三行的唯一实质差异是精度处理：先升 fp32 做归约与除法再降回输入 dtype。`Olmo2Attention` 的 `q_norm` / `k_norm`（`modeling_olmo2.py`，[A]）是式 (15a) 的生产形态。
 
+> **坑**：在低精度 dtype 下直接做平方均值归约——尾数位不够时归约误差被 rsqrt 放大进每个分量，表现为激活尺度的系统性偏移。归约与除法先升 fp32、再降回输入 dtype，是各官方实现的共同写法。
+
 ## 总结
 
 | 概念 | 公式 / 数值 | 要点 |
@@ -303,10 +309,10 @@ def rmsnorm(x, weight, eps=1e-6):             # x: [B, T, d]；教学用，非�
 
 ## 练习
 
-1.（推导）补全式 (10)：从 $\hat{x} = (x-\mu)/\sigma$ 出发，依次写出 $\partial\mu/\partial x$、 $\partial\sigma/\partial x$、 $\partial\hat{x}/\partial x$ 三步；验证 $J_{\mathrm{LN}} \thinspace 1_d = 0$ 与 $J_{\mathrm{LN}} \thinspace \hat{x} = 0$，据此说明 $J_{\mathrm{LN}}$ 的秩恰为 $d-2$（ $d \ge 3$）；再证在与 $\lbrace1_d, \hat{x}\rbrace$ 正交的子空间上 $J_{\mathrm{LN}}$ 的作用恰为 $(1/\sigma) I$。
-2.（推导）把式 (8) 推广到含归一化的情形：(a) 对 Pre-LN 写出 $\partial L / \partial x_l$ 的完整表达式（提示：恒等项仍在，但子层贡献项里每个 $f_i$ 的 Jacobian 左乘 $J_{\mathrm{LN}}(x_i)$）；(b) 对 Post-LN 说明为什么不存在含 $I$ 的类似分解（提示： $x_L$ 不能写成 $x_l$ 加若干项）；(c) 由 (a)(b) 解释 extended analysis「Pre-LN 各层梯度大致均匀、Post-LN 向输入端衰减」。
-3.（计算）RMSNorm vs LN 的账：对 $d = 4096$，数一遍两变体各自需要几遍对 $d$ 的归约（reduction）与几次逐元素乘加；取 $L = 32$（每层 2 个 norm + 1 个 final norm）、 $T = 8192$、 $B = 1$，估 LN 相对 RMSNorm 多花的 FLOPs，并与一层 SwiGLU FFN 的 $6\thinspace d\thinspace d_{\mathrm{ff}} T$（ $d_{\mathrm{ff}} = 14336$）对比求百分比；据此说明这笔省的收益主要在访存趟数与 kernel 融合而非 FLOPs。
-4.（推导 + 论证）soft-capping 与饱和：设 logit $z$ 的上游梯度为 $g$。写出经式 (17) 后的梯度 $g'$；取 $c = 50.0$，求使 $|g'/g| < 0.01$ 的 $|z|$；据此给出「梯度不归零但渐弱」的精确含义，并解释为什么 $c$ 不能取得远小于训练期 logit 的典型幅度（提示：2.3 §3 的饱和分析会以另一种形式回来）。
+1.（推导 · [20]）补全式 (10)：从 $\hat{x} = (x-\mu)/\sigma$ 出发，依次写出 $\partial\mu/\partial x$、 $\partial\sigma/\partial x$、 $\partial\hat{x}/\partial x$ 三步；验证 $J_{\mathrm{LN}} \thinspace 1_d = 0$ 与 $J_{\mathrm{LN}} \thinspace \hat{x} = 0$，据此说明 $J_{\mathrm{LN}}$ 的秩恰为 $d-2$（ $d \ge 3$）；再证在与 $\lbrace1_d, \hat{x}\rbrace$ 正交的子空间上 $J_{\mathrm{LN}}$ 的作用恰为 $(1/\sigma) I$。
+2.（推导 · [30]）把式 (8) 推广到含归一化的情形：(a) 对 Pre-LN 写出 $\partial L / \partial x_l$ 的完整表达式（提示：恒等项仍在，但子层贡献项里每个 $f_i$ 的 Jacobian 左乘 $J_{\mathrm{LN}}(x_i)$）；(b) 对 Post-LN 说明为什么不存在含 $I$ 的类似分解（提示： $x_L$ 不能写成 $x_l$ 加若干项）；(c) 由 (a)(b) 解释 extended analysis「Pre-LN 各层梯度大致均匀、Post-LN 向输入端衰减」。
+3.（计算 · [30]）先预测再算：动笔前先猜——LN 相对 RMSNorm 多花的量，占一层 FFN 的百分比落在哪个量级？RMSNorm vs LN 的账：对 $d = 4096$，数一遍两变体各自需要几遍对 $d$ 的归约（reduction）与几次逐元素乘加；取 $L = 32$（每层 2 个 norm + 1 个 final norm）、 $T = 8192$、 $B = 1$，估 LN 相对 RMSNorm 多花的 FLOPs，并与一层 SwiGLU FFN 的 $6\thinspace d\thinspace d_{\mathrm{ff}} T$（ $d_{\mathrm{ff}} = 14336$）对比求百分比；据此说明这笔省的收益主要在访存趟数与 kernel 融合而非 FLOPs。校验：两变体的归约趟数与逐元素计数可对照 modeling_llama.py 的 `LlamaRMSNorm` 与 torch 文档的 LayerNorm 逐行复核。
+4.（推导 + 论证 · [30]）soft-capping 与饱和：设 logit $z$ 的上游梯度为 $g$。写出经式 (17) 后的梯度 $g'$；取 $c = 50.0$，求使 $|g'/g| < 0.01$ 的 $|z|$；据此给出「梯度不归零但渐弱」的精确含义，并解释为什么 $c$ 不能取得远小于训练期 logit 的典型幅度（提示：2.3 §3 的饱和分析会以另一种形式回来）。
 
 ## 参考
 
