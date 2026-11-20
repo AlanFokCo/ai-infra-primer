@@ -23,7 +23,11 @@ $$
 
 decode 算力一侧同构：linear 层每 token 读出 $+$ 写入约 $4 H d_v d_k$ FLOPs，与 $T$ 无关；full 层每 token 打分约 $4 H_q d_{\mathrm{head}} T$ FLOPs，随 $T$ 线性。hybrid 因此同时压两笔斜率——内存（式 (1)）与 decode FLOPs——而保留的检索能力按层数只剩 $1/(r+1)$ 份。 $r$ 的全部权衡就压在这两个比值上。
 
-检索一侧的机制论证：精确回忆只需 full 层兜底。一项内容只要驻留在某个 full 层的 cache 里，该层就能在任意距离外逐位读回；linear 层在其间充当压缩传输。等距铺开（每 $r+1$ 层一个 full）还有一层回路角度的好处：4.7 的 induction 式「前驱 + 检索」两段回路需要两个 attention 层先后配合，等距布局保证序列任意位置附近都有可用的层对。这是本书的机制读法，不是任一论文的 ablation 结论；各论文的实证边界见 §8。
+检索一侧的机制论证：精确回忆只需 full 层兜底。一项内容只要驻留在某个 full 层的 cache 里，该层就能在任意距离外逐位读回；linear 层在其间充当压缩传输。
+
+> **提点**：等距铺开（每 $r+1$ 层一个 full）还有一层回路角度的好处：4.7 的 induction 式「前驱 + 检索」两段回路需要两个 attention 层先后配合，等距布局保证序列任意位置附近都有可用的层对。这是本书的机制读法，不是任一论文的 ablation 结论；各论文的实证边界见 §8。
+
+本章口径：内存与算力账一律取 bf16、单序列（B = 1），窗长逐模型随表声明，不复用其他章的 8B 口径。
 
 ## 2. 交错模式对照表
 
@@ -79,7 +83,7 @@ $$
 **full-attn 层：MLA + NoPE**。full 层用 MLA（`kv_lora_rank=512`、`qk_nope_head_dim=128`、`qk_rope_head_dim=64`、`v_head_dim=128`，与 DeepSeek 谱系同字段），但 `mla_use_nope=true`——RoPE 关闭。这个选择回答两个问题：
 
 1. **为什么可行**：位置对称性已经不在了。NoPE 的顾虑本是 attention 对位置盲（2.5 §5；[Kazemnejad et al., 2023](../references.md)，arXiv:2305.19466，[B] 的对照实验），但那条顾虑的前提是「位置编码只能由 attention 层自己注入」。hybrid 里这个前提不成立：stream 在进入每个 full 层之前已被 KDA 层加工过，而 KDA 递推（4.3 式 (16)）对输入顺序非交换—— $S_t$ 由时序连乘 $\prod_s \mathrm{diag}(\alpha_s)(I - \beta_s k_s k_s^{\top})$ 与秩一写入构成，置换输入序列必然改变状态与读出（练习 2 给出严格表述）。位置信息以「学出来的时间尺度」的形式写进 stream 特征；full 层只需按内容检索，顺序由 linear 层兜底。等距 3:1 布局还保证顺序信号的传输距离有界：周期段内任意 full 层与其上游最近的 full 层之间恰隔 3 层 KDA，与最近 KDA 层至多隔 3 层。
-2. **为什么想要**：NoPE 拆掉 4.1 §4.1 的 RoPE×低秩冲突。无旋转则 $R_{n-t}$ 不再卡在 $W^{UK}$ 与 $c$ 之间，朴素低秩吸收畅通：cache 保持 $d_c + d_R$ = 576 元素 / token / 层（4.1 §4.2 口径；NoPE 只关旋转、不动 config 字段），decode 直接对 latent 打分，4.1 §4.3-4.4 的两笔吸收（ $`\tilde{W}_h`$ 与 $`\widehat{W}_h`$）无需 decoupled 通道的配合即全量成立。在这里 RoPE 是花钱买一份 KDA 已经免费提供的位置信号，还顺手堵死吸收。去掉它是双赢，不是妥协。
+2. **为什么想要**：NoPE 拆掉 4.1 §4.1 的 RoPE×低秩冲突。无旋转则 $R_{n-t}$ 不再卡在 $W^{UK}$ 与 $c$ 之间，朴素低秩吸收畅通：cache 保持 $d_c + d_R$ = 576 元素 / token / 层（4.1 §4.2 口径；NoPE 只关旋转、不动 config 字段），decode 直接对 latent 打分，4.1 §4.3-4.4 的两笔吸收（ $`\tilde{W}_h`$ 与 $`\widehat{W}_h`$）无需 decoupled 通道的配合即全量成立。在这里 RoPE 是花钱买一份 KDA 已经免费提供的位置信号（口径：KDA 已把顺序写进 stream，full 层不另付结构成本），还顺手堵死吸收。去掉它是双赢，不是妥协。
 
 **论文数字**（摘要口径）：公平对照实验用 1.4T tokens（Kimi Linear / GDN-H / MLA 三模型共享语料与 recipe），最终发布 checkpoint 用 5.7T tokens（对齐 Moonlight 预训练量，对照见论文 Appendix D）——两档勿混。KV cache 最多 −75%（§7 对账：7/27 层保持 cache，斜率剩 25.9%）；1M 上下文 decode 吞吐 up to 6×（摘要）、精确值 6.3×（Fig 1(b) 的 TPOT 对照）。摘要同时声明这是公平对照下首个全面超过 full attention 的 linear attention 架构——注意该结论在 3:1 hybrid 形态下达成，不是纯 KDA（§8 再议）。
 
@@ -139,19 +143,19 @@ decode 算力账顺带登记（§1 的第二笔斜率）。linear 层每 token �
 | --- | --- | --- |
 | 互补性 | 式 (1) | rank 界（4.3 §10）+ 线性 cache（2.4 式 (9)）⇒ 斜率 ÷ (r+1)，截距不省 |
 | Qwen3-Next | 式 (2)(3)；48 = 36 GDN + 12 gated attn | interval=4；输出 sigmoid 门（gate 切自 q_proj）；zero-centered 增益 $g_0 = 0$；MTP 归 4.5；[W] |
-| Kimi Linear | 27 = 20 KDA + 7 MLA-NoPE | full_attn_layers 末层例外；NoPE 双重论证（KDA 已破位置对称 + 拆 RoPE×低秩冲突）；cache −75% = 层数比；decode 6.3×（Fig 1(b)）；训练 1.4T / 5.7T 两档；[A] |
-| Kimi K3 | 2.8T / 104B | KDA 沿用 + LatentMoE（896 / 16）+ Attention Residuals（细节以 report 为准）；[A] |
+| Kimi Linear | 27 = 20 KDA + 7 MLA-NoPE | full_attn_layers 末层例外；NoPE 双重论证（KDA 已破位置对称 + 拆 RoPE×低秩冲突）（练习 2）；cache −75% = 层数比；decode 6.3×（Fig 1(b)）；训练 1.4T / 5.7T 两档；[A] |
+| Kimi K3 | 2.8T / 104B | KDA 沿用 + LatentMoE（896 / 16）+ Attention Residuals（细节以 report 为准）（练习 2）；[A] |
 | Jamba | 32 = 28 Mamba + 4 attn；MoE 隔层 16 / top-2 | SSM 谱系交错形态；52B / 12B、256K（摘要）；[A] |
-| MiniMax-01 | 80 = 70 lightning + 10 full（7:1） | 456B / 45.9B；1M 训练 / 4M 外推（摘要）；DeepNorm 式 postnorm；[A] |
+| MiniMax-01 | 80 = 70 lightning + 10 full（7:1） | 456B / 45.9B；1M 训练 / 4M 外推（摘要）（练习 3）；DeepNorm 式 postnorm；[A] |
 | 内存统一账 | §7 两表 | 每层 1 MiB 定长状态 vs 每层 0.6-2 KiB / token KV；交叉点约 $10^{3}$ token |
-| 设计空间 | $r$ / 位置 / 门控 | 检索密度 ↔ 内存斜率；末层例外；门控与位置编码为 full 层子旋钮 |
+| 设计空间 | $r$ / 位置 / 门控 | 检索密度 ↔ 内存斜率；末层例外；门控与位置编码为 full 层子旋钮（练习 1） |
 
 ## 练习
 
-1.（计算）用式 (1) 复核 Qwen3-Next 在扩展窗 $T$ = 1,010,000 下的全模型 decode 内存；同窗长下「48 层全 GDN」与「48 层全 full」两个反事实各是多少？写出三者的截距与斜率结构，并解释为什么「全 GDN」反事实在实践中不成立（提示：§1 的 rank 界论证）。
-2.（推导）Kimi Linear 的 NoPE 论证。设某层 KDA 的读出为 $o_t = S_t q_t$（4.3 式 (16)）。证明：对任意非平凡位置置换 $\pi$，KDA 层输出序列不满足置换等变（与 2.3 的 attention 置换等变性对照），即顺序信息已进入 stream；由此说明「full 层 NoPE 仍可获得位置信息」的完整机制链条，并指出该论证对「full 层放在第 1 层」为何失效。
-3.（计算）MiniMax-Text-01 在 4M 外推档、 $B$ = 8 并发下，full 层 cache 总量与单卡 80 GB HBM 的关系；若要塞进单卡，full 层每 token 每层 KV 元素数 $c_{\mathrm{kv}}$ 需压到什么量级？列出可走的 4.1 路线（GQA 组数 / MLA latent 维）各一条。
-4.（代码）对照 transformers `modeling_qwen3_next.py` 的 `Qwen3NextAttention` 门控切片与 `Qwen3NextRMSNorm` 前向，写约 30 行教学版复现式 (2)(3)（教学用，非优化实现）；再对 `torch_recurrent_gated_delta_rule` 的状态布局 $(d_k, d_v)$ 与本书约定 $S \in \mathbb{R}^{d_v \times d_k}$ 的差异写一段注记（4.3 §8 布局注记）。
+1.（计算 · [20]）用式 (1) 复核 Qwen3-Next 在扩展窗 $T$ = 1,010,000 下的全模型 decode 内存。先预测固定项与线性项在该窗长下谁主导，再计算；同窗长下「48 层全 GDN」与「48 层全 full」两个反事实各是多少？写出三者的截距与斜率结构，并解释为什么「全 GDN」反事实在实践中不成立（提示：§1 的 rank 界论证）。校验：固定项合计 36 MiB、线性项斜率 24 KiB / token，与正文内存表同数。
+2.（推导 · [30]）Kimi Linear 的 NoPE 论证。设某层 KDA 的读出为 $o_t = S_t q_t$（4.3 式 (16)）。证明：对任意非平凡位置置换 $\pi$，KDA 层输出序列不满足置换等变（与 2.3 的 attention 置换等变性对照），即顺序信息已进入 stream；由此说明「full 层 NoPE 仍可获得位置信息」的完整机制链条，并指出该论证对「full 层放在第 1 层」为何失效。
+3.（计算 · [30]）MiniMax-Text-01 在 4M 外推档、 $B$ = 8 并发下，full 层 cache 总量与单卡 80 GB HBM 的关系。先预测超不超单卡再算；若要塞进单卡，full 层每 token 每层 KV 元素数 $c_{\mathrm{kv}}$ 需压到什么量级？列出可走的 4.1 路线（GQA 组数 / MLA latent 维）各一条。校验：不带并发时与正文 4M 档的 160 GiB 一致。
+4.（代码 · [30]）对照 transformers `modeling_qwen3_next.py` 的 `Qwen3NextAttention` 门控切片与 `Qwen3NextRMSNorm` 前向，写约 30 行教学版复现式 (2)(3)（教学用，非优化实现）；再对 `torch_recurrent_gated_delta_rule` 的状态布局 $(d_k, d_v)$ 与本书约定 $S \in \mathbb{R}^{d_v \times d_k}$ 的差异写一段注记（4.3 §8 布局注记）。先预测两种布局下同一状态的转置对应关系，再对照源码验证。校验：教学版与官方前向在同一输入下逐元素一致。
 
 ## 参考
 

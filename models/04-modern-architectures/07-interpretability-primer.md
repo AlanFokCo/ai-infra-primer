@@ -4,7 +4,7 @@
 
 ## 1. 地基：residual stream 是 read-modify-write 总线
 
-2.1 式 (2) 把整机输出写成纯加和 $x^{(L)} = x^{(0)} + \sum_{\ell} a_{\ell} + \sum_{\ell} f_{\ell}$。本章全部方法都从这条加法结构里长出来。先把它改写成 read-modify-write 的通用循环：每个组件（一个 attention head、一个 MLP）从 stream 读入（经 norm 与各自投影），把输出**加回** stream。没有任何组件能覆盖或擦除别人的写入——对冲（写入一个反向量）是唯一可用的「删除」。
+一台训练好的 Transformer，内部在读什么、写什么？2.1 式 (2) 把整机输出写成纯加和 $x^{(L)} = x^{(0)} + \sum_{\ell} a_{\ell} + \sum_{\ell} f_{\ell}$。本章全部方法都从这条加法结构里长出来。先把它改写成 read-modify-write 的通用循环：每个组件（一个 attention head、一个 MLP）从 stream 读入（经 norm 与各自投影），把输出**加回** stream。没有任何组件能覆盖或擦除别人的写入——对冲（写入一个反向量）是唯一可用的「删除」。
 
 ```
 logit lens（§2）：       ▼          ▼                    ▼
@@ -22,7 +22,7 @@ x⁽⁰⁾ ═► ═► ═► ═► x⁽¹⁾ ═► ═► x⁽²⁾ ═► 
 2. 从和中删去某项 $a_\ell$ 即「关掉」该组件 → ablation；
 3. 把某项替换成它在另一个输入下的取值即一次受控干预 → activation patching（§6）。
 
-记号约定沿用 2.1： $x^{(\ell)} \in \mathbb{R}^{B \times T \times d}$ ；本章多在单位置讨论，记 $h \in \mathbb{R}^{d}$ 为某位置某层的 stream 向量（文献常写作 $h_\ell$ ）。组件粒度取「一个 head 的输出（ $W_O$ 之后、残差加之前）或一个 MLP 的输出」，这是干预的最小单位。
+记号约定沿用 2.1： $x^{(\ell)} \in \mathbb{R}^{B \times T \times d}$ ；本章多在单位置讨论，记 $h \in \mathbb{R}^{d}$ 为某位置某层的 stream 向量（文献常写作 $h_\ell$ ）。组件粒度取「一个 head 的输出（ $W_O$ 之后、残差加之前）或一个 MLP 的输出」，这是干预的最小单位。本章口径：circuit 与 patching 的实例固定在 GPT-2 small 的 IOI 任务上，SAE 与工具链实例用 Gemma Scope 与 TransformerLens 的公开件。
 
 ## 2. Logit lens：中间层的词表投影
 
@@ -106,7 +106,9 @@ h ∈ R^d ─► encoder（ReLU / TopK / 门控）─► z ∈ R^n（稀疏：L0
          loss = ‖h − ĥ‖² + λ‖z‖₁（L1 族，式 (7)）
 ```
 
-L1 的已知副作用：惩罚正比于幅度，把全部非零 $z_i$ 系统性压小（shrinkage），重构幅度随之偏低（练习 3 推导标量版）。两个变体族针对这一点：
+> **坑**：L1 的惩罚正比于幅度，会把全部非零 $z_i$ 系统性压小（shrinkage），重构幅度随之偏低（练习 3 推导标量版机理）。
+
+两个变体族针对的正是这个坑：
 
 - **TopK（k-SAE）**：去掉 L1，硬约束稀疏度—— $z = \mathrm{TopK}(W_{\mathrm{enc}} h + b_{\mathrm{enc}})$ ，每位置只保留最大的 $k$ 个分量、其余置零。 $L_0 \equiv k$ ，超参 $\lambda$ 消失，幅度不被压缩；代价是稀疏度对每个位置一视同仁。
 - **门控（gating）/ JumpReLU**：把「是否激活」与「激活多强」拆成两条路径，
@@ -127,7 +129,7 @@ $$
 
 ## 5. Circuits：从组件到算法
 
-circuit 的定义：实现某个行为子功能的组件子图——节点是 head / MLP，边是「前者的写入被后者读出」。3.3 §6 的 induction head 就是最小实例：两个 head 跨两层，靠组合双线性型（3.3 式 (7)）完成 prefix matching + copying，单看任一层该功能都不存在——circuit 的意义恰在这种跨组件组合。
+所谓 circuit（回路），是指实现某个行为子功能的组件子图——节点是 head / MLP，边是「前者的写入被后者读出」。3.3 §6 的 induction head 就是最小实例：两个 head 跨两层，靠组合双线性型（3.3 式 (7)）完成 prefix matching + copying，单看任一层该功能都不存在——circuit 的意义恰在这种跨组件组合。
 
 方法论全流程的范本是 IOI（indirect object identification）circuit（[Wang et al., 2022](../references.md)，arXiv:2211.00593，[A]）。任务模板：「When Mary and John went to the store, John gave a drink to ___」→ 应填 Mary（IO = 间接宾语；S = John，句中重复出现的那个名字）。对象模型 GPT-2 small（12 层 × 12 head = 144 个 head；[Radford et al., 2019](../references.md)，[W]）。论文的结论：26 个 head 归入 7 类功能角色，主干链路三类：
 
@@ -178,7 +180,7 @@ $$
 
 ## 7. 方法工具箱对照表
 
-§2–§6 的工具压进一张表：
+§2–§6 的六件工具各自测什么、又分别测不了什么？压进一张表对照：
 
 | 方法 | 操作 | 测什么 | 证据类型 | 粒度 | 回答不了 |
 | --- | --- | --- | --- | --- | --- |
@@ -211,16 +213,16 @@ Gemma Scope 与 transformer-circuits.pub 系列的自述局限可以压成一句
 | logit lens | 式 (1)： $`\tilde{p}_\ell = \mathrm{softmax}(W_U x^{(\ell)})`$ | 输出坐标系读中间层；坐标系 / 分布 / 因果三局限；无正式出处（博客 2020） |
 | superposition | 式 (4)(5)： $`\hat{x}_i = \lVert W_{:i} \rVert^{2} x_i + \sum_{j \neq i} \langle W_{:i}, W_{:j} \rangle x_j`$ ；干扰方差 $\sim (n-1)S/d$ | 随机方向容量 $n \sim \exp(\epsilon^{2} d / 4)$ ；稀疏判据 $nS \ll d$ ；polysemanticity = 换基问题 |
 | SAE | 式 (7)： $\lVert h - Dz \rVert^{2} + \lambda \lVert z \rVert_1$ ；TopK；门控式 (8) | L1 shrinkage → TopK / JumpReLU；按 $L_0$ 归档；Gemma Scope 逐层三挂载点开放 |
-| circuits | IOI：26 heads / 7 类（GPT-2 small，144 heads） | 定指标 → 造腐蚀 → patching → knockout 完备性；backup name mover 教训 |
+| circuits | IOI：26 heads / 7 类（GPT-2 small，144 heads） | 定指标 → 造腐蚀 → patching → knockout 完备性；backup name mover 教训；练习 4 |
 | activation patching | 式 (9)(10)：do 算子与恢复率 | 充分性（patch-clean）与必要性（ablation）都要测；path patching 钉边；probing 只给相关下限 |
 | 可信度分级 | §8 三档表 | 观测提假设、因果做宣判；SAE 因果断言须过 patching |
 
 ## 练习
 
-1.（推导）从 2.1 式 (2) 出发，证明「把第 $k$ 层 MLP 置零」与「把第 $k$ 层 MLP 输出替换为它在输入 $x'$ 下的取值」都对应前向计算图上的良定义操作，并写出两者在加和形式下各自的编辑方式。若把 Pre-LN 换成 Post-LN（ $x \leftarrow \mathrm{LN}(x + f(x))$ ），这两个操作还良定义吗？（提示：对照 2.1 §2 末的 Post-LN 注记，纯加法展开是先决条件。）
-2.（计算）superposition 的两条独立约束：取 $d = 4096$ 、 $\epsilon = 0.1$ ，用 $\sqrt{4 \ln n / d} \le \epsilon$ 估算随机方向可容纳特征数 $n$ 的量级；再取稀疏度 $S = 0.01$ ，用式 (5) 的判据 $nS \ll d$ 给出第二个上界。哪个先咬紧？说明「几何容量」与「稀疏负载」为什么必须分开算。
-3.（推导）L1 的 shrinkage：对标量问题 $\min_z\thinspace (h - z)^{2} + \lambda |z|$ （ $h > 0$ ），证明解为软阈值 $`z^{*} = \max(h - \lambda/2,\ 0)`$ 。由此说明式 (7) 为何系统性低估特征幅度，以及 TopK 与门控变体各自在哪个环节取消这个偏差。
-4.（代码 + 分析）用 TransformerLens 对 GPT-2 small 跑 IOI 协议（教学练习，测量口径以 TransformerLens 文档为准）：构造 20 条 Mary/John 模板与对应的随机名腐蚀版，定义 $\mathrm{LD} = \mathrm{logit}(\mathrm{IO}) - \mathrm{logit}(\mathrm{S})$ ，对第 9、10 层全部 head 做 activation patching，按式 (10) 的恢复率排序列出前 5 个 head，与论文报告的 name mover 位置（L9H6 / L9H9 / L10H0）对照；再对恢复率最高者做 zero ablation，报告 LD 下降幅度，并用 backup name mover 解释「ablation 后行为仍在」的可能原因。
+1.（推导 · [20]）从 2.1 式 (2) 出发，证明「把第 $k$ 层 MLP 置零」与「把第 $k$ 层 MLP 输出替换为它在输入 $x'$ 下的取值」都对应前向计算图上的良定义操作，并写出两者在加和形式下各自的编辑方式。若把 Pre-LN 换成 Post-LN（ $x \leftarrow \mathrm{LN}(x + f(x))$ ），这两个操作还良定义吗？（提示：对照 2.1 §2 末的 Post-LN 注记，纯加法展开是先决条件。）
+2.（计算 · [20]）superposition 的两条独立约束：取 $d = 4096$ 、 $\epsilon = 0.1$ ，用 $\sqrt{4 \ln n / d} \le \epsilon$ 估算随机方向可容纳特征数 $n$ 的量级；再取稀疏度 $S = 0.01$ ，用式 (5) 的判据 $nS \ll d$ 给出第二个上界。哪个先咬紧？说明「几何容量」与「稀疏负载」为什么必须分开算。校验：两个上界都可由对数恒等式手算复核——几何上界随维度指数放大，稀疏上界随维度线性放大。
+3.（推导 · [20]）L1 的 shrinkage：对标量问题 $\min_z\thinspace (h - z)^{2} + \lambda |z|$ （ $h > 0$ ），证明解为软阈值 $`z^{*} = \max(h - \lambda/2,\ 0)`$ 。由此说明式 (7) 为何系统性低估特征幅度，以及 TopK 与门控变体各自在哪个环节取消这个偏差。
+4.（代码 + 分析 · [40]）用 TransformerLens 对 GPT-2 small 跑 IOI 协议（教学练习，测量口径以 TransformerLens 文档为准）：(a) 构造 20 条 Mary/John 模板与对应的随机名腐蚀版，定义 $\mathrm{LD} = \mathrm{logit}(\mathrm{IO}) - \mathrm{logit}(\mathrm{S})$ ；(b) 对第 9、10 层全部 head 做 activation patching，按式 (10) 的恢复率排序列出前 5 个 head，与论文报告的 name mover 位置（L9H6 / L9H9 / L10H0）对照；(c) 再对恢复率最高者做 zero ablation，报告 LD 下降幅度；(d) 用 backup name mover 解释「ablation 后行为仍在」的可能原因。先按正文 IOI 段的结论预测哪几个 head 会进前 5，再跑实验对照。校验：前 5 名应与论文报告的三个 name mover 位置有交集。
 
 ## 参考
 

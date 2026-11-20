@@ -4,7 +4,7 @@
 
 ## 1. 解耦：容量按总参数付内存，计算按激活付 FLOPs
 
-2.6 §5 留下的接口在这里兑现。MoE 层把一个 FFN 换成 $N_e$ 个并行 FFN（expert）加一台 router：
+同一个 FFN，参数翻几十倍而每个 token 的计算量不变，可能吗？2.6 §5 留下的接口在这里兑现。本章口径：数字实例一律落在三家锚点（Mixtral-8x7B、Qwen3-30B-A3B、DeepSeek-V3）的公开 config 上，随式注明。MoE 层把一个 FFN 换成 $N_e$ 个并行 FFN（expert）加一台 router：
 
 $$
 \mathrm{MoE}(x) = \sum_{i=1}^{N_e} g_i(x)\thinspace E_i(x), \qquad g_i(x) = \begin{cases} \tilde{g}_i(x), & i \in \mathrm{TopK}\big(s(x), k\big) \\ 0, & \text{otherwise} \end{cases} \qquad (1)
@@ -46,6 +46,8 @@ $$
 Mixtral 的官方实现是这节账的最小代码锚点：transformers 的 `modeling_mixtral.py` 中 `MixtralSparseMoeBlock`（[HuggingFace](https://github.com/huggingface/transformers/blob/main/src/transformers/models/mixtral/modeling_mixtral.py)）：router logits 过 softmax、`top_k = 2` 取两家、归一化后按 expert 加权求和——式 (1) 的逐行直译，token-choice 族的最简实例。
 
 ## 2. Router 机制谱系：从噪声探索到辅助损失
+
+router 要回答两个问题：每个 token 发给谁，以及怎样保证没有 expert 被饿死、被撑爆。本节的谱系从最简回答（加噪声探索）开始，逐步走到把均衡写成损失函数里的一项。
 
 ### 2.1 Shazeer 2017：noisy top-k gating
 
@@ -227,7 +229,9 @@ class Gate(nn.Module):                    # 式 (16)(17)(18) 的对应物
         return idx, w
 ```
 
-逐行对账：`sigmoid` ↔ 式 (16)；`choice` 与 `scores` 分离 ↔ 「偏置只进选择不进权重」（性质 ii-a）；`gather` 回原始分数 ↔ 式 (17) 的分子；`requires_grad=False` ↔ 控制器不走梯度（性质 ii-b）。与官方实现的差异：官方版多出 n_group / topk_group 的组掩码（组限定分发的代码落点）与推理路径的 expert 分发；另一处工程痕迹是 bias 字段挂在 hidden 维 7168 的条件分支上——该字段为 V3 口径硬编码。偏置的实际更新发生在训练循环（按式 (18) 统计全步负载后改写），推理代码里它只是常数。
+逐行对账：`sigmoid` ↔ 式 (16)；`choice` 与 `scores` 分离 ↔ 「偏置只进选择不进权重」（性质 ii-a）；`gather` 回原始分数 ↔ 式 (17) 的分子；`requires_grad=False` ↔ 控制器不走梯度（性质 ii-b）。与官方实现的差异：官方版多出 n_group / topk_group 的组掩码（组限定分发的代码落点）与推理路径的 expert 分发。偏置的实际更新发生在训练循环（按式 (18) 统计全步负载后改写），推理代码里它只是常数。
+
+> **坑**：官方推理代码的 bias 字段挂在 hidden 维 7168 的条件分支上——该字段为 V3 口径硬编码，照抄到别的 hidden 维时偏置形状要自行核对。
 
 ## 4. Router 病理学：三种失效与诊断指标
 
@@ -239,13 +243,13 @@ MoE 特有的失效全部围绕 router 的反馈回路（素材分散于 Switch 
 
 诊断口径注记：上述指标全部逐层统计——塌缩与死 expert 常只在个别层发生，整网平均会洗平信号。GShard 的随机改派（§2.3）亦可读作一条抗塌缩机制：溢出 token 被随机送往有余量的 expert，给低负载 expert 续上梯度流，代价是路由决策不再纯由亲和度决定。
 
-设计读法： $\alpha$ 与 $\Delta$ 是同一旋钮的两种实现——均衡回路的增益。增益过低塌缩、过高振荡，工作点在两者之间；这与 §3.2 (i) 的 $\gamma$ 折中是同一条控制论常识在两个配方里的现身。
+> **提点**： $\alpha$ 与 $\Delta$ 是同一旋钮的两种实现——均衡回路的增益。增益过低塌缩、过高振荡，工作点在两者之间；这与 §3.2 (i) 的 $\gamma$ 折中是同一条控制论常识在两个配方里的现身。
 
 ## 5. MoE × scaling laws：细粒度缩放的曲线证据
 
 1.3 §6 已建立框架： $C \approx 6 N_{\mathrm{act}} D$ 下，FLOPs 角色由 $N_{\mathrm{act}}$ 继承，容量项由 $N_{\mathrm{tot}}$ 摊薄。本章补两条实证。
 
-其一，DeepSeekMoE 的 IsoFLOPs 对照（[A]）：同算力下 MoE 的 loss 曲线整体低于 dense，细粒度切分（式 (14)）再压一截，组合自由度（式 (15)）在这里兑现为 loss 差。该论文的粒度消融进一步显示：固定激活参数、只增大切分倍数 $m$，loss 单调改善，直到路由与通信开销反超。
+其一，DeepSeekMoE 的 IsoFLOPs 对照（[A]）：同算力下 MoE 的 loss 曲线整体低于 dense，细粒度切分（式 (14)）再压一截，组合自由度（式 (15)）在这里兑现为 loss 差。该论文的粒度消融进一步显示：固定激活参数、只增大切分倍数 $m$，loss 单调改善，直到路由与通信开销（口径：router 计算与 expert 通信的账，相对的是容量收益）反超。
 
 其二，工作点的终点形态。DeepSeek-V3 以 671B 总参 / 37B 激活、14.8T token 训练，pre-training 用 2.664M H800 GPU-hours（全训练 2.788M，口径见 1.2 §9；[A]）。按 $C = 6 N_{\mathrm{act}} D \approx 3.3 \times 10^{24}$ FLOPs 的预算，dense 等价物只养得起 37B 量级的容量；MoE 把容量推到 671B，边际成本不进 FLOPs 账，进的是内存与 §7 的通信账。
 
@@ -286,7 +290,7 @@ $$
 
 ### 6.2 推理：self-speculative 与接受率
 
-推理时 MTP 模块翻过来当草稿模型（self-speculative）：模块 1 以 backbone 表示为条件先猜 $t+2$，主模型一次前向并行验证两个位置。接受规则与接受率公式出自 speculative decoding（[Leviathan et al., 2023](../references.md)，arXiv:2211.17192，[B]）：草稿分布 $q$、目标分布 $p$，采样 $x \sim q$ 后以概率 $\min(1, p(x)/q(x))$ 接受；拒绝则从归一化的 $`(p - q)_{+}`$ 重采。该规则保证输出分布精确等于 $p$——无损加速（练习 3 证）。
+推理时 MTP 模块翻过来当草稿模型（self-speculative）：模块 1 以 backbone 表示为条件先猜 $t+2$，主模型一次前向并行验证两个位置。接受规则与接受率公式出自 speculative decoding（[Leviathan et al., 2023](../references.md)，arXiv:2211.17192，[B]）：草稿分布 $q$、目标分布 $p$，采样 $x \sim q$ 后以概率 $\min(1, p(x)/q(x))$ 接受；拒绝则从归一化的 $`(p - q)_{+}`$ 重采。该规则保证输出分布精确等于 $p$——无损加速（练习 4 证）。
 
 整体接受率：
 
@@ -327,7 +331,7 @@ MoE 的稀疏激活把 dense 层换成一个跨设备分发问题。expert 分�
 | 概念 | 公式 / 数值 | 要点 |
 | --- | --- | --- |
 | MoE 层 | 式 (1)；参数 $N_e \cdot 3d\thinspace d_{\mathrm{ff}}^{(e)}$，FLOPs $(k+K_s)\cdot 6d\thinspace d_{\mathrm{ff}}^{(e)}$ | 解耦：FLOPs ∝ $N_{\mathrm{act}}$，容量 ∝ $N_{\mathrm{tot}}$；联合视角式 (2) |
-| 锚点稀疏度 | Mixtral 8 选 2（46.7B/12.9B）[A]；Qwen3-30B-A3B 128 选 8（30.5B/3.3B）[A]；DeepSeek-V3 256+1 选 8（671B/37B）[A] | $\rho$：25% → 6.25% → 3.5% |
+| 锚点稀疏度 | Mixtral 8 选 2（46.7B/12.9B）[A]；Qwen3-30B-A3B 128 选 8（30.5B/3.3B）[A]；DeepSeek-V3 256+1 选 8（671B/37B）[A] | $\rho$：25% → 6.25% → 3.5%；练习 1 |
 | noisy top-k | 式 (3)(4) [B] | 可学噪声 = 参数化探索；KeepTopK 给硬稀疏 |
 | aux loss | $\alpha N_e \sum f_i P_i$，式 (6)–(10) [A] | 协方差分解式 (8)；对角最小性式 (9)（CS）；梯度只走 $P$、均值回复式 (10)；全局最小不在均匀（诚实边界） |
 | Switch | top-1；容量式 (11)；溢出 = 跳层 [A] | CF 常用 1.25；溢出率小则质量影响可忽略 |
@@ -335,17 +339,17 @@ MoE 的稀疏激活把 dense 层换成一个跨设备分发问题。expert 分�
 | expert choice | 式 (13) [B] | 均衡由构造保证；token 侧计算量可变；AR 不适配（未来依赖） |
 | DeepSeekMoE | 式 (14)(15) [A] | $m$ 倍切分等参等算力；组合数 $\binom{mN_e}{mk}$；16B/2.8B ≈ 40% 算力达 LLaMA2-7B |
 | DeepSeek-V3 路由 | 式 (16)(17)(18) [A] | sigmoid 亲和；偏置只进选择不进权重； $\gamma = 10^{-3}$ 符号步 = 积分控制器；seq 级兜底 + 组限定（8 组选 4） |
-| router 病理 | 塌缩 / 死 expert / 振荡 | 诊断： $\max f_i$、熵、死 expert 占比、 $f_i$ 负自相关 |
+| router 病理 | 塌缩 / 死 expert / 振荡 | 诊断： $\max f_i$、熵、死 expert 占比、 $f_i$ 负自相关；练习 3 |
 | MTP | 式 (19)–(21) [A] | 链式模块、共享 Emb/OutHead；训练加密监督；推理 self-speculative： $\alpha = 1 - D_{\mathrm{TV}}$ 式 (22)、 $\mathbb{E} = (1-\alpha^{\gamma+1})/(1-\alpha)$ 式 (23)；V3 接受率 85–90%、约 1.8× TPS |
 | Medusa 对照 | 式 (24) [A] | 并行头、无链；树状验证 |
 | EP 接口 | 每 token 每层 $2kd\thinspace b$ bytes；扇出 $\le M$ | 通信账与切分权衡归 training 5.4；拓扑与 EPLB 实现归 cluster 维度 |
 
 ## 练习
 
-1.（推导）(a) 由 $\sum_i f_i = \sum_i P_i = 1$ 推出式 (7)，写明交叉项为何为零；(b) 完成式 (9) 的 Cauchy–Schwarz 步骤并给出等号条件；(c) 构造一对单纯形向量 $(f, P)$ 使 $\sum_i f_i P_i < 1/N_e$，并结合「 $f$、 $P$ 由同一 router 生成」说明该点为何不构成对式 (6) 的反驳；(d) 由式 (10) 出发，写出 $L_{\mathrm{aux}}$ 对 logit $\ell_j(x_t)$ 的完整梯度（经 softmax Jacobian），说明高 $f$ expert 的概率质量被推向何处。
-2.（计算）DeepSeek-V3 单 MoE 层： $d$ = 7168、 $d_{\mathrm{ff}}^{(e)}$ = 2048、256 routed + 1 shared、top-8。(a) 层参数与每 token 激活参数；(b) per-token FLOPs，以及等激活 dense FFN 的中间维应取多少；(c) 若改为 512 个中间维 1024 的 expert、top-16 + 1 个同样变细的 shared，用式 (14) 检验参数与 FLOPs 是否不变，组合数变几倍（ $\binom{512}{16}$ 对 $\binom{256}{8}$，用对数估）。
-3.（推导）(a) 由接受-重采规则证明 speculative decoding 的输出分布精确等于 $p$（提示：对「接受 $x \sim q$」与「拒绝后重采」两路求边际）；(b) 由该规则推式 (22) 的 $\alpha = 1 - D_{\mathrm{TV}}$；(c) 在逐位置 iid 接受假设下推式 (23)；(d) 取 $\alpha = 0.87$、 $\gamma = 1$ 算期望产出，并说明 V3 实测约 1.8× 与理论值之间的差来自哪里（草稿模块自身前向、验证开销）。
-4.（计算 + 推导）Switch 容量账：batch 65536 token、 $N_e$ = 128、CF = 1.25。(a) 每 expert 容量 $C_e$；(b) 写出溢出 token 在该层的前向公式（提示：输出 = residual 直传）；(c) 若负载呈 Zipf 形 $f_i \propto i^{-1.2}$，数值估计溢出 token 占比（允许用代码模拟）。
+1.（计算 · [20]）DeepSeek-V3 单 MoE 层： $d$ = 7168、 $d_{\mathrm{ff}}^{(e)}$ = 2048、256 routed + 1 shared、top-8。(a) 层参数与每 token 激活参数；(b) per-token FLOPs，以及等激活 dense FFN 的中间维应取多少；(c) 若改为 512 个中间维 1024 的 expert、top-16 + 1 个同样变细的 shared，用式 (14) 检验参数与 FLOPs 是否不变，组合数变几倍（ $\binom{512}{16}$ 对 $\binom{256}{8}$，用对数估）。校验：routed 数与每 token 激活数应对得上 DeepSeek-V3 config 的 n_routed_experts 与 num_experts_per_tok 字段。
+2.（计算 + 推导 · [30]）Switch 容量账：batch 65536 token、 $N_e$ = 128、CF = 1.25。(a) 每 expert 容量 $C_e$；(b) 写出溢出 token 在该层的前向公式（提示：输出 = residual 直传）；(c) 若负载呈 Zipf 形 $f_i \propto i^{-1.2}$，数值估计溢出 token 占比（允许用代码模拟）。先写出你对 (c) 溢出占比的数量级预测，再动手模拟。校验：(a) 的容量乘 expert 数应不小于 batch 总 token 数；(c) 的溢出占比应随 Zipf 指数变陡而上升。
+3.（推导 · [30]）(a) 由 $\sum_i f_i = \sum_i P_i = 1$ 推出式 (7)，写明交叉项为何为零；(b) 完成式 (9) 的 Cauchy–Schwarz 步骤并给出等号条件；(c) 构造一对单纯形向量 $(f, P)$ 使 $\sum_i f_i P_i < 1/N_e$，并结合「 $f$、 $P$ 由同一 router 生成」说明该点为何不构成对式 (6) 的反驳；(d) 由式 (10) 出发，写出 $L_{\mathrm{aux}}$ 对 logit $\ell_j(x_t)$ 的完整梯度（经 softmax Jacobian），说明高 $f$ expert 的概率质量被推向何处。
+4.（推导 · [40]）(a) 由接受-重采规则证明 speculative decoding 的输出分布精确等于 $p$（提示：对「接受 $x \sim q$」与「拒绝后重采」两路求边际）；(b) 由该规则推式 (22) 的 $\alpha = 1 - D_{\mathrm{TV}}$；(c) 在逐位置 iid 接受假设下推式 (23)；(d) 取 $\alpha = 0.87$、 $\gamma = 1$ 算期望产出，并说明 V3 实测约 1.8× 与理论值之间的差来自哪里（草稿模块自身前向、验证开销）。
 
 ## 参考
 

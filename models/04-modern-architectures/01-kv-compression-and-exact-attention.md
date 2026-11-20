@@ -10,6 +10,8 @@
 
 两条战线正交：KV 压缩改「存什么」，FlashAttention 改「怎么算」，可以叠加（DeepSeek-V3 即 MLA 与 FlashAttention 的组合）。§2–§4 走第一条线（MQA → GQA → MLA），§5 走第二条。
 
+本章口径：cache 实例账一律用 8B 档 Llama 形态（32 层、GQA-8、head 维 128、bf16）。MLA 段换 DeepSeek-V3 的 config 字段口径，因为 MLA 维度只有它公开可核；IO 段换 A100 硬件口径，因为论文 benchmark 平台是它。两处换口径随段声明。
+
 ## 2. MQA： $H_{kv} = 1$ 的极端形
 
 MHA 标准形每头一对 K/V 投影（2.3 式 (11)）。MQA（multi-query attention，[Shazeer, 2019](../references.md)，arXiv:1911.02150，[B]）把它推到底：全部 $H_q$ 个 query 头共享同一对 K/V：
@@ -30,7 +32,7 @@ decode 侧还有一笔账。2.4 式 (12) 的分母是「权重读一遍 + 每序
 
 代价写在机制里。回到 2.3 §2 的透镜视角：score 经 rank-$`d_k`$ 双线性型读 stream（列向量约定下 $A_h = (W_h^{Q})^{\top} W_h^{K} \in \mathbb{R}^{d \times d}$，rank ≤ $d_{\mathrm{head}}$），MHA 是 $H$ 个独立低秩透镜并排。MQA 不是减少透镜个数，而是强制全部透镜共用同一片 K 侧玻璃： $A_h^{MQA} = (W_h^{Q})^{\top} W^{K}$。 $H_q$ 个头的 key 侧行空间被固定在同一组基上，检索分辨率塌缩到一份。value 侧同样：整条序列只有一条 $d_{\mathrm{head}}$ 维的交付通道， $H_q$ 个头各自加权求和的是同一些 $v_s$，交付带宽也塌缩到一份。MQA 论文报告的质量差距（[B]，无官方代码，按论文口径引）就是这两处塌缩的代价。§3 的 GQA 是「塌缩程度可调」的修复。
 
-一个对照注记为 §4 铺垫：MQA 与 GQA 同 RoPE 无冲突——压缩的是头数，每个幸存的 K/V 头仍逐位置物化、照常旋转（2.5 §4.3 的应用位置不变，cache 里存的是已旋转的共享 $k_n$）。冲突只在「压缩每个 token 的 KV 内容本身」时出现。那是 MLA 要面对的，§4.1 的推导就从这里开始。
+> **提点**（为 §4 铺垫）：MQA 与 GQA 同 RoPE 无冲突——压缩的是头数，每个幸存的 K/V 头仍逐位置物化、照常旋转（2.5 §4.3 的应用位置不变，cache 里存的是已旋转的共享 $k_n$）。冲突只在「压缩每个 token 的 KV 内容本身」时出现，那是 MLA 要面对的（§4.1 的推导就从这里开始）。
 
 ## 3. GQA：组内共享、uptraining 与 Pareto 前沿
 
@@ -55,7 +57,7 @@ H_kv = 32                H_kv = 8                    H_kv = 1
 
 实现侧一句：cache 只按 $H_{kv}$ 份存储与回读，组内广播发生在打分前的视图层——K/V 从 $[B, H_{kv}, t, D]$ 扩视到 $[B, H_q, t, D]$，扩视不产生新字节；eager 路径显式 repeat，SDPA / FlashAttention 路径在 kernel 内广播（Llama modeling 代码的 K/V 复用即此形，[HuggingFace, modeling_llama.py](../references.md)，[A]）。广播同样出现在 2.4 §4.4 的 shape 走读里（ $s_t$ 是 $[B, 32, 1, t]$ 对 cache $[B, 8, t, 128]$ 的组内匹配）。注意广播不改账：省的是存储与带宽，打分 FLOPs 仍按 $H_q$ 个 query 头全付。
 
-**uptraining**。GQA 论文给的迁移配方（[B]，按论文引）：从已训好的 MHA checkpoint 出发，把每组内各头的 $W_h^{K}$（同理 $W_h^{V}$）做 mean pooling，用得到的共享 K/V 投影初始化，再花约原预训练算力 5% 的预算继续训练。初始化为什么取 mean？论文对照过三种取法：组内 mean pooling、取组内第一头、随机初始化，mean pooling 最优（[B]）。机制上的直观是：各头的 $W_h^{K}$ 行空间方向不同，任取一头等于把组内其余头的检索结构硬对齐到该头，而 mean 保持组内方向的质心，零阶扰动最小。随后 5% 预算的继续训练把 pooled 权重与网络其余部分重新校准。这条路径的意义是：GQA 可以 retro-fit 到存量 MHA checkpoint 上，不必从头训。
+**uptraining**。所谓 uptraining，是指把已训好的 MHA checkpoint 迁移成 GQA 架构、再小额续训的配方。GQA 论文给的迁移配方（[B]，按论文引）：从已训好的 MHA checkpoint 出发，把每组内各头的 $W_h^{K}$（同理 $W_h^{V}$）做 mean pooling，用得到的共享 K/V 投影初始化，再花约原预训练算力 5% 的预算继续训练。初始化为什么取 mean？论文对照过三种取法：组内 mean pooling、取组内第一头、随机初始化，mean pooling 最优（[B]）。机制上的直观是：各头的 $W_h^{K}$ 行空间方向不同，任取一头等于把组内其余头的检索结构硬对齐到该头，而 mean 保持组内方向的质心，零阶扰动最小。随后 5% 预算的继续训练把 pooled 权重与网络其余部分重新校准。这条路径的意义是：GQA 可以 retro-fit 到存量 MHA checkpoint 上，不必从头训。
 
 **Pareto 数据形态**（论文在 T5 族各规模上的 uptraining 对照，[B]）。三个臂的形态是：MQA 的 decode 最快、质量可见下降；GQA-8（8 KV 头）质量与 MHA 基线几乎重合，decode 速度接近 MQA。论文据此把 GQA-8 作为中间点选择（质量对照见 Table 1 / Fig 5，速度对照见 Fig 6）。注意证据边界：论文逐点给的是 MHA / GQA-8 / MQA 三个臂，「再向左（4、2、1）质量快速下滑」的悬崖形状是本书按 §2 塌缩机制做的外推标注，非论文数据。账侧读法：decode 每步的 cache 读取正比于 $H_{kv}$（2.4 式 (11) 的分母）。从 8 压到 1 只再省 8 倍读取，而质量从「与 MHA 几乎重合」跳到「可见下降」（MQA 臂，论文口径）。读取收益线性、质量代价非线性，中间点因此合理。落地坐标与之一致：Llama-3.1-8B（ $H_q$ = 32、 $H_{kv}$ = 8， $g$ = 4）与 Llama-3.1-70B（ $H_q$ = 64、 $H_{kv}$ = 8， $g$ = 8）（[Meta, Llama-3.1-8B config](../references.md)、[Meta, Llama-3.1-70B config](../references.md)，均 [A]）——两家都把旋钮停在 $H_{kv}$ = 8。
 
@@ -179,7 +181,7 @@ $k^{C}$ 从计算图中消失：score 直接打在 cached latent $c_s^{KV}$ 上�
 
 ### 4.4 W_UV absorption：对称的一笔
 
-V 侧同构。把加权和提到上投影之前（式 (10) 第一式代入式 (6)）：
+K 侧吸完了，V 侧怎么办？同构处理。把加权和提到上投影之前（式 (10) 第一式代入式 (6)）：
 
 $$
 o_{t,h} = \sum_{s=1}^{t} p_{t,s,h} \thinspace W_h^{UV} c_s^{KV} = W_h^{UV} \underbrace{\sum_{s=1}^{t} p_{t,s,h} \thinspace c_s^{KV}}_{m_{t,h} \in \mathbb{R}^{d_c}} \qquad (13)
@@ -216,11 +218,13 @@ $`\widehat{W}_h`$ 同样离线预计算， $W_h^{UV}$ 被吸进 $W^{O}$。两笔
 
 先把 2.3 §7 的内存账再数一遍（单层、 $B$ = 1、 $H$ 头合并、bf16）。朴素实现把 score 矩阵 $S$ 与概率矩阵 $P$ 各物化一份 $[H, T, T]$： $T$ = 131072 时是 2 TiB，且训练反向要用，不能算完即弃。物化的路径是： $Q K^{\top}$ 在片上算出 $S$ → 写 HBM → 读回做 softmax → $P$ 写回 HBM → 再读回算 $P V$。硬件侧的落差（FlashAttention 论文 §2 的口径，[Dao et al., 2022](../references.md)，arXiv:2205.14135，[A]）：A100 的 HBM 40–80 GB、带宽 1.5–2.0 TB/s；每 SM 片上 SRAM 192 KB、聚合带宽约 19 TB/s。容量差约五个数量级，带宽差约一个数量级。再看算术强度：attention 本体的 matmul FLOPs 是 $\Theta(T^{2} d)$、HBM 流量是 $\Theta(T^{2})$ 元素，算术强度 $\Theta(d)$ ≈ 128，对 ridge $10^{2}$ 只勉强压线。再被 softmax、mask、dropout 这些逐元素非 matmul 操作的往返读写一拖，实测落在 memory-bound 区。
 
-朴素实现的执行形态是三个 kernel 接力：matmul 产 $S$、softmax 逐行（含 mask、可能还有 dropout）、matmul 产 $O$。每次接力都经 HBM 中转， $T^{2}$ 对象被写出再读回共四趟。思路因此是：把 $Q, K, V$ 切成能驻留 SRAM 的块，全部中间结果留在片上，HBM 只读写 $Q, K, V, O$ 本身。障碍只有一个：softmax 的行归一化需要整行 score 的最大值与指数和（2.3 式 (10) 的 max 减法），分块后两者都不可得。online softmax 就是绕开它的数学工具。
+朴素实现的执行形态是三个 kernel 接力：matmul 产 $S$、softmax 逐行（含 mask、可能还有 dropout）、matmul 产 $O$。每次接力都经 HBM 中转， $T^{2}$ 对象被写出再读回共四趟。思路因此是：把 $Q, K, V$ 切成能驻留 SRAM 的块，全部中间结果留在片上，HBM 只读写 $Q, K, V, O$ 本身。障碍只有一个：softmax 的行归一化需要整行 score 的最大值与指数和（2.3 式 (10) 的 max 减法），分块后两者都不可得。online softmax（精确定义见下节）就是绕开它的数学工具。
 
 ### 5.2 online softmax：重缩放推导
 
-设某行 logit 按块依次到达 $B_1, B_2, \ldots$（每块 $B_c$ 个 logit），记前 $j$ 块的并集为 $U_j$。维护两个 running 统计量，处理到第 $j$ 块时更新：
+整行的 max 拿不到，还能不能做 softmax？路线：把行归一化拆成「running max + running 指数和」两个统计量，每来一块换基准重缩放一次；再归纳证明换基准是恒等变换，分块结果与整行 softmax 逐点相同。
+
+设某行 logit 按块依次到达 $B_1, B_2, \ldots$（每块 $B_c$ 个 logit），记前 $j$ 块的并集为 $U_j$。维护两个 running 统计量（随块到达逐步更新、不必回看旧块的量），处理到第 $j$ 块时更新：
 
 $$
 m^{(j)} = \max\left( m^{(j-1)},\ \max_{s \in B_j} x_s \right), \qquad \ell^{(j)} = e^{m^{(j-1)} - m^{(j)}} \thinspace \ell^{(j-1)} + \sum_{s \in B_j} e^{x_s - m^{(j)}} \qquad (15)
@@ -236,7 +240,7 @@ $$
 e^{m^{(j-1)} - m^{(j)}} \thinspace \ell^{(j-1)} = e^{m^{(j-1)} - m^{(j)}} \sum_{s \in U_{j-1}} e^{x_s - m^{(j-1)}} = \sum_{s \in U_{j-1}} e^{x_s - m^{(j-1)} + m^{(j-1)} - m^{(j)}} = \sum_{s \in U_{j-1}} e^{x_s - m^{(j)}}
 $$
 
-即把旧和从旧基准 $m^{(j-1)}$ 平移到新基准 $m^{(j)}$——指数里新旧基准之差相互抵消，逐项不变。第二项是新块在新基准下的指数和。两项相加即 $U_j = U_{j-1} \cup B_j$ 上以 $m^{(j)}$ 为基准的指数和。∎
+即把旧和从旧基准 $m^{(j-1)}$ 平移到新基准 $m^{(j)}$——指数里新旧基准之差相互抵消，逐项不变。第二项是新块在新基准下的指数和。两项相加即 $U_j = U_{j-1} \cup B_j$ 上以 $m^{(j)}$ 为基准的指数和。终止：归纳对任意块数成立；全部块处理完后，两个统计量恰为全行的全局 max 与以它为基准的指数和。∎
 
 数值走一遍。设一行 logit 为 $x = (1, 2, 5, -1)$，分两块到达 $(1, 2)$ 与 $(5, -1)$。第一块： $m^{(1)}$ = 2， $\ell^{(1)} = e^{-1} + e^{0} \approx 1.368$。第二块：块内 max 为 5， $m^{(2)}$ = 5，重缩放因子 $e^{2-5} \approx 0.0498$， $\ell^{(2)} = 0.0498 \times 1.368 + e^{0} + e^{-6} \approx 0.0681 + 1.0025 = 1.0706$。直接以全局 max 5 为基准验证： $e^{-4} + e^{-3} + e^{0} + e^{-6} \approx 0.0183 + 0.0498 + 1 + 0.0025 = 1.0706$——逐位相同；分块只是多付了一次「换基准」，和式不变。 $O^{(j)}$ 的走法同构，只是把标量 $e^{x_s - m}$ 换成 $e^{x_s - m} v_s$。
 
@@ -305,7 +309,7 @@ FA2 与 FA3 各一句话：FA2（[Dao, 2023](../references.md)，arXiv:2307.0869
 | GQA | $H_{kv} = H_q / g$，式 (3) | uptraining：组内 mean-pool 初始化（三臂对照最优）+ 约 5% 预训练算力；GQA-8 为论文 Fig 6 的中间点选择，Llama-3.1 8B / 70B 均取 $H_{kv}$ = 8 |
 | RoPE×低秩冲突 | 式 (4) | $R_{n-t}$ 卡在 $W^{UK}$ 与 $c$ 之间； $R_\Delta C \neq C R_\Delta$（全换位 ⟺ 频率块不混合 ⟺ 非压缩） |
 | MLA 构造 | 式 (5)–(10) | $c^{KV}$ = $W^{DKV} u$（512）+ decoupled $k^{R}$（64，旋转后缓存、全头共享）；query 侧同低秩（1536） |
-| MLA cache 账 | 576 元素 / token / 层 | vs MHA-32 反事实 8192（14.2×）；V3 满窗 163840：10.7 GiB vs MHA 反事实 610 GiB（56.9×） |
+| MLA cache 账 | 576 元素 / token / 层 | vs MHA-32 反事实 8192（14.2×）；V3 满窗 163840：10.7 GiB vs MHA 反事实 610 GiB（56.9×）（练习 1） |
 | W_UK / W_UV absorption | 式 (11)(12) / (13)(14) | $`\tilde{W}_h = (W_h^{UQ})^{\top} W_h^{UK}`$、 $`\widehat{W}_h = W_h^{O} W_h^{UV}`$ 离线预计算；decode 吸收形（读 576 而非 32832 元素，57×）/ prefill 展开形 |
 | online softmax | 式 (15)(16) | running max / sum，重缩放因子 $e^{m_{old} - m_{new}}$ 只换基准；归纳不变量 ⟹ 逐点精确 |
 | FlashAttention | tiling 图；式 (17) | 精确等价非近似；HBM 流量 $O(T^{2} d^{2} / M)$ vs naive $\Theta(T^{2})$；反向重算，前向内存 $O(T)$ |
@@ -313,10 +317,10 @@ FA2 与 FA3 各一句话：FA2（[Dao, 2023](../references.md)，arXiv:2307.0869
 
 ## 练习
 
-1.（推导）MQA 的透镜账。2.3 §2：MHA 第 $h$ 头经 rank-$`d_k`$ 双线性型 $A_h = (W_h^{Q})^{\top} W_h^{K}$ 读 stream。(a) 写出 MQA 下第 $h$ 头的等价双线性型 $A_h^{MQA}$，说明 $H_q$ 个 $A_h^{MQA}$ 的「K 侧行空间」为什么被钉在同一组基上；(b) 设 $v_s$ 全头共享，证明对任意 attention 权重分配，每头输出 $o_{t,h} \in \mathrm{span}\lbrace v_s\rbrace_{s \le t}$，即全部头的读出共享同一条维数 ≤ $d_{\mathrm{head}}$ 的 value 通道——与 MHA 的 $H_q$ 份独立 $\lbrace v_{s,h}\rbrace$ 对照，说明「value 交付带宽与 $H_q$ 无关」的准确含义。
-2.（推导）MLA absorption 的形状与账。设 $d_c$ = 512、 $d_c'$ = 1536、 $d_h$ = $d_v$ = 128、 $d_R$ = 64、 $H$ = 128。(a) 写出 $`W_h^{UQ}, W_h^{UK}, \tilde{W}_h, \widehat{W}_h`$ 的全部 shape 并验证式 (11)(14) 的矩阵乘法合法；(b) decode 第 $t$ 步，分别计算吸收形（score 对 $c$ 打）与非吸收形（先展开 $K^C, V^C$ 再算）的逐头 score FLOPs 与每 token 每层 KV 读取字节，验证「FLOPs 3 倍、读取 57 倍」的交换比；(c) prefill 长度 $T_p$ 时两形态的 $QK^{\top}$ FLOPs 各是多少？由此说明 prefill 用展开形的理由。
-3.（计算）DeepSeek-V3 满窗账：61 层、每 token 每层 576 元素、bf16、 $T$ = 163840。(a) 单序列 cache 总量（GiB）；(b) 同窗口反事实 MHA（ $H$ = 128、 $d_{\mathrm{head}}$ = 128）与反事实 GQA-8（ $H_{kv}$ = 8）各多少；(c) $B$ = 16 并发下三者的 cache 总量；设权重 671B 参数以 fp8（1 字节）驻留约 671 GB，指出 cache 与权重在显存预算中的相对位置随 $B$ 的变化。
-4.（代码）教学实现 online softmax forward（教学用，非优化实现）：随机 $Q, K, V$（ $T$ = 1024、 $d$ = 64、fp32），按式 (15)(16) 以块大小 $B_c$ = 128 实现 causal attention forward，与 `F.scaled_dot_product_attention(is_causal=True)` 断言 allclose（容差 $10^{-5}$）。扫 $B_c \in \lbrace32, 64, 128, 256\rbrace$：(a) 验证输出不随块大小改变（精确性的可执行形式）；(b) 记录峰值显存，对照 2.3 §7 教学版在同一 $T$ 下的物化账。
+1.（计算 · [20]）DeepSeek-V3 满窗账：61 层、每 token 每层 576 元素、bf16、 $T$ = 163840。先写出 (a) 的数量级预测及理由，再计算。(a) 单序列 cache 总量（GiB）；(b) 同窗口反事实 MHA（ $H$ = 128、 $d_{\mathrm{head}}$ = 128）与反事实 GQA-8（ $H_{kv}$ = 8）各多少；(c) $B$ = 16 并发下三者的 cache 总量；设权重 671B 参数以 fp8（1 字节）驻留约 671 GB，指出 cache 与权重在显存预算中的相对位置随 $B$ 的变化。校验：(a) 按 61 × 576 × 2 × 163840 字节逐步换算，与正文 cache 账段给出的满窗数值一致。
+2.（推导 · [30]）MQA 的透镜账。2.3 §2：MHA 第 $h$ 头经 rank-$`d_k`$ 双线性型 $A_h = (W_h^{Q})^{\top} W_h^{K}$ 读 stream。(a) 写出 MQA 下第 $h$ 头的等价双线性型 $A_h^{MQA}$，说明 $H_q$ 个 $A_h^{MQA}$ 的「K 侧行空间」为什么被钉在同一组基上；(b) 设 $v_s$ 全头共享，证明对任意 attention 权重分配，每头输出 $o_{t,h} \in \mathrm{span}\lbrace v_s\rbrace_{s \le t}$，即全部头的读出共享同一条维数 ≤ $d_{\mathrm{head}}$ 的 value 通道——与 MHA 的 $H_q$ 份独立 $\lbrace v_{s,h}\rbrace$ 对照，说明「value 交付带宽与 $H_q$ 无关」的准确含义。
+3.（推导 · [30]）MLA absorption 的形状与账。设 $d_c$ = 512、 $d_c'$ = 1536、 $d_h$ = $d_v$ = 128、 $d_R$ = 64、 $H$ = 128。(a) 写出 $`W_h^{UQ}, W_h^{UK}, \tilde{W}_h, \widehat{W}_h`$ 的全部 shape 并验证式 (11)(14) 的矩阵乘法合法；(b) decode 第 $t$ 步，分别计算吸收形（score 对 $c$ 打）与非吸收形（先展开 $K^C, V^C$ 再算）的逐头 score FLOPs 与每 token 每层 KV 读取字节，验证「FLOPs 3 倍、读取 57 倍」的交换比；(c) prefill 长度 $T_p$ 时两形态的 $QK^{\top}$ FLOPs 各是多少？由此说明 prefill 用展开形的理由。
+4.（代码 · [30]）教学实现 online softmax forward（教学用，非优化实现）：随机 $Q, K, V$（ $T$ = 1024、 $d$ = 64、fp32），按式 (15)(16) 以块大小 $B_c$ = 128 实现 causal attention forward，与 `F.scaled_dot_product_attention(is_causal=True)` 断言 allclose（容差 $10^{-5}$）。先预测输出是否随块大小改变及理由，再扫 $B_c \in \lbrace32, 64, 128, 256\rbrace$：(a) 验证输出不随块大小改变（精确性的可执行形式）；(b) 记录峰值显存，对照 2.3 §7 教学版在同一 $T$ 下的物化账。
 
 ## 参考
 

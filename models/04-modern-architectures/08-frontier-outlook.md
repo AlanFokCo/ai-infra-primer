@@ -4,7 +4,7 @@
 
 ## 1. Diffusion LLM：把链式法则换成逐步去掩码
 
-LLaDA 把掩码扩散（masked diffusion）推到 8B 参数、从头训练、并与同规模自回归（AR）基线同量级对照（[Nie et al., 2025](../references.md)，arXiv:2502.09992，[A]）——文本扩散第一次有了「同量级 AR 对照」意义上的证据，而不再是玩具规模的存在性声明。
+LLaDA 把掩码扩散（masked diffusion）推到 8B 参数、从头训练、并与同规模自回归（AR）基线同量级对照（[Nie et al., 2025](../references.md)，arXiv:2502.09992，[A]）——文本扩散第一次有了「同量级 AR 对照」意义上的证据，而不再是玩具规模的存在性声明。本章口径一句话：六个方向各自带锚点，无法统一一组数值；凡算账处沿用前面各章已声明的口径，新引入的数值实例就地注明来源。
 
 **Forward：逐 token 独立腐蚀。** 词表外加一个吸收态（absorbing state）[M]；调度 $\alpha_t$ 从 $\alpha_0 = 1$ 单调降到 $\alpha_1 = 0$。每个位置独立地以概率 $1 - \alpha_t$ 被替换为 [M]：
 
@@ -28,7 +28,7 @@ $$
 \mathcal{L}(\theta) = \mathbb{E}_{t \sim U(0,1)}\hspace{5mu} \frac{1}{t} \sum_{i:\ x_t^{i} = M} \mathrm{CE}\big(x_0^{i},\ \tilde{p}_\theta(\cdot \mid x_t)\big) \qquad (3)
 $$
 
-**符号**： $t$：掩码率（线性调度下 $1 - \alpha_t = t$）；求和只覆盖被掩位置； $1/t$ 为调度权重（推导为练习 1）。训练循环就三行：均匀采样掩码率 $t$、按 $t$ 独立掩码、只对被掩位置算 CE 并除以 $t$。与 3.1 的 MLM 对照：BERT 把掩码率固定在 15%，式 (3) 把掩码率本身变成被积变量——diffusion LLM 因此与 encoder 家族共享大部分训练基础设施。
+**符号**： $t$：掩码率（线性调度下 $1 - \alpha_t = t$）；求和只覆盖被掩位置； $1/t$ 为调度权重（推导为练习 3）。训练循环就三行：均匀采样掩码率 $t$、按 $t$ 独立掩码、只对被掩位置算 CE 并除以 $t$。与 3.1 的 MLM 对照：BERT 把掩码率固定在 15%，式 (3) 把掩码率本身变成被积变量——diffusion LLM 因此与 encoder 家族共享大部分训练基础设施。
 
 SEDD（[Lou et al., 2023](../references.md)，arXiv:2310.16834，[A]）走更一般的连续时间马尔可夫链参数化：网络直接学具体分数（concrete score） $`s_\theta(x)_y \approx q_t(y)/q_t(x)`$（扰动后边际的比值），用分数熵（score entropy，Bregman 散度族的 proper scoring rule，极小点唯一落在真实比值）训练，ELBO 由逐步比值的积分给出。吸收态只是其 rate matrix 的一个特例。
 
@@ -114,9 +114,9 @@ looped-depth recurrence 是相邻坐标上的另一个旋钮：同一 block 的�
 
 ## 练习
 
-1.（推导）从式 (1)(2) 出发，对线性调度 $\alpha_t = 1 - t$ 推导式 (3)：(a) 写出逐步 ELBO 中 $t \to s$ 一步的贡献，说明权重 $-\alpha_t' / (1 - \alpha_t)$ 的来源；(b) 说明未掩码位置为什么不贡献 loss（carry-over 项恒为零）；(c) 指出 $1/t$ 权重在 $t \to 0$ 时发散，为什么实践中无害（提示： $t$ 小时被掩位置数的期望也小）。
-2.（计算）decode 的 attention FLOPs 对账。设 $L$ 层、head 总维 $d$、生成长度 $T$、diffusion 步数 $N$。(a) 证明 AR decode 全程的 scores + AV 合计约 $2LT^{2}d$（第 $t$ 步 $4td$，逐层）；(b) 证明 masked diffusion 每步（全序列双向、无 cache 复用）为 $4LT^{2}d$、全程 $4NLT^{2}d$，比值为 $2N$；(c) 取 $T = 8192$、 $N = 64$ 算出倍数 128×，并定性说明这笔多付的 FLOPs 在什么 batch 与延迟预算下可能被并行提交抵消。
-3.（代码）教学实现 masked diffusion 训练步（教学用，非优化实现）：给定 batch $x_0 \in \lbrace1,\ldots,V\rbrace^{B \times T}$ 与模型 $f_\theta$，(a) 采样 $t \sim U(\epsilon, 1)$ 并按式 (1) 逐位置独立掩码；(b) 前向得 logits $[B, T, V+1]$，按式 (3) 计算加权 CE（只在被掩位置、除 $t$）；(c) 数值断言：被掩位置数的 batch 期望为 $tT$，且掩码索引集合与 loss mask 一致。
+1.（代码 · [20]）教学实现 masked diffusion 训练步（教学用，非优化实现）：给定 batch $x_0 \in \lbrace1,\ldots,V\rbrace^{B \times T}$ 与模型 $f_\theta$，(a) 采样 $t \sim U(\epsilon, 1)$ 并按式 (1) 逐位置独立掩码；(b) 前向得 logits $[B, T, V+1]$，按式 (3) 计算加权 CE（只在被掩位置、除 $t$）；(c) 数值断言：被掩位置数的 batch 期望为 $tT$，且掩码索引集合与 loss mask 一致。校验：被掩位置的期望占比等于采样到的掩码率。
+2.（计算 · [30]）decode 的 attention FLOPs 对账。设 $L$ 层、head 总维 $d$、生成长度 $T$、diffusion 步数 $N$。(a) 证明 AR decode 全程的 scores + AV 合计约 $2LT^{2}d$（第 $t$ 步 $4td$，逐层）；(b) 证明 masked diffusion 每步（全序列双向、无 cache 复用）为 $4LT^{2}d$、全程 $4NLT^{2}d$，比值为 $2N$；(c) 取 $T = 8192$、 $N = 64$ 算出倍数 128×，并定性说明这笔多付的 FLOPs 在什么 batch 与延迟预算下可能被并行提交抵消。校验：(c) 的倍数应与 (b) 的比值公式代入同一组数的结果一致。
+3.（推导 · [30]）从式 (1)(2) 出发，对线性调度 $\alpha_t = 1 - t$ 推导式 (3)：(a) 写出逐步 ELBO 中 $t \to s$ 一步的贡献，说明权重 $-\alpha_t' / (1 - \alpha_t)$ 的来源；(b) 说明未掩码位置为什么不贡献 loss（carry-over 项恒为零）；(c) 指出 $1/t$ 权重在 $t \to 0$ 时发散，为什么实践中无害（提示： $t$ 小时被掩位置数的期望也小）。
 
 ## 参考
 

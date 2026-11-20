@@ -4,7 +4,7 @@
 
 ## 1. Kernel 视角：换掉 softmax，交换结合顺序
 
-2.3 式 (4) 加 causal mask（2.4 式 (3)）后逐行写出，缩放常数折进 score：
+attention 的二次复杂度卡在哪一步？卡在 softmax 逼出的逐对打分上。把 softmax 换掉会发生什么？先把 2.3 式 (4) 加 causal mask（2.4 式 (3)）逐行写出，缩放常数折进 score：
 
 $$
 o_t = \frac{\sum_{s=1}^{t} \mathrm{sim}(q_t, k_s)\thinspace v_s}{\sum_{s=1}^{t} \mathrm{sim}(q_t, k_s)}, \qquad \mathrm{sim}(q, k) = \exp\left(\frac{\langle q, k \rangle}{\sqrt{d_k}}\right) \qquad (1)
@@ -43,7 +43,9 @@ causal 情形下左序只需下三角、约减半为 $T^{2}(d_r+d_v)$（2.3 §7 
 
 两个代价注记。其一，特征化本身要钱：Performer 型 $\phi$ 含一次 $d_k \times d_r$ 投影（§2），逐 token $2d_kd_r$，与右序主项同阶、不改结论。其二，右序的训练形态不是把递推跑 $T$ 步——那是串行灾难；可并行形态是 chunkwise，连同 delta-rule 族的版本在 §8 统一处理。
 
-补一条视角注记：式 (4) 右序的 $\Phi(K)^{\top}V$ 不是普通中间矩阵——按前缀看，它正是 §3 式 (7) 的状态 $S_t$（布局注记：此处 $\Phi(K)^{\top}V \in \mathbb{R}^{d_r \times d_v}$ 是 key×value 布局，与 §3 起全书统一的状态约定 $S \in \mathbb{R}^{d_v \times d_r}$ 互为转置；§1-2 保留 attention 文献习惯的矩阵写法，§3 起一律用约定布局）。结合律重排因此同时产出两个对象：训练的矩阵算法与推理的递推状态；本章全部推导都从这一等式长出。左序没有这种递推对应物： $T \times T$ 核矩阵的第 $t$ 行依赖全部 $t$ 个 key，是天然的并行对象，也天然背着 $O(T^{2})$ 内存。
+> **提点**：式 (4) 右序的 $\Phi(K)^{\top}V$ 不是普通中间矩阵——按前缀看，它正是 §3 式 (7) 的状态 $S_t$（布局注记：此处 $\Phi(K)^{\top}V \in \mathbb{R}^{d_r \times d_v}$ 是 key×value 布局，与 §3 起全书统一的状态约定 $S \in \mathbb{R}^{d_v \times d_r}$ 互为转置；§1-2 保留 attention 文献习惯的矩阵写法，§3 起一律用约定布局）。结合律重排因此同时产出两个对象：训练的矩阵算法与推理的递推状态；本章全部推导都从这一等式长出。左序没有这种递推对应物： $T \times T$ 核矩阵的第 $t$ 行依赖全部 $t$ 个 key，是天然的并行对象，也天然背着 $O(T^{2})$ 内存。
+
+本章口径：数值实例一律取 head 维 128、bf16，序列长度用 8192 与 131072 两档；FAVOR+ 段另加特征维 256 档，随段声明。
 
 ## 2. FAVOR+：用随机特征无偏逼近 softmax 核
 
@@ -67,7 +69,7 @@ $$
 
 ## 3. Recurrent 形式：linear attention ≡ 矩阵状态 RNN
 
-式 (3) 的两个前缀和是全章枢纽。定义（**全章与全书统一约定**：状态 $S_t \in \mathbb{R}^{d_v \times d_k}$、读出 $o_t = S_t\thinspace\phi(q_t)$、写入 $v_t\phi(k_t)^{\top}$、擦除右乘；delta-rule 族 $\phi$ = 恒等，下式中 $d_r$ 即 $d_k$）：
+结合律重排省的是训练侧的账，decode 侧怎么办？式 (3) 的两个前缀和正是入口，也是全章枢纽。定义（**全章与全书统一约定**：状态 $S_t \in \mathbb{R}^{d_v \times d_k}$、读出 $o_t = S_t\thinspace\phi(q_t)$、写入 $v_t\phi(k_t)^{\top}$、擦除右乘；delta-rule 族 $\phi$ = 恒等，下式中 $d_r$ 即 $d_k$）：
 
 $$
 S_t = \sum_{s=1}^{t} v_s \phi(k_s)^{\top} \in \mathbb{R}^{d_v \times d_r}, \qquad z_t = \sum_{s=1}^{t} \phi(k_s) \in \mathbb{R}^{d_r} \qquad (7)
@@ -266,7 +268,7 @@ $$
 
 反向一侧的账顺带记一笔：chunkwise 的反向与正向同构——对偶的 WY 形式把梯度同样写成块内 matmul 加状态传递；工程实现再配重算策略（块内中间量不物化、反向时按同式重算），激活内存压到块界状态级别。这与 4.1 FlashAttention「不物化大矩阵、反向重算」是同一套内存哲学，对象从 $T \times T$ scores 换成块内修正。
 
-工程锚点：fla-org/flash-linear-attention（[fla-org](../references.md)，[A]）实现 DeltaNet/GDN/KDA 的 chunkwise kernel（`chunk_gated_delta_rule` 等），transformers 的 Qwen3-Next 建模代码直接调该函数（W2 调研读码确认）。**布局注记**：本书公式约定 $S \in \mathbb{R}^{d_v \times d_k}$、右乘擦除；HF 侧 kernel 把状态存成转置 $(d_k, d_v)$、左乘写入——两套约定互为转置，读码勿混。
+工程锚点：fla-org/flash-linear-attention（[fla-org](../references.md)，[A]）实现 DeltaNet/GDN/KDA 的 chunkwise kernel（`chunk_gated_delta_rule` 等），transformers 的 Qwen3-Next 建模代码直接调该函数（W2 调研读码确认）。> **坑**：本书公式约定 $S \in \mathbb{R}^{d_v \times d_k}$、右乘擦除，HF 侧 kernel 把状态存成转置 $(d_k, d_v)$、左乘写入——两套约定互为转置，读码时混用即维度错配。规避：用 fla kernel 前，先对输入输出 shape 做一次转置核对。
 
 ## 9. Mamba/S6：连续系统的离散化与 selectivity
 
@@ -343,15 +345,15 @@ Mamba-2 的 SSD 框架（[Dao & Gu, 2024](../references.md)，arXiv:2405.21060�
 | KDA | 式 (16) | $\mathrm{diag}(\alpha_t)$ key 侧逐通道遗忘（ $\alpha_t \in \mathbb{R}^{d_k}$）；DPLR 转移 |
 | chunkwise | 式 (17) | WY： $C$ 个秩一 downdate $=$ 秩-$`C`$ 修正；fla kernel 锚点 |
 | S6 | 式 (18)(19)(20) | ZOH： $\bar{A} = e^{\Delta A}$、 $\bar{B} \approx \Delta B$；selectivity 使卷积形失效 |
-| SSD 对偶 | $\gamma^{\thinspace t-s}\langle q_t, k_s\rangle$ 半可分 | SSM $=$ linear attention 的另一参数化 |
+| SSD 对偶 | $\gamma^{\thinspace t-s}\langle q_t, k_s\rangle$ 半可分 | SSM $=$ linear attention 的另一参数化（练习 2） |
 | 回忆上界 | $SK = V$ 命题 | 精确联想 $\le d_k$ 对 / 头；SNR $\sim d_k/(n-1)$；hybrid 动机（4.4） |
 
 ## 练习
 
-1.（推导）(a) 补全式 (5)：写出 $\omega \sim \mathcal{N}(0, I)$ 的矩母函数推导 $\mathbb{E}[e^{\omega^{\top}u}] = e^{\lVert u \rVert^{2}/2}$，并完成 $\mathbb{E}[\phi(q)^{\top}\phi(k)] = e^{q^{\top}k}$ 的最后一步。(b) 证明式 (6) 估计量的方差为 $O(1/m)$（提示： $\phi(q)^{\top}\phi(k) = \frac{1}{m}\sum_i (\cdot)$ 各项 iid，先算 $\mathbb{E}[e^{2\omega^{\top}x}]$）。(c) 说明 trigonometric 特征为何让式 (8) 的分母 $z_t^{\top}\phi(q_t)$ 有近零风险，而式 (6) 的 positive 特征没有。
-2.（推导）(a) 补全式 (11)：从 recurrent 形 $S_t = \gamma S_{t-1} + v_tk_t^{\top}$ 出发，对块内第 $\tau$ 行把求和劈成「本块 $+$ 既往块」，验证跨块项系数恰为 $\gamma^{\tau}$、块末状态更新中第 $\sigma$ 行写入的系数为 $\gamma^{C-\sigma}$。(b) 验证 §8 的 WY 递推：设 $\prod_{t=1}^{j-1} (I - \beta_t k_tk_t^{\top}) = I - K_{1:j-1} W_{1:j-1,\thinspace1:j-1} K_{1:j-1}^{\top}$，证明加入第 $j$ 个因子后 $W_{jj} = \beta_j$、 $W_{1:j-1,\thinspace j} = -\beta_j\thinspace W_{1:j-1,\thinspace1:j-1} \left( K_{1:j-1}^{\top} k_j \right)$，并对 $C = 2$ 核对与 §8 展开式一致。
-3.（推导）GDN 代数三问：(a) 证明 $\lVert k_t \rVert = 1$、 $\beta_t = 1$、 $\alpha_t = 1$ 时 $S_tk_t = v_t$；(b) 证明 $u \perp k_t$ 时 $S_tu = \alpha_t S_{t-1}u$（正交内容只被 $\alpha$ 缩放）；(c) 对一般 $\alpha, \beta$ 计算 $S_tk_t$，指出 $\beta_t$ 在结果中出现两次（擦除项与写入项），由此用代数语言说明 GDN-2 式 (15) 多出的自由度。
-4.（计算 $+$ 代码）(a) 取 $H$ = 32、 $d_k = d_v$ = 128、bf16：算 linear 层每层状态字节数，与 $t$ = 131072 时同头数 KV cache 每层字节数（2.4 式 (9) 口径），给比值并说明它随 $t$ 的标度。(b) 跑通 §3 教学实现的等价性断言；把 `phi` 换成式 (6) 的 FAVOR+ 特征（ $m$ = 256），对照 softmax attention 输出，报告逐位置最大误差随 $m \in \lbrace64, 256, 1024\rbrace$ 的收缩速率。(c) 实现式 (13) 的 DeltaNet 递推（ $k$ 归一化），数值验证 §5 的「一步精确写入」与「正交不动」。
+1.（推导 · [20]）GDN 代数三问：(a) 证明 $\lVert k_t \rVert = 1$、 $\beta_t = 1$、 $\alpha_t = 1$ 时 $S_tk_t = v_t$；(b) 证明 $u \perp k_t$ 时 $S_tu = \alpha_t S_{t-1}u$（正交内容只被 $\alpha$ 缩放）；(c) 对一般 $\alpha, \beta$ 计算 $S_tk_t$，指出 $\beta_t$ 在结果中出现两次（擦除项与写入项），由此用代数语言说明 GDN-2 式 (15) 多出的自由度。
+2.（推导 · [30]）(a) 补全式 (11)：从 recurrent 形 $S_t = \gamma S_{t-1} + v_tk_t^{\top}$ 出发，对块内第 $\tau$ 行把求和劈成「本块 $+$ 既往块」，验证跨块项系数恰为 $\gamma^{\tau}$、块末状态更新中第 $\sigma$ 行写入的系数为 $\gamma^{C-\sigma}$。(b) 验证 §8 的 WY 递推：设 $\prod_{t=1}^{j-1} (I - \beta_t k_tk_t^{\top}) = I - K_{1:j-1} W_{1:j-1,\thinspace1:j-1} K_{1:j-1}^{\top}$，证明加入第 $j$ 个因子后 $W_{jj} = \beta_j$、 $W_{1:j-1,\thinspace j} = -\beta_j\thinspace W_{1:j-1,\thinspace1:j-1} \left( K_{1:j-1}^{\top} k_j \right)$，并对 $C = 2$ 核对与 §8 展开式一致。
+3.（推导 · [30]）(a) 补全式 (5)：写出 $\omega \sim \mathcal{N}(0, I)$ 的矩母函数推导 $\mathbb{E}[e^{\omega^{\top}u}] = e^{\lVert u \rVert^{2}/2}$，并完成 $\mathbb{E}[\phi(q)^{\top}\phi(k)] = e^{q^{\top}k}$ 的最后一步。(b) 证明式 (6) 估计量的方差为 $O(1/m)$（提示： $\phi(q)^{\top}\phi(k) = \frac{1}{m}\sum_i (\cdot)$ 各项 iid，先算 $\mathbb{E}[e^{2\omega^{\top}x}]$）。(c) 说明 trigonometric 特征为何让式 (8) 的分母 $z_t^{\top}\phi(q_t)$ 有近零风险，而式 (6) 的 positive 特征没有。
+4.（计算 $+$ 代码 · [30]）(a) 取 $H$ = 32、 $d_k = d_v$ = 128、bf16：算 linear 层每层状态字节数，与 $t$ = 131072 时同头数 KV cache 每层字节数（2.4 式 (9) 口径），给比值并说明它随 $t$ 的标度。校验：(a) 的比值与正文 decode 账段的 2048 倍同数量级。(b) 先预测误差随特征维的收缩速率量级，再跑通 §3 教学实现的等价性断言；把 `phi` 换成式 (6) 的 FAVOR+ 特征（ $m$ = 256），对照 softmax attention 输出，报告逐位置最大误差随 $m \in \lbrace64, 256, 1024\rbrace$ 的收缩速率。(c) 实现式 (13) 的 DeltaNet 递推（ $k$ 归一化），数值验证 §5 的「一步精确写入」与「正交不动」。
 
 ## 参考
 
