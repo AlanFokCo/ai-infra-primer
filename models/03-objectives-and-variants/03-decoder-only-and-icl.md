@@ -24,13 +24,15 @@ $$
 
 「接口是数据而不是参数」是 ICL 存在的前提。它的账由后两条论证结，能力边界由第 4–8 节结。序列化本身不损失信息，链式法则对任意顺序成立。但有一个实现级约束：序列化必须把输入放在输出之前，否则式 (1) 的每个条件因子里混入未知量，自回归采样无从起步。模板 $\tau$ 在演示与 query 间保持一致，则是让模型把前缀识别为「同一任务的实例列」的最低结构要求（第 7 节会看到，格式本身是演示信息构成的大头之一）。序列化不保证模型学会了利用这种结构，那是实证问题。
 
+本章没有统一数值口径：机制论证用玩具规模（线性回归、两层 attention-only），测量实例用 GPT-2 small，服务账用 8B 档模型——三处各随节声明。
+
 ## 2. 论证二（增量计算经济学）：KV cache 只适配 causal
 
 2.4 已把账算完，此处只收银。可生成的判定是可见集条件（2.4 式 (4)）： $V(i) \subseteq \lbrace1, \ldots, i\rbrace$ 对每个位置成立；causal mask 是满足该条件的最大可见集——每个位置看见全部过去，一个 token 都不浪费。prefix-LM 是它的折中（前缀块内双向、续写区因果，2.4 §2 的对照表），MLM 的全 0 mask 处处违反（不能自回归生成的完整证明，含「多轮迭代采样不能绕过」的论证，在 3.2）。
 
 经济学含义分两层。其一，可缓存性与因果性是同一性质的两面（2.4 §4.2）。双向模型追加一个 token 会改变所有位置的 stream，下游全部重算，cache 无物可存。朴素逐 token 生成的总账是 $\approx NT^{2} + \frac{2}{3}LT^{3}d$（2.4 式 (5)），而 cache decode 是 $2NT + 2LT^{2}d$（2.4 式 (8)）：attention 项差约 $T/3$ 倍，满窗 $T$ = 131072 时约 $4.4 \times 10^{4}$ 倍。生成式服务的可行性挂在这条不等式上。其二，cache 的内存形态（2.4 式 (9)：每 token 每层 $2 H_{kv} d_{\mathrm{head}} b$ 字节、随 $T$ 线性增长）使「长 prompt + 短输出」型任务的成本可预测、可定价。ICL 恰好是这个形状： $K$ 个演示的 prefill 一次付清（compute-bound 的大 matmul，2.4 §6），同一会话的后续 query 复用同一份 cache。
 
-把三条论证连起来看，ICL 还是一次成本移位：任务适配的代价从「训练侧的一次性梯度回路」（fine-tune：额外数据、额外优化、产出新权重）搬到「推理侧的每请求 prefill」。两笔账的结构性差异（一次性训练成本对每请求前缀成本）在练习 2 展开；哪个划算取决于请求量与任务数量，但「存在推理侧选项」本身改变了适配的工程形态。
+把三条论证连起来看，ICL 还是一次成本移位：任务适配的代价从「训练侧的一次性梯度回路」（fine-tune：额外数据、额外优化、产出新权重）搬到「推理侧的每请求 prefill」。两笔账的结构性差异（一次性训练成本对每请求前缀成本）在练习 1 展开；哪个划算取决于请求量与任务数量，但「存在推理侧选项」本身改变了适配的工程形态。
 
 这条论证同时给出 ICL 的物理载体：参数不动时，前向过程中唯一的可写存储是 KV cache 与当前 token 的 residual stream。第 4 节形式化里「无参数更新」的全部信息量，就压在这两份随序列线性增长的激活里——第 5、6 节的两层机制解释，都是在这个载体上发生的。
 
@@ -79,7 +81,7 @@ $$
 
 **符号**： $\eta$ ：学习率； $x_i \in \mathbb{R}^{d_x}$ 、 $y_i \in \mathbb{R}^{d_y}$ 。
 
-von Oswald et al.（[2022](../references.md)，arXiv:2212.07677，[B]）的构造性结果（定理 sketch）：去掉 softmax 的 linear attention 层 $o_t = \sum_s v_s \langle k_s, q_t \rangle$ 可以逐项实现式 (3)。构造：token 嵌入取堆叠向量 $z_i = (x_i;\thinspace y_i) \in \mathbb{R}^{d_x + d_y}$（query 位置 $z_q = (x_q;\thinspace 0)$ ），三个投影取分块选择矩阵 $W_K z_i = x_i$ 、 $W_Q z_q = x_q$ 、 $W_V z_i = \eta\thinspace y_i$ ，代入 query 行：
+von Oswald et al.（[2022](../references.md)，arXiv:2212.07677，[B]）的构造性结果（定理 sketch）可以写成一条命题：**去掉 softmax 的 linear attention 层可以逐项实现一步 GD**—— $o_t = \sum_s v_s \langle k_s, q_t \rangle$ 逐项实现式 (3)。证明路线一句话：嵌入把输入与标签堆进同一向量，三个投影取分块选择矩阵，让 attention 的加权和恰好等于一步 GD 的更新。构造：token 嵌入取堆叠向量 $z_i = (x_i;\thinspace y_i) \in \mathbb{R}^{d_x + d_y}$（query 位置 $z_q = (x_q;\thinspace 0)$ ），三个投影取分块选择矩阵 $W_K z_i = x_i$ 、 $W_Q z_q = x_q$ 、 $W_V z_i = \eta\thinspace y_i$ ，代入 query 行：
 
 $$
 o_q = \sum_{i=1}^{K} \left( \eta\thinspace y_i \right) \left\langle x_i, x_q \right\rangle = \eta \sum_{i=1}^{K} y_i \left( x_i^{\top} x_q \right) = W_1 x_q \qquad (4)
@@ -87,9 +89,9 @@ $$
 
 **符号**： $o_q$ ：query 位置的 attention 输出； $\langle x_i, x_q \rangle = x_i^{\top} x_q$ ；其余同式 (3)。
 
-与式 (3) 逐项相等。demo 行的输出在构造里是 don't-care（预测只读 query 行）。 $W_0 \neq 0$ 的一般情形把 value 换成残差 $\eta \left( y_i - W_0 x_i \right)$ 并保留一条 $W_0 x_q$ 直连项即可——von Oswald 的完整构造用分块矩阵把残差项也装进嵌入，多层堆叠对应多步 GD。
+与式 (3) 逐项相等。demo 行的输出在构造里是 don't-care（预测只读 query 行）。 $W_0 \neq 0$ 的一般情形把 value 换成残差 $\eta \left( y_i - W_0 x_i \right)$ 并保留一条 $W_0 x_q$ 直连项即可——von Oswald 的完整构造用分块矩阵把残差项也装进嵌入，多层堆叠对应多步 GD。一般情形的完整构造留作练习 2。
 
-适用边界必须讲清楚，否则这层解释会被过度引用。第一，等价只对**线性核**（无 softmax）精确成立：softmax 归一化给每个演示项的权重引入全序列耦合，逐项相等断裂（断裂位置与断裂项的形式是练习 1）。第二，权重是**构造**出来的，定理不保证训练必然找到它。第三，演示任务被设为线性回归；非线性任务对应的是逐层 GD 或其他算法的推广命题。
+适用边界必须讲清楚，否则这层解释会被过度引用。第一，等价只对**线性核**（无 softmax）精确成立：softmax 归一化给每个演示项的权重引入全序列耦合，逐项相等断裂（断裂位置与断裂项的形式是练习 2）。第二，权重是**构造**出来的，定理不保证训练必然找到它。第三，演示任务被设为线性回归；非线性任务对应的是逐层 GD 或其他算法的推广命题。
 
 互补方向是识别而非构造。Akyürek et al.（arXiv:2211.15661，[B]）训练真实 transformer 做 in-context 线性回归，然后把前向输出与候选算法逐点对照——闭式 ridge（岭回归）解
 
@@ -175,16 +177,16 @@ Olsson et al. 的第二组结果是动力学而非结构：沿训练步数看，
 | ICL 形式化 | 式 (2)： $s_K = \tau(x_1, y_1) \oplus \cdots \oplus \tau(x_q)$ | 无梯度、信息通道只有 token；zero / one / few-shot |
 | 隐式 GD | 式 (3)(4)；ridge 式 (5) | von Oswald 构造（精确、线性核）/ Akyürek 识别 / Dai 类比——三级证据 |
 | induction heads | 式 (6) previous-token；式 (7) 组合双线性型 | prefix matching + copying；induction score 可测（随机重复序列协议） |
-| 任务识别 | Min et al. ablation 表 | 映射 ≠ 演示信息的大头；结论随任务新颖度翻转 |
-| 训练相变 | Olsson et al.（相变观测，[B]）+ Pythia 154 checkpoints（公共底座，[A]） | few-shot 分数与 induction score 同步起跳；训练轴证据强于规模轴 |
+| 任务识别 | 第 7 节：Min et al. ablation 表 | 映射 ≠ 演示信息的大头；结论随任务新颖度翻转 |
+| 训练相变 | 第 8 节：Olsson et al.（相变观测，[B]）+ Pythia 154 checkpoints（公共底座，[A]） | few-shot 分数与 induction score 同步起跳；训练轴证据强于规模轴 |
 | 开放领域 | 第 9 节 | 三层互补不互斥；共同约束 = 信息只住在激活里 |
 
 ## 练习
 
-1.（推导）补全第 5 节 $W_0 \neq 0$ 的构造：给出嵌入 $z_i$ 与 $W_K, W_Q, W_V$ 的分块矩阵形式，使一层 linear attention 的 query 行输出 $\left( W_0 - \eta \nabla_W \mathcal{L} \right) x_q$ 。再把 $o_t = \sum_s v_s \langle k_s, q_t \rangle$ 换回 softmax attention，指出式 (4) 的逐项相等在哪一步断裂、断裂项的形式是什么。
-2.（计算）ICL 的服务账：Llama-3.1-8B 口径（ $L = 32$ 、 $H_{kv} = 8$ 、 $d_{\mathrm{head}} = 128$ 、bf16），每条 演示 64 token、query 32 token， $K \in \lbrace0, 1, 4, 16, 64\rbrace$ ：(a) 用 2.4 式 (9) 算各 $K$ 下 prompt 的 KV cache 字节数与每多一条演示的边际字节；(b) 用 2.4 式 (8) 估算各 $K$ 的 prefill FLOPs；(c) 对照「把任务 fine-tune 进权重」的方案，指出两笔账的结构性差异（一次性训练成本对每请求 prefill 成本），说明各适用于什么请求量与任务数量的组合。
-3.（代码）用 TransformerLens 加载 GPT-2 small：取 50 个随机 token 重复两遍组成序列，对每个 head 计算 induction score（attention pattern 在「偏移重复起点 +1」目标位上的平均 mass），列出得分最高的 5 个 head；对其中最强者再测 prefix-matching score 与 copying score，验证式 (6)(7) 预测的 QK / OV 分工。（教学练习，测量口径以 TransformerLens 文档为准。）
-4.（分析）若 ablate 第 1 层的 previous-token head（ $W_{OV}^{(1)} \to 0$ ），式 (7) 的匹配项剩余什么？induction score 预期如何变化？设计一个检验把「prefix matching 依赖第 1 层」与「第 2 层独立形成匹配能力」分开：可用的仪器是 Pythia 某模型相变窗口前后的相邻 checkpoints，或 TransformerLens 的 ablation 接口——写明你观测哪个量、两种假设下它各应呈现什么形态。
+1.（计算 · [20]）ICL 的服务账：Llama-3.1-8B 口径（ $L = 32$ 、 $H_{kv} = 8$ 、 $d_{\mathrm{head}} = 128$ 、bf16），每条演示 64 token、query 32 token， $K \in \lbrace0, 1, 4, 16, 64\rbrace$ ：(a) 用 2.4 式 (9) 算各 $K$ 下 prompt 的 KV cache 字节数与每多一条演示的边际字节；(b) 用 2.4 式 (8) 估算各 $K$ 的 prefill FLOPs；(c) 对照「把任务 fine-tune 进权重」的方案，指出两笔账的结构性差异（一次性训练成本对每请求 prefill 成本），说明各适用于什么请求量与任务数量的组合。先写出 cache 字节数随演示条数的增长斜率预测，再逐档计算。校验：零演示档的 cache 只含 query 的 32 token；相邻档的字节差恒定（线性口径）。
+2.（推导 · [30]）补全第 5 节 $W_0 \neq 0$ 的构造：给出嵌入 $z_i$ 与 $W_K, W_Q, W_V$ 的分块矩阵形式，使一层 linear attention 的 query 行输出 $\left( W_0 - \eta \nabla_W \mathcal{L} \right) x_q$ 。再把 $o_t = \sum_s v_s \langle k_s, q_t \rangle$ 换回 softmax attention，指出式 (4) 的逐项相等在哪一步断裂、断裂项的形式是什么。本题即第 5 节构造性命题的一般情形。
+3.（代码 · [30]）用 TransformerLens 加载 GPT-2 small：取 50 个随机 token 重复两遍组成序列，对每个 head 计算 induction score（attention pattern 在「偏移重复起点 +1」目标位上的平均 mass），列出得分最高的 5 个 head；对其中最强者再测 prefix-matching score 与 copying score，验证式 (6)(7) 预测的 QK / OV 分工。先预测最强 head 的大致层位再跑。校验：prefix-matching 与 copying 两个 score 的最高分应落在同一个 head 上（QK/OV 分工的预测）。（教学练习，测量口径以 TransformerLens 文档为准。）
+4.（分析 · [40]）若 ablate 第 1 层的 previous-token head（ $W_{OV}^{(1)} \to 0$ ），式 (7) 的匹配项剩余什么？induction score 预期如何变化？本题要求把「prefix matching 依赖第 1 层」与「第 2 层独立形成匹配能力」两个假设分开。(a) 先写出两种假设下 induction score 各自的预期形态；(b) 用 TransformerLens 的 ablation 接口执行消融，记录观测量的变化；(c) 换 Pythia 某模型相变窗口前后的相邻 checkpoints 重做对照，判断哪个假设被证伪。校验：观测落在 (a) 写出的哪一种预期形态上，即是对应假设的判定。
 
 ## 参考
 

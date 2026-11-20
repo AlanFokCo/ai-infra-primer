@@ -22,11 +22,15 @@ $$
 
 输入格式上还有两个沿用至今的约定：序列前置特殊 token [CLS]，句对之间与末尾插 [SEP]（BERT 的输入模板，词表为 30522 的 WordPiece）。这两个特殊 token 不携带词汇内容，作用分别是序列级读出位（§3）与句对边界标记（§4）。
 
+本章口径：参数账统一走 BERT-base 字段（词表 30522、隐藏维 768、12 层、FFN 宽 3072）；cross-attention 的 cache 账用 T5-base 字段（12 层、12 头、head 宽 64、bf16）；ModernBERT 一节的字段以 config 实测为准。后两处换口径随节声明。
+
 ## 2. 能力边界：无法自回归生成的证明
 
 2.4 §2 已给出可生成性的判定门槛 $V(i) \subseteq \lbrace1, \ldots, i\rbrace$（2.4 式 (4)），并指出 MLM 的全零矩阵处处违反它。本节把「为什么违反了就无法生成」补成一个完整命题，包括最常见的绕过方案为什么无效。
 
 **命题**（ $M \equiv 0$ 不可自回归生成）。设网络所有层满足式 (1)，输入长度 $T$、输出 logits $z \in \mathbb{R}^{T \times V}$。则：(i) $z_t$ 定义的条件分布以未来 token 为条件，不是 1.1 式 (3) 链式分解的任何因子，且在生成第 $t$ 步无法实例化；(ii) 不存在合法的增量计算——追加 token 使全部历史表征失效；(iii) 给未来位置填占位符不能修复 (i)；(iv) 迭代重采样是另一个数学对象，不构成反例。
+
+证明分四路：(i) 是主线，证条件分布里根本不存在可用的链式因子；(ii)(iii)(iv) 依次处理三种最常见的绕过方案——增量缓存、占位符、迭代重采样。
 
 **(i) 无可用因子。** 自回归采样第 $t$ 步需要 $P(x_t | x_{\lt t})$。而 $M \equiv 0$ 时，第一层 attention 的第 $t$ 行为
 
@@ -88,7 +92,7 @@ $$
 
 证据是消融而不是论证。RoBERTa（[Liu et al., 2019](../references.md)，arXiv:1907.11692，[A]）把输入格式与 NSP 分四档对照：SEGMENT-PAIR 与 SENTENCE-PAIR 保留 NSP；FULL-SENTENCES（可跨文档边界的长序列块）与 DOC-SENTENCES（单文档内的完整句子块，不跨文档）去掉 NSP。论文的结论口径：去掉 NSP 后下游整体持平或略升。逐指标看并非单调——例如 SEGMENT-PAIR 换到 SENTENCE-PAIR 时 SQuAD1.1 从 90.4 降到 88.7（这两档都保留 NSP），账面提升主要来自输入格式的更换而非 NSP 的移除本身。结论：NSP 的净贡献为零或负，BERT 预训练的收益全部在 MLM 一侧，RoBERTa 因此只训 MLM。
 
-机制修正的反面构造来自 ALBERT：把负样本换成「同一文档中连续两句交换顺序」（sentence-order prediction, SOP）。主题一致性由构造保证，分类面上只剩连贯性信号（[Lan et al., 2019](../references.md)，arXiv:1909.11942，[A]）。SOP 的存在本身就是对「任务混淆」诊断的确认：把易信号从负样本里剔除，任务才迫使模型学目标信号。在 3.1 的 $(x', M, \ell)$ 框架里，NSP 是第四个对象：它不动三元组中的任何一个，是挂在读出接口上的辅助 loss。RoBERTa 的消融说明辅助 loss 不是免费的，设计错了会污染表示。
+机制修正的反面构造来自 ALBERT：把负样本换成「同一文档中连续两句交换顺序」（sentence-order prediction, SOP）。主题一致性由构造保证，分类面上只剩连贯性信号（[Lan et al., 2019](../references.md)，arXiv:1909.11942，[A]）。SOP 的存在本身就是对「任务混淆」诊断的确认：把易信号从负样本里剔除，任务才迫使模型学目标信号。在 3.1 的 $(x', M, \ell)$ 框架里，NSP 是第四个对象：它不动三元组中的任何一个，是挂在读出接口上的辅助 loss。RoBERTa 的消融说明辅助 loss 不是免费的（口径：「免费」指不占用监督信号、不干扰表示质量，与计算量无关），设计错了会污染表示。
 
 ## 5. ALBERT：参数效率的两个杠杆
 
@@ -114,7 +118,9 @@ $$
 
 层参数从 $L \cdot n_{\mathrm{layer}}$ 降到 $n_{\mathrm{layer}}$。代入字段：每层 attention 四矩阵 $4d^{2}$ 加 FFN $2 d \thinspace d_{\mathrm{ff}}$ 共 $12 d^{2} \approx 7.1 \times 10^{6}$（忽略 LN 与 bias），12 层不共享为 $84.9 \times 10^{6}$、共享后 $7.1 \times 10^{6}$。两杠杆叠加，同构型总参数从约 $1.1 \times 10^{8}$（BERT-base 公开口径 110M）压到约 $1.2 \times 10^{7}$ 量级。
 
-代价写在数学里：迭代同一算子 $L$ 次是不动点式的受限函数族——第 3 层与第 9 层被迫是同一个变换，逐层特化（不同深度分工）被牺牲。ALBERT 的取舍是把省下的参数预算换更大的 $d$。论文的结论方向是参数效率（同下游性能下参数少约一个量级），不是同参数下的表达力提升。这个机制换个方向看也熟悉：共享参数沿深度迭代，与 RNN 沿时间共享参数是同一种参数复用，只是复用轴换了。
+代价写在数学里：迭代同一算子 $L$ 次是不动点式的受限函数族——第 3 层与第 9 层被迫是同一个变换，逐层特化（不同深度分工）被牺牲。ALBERT 的取舍是把省下的参数预算换更大的 $d$。论文的结论方向是参数效率（同下游性能下参数少约一个量级），不是同参数下的表达力提升。
+
+> **提点**：共享参数沿深度迭代，与 RNN 沿时间共享参数是同一种参数复用——只是复用轴换了。
 
 ## 6. ELECTRA：把监督铺满全序列
 
@@ -134,7 +140,7 @@ $$
 
 ## 7. Encoder-decoder：cross-attention 与条件生成
 
-把 §2 的边界与 §3 的接口能力合并，得到分工形态：双向栈只管「读」（输入完整已知， $M \equiv 0$ 合法），因果栈只管「写」（保住 2.4 式 (4) 的可生成性），中间用 cross-attention 接通。生成语义是条件链式分解：
+「读」与「写」能不能拆成两个栈来干？把 §2 的边界与 §3 的接口能力合并，得到分工形态：双向栈只管「读」（输入完整已知， $M \equiv 0$ 合法），因果栈只管「写」（保住 2.4 式 (4) 的可生成性），中间用 cross-attention 接通。生成语义是条件链式分解：
 
 $$
 P(y_{1:T} | x_{1:S}) = \prod_{t=1}^{T} P(y_t | y_{\lt t}, \thinspace x_{1:S}) \qquad (11)
@@ -182,11 +188,11 @@ T5（[Raffel et al., 2019](../references.md)，arXiv:1910.10683，[A]）是这�
 
 **理解侧的表征密度。** causal mask 下位置 $i$ 的表征只暴露于 $i$ 个 token，整序列平均暴露 $S/2$；双向栈每位置恒见全部 $S$ 个——同为 12 层，encoder 每参数的上下文暴露量约为 decoder-only 读同一输入时的 2 倍。这是「理解任务的参数效率双向栈更高」的粗口径来源：参数相同，每 token 表征的信息进账翻倍。
 
-两笔账合读：任务的输入与输出可分离时，enc-dec 把「读」的预算放在全暴露的双向栈、「写」的预算放在串行成本打 6 折的因果栈，两头都比单一混合栈划算。反方向同样成立：输入与输出同源同链（开放续写、对话）时，decoder-only 让 prompt 与生成共享同一份前缀计算（KV cache 直接续写），分离反而只剩开销——那条线的展开在 3.3。
+两笔账合读：任务的输入与输出可分离时，enc-dec 把「读」的预算放在全暴露的双向栈、「写」的预算放在串行成本打 6 折的因果栈，两头都比单一混合栈划算。反方向同样成立：输入与输出同源同链（开放续写、对话）时，decoder-only 让 prompt 与生成共享同一份前缀计算（KV cache 直接续写），分离反而只剩开销（口径：只为分工付出的计算与内存，无质量收益）——那条线的展开在 3.3。
 
 ## 9. 何时 enc-dec 占优：固定输入任务与 Whisper 活例
 
-判据一句话：**输入在生成开始前完整已知、且与输出不同链**。
+什么任务该用 enc-dec 而不是 decoder-only？判据一句话：**输入在生成开始前完整已知、且与输出不同链**。
 
 - 机器翻译：源句完整固定，双向编码合法；输出走因果链。
 - 摘要：文档固定，输出短、decode 步少，编码质量主导质量上限——双向栈的信息密度直接兑现。
@@ -198,7 +204,11 @@ Whisper（[Radford et al., 2022](../references.md)，arXiv:2212.04356，[A]；�
 
 BERT 的架构字段停在 2018 年的零件上（可学绝对位置 embedding、每层全 global attention、padding 批处理）。ModernBERT（[Warner et al., 2024](../references.md)，arXiv:2412.13663，[A]）保持 encoder-only 形态与 MLM objective 不变，把零件全部换成 Part 2 的现代件。以下字段取自 config（[ModernBERT-base/large config 与官方 repo](../references.md)，[A]，hf-mirror 实测 2026-11-11）：base 为 22 层、hidden 768、12 heads、intermediate 1152、vocab 50368、ctx 8192、`tie_word_embeddings=true`、`attention_bias=false`；large 为 28 层、hidden 1024、16 heads、intermediate 2624。三个机制逐一看。
 
-**(1) RoPE 双 base。** config 里 `position_embedding_type="absolute"` 是残留字段，实际位置编码是 RoPE（`rope_theta` 字段为证）——读 config 勿被误导。global 层与 local 层配不同 base：`global_rope_theta=160000`、`local_rope_theta=10000`。按 2.5 的波长账：base 越大，低频分量的波长越长，远程相对位置的相位差越缓。要服务 8192 全程依赖的 global 层，配大 base；总窗宽 128（每侧 64）的 local 层用小 base 保高频分辨。同一模型内位置编码按层职责分配，这是 2.5 的零件在 encoder 侧的精细化用法。
+**(1) RoPE 双 base。** 实际位置编码是 RoPE，且 global 层与 local 层配不同 base：`global_rope_theta=160000`、`local_rope_theta=10000`。
+
+> **坑**：config 里 `position_embedding_type="absolute"` 是残留字段——按字面读会把位置编码当成可学绝对位置；实际以 `rope_theta` 字段为准。
+
+按 2.5 的波长账：base 越大，低频分量的波长越长，远程相对位置的相位差越缓。要服务 8192 全程依赖的 global 层，配大 base；总窗宽 128（每侧 64）的 local 层用小 base 保高频分辨。同一模型内位置编码按层职责分配，这是 2.5 的零件在 encoder 侧的精细化用法。
 
 **(2) local/global 交替。** `global_attn_every_n_layers=3`：每 3 层一个 full attention（式 (1) 全可见），其余层为滑窗 local（`local_attention=128`，口径为总窗宽 128 token——论文原文 "a 128 token, local sliding window attention"；HF `modeling_modernbert.py` 中 `sliding_window = local_attention // 2`，即每位置见左右各 64）。BERT 时代每层都付 $O(T^{2})$ 的 global 账；ctx 拉到 8192 后 attention 项 $2LT^{2}d$（1.2 式 (6)）不再可忽略。交替结构是 sparse attention 谱系（4.2）在 encoder 侧的实例——SWA 堆叠感受野 $L \cdot w$ 的推导同样适用，global 层周期性把局部信息混回全局；与 decoder 侧 Gemma 3 的 5:1 local:global（4.2）同族，比例不同。
 
@@ -231,16 +241,16 @@ ModernBERT-base 结构一瞥（22 层，global 周期 3，示意）
 | ALBERT | 式 (8) $Vd \to Ve + ed$（23.4M→4.0M）；式 (9) 层共享（84.9M→7.1M） | 110M → ~12M 量级；代价 = 逐层特化被牺牲 |
 | ELECTRA | 式 (10)， $\lambda$ = 50 | 监督密度 ×6.7；非对抗（采样隔断梯度），G 训完即弃 |
 | cross-attention | 式 (11)–(13) | K/V 来自 encoder、一次计算全程复用：定长 cache；无 mask |
-| 参数/token 账 | decoder 层 $16d^{2}$ vs self-only 层 $12d^{2}$ | decode 参数项 ≈ 0.57×；理解侧暴露量 ×2 |
+| 参数/token 账 | 第 8 节：decoder 层 $16d^{2}$ vs self-only 层 $12d^{2}$ | decode 参数项 ≈ 0.57×；理解侧暴露量 ×2 |
 | 占优场景 | 翻译 / 摘要 / ASR（Whisper，10.2 详读） | 输入完整已知、与输出不同链 |
-| ModernBERT | RoPE 双 $\theta$（ $1.6 \times 10^{5}$ / $10^{4}$）、2:1 local:global（每 3 层 1 个 global；local 总窗宽 128，每侧 64）、unpadding | 形态不变零件全换；8192 ctx；config 的 absolute 字段是残留 |
+| ModernBERT | 第 10 节：RoPE 双 $\theta$（ $1.6 \times 10^{5}$ / $10^{4}$）、2:1 local:global（每 3 层 1 个 global；local 总窗宽 128，每侧 64）、unpadding | 形态不变零件全换；8192 ctx；config 的 absolute 字段是残留 |
 
 ## 练习
 
-1.（推导）补全 §2 命题 (i) 的细节：对单层 $M \equiv 0$ 的 attention，写出 $z_t$ 对 $x_{t+1}$ 的依赖链（经 $v_{t+1}$ 与经 $s_{t,t+1}$ 两条路径），证明 $z_t$ 与 $x_{t+1}$ 无关当且仅当 $\alpha_{t,t+1} = 0$；进而说明「把未来位置填常量」为何仍得不到 $P(x_t | x_{\lt t})$——常量占位依然是条件的一部分。
-2.（计算）ALBERT 参数账：取 BERT-base 字段 $V$ = 30522、 $d$ = 768、 $L$ = 12、 $d_{\mathrm{ff}}$ = 3072、 $e$ = 128，忽略 LN 与 bias。(a) 分别算 embedding $Vd$ 与 $Ve + ed$；(b) 层参数 12 层不共享 vs 共享（attention $4d^{2}$ + FFN $2 d \thinspace d_{\mathrm{ff}}$）；(c) 总量比值。再把 $d$ 升到 1024、 $e$ 不变重算 (a)(c)，说明 embedding 分解的削减率随 $d$ 增大如何变化。
-3.（计算）cross-attention cache 账：T5-base 口径 $L_d$ = 12、 $H$ = 12、 $d_{\mathrm{head}}$ = 64、bf16。(a) $S$ = 512 时 cross K/V 每序列多少字节；(b) self-attention cache 在 $t$ = 512 与 $t$ = 4096 各多少；(c) $t \to \infty$ 时 cross 占总 cache 的比例极限是什么；(d) 长文档摘要（ $S$ = 8192、 $T$ = 1024）下 cross 与 self 哪份大？
-4.（概念）ELECTRA 的 $\lambda$ 与 $G$ 的尺寸： $L_G$ 的支撑集是 15% 位置、 $L_D$ 是 100%——若 $\lambda$ = 1，总梯度被哪侧主导？论文取 $\lambda$ = 50 且最终交付 $D$，从「谁是学生、谁是脚手架」解释这个数量级的方向。再讨论： $G$ 训练到接近完美（替换几乎不可检测）时 $L_D$ 会发生什么，由此说明 $G$ 刻意做小的机制理由。
+1.（推导 · [20]）补全 §2 命题 (i) 的细节：对单层 $M \equiv 0$ 的 attention，写出 $z_t$ 对 $x_{t+1}$ 的依赖链（经 $v_{t+1}$ 与经 $s_{t,t+1}$ 两条路径），证明 $z_t$ 与 $x_{t+1}$ 无关当且仅当 $\alpha_{t,t+1} = 0$；进而说明「把未来位置填常量」为何仍得不到 $P(x_t | x_{\lt t})$——常量占位依然是条件的一部分。本题的证明目标即正文「不可自回归生成」命题的缺失步骤。
+2.（计算 · [20]）ALBERT 参数账：取 BERT-base 字段 $V$ = 30522、 $d$ = 768、 $L$ = 12、 $d_{\mathrm{ff}}$ = 3072、 $e$ = 128，忽略 LN 与 bias。(a) 分别算 embedding $Vd$ 与 $Ve + ed$；(b) 层参数 12 层不共享 vs 共享（attention $4d^{2}$ + FFN $2 d \thinspace d_{\mathrm{ff}}$）；(c) 总量比值。再把 $d$ 升到 1024、 $e$ 不变重算 (a)(c)，说明 embedding 分解的削减率随 $d$ 增大如何变化。校验：(a)(b) 与正文两个杠杆段的代入值一致；(c) 的比值与 (a)(b) 自洽。
+3.（概念 · [20]）ELECTRA 的 $\lambda$ 与 $G$ 的尺寸： $L_G$ 的支撑集是 15% 位置、 $L_D$ 是 100%——若 $\lambda$ = 1，总梯度被哪侧主导？论文取 $\lambda$ = 50 且最终交付 $D$，从「谁是学生、谁是脚手架」解释这个数量级的方向。再讨论： $G$ 训练到接近完美（替换几乎不可检测）时 $L_D$ 会发生什么，由此说明 $G$ 刻意做小的机制理由。
+4.（计算 · [30]）cross-attention cache 账：T5-base 口径 $L_d$ = 12、 $H$ = 12、 $d_{\mathrm{head}}$ = 64、bf16。(a) $S$ = 512 时 cross K/V 每序列多少字节；(b) self-attention cache 在 $t$ = 512 与 $t$ = 4096 各多少；(c) $t \to \infty$ 时 cross 占总 cache 的比例极限是什么；(d) 长文档摘要（ $S$ = 8192、 $T$ = 1024）下 cross 与 self 哪份大？先按「cross 恒定、self 线性」写出 (c) 的极限预测，再逐问计算。校验：(a) 与正文 T5-base 的约 18 MiB 口径一致。
 
 ## 参考
 
