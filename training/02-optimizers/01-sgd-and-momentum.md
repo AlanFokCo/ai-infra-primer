@@ -12,6 +12,8 @@ $$
 
 **符号**： $\theta \in \mathbb{R}^{N}$ ：参数； $\eta$ ：步长（learning rate）； $t$ ：step 下标； $\mathcal{L}$ 取期望口径，有限数据集时替换为经验平均，本章结论不变。
 
+本章数值口径先定死：动量系数的算例全章用同一组三档值，二次碗的数值例全章共用同一对条件数（首现处各自标明）；PyTorch 与 Goyal 的配方、Sutskever 的 schedule 取值属引用口径，随出处出现。
+
 真梯度算不起：一次 $g$ 要扫完全部数据。mini-batch SGD 用 $B$ 个 iid 样本的均值代替：
 
 $$
@@ -36,7 +38,7 @@ $$
 
 ## 2. 步长与噪声的联合账：最优步长的两个 regime
 
-式 (3)(4) 还只是静态性质；要把它们接到训练进程上，需要损失的几何。取局部二次模型（§5 的完整分析对象）： $`\mathcal{L}(\theta) = \frac{1}{2} (\theta - \theta^{\ast})^{\top} H (\theta - \theta^{\ast})`$ ， $H \succ 0$ 为 Hessian，最大特征值 $L$ 即光滑常数。对精确二次做一步 $\theta \leftarrow \theta - \eta \hat g$ ：
+batch 加大一倍，步长能跟着加大一倍吗？答案取决于噪声是否主导。式 (3)(4) 还只是静态性质，要把它们接到训练进程上，需要损失的几何。路线：先对精确二次做一步展开，再取期望，最后对步长求顶点。取局部二次模型（§5 的完整分析对象）： $`\mathcal{L}(\theta) = \frac{1}{2} (\theta - \theta^{\ast})^{\top} H (\theta - \theta^{\ast})`$ ， $H \succ 0$ 为 Hessian，最大特征值 $L$ 即光滑常数。对精确二次做一步 $\theta \leftarrow \theta - \eta \hat g$ ：
 
 $$
 \mathcal{L}(\theta - \eta \hat g) = \mathcal{L}(\theta) - \eta \langle g, \hat g \rangle + \frac{\eta^{2}}{2} \hat g^{\top} H \hat g \le \mathcal{L}(\theta) - \eta \langle g, \hat g \rangle + \frac{\eta^{2} L}{2} \lVert \hat g \rVert^{2} \qquad (5)
@@ -79,13 +81,15 @@ $$
 
 **符号**： $v_t$ ：速度（velocity，未归一的梯度加权和）； $m_t$ ：梯度的 EMA（权重和为 1 量级）； $\beta \in [0, 1)$ ：动量系数； $\hat g_t$ ：第 $t$ 步的 mini-batch 梯度。
 
-**等价证明（变量代换）**。令 $m_t = (1-\beta) \thinspace v_t$ 。式 (8) 第一式两边乘 $(1-\beta)$ ，得 $(1-\beta) v_{t+1} = \beta (1-\beta) v_t + (1-\beta) \hat g_t$ ，即 $m_{t+1} = \beta m_t + (1-\beta) \hat g_t$ ——正是式 (9) 第一式。初值同为 0，归纳成立。更新侧：式 (8) 第二式 $= \theta_t - \dfrac{\eta}{1-\beta} m_{t+1}$ ，与式 (9) 第二式恒等当且仅当
+**命题**（momentum 两形式等价）：速度形式与 EMA 形式是同一算法的两种参数化，换算只隔一个因子。**证明**（变量代换）：令 $m_t = (1-\beta) \thinspace v_t$ 。式 (8) 第一式两边乘 $(1-\beta)$ ，得 $(1-\beta) v_{t+1} = \beta (1-\beta) v_t + (1-\beta) \hat g_t$ ，即 $m_{t+1} = \beta m_t + (1-\beta) \hat g_t$ ——正是式 (9) 第一式。初值同为 0，归纳成立。更新侧：式 (8) 第二式 $= \theta_t - \dfrac{\eta}{1-\beta} m_{t+1}$ ，与式 (9) 第二式恒等当且仅当
 
 $$
 \eta' = \frac{\eta}{1-\beta} \qquad (10)
 $$
 
-故两形式是同一算法的两种参数化，换算只隔一个因子 $1-\beta$ 。读文献或改代码时先问一句： $\eta$ 乘在归一化之前还是之后？混用两形式的超参，复现就悄悄偏了。
+证毕：两形式同轨迹，换算只隔一个因子 $1-\beta$ 。
+
+> **坑**：两种参数化的超参不可直接互换。读文献或改代码时先问一句—— $\eta$ 乘在归一化之前还是之后？混用两形式的超参不报错，复现就悄悄偏了。
 
 把式 (8) 展开看结构：
 
@@ -106,7 +110,7 @@ $$
 ĝ_t ──► m ← β·m + (1−β)·ĝ （EMA 平滑器）──► θ ← θ − η′·m   式 (9)
 ```
 
-EMA 形式还有一个开局细节： $m_0 = 0$ 意味着前若干步的 $m_t$ 系统性偏小—— $t$ 步后权重和只有 $1 - \beta^{t}$ ，前期估计带着 $1 - \beta^{t}$ 的衰减偏差。SGD-momentum 实践通常不处理（PyTorch 首步直接以 $\hat g_1$ 初始化 buffer，见下）；Adam 把这个偏差显式除掉（bias correction，2.2 推导）。两处对照着看，就知道后者在修正什么。
+> **提点**：EMA 形式还有一个开局细节。 $m_0 = 0$ 意味着前若干步的 $m_t$ 系统性偏小—— $t$ 步后权重和只有 $1 - \beta^{t}$ ，前期估计带着 $1 - \beta^{t}$ 的衰减偏差。SGD-momentum 实践通常不处理（PyTorch 首步直接以 $\hat g_1$ 初始化 buffer，见下）；Adam 把这个偏差显式除掉（bias correction，2.2 推导）。两处对照着看，就知道后者在修正什么。
 
 **第三种约定：步长在速度内部**。[Sutskever et al., 2013](../references.md)（ICML 2013，PMLR 28(3):1139-1147，无 arXiv，[B]）原文的 classical momentum（CM）：
 
@@ -128,7 +132,7 @@ $$
 
 与 CM 的唯一差别是梯度的自变量： $\theta_t + \mu v_t$ 。先走到动量即将带你去的位置，再在那里看梯度。机制含义分两种情形。若动量方向继续对，外推点梯度与当前点渐近一致，两者无差。若即将冲过头——高曲率方向、碗壁反弹前夜——外推点的梯度已经反向，更新被提前刹车。Nesterov 比 CM 多一次「向前看」的修正；在 $\kappa$ 大的问题上，这种修正正对着 §5 的病根。
 
-这个差别可以写成精确代数。令 $\tilde\theta_t = \theta_t + \mu v_t$ （外推点），则 $\theta_t = \tilde\theta_t - \mu v_t$ ，代入式 (13) 第二式：
+这个差别可以写成精确代数。路线：把更新全部改写到外推点上做纯代数——关键一步是梯度的自变量恰好就是外推点。令 $\tilde\theta_t = \theta_t + \mu v_t$ （外推点），则 $\theta_t = \tilde\theta_t - \mu v_t$ ，代入式 (13) 第二式：
 
 $$
 \tilde\theta_{t+1} = \theta_{t+1} + \mu \thinspace v_{t+1} = \tilde\theta_t - \mu \thinspace v_t + (1+\mu) \thinspace v_{t+1}
@@ -162,7 +166,7 @@ $$
 
 大 $\kappa$ 下 $\rho_{\mathrm{GD}} \approx 1 - 2/\kappa$ ：每步只消掉最慢方向误差的一丁点。机制读法：步长被最陡方向压住（ $\eta \le 2/L$ 才不发散），最平方向的收缩系数 $1 - \eta\mu \approx 1 - 2/\kappa$ 几乎不动。这就是「峡谷里的 GD」：快方向来回弹跳（zigzag），慢方向前进极慢。
 
-**Heavy ball 的速率**（[Polyak, 1964](../references.md)，USSR Computational Mathematics and Mathematical Physics 4(5):1-17，无 arXiv，[B]）。在式 (1) 上加历史项（即式 (8) 的非随机版重排）：
+**Heavy ball 的速率**（[Polyak, 1964](../references.md)，USSR Computational Mathematics and Mathematical Physics 4(5):1-17，无 arXiv，[B]）。**路线**：按特征基把问题降成一维二阶递推，求转移矩阵的谱半径；关键一步是发现复根区内的速率与特征值无关、统一由动量系数控制——最优调参随之变成「把整个特征值区间罩进复根区」。在式 (1) 上加历史项（即式 (8) 的非随机版重排）：
 
 $$
 \theta_{t+1} = \theta_t - \eta \thinspace H \theta_t + \beta \thinspace (\theta_t - \theta_{t-1}) \qquad (17)
@@ -257,10 +261,10 @@ LLM 预训练的主流却不是 SGD-momentum：各家公开配方的 optimizer �
 
 ## 练习
 
-1.（推导）不借用光滑性放缩，对精确二次 $\mathcal{L} = \frac{1}{2}\theta^{\top}H\theta$ 直接展开 $\mathbb{E}\left[\hat g^{\top} H \hat g\right]$ （提示： $\hat g = H\theta + \xi$ ， $\mathbb{E}[\xi] = 0$ 、 $\mathrm{Cov}(\xi) = \Sigma/B$ ），给出 $`\eta^{\ast}(B)`$ 的精确式，并说明何时退回式 (7) 的上界版。
-2.（推导）从式 (18) 出发：(a) 验证复根区 $|r| = \sqrt\beta$ 与 $\lambda$ 无关；(b) 补全式 (19) 到式 (20) 的代数；(c) 证明当某方向落在实根区（判别式 $> 0$ ）时其收缩慢于 $\sqrt\beta$ ——最优调参必须把 $[\mu, L]$ 全部罩进复根区。
-3.（计算） $\beta = 0.95$ ：(a) 平均视野 $1/(1-\beta)$ 与覆盖 90% 权重所需步数；(b) 缓冲区噪声放大倍数 $1/(1-\beta^{2})$ ；(c) 等有效步长下相对裸 SGD 的噪声注入比 $(1-\beta)/(1+\beta)$ ；(d) 信息平均滞后 $\beta/(1-\beta)$ 。四个数写在一行，说明调 $\beta$ 时 $\eta$ 与 warmup 步数各应如何联动。
-4.（代码）(a) numpy 复现： $H$ 取对角阵、特征值在 $[\mu, L]$ 上对数等距， $\kappa = 10^{4}$ ，按式 (16) 与式 (20) 调参分别跑 GD 与 heavy ball，把 $\log \mathcal{L}$ 曲线的斜率对回两个 $\rho$ 。(b) PyTorch 侧：同一损失上验证 `SGD(momentum=β, lr=η)` 与手写 EMA 形式（式 (9)， $\eta' = \eta/(1-\beta)$ ）逐 step 参数一致；再验证 `nesterov=True` 与式 (13) 的手写实现在外推点序列上逐步一致。
+1.（计算 · [10]） $\beta = 0.95$ ：(a) 平均视野 $1/(1-\beta)$ 与覆盖 90% 权重所需步数；(b) 缓冲区噪声放大倍数 $1/(1-\beta^{2})$ ；(c) 等有效步长下相对裸 SGD 的噪声注入比 $(1-\beta)/(1+\beta)$ ；(d) 信息平均滞后 $\beta/(1-\beta)$ 。四个数写在一行，说明调 $\beta$ 时 $\eta$ 与 warmup 步数各应如何联动。校验：把 β 代回正文第一档取值时，(c) 应退化为正文给出的 1/19。
+2.（推导 · [20]）不借用光滑性放缩，对精确二次 $\mathcal{L} = \frac{1}{2}\theta^{\top}H\theta$ 直接展开 $\mathbb{E}\left[\hat g^{\top} H \hat g\right]$ （提示： $\hat g = H\theta + \xi$ ， $\mathbb{E}[\xi] = 0$ 、 $\mathrm{Cov}(\xi) = \Sigma/B$ ），给出 $`\eta^{\ast}(B)`$ 的精确式，并说明何时退回式 (7) 的上界版。
+3.（推导 · [30]）从式 (18) 出发：(a) 验证复根区 $|r| = \sqrt\beta$ 与 $\lambda$ 无关；(b) 补全式 (19) 到式 (20) 的代数；(c) 证明当某方向落在实根区（判别式 $> 0$ ）时其收缩慢于 $\sqrt\beta$ ——最优调参必须把 $[\mu, L]$ 全部罩进复根区。
+4.（代码 · [30]）先按速率表预测两组到达同一精度所需的步数比，再跑。(a) numpy 复现： $H$ 取对角阵、特征值在 $[\mu, L]$ 上对数等距， $\kappa = 10^{4}$ ，按式 (16) 与式 (20) 调参分别跑 GD 与 heavy ball，把 $\log \mathcal{L}$ 曲线的斜率对回两个 $\rho$ 。(b) PyTorch 侧：同一损失上验证 `SGD(momentum=β, lr=η)` 与手写 EMA 形式（式 (9)， $\eta' = \eta/(1-\beta)$ ）逐 step 参数一致；再验证 `nesterov=True` 与式 (13) 的手写实现在外推点序列上逐步一致。校验：(a) 由 log 斜率换算回的收缩因子应与正文速率表给出的两档步数自洽；(b) 两条轨迹应逐 step 全等（fp64 下逐元素相等）。
 
 ## 参考
 

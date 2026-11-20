@@ -4,7 +4,7 @@
 
 ## 1. 矩阵参数与向量参数的几何分野
 
-一个 decoder-only Transformer 的参数清单按形状分成两类。第一类是矩阵：attention 的 Q/K/V/O 投影、FFN 的 up/gate/down、MoE 的 expert 矩阵。它们在前向里充当**算子**： $y = Wx$，把输入空间的向量映到输出空间。第二类是向量与标量：RMSNorm 的 gain、bias、按行走查表的 embedding。它们不充当空间之间的映射。这个二分有几何上的理由：对算子而言，「参数动了一步，模型功能变了多少」的自然度量是诱导范数。
+哪些参数能用谱方法、哪些不能？答案取决于参数在前向里扮演什么角色。一个 decoder-only Transformer 的参数清单按形状分成两类。第一类是矩阵：attention 的 Q/K/V/O 投影、FFN 的 up/gate/down、MoE 的 expert 矩阵。它们在前向里充当**算子**： $y = Wx$，把输入空间的向量映到输出空间。第二类是向量与标量：RMSNorm 的 gain、bias、按行走查表的 embedding。它们不充当空间之间的映射。这个二分有几何上的理由：对算子而言，「参数动了一步，模型功能变了多少」的自然度量是诱导范数。
 
 设权重 $W \in \mathbb{R}^{n \times m}$ 收到扰动 $\Delta$。该层输出的扰动满足
 
@@ -14,17 +14,21 @@ $$
 
 **符号**： $\lVert \Delta \rVert_2 = \max_i \sigma_i(\Delta)$：谱范数（spectral norm），即最大奇异值； $x \in \mathbb{R}^{m}$：该层输入。
 
-式 (1) 的界是紧的：取 $x$ 为 $\Delta$ 最大奇异值对应的右奇异向量即取等。所以 $\lVert \Delta \rVert_2$ 精确等于「单位输入下该层功能的最坏扰动」。对照之下，Frobenius 范数 $\lVert \Delta \rVert_F = \sqrt{\sum_{ij} \Delta_{ij}^2}$ 只量逐元素能量，与功能扰动之间隔着条件数。隐藏层的激活空间（局部）近似欧氏——这一观察由 Moonlight 论文 §2.1 归于 Cesista 的讨论（[Liu et al., 2025](../references.md)，arXiv:2502.16982，[A]）。于是「控制每层功能每步的最坏变化」翻译成数学就是：**对矩阵参数的更新步加谱范数约束**。向量参数没有算子结构，谱框架对它们无定义。embedding 与 lm_head 虽是 2D 张量，但一个是查表、一个是读出，实证上也必须排除在 Muon 之外（§5）。本章的谱方法只覆盖隐藏层矩阵参数这一类对象。
+式 (1) 的界是紧的：取 $x$ 为 $\Delta$ 最大奇异值对应的右奇异向量即取等。代一组整数看：扰动只有两列，分别为 (3, 0) 与 (0, 1)；谱范数是 3，任意单位输入下输出最多被移动 3 个单位，输入取第一列方向时恰好取等。所以 $\lVert \Delta \rVert_2$ 精确等于「单位输入下该层功能的最坏扰动」。对照之下，Frobenius 范数 $\lVert \Delta \rVert_F = \sqrt{\sum_{ij} \Delta_{ij}^2}$ 只量逐元素能量，与功能扰动之间隔着条件数。隐藏层的激活空间（局部）近似欧氏——这一观察由 Moonlight 论文 §2.1 归于 Cesista 的讨论（[Liu et al., 2025](../references.md)，arXiv:2502.16982，[A]）。于是「控制每层功能每步的最坏变化」翻译成数学就是：**对矩阵参数的更新步加谱范数约束**。向量参数没有算子结构，谱框架对它们无定义。embedding 与 lm_head 虽是 2D 张量，但一个是查表、一个是读出，实证上也必须排除在 Muon 之外（§5）。本章的谱方法只覆盖隐藏层矩阵参数这一类对象。
+
+本章口径一句话：谱方法的适用对象统一为隐藏层矩阵参数，embedding 与输出头除外（理由在分工一节给出）；效率数字例统一取论文与官方实现给出的规模档，换档处在句内声明。
 
 ## 2. 谱范数约束下的最速下降 = msign（完整推导）
 
-把「在谱范数预算 $\eta$ 内让 loss 的一阶近似下降最多」写成约束优化问题。当前梯度 $G \in \mathbb{R}^{n \times m}$（满秩情形先证，秩亏情形留练习 1）。求更新方向：
+谱约束下，损失下降最快的更新方向长什么样？把「在谱范数预算 $\eta$ 内让 loss 的一阶近似下降最多」写成约束优化问题：当前梯度 $G \in \mathbb{R}^{n \times m}$（满秩情形先证，秩亏情形留练习 4）。求更新方向：
 
 $$
 \min_{\Delta \in \mathbb{R}^{n \times m}} \hspace{5mu} \langle G, \Delta \rangle_F \qquad \text{s.t.} \qquad \lVert \Delta \rVert_2 \le \eta \qquad (2)
 $$
 
 **符号**： $\langle G, \Delta \rangle_F = \mathrm{tr}(G^{\top} \Delta)$：Frobenius 内积，即 loss 一阶近似的改变量； $\eta > 0$：谱范数预算（每步功能扰动上界）。
+
+**命题**（谱约束最速下降）：在谱范数预算内，让损失一阶近似下降最多的更新方向唯一，就是梯度矩阵的负正交化方向；每步最大下降量等于预算乘梯度的核范数。**证明**（路线：先用 SVD 换元把目标与约束同时写进奇异向量基——这是关键一步，正交变换同时保持 Frobenius 内积与谱范数；换元后目标只含对角元，谱范数把对角元逐个压住、给出下界；最后构造达到下界的解并证唯一）。
 
 **第一步：SVD 换元把约束与目标同时对角化。** 取 $G$ 的完整 SVD： $G = U \Sigma V^{\top}$， $U \in \mathbb{R}^{n \times n}$、 $V \in \mathbb{R}^{m \times m}$ 正交， $\Sigma \in \mathbb{R}^{n \times m}$ 对角（奇异值 $\sigma_1 \ge \cdots \ge \sigma_r \gt 0$， $r$ 为秩）。令 $D = U^{\top} \Delta V$。正交变换不改变谱范数： $\lVert D \rVert_2 = \lVert \Delta \rVert_2$。目标改写（迹的循环不变性）：
 
@@ -67,7 +71,9 @@ $$
 | $\lVert \Delta \rVert_F \le \eta$ | $G / \lVert G \rVert_F$（保留方向与相对幅度） | $\eta \lVert G \rVert_F$ | SGD |
 | $\lVert \Delta \rVert_2 \le \eta$ | $U V^{\top}$（全部奇异值压平到 1） | $\eta \lVert G \rVert_{\ast}$ | Muon 的骨架 |
 
-第二行就是 Muon 的全部动机：谱约束把更新的每个奇异方向拉到同一幅度， $G$ 里幅度悬殊的方向（大奇异值主导、小奇异值近零）被等权对待。Muon 博客的实证观察是：SGD-momentum 与 Adam 产生的更新矩阵条件数很高，更新被少数主方向垄断；正交化「放大了那些幅度小但对学习重要的稀有方向」（原文自标注为 speculation，[Jordan, 2024](../references.md)，教学参照）。Moonlight 的 SVD 熵分析给了旁证：1.2T token checkpoint 上，超过 90% 的权重矩阵在 Muon 下的奇异值分布熵高于 AdamW（[Liu et al., 2025](../references.md)，[A]，附录 F）。把优化器统一看作「某种范数约束下的最速下降」的框架由 Bernstein & Newhouse 提出；Muon 博客与 Moonlight §2.1 均以此定位 Muon（Adam 对应逐坐标自适应的范数族，Muon 精确计算时对应谱范数）。该框架文献未收录进本书 references，此处仅作谱系注记。
+第二行就是 Muon 的全部动机：谱约束把更新的每个奇异方向拉到同一幅度， $G$ 里幅度悬殊的方向（大奇异值主导、小奇异值近零）被等权对待。Muon 博客的实证观察是：SGD-momentum 与 Adam 产生的更新矩阵条件数很高，更新被少数主方向垄断；正交化「放大了那些幅度小但对学习重要的稀有方向」（原文自标注为 speculation，[Jordan, 2024](../references.md)，教学参照）。Moonlight 的 SVD 熵分析给了旁证：1.2T token checkpoint 上，超过 90% 的权重矩阵在 Muon 下的奇异值分布熵高于 AdamW（[Liu et al., 2025](../references.md)，[A]，附录 F）。
+
+> **提点**：把优化器统一看作「某种范数约束下的最速下降」的框架由 Bernstein & Newhouse 提出；Muon 博客与 Moonlight §2.1 均以此定位 Muon（Adam 对应逐坐标自适应的范数族，Muon 精确计算时对应谱范数）。该框架文献未收录进本书 references，此处仅作谱系注记。
 
 ## 3. Newton-Schulz 迭代：不算 SVD 的 msign
 
@@ -77,9 +83,9 @@ $$
 X_0 = \frac{G}{\lVert G \rVert_F}, \qquad X_{k+1} = a \thinspace X_k + b \left( X_k X_k^{\top} \right) X_k + c \left( X_k X_k^{\top} \right)^2 X_k \qquad (7)
 $$
 
-**符号**： $a, b, c$：多项式系数；归一化用 Frobenius 范数而非谱范数—— $\lVert G \rVert_F \ge \lVert G \rVert_2$，除以它保证 $X_0$ 的全部奇异值 $\le 1$（Frobenius 范数是免费可算的，谱范数本身就要迭代求）。
+**符号**： $a, b, c$：多项式系数；归一化用 Frobenius 范数而非谱范数—— $\lVert G \rVert_F \ge \lVert G \rVert_2$，除以它保证 $X_0$ 的全部奇异值 $\le 1$（Frobenius 范数一次平方和可得，谱范数本身反而要迭代求）。
 
-**关键结构：NS 迭代只改奇异值、不动奇异向量。** 设 $X_k = U \thinspace \mathrm{diag}(\sigma^{(k)}) \thinspace V^{\top}$，则 $X_k X_k^{\top} = U \thinspace \mathrm{diag}\left( (\sigma^{(k)})^2 \right) U^{\top}$，进而 $(X_k X_k^{\top}) X_k = U \thinspace \mathrm{diag}\left( (\sigma^{(k)})^3 \right) V^{\top}$、 $(X_k X_k^{\top})^2 X_k = U \thinspace \mathrm{diag}\left( (\sigma^{(k)})^5 \right) V^{\top}$。代回式 (7)：
+**命题**（NS 保持奇异向量）：NS 迭代只改奇异值、不动奇异向量。**验证**（代回即得）：设 $X_k = U \thinspace \mathrm{diag}(\sigma^{(k)}) \thinspace V^{\top}$，则 $X_k X_k^{\top} = U \thinspace \mathrm{diag}\left( (\sigma^{(k)})^2 \right) U^{\top}$，进而 $(X_k X_k^{\top}) X_k = U \thinspace \mathrm{diag}\left( (\sigma^{(k)})^3 \right) V^{\top}$、 $(X_k X_k^{\top})^2 X_k = U \thinspace \mathrm{diag}\left( (\sigma^{(k)})^5 \right) V^{\top}$。代回式 (7)：
 
 $$
 X_{k+1} = U \thinspace \mathrm{diag}\left( f\left( \sigma^{(k)} \right) \right) V^{\top}, \qquad f(\sigma) = a \thinspace \sigma + b \thinspace \sigma^3 + c \thinspace \sigma^5 \qquad (8)
@@ -87,7 +93,7 @@ $$
 
 **符号**： $f$：逐奇异值作用的标量五次多项式。整个矩阵迭代退化为对每个奇异值独立跑标量迭代 $\sigma^{(k+1)} = f(\sigma^{(k)})$——分析 NS 只需要分析一维 map $f$。若 $f$ 把 $(0, 1]$ 映向 1，则 $X_k \to U V^{\top} = \mathrm{msign}(G)$，正交化完成。
 
-**系数的故事（出处与调参准则）**。先看经典取值 $(a, b, c) = (2, -1.5, 0.5)$： $f(1) = 1$ 是精确不动点且 $f'(1) = 0$（超吸引，练习 2），从任意 $\sigma_0 \in (0, 1]$ 收敛到 1（逐步递增、但有轻微过冲—— $f$ 在 $\sigma \approx 0.89$ 处峰值约 1.002，随后回落到 1；本书数值复核）。问题是小奇异值收敛慢： $\sigma_0 = 0.001$ 时要约 12 步（11 步约 0.997、12 步约 1.0000；见下表）。Muon 博客的调参准则（[Jordan, 2024](../references.md)，教学参照）针对这一点： $f'(0) = a$ 控制小奇异值的早期收缩速率，要让 $a$ 尽量大。约束是长程行为不跑偏——博客的原文口径是「经验上 $\varepsilon$ 高达 0.3 也不伤 loss 曲线」，故把目标放宽为长程值落在 $[0.7, 1.3]$。用 ad-hoc 梯度法调出
+**系数的故事（出处与调参准则）**。先看经典取值 $(a, b, c) = (2, -1.5, 0.5)$： $f(1) = 1$ 是精确不动点且 $f'(1) = 0$（超吸引，练习 1），从任意 $\sigma_0 \in (0, 1]$ 收敛到 1（逐步递增、但有轻微过冲—— $f$ 在 $\sigma \approx 0.89$ 处峰值约 1.002，随后回落到 1；本书数值复核）。问题是小奇异值收敛慢： $\sigma_0 = 0.001$ 时要约 12 步（11 步约 0.997、12 步约 1.0000；见下表）。Muon 博客的调参准则（[Jordan, 2024](../references.md)，教学参照）针对这一点： $f'(0) = a$ 控制小奇异值的早期收缩速率，要让 $a$ 尽量大。约束是长程行为不跑偏——博客的原文口径是「经验上 $\varepsilon$ 高达 0.3 也不伤 loss 曲线」，故把目标放宽为长程值落在 $[0.7, 1.3]$。用 ad-hoc 梯度法调出
 
 $$
 (a, b, c) = (3.4445, \thinspace -4.7750, \thinspace 2.0315) \qquad (9)
@@ -107,7 +113,8 @@ Moonlight 沿用同一组系数并注明出处（[Liu et al., 2025](../reference
 
 - $f(1) = 0.701 \neq 1$：**1 不是这组系数的不动点**；继续迭代也不收敛到点，而是落入有界 4-环 $\lbrace 0.68, 1.13, 0.75, 1.05 \rbrace$（近似值）。这与官方实现的 docstring 一致：「产出不是 $U V^{\top}$ 而是 $U S' V^{\top}$， $`S'_{ii} \sim \mathrm{Uniform}(0.5, 1.5)`$」——近似是刻意的，用精确性换小奇异值的抬升速度。
 - 5 步把 $\gtrsim 10^{-3}$ 的输入压进约 $[0.47, 1.20]$（细网格复算： $[10^{-3}, 1]$ 的像为 $[0.473, 1.202]$，最大值 1.202 出现在 $\sigma_0 \approx 0.004$ 附近）；但小端的放大倍率是有限的： $f$ 在 0 附近斜率为 $a$，5 步约 $a^5 \approx 485$ 倍，即归一化后小于约 $10^{-3}$ 的奇异方向 5 步内抬不进 $[0.5, 1.5]$ 邻域。NS₅ 正交化的有效带宽是「归一化奇异值 $\gtrsim 10^{-3}$」的方向族，更深的近零方向保留其小幅度——这不是缺陷而是事实边界（§9 还会回来）。
-- 迭代对输入有发散区：本书数值复核显示发散阈值约为 1.264（ $\sigma_0 = 1.25$ 仍有界， $1.27$ 起发散）。所以式 (7) 首行的归一化不是精度技巧而是**正确性前提**——谱范数必须先压进收敛域。
+
+> **坑**：NS 迭代对输入有发散区——输入谱范数超过约 1.264 即发散（ $\sigma_0 = 1.25$ 仍有界， $1.27$ 起发散；本书数值复核），输出爆炸。规避：式 (7) 首行的归一化不是精度技巧而是**正确性前提**，谱范数必须先压进收敛域。
 
 一个自然的追问：4-环残余误差会不会跨训练步累积？不会。NS 在每个训练步被独立调用——输入是当步的动量矩阵 $\mu M_t + G_t$（式 (10)），首步归一化把上一步的残余完全洗掉。每步的正交化误差是「当步有界」而非「跨步复利」：步 $t$ 的更新方向与精确 msign 的差异被限制在奇异值 $[0.5, 1.5]$ 的形变内，方向基 $U$、 $V$ 本身不受标量动力学影响（式 (8) 保持奇异向量严格不变）。跨步漂移的唯一来源是优化器状态 $M_t$ 的正常递推，与 NS 无关。
 
@@ -134,7 +141,7 @@ X_k [m, n] ──► A = X_k X_kᵀ [m, m]          2 m² n FLOPs
           O = X₅ [n, m]（转置回原向）≈ U S′ Vᵀ，S′ ∈ [0.5, 1.5] 邻域
 ```
 
-每步 $4 m^2 n + 2 m^3 \le 6 n m^2$ FLOPs， $T$ 步合计 $\le 6 T n m^2$。对照该层一次前向加反向的 $6 n m B$ FLOPs（ $B$ 为该步流经此层的 token 数，models 1.2 的 $2mnk$ 口径），Muon 的相对开销 $\le T \thinspace m / B$。代入两组真实数字（[Jordan, 2024](../references.md)）：NanoGPT 速度赛（ $m = 768$、 $B = 524288$）得 $5 \times 768 / 524288 \approx 0.0073$，即约 0.7%；Llama-3 405B 规模（ $m = 16384$、 $B = 1.6 \times 10^{7}$）得约 0.5%。结论：NS 的 FLOPs 开销在大小两个尺度上都低于 1%。Muon 的成本不在算力，在工程——分布式，见 §6 末。
+每步 $4 m^2 n + 2 m^3 \le 6 n m^2$ FLOPs， $T$ 步合计 $\le 6 T n m^2$。对照该层一次前向加反向的 $6 n m B$ FLOPs（ $B$ 为该步流经此层的 token 数，models 1.2 的 $2mnk$ 口径），Muon 的相对开销（口径：NS 迭代的 matmul FLOPs 对该层一次前向加反向 FLOPs 的占比） $\le T \thinspace m / B$。代入两组真实数字（[Jordan, 2024](../references.md)）：NanoGPT 速度赛（ $m = 768$、 $B = 524288$）得 $5 \times 768 / 524288 \approx 0.0073$，即约 0.7%；Llama-3 405B 规模（ $m = 16384$、 $B = 1.6 \times 10^{7}$）得约 0.5%。结论：NS 的 FLOPs 开销在大小两个尺度上都低于 1%。Muon 的成本不在算力，在工程——分布式，见 §6 末。
 
 ## 4. Muon 更新规则完整形式（Moonlight 口径，逐式回原文）
 
@@ -275,19 +282,19 @@ Moonlight 官方示例实现（MoonshotAI/Moonlight `examples/toy_train.py` 的 
 | 最速下降 | $\Delta^{\ast} = -\eta \thinspace U V^{\top}$，式 (2)-(5)；下降量 $\eta \lVert G \rVert_{\ast}$ | 对偶范数配对：谱 ↔ 核；满秩时解唯一 |
 | msign 三形式 | $U V^{\top} = (G G^{\top})^{-1/2} G$，式 (6) | 即离 $G$ 最近的半正交矩阵 |
 | NS 迭代 | 式 (7)(9)： $f(\sigma) = a\sigma + b\sigma^3 + c\sigma^5$ 逐奇异值作用，式 (8) | 系数 $(3.4445, -4.7750, 2.0315)$； $f(1) = 0.701$；长程 4-环 $[0.68, 1.13]$；5 步把 $\gtrsim 10^{-3}$ 的输入映进约 $[0.47, 1.20]$； $\sigma_0 \gtrsim 1.26$ 发散（本书数值复核） |
-| NS 开销 | 每步 $\le 6 n m^2$ FLOPs；总开销 $\le T m / B$ | NanoGPT 0.7%、405B 0.5%（博客口径）；bf16 可跑 |
+| NS 开销 | 每步 $\le 6 n m^2$ FLOPs；总开销 $\le T m / B$ | NanoGPT 0.7%、405B 0.5%（博客口径）；bf16 可跑；练习 2 复算这笔账 |
 | Muon 完整式 | 式 (10)(12)：momentum $\mu = 0.95$ → NS₅ → $\times 0.2 \sqrt{\max(A,B)}$ → $+\lambda W$ | 引理 1： $\mathrm{RMS} = \sqrt{1/\max(A,B)}$；AdamW 经验 RMS $0.2\text{–}0.4$；wd $\lambda = 0.1$；复用 AdamW 超参 |
 | 分工 | §5 参数二分 | 隐藏矩阵 → Muon；embedding/lm_head/norm/scalar → AdamW；优化器态 2 份降 1 份 |
-| 效率 claim | compute-optimal 下约 52% FLOPs 追平 AdamW（ $\approx 2\times$） | 条件：dense Llama 架构系列、grid-searched baseline、复用超参 |
+| 效率 claim | compute-optimal 下约 52% FLOPs 追平 AdamW（ $\approx 2\times$） | 条件：dense Llama 架构系列、grid-searched baseline、复用超参（适用条件四条见正文清单） |
 | MuonClip | 式 (13)(14)： $\gamma_h = \min(1, \tau / S_{\max}^h)$， $\tau = 100$ | post-update 权重缩放、不进计算图；K2 15.5T token 零 spike；MLA 分量规则 |
 | µP 对照 | RMS 匹配 vs 缩放律迁移 | Moonlight 无 µP 内容；配方对照归 7.2 |
 
 ## 练习
 
-1.（推导）秩亏情形的式 (2)：设 $G$ 的秩 $r \lt \min(n, m)$。证明解不唯一，解集为 $\lbrace \Delta = U D V^{\top} : D_{ii} = -\eta \thinspace (i \le r), \thinspace \lVert D \rVert_2 \le \eta \rbrace$；并证明 $\Delta = -\eta \thinspace U_r V_r^{\top}$（即 $\mathrm{msign}$ 的推广：零奇异值的符号取 0）是其中 Frobenius 范数最小的解。
-2.（推导）完成 §3 的两处验证：(a) 若 $X_k = U \thinspace \mathrm{diag}(\sigma) \thinspace V^{\top}$ 则式 (7) 给出 $X_{k+1} = U \thinspace \mathrm{diag}(f(\sigma)) \thinspace V^{\top}$；(b) 经典系数 $(2, -1.5, 0.5)$ 满足 $f(1) = 1$ 且 $f'(1) = 0$（超吸引不动点），并求其二阶接触阶——由此解释为何它从小奇异值出发收敛慢（提示： $f(\sigma)/\sigma$ 在 0 附近的值）。
-3.（计算）NS 开销账：对 $d = 4096$、 $d_{\mathrm{ff}} = 14336$ 的 FFN down 投影矩阵（ $[4096, 14336]$）， $T = 5$、该层每步流经 $B = 4 \times 10^{6}$ token。按 §3 的 $6 T n m^2$ 与 $6 n m B$ 估算 Muon 对该层的相对 FLOPs 开销，与 $T m / B$ 的捷径口径对照；再答：batch 缩到 $B = 4 \times 10^{4}$（小 batch 微调）时开销变成多少，这与 §9 第 2 条的官方警告有何呼应？
-4.（代码）(a) 用 20 行 Python 实现标量 map $f$（式 (8)(9)），复现 §3 表格的 5 步值与长程 4-环；(b) 用 PyTorch 实现 NS₅（对照 `zeropower_via_newtonschulz5`，教学用，非优化实现），对随机高斯矩阵 $G \in \mathbb{R}^{256 \times 128}$ 验证 $X_5$ 的奇异值落在 $[0.5, 1.5]$ 邻域的比例，并与 SVD 的 $U V^{\top}$ 比较方向差异 $\lVert X_5 - U V^{\top} \rVert_F / \lVert U V^{\top} \rVert_F$。
+1.（推导 · [20]）完成 §3 的两处验证：(a) 若 $X_k = U \thinspace \mathrm{diag}(\sigma) \thinspace V^{\top}$ 则式 (7) 给出 $X_{k+1} = U \thinspace \mathrm{diag}(f(\sigma)) \thinspace V^{\top}$；(b) 经典系数 $(2, -1.5, 0.5)$ 满足 $f(1) = 1$ 且 $f'(1) = 0$（超吸引不动点），并求其二阶接触阶——由此解释为何它从小奇异值出发收敛慢（提示： $f(\sigma)/\sigma$ 在 0 附近的值）。
+2.（计算 · [20]）NS 开销账：对 $d = 4096$、 $d_{\mathrm{ff}} = 14336$ 的 FFN down 投影矩阵（ $[4096, 14336]$）， $T = 5$、该层每步流经 $B = 4 \times 10^{6}$ token。按 §3 的 $6 T n m^2$ 与 $6 n m B$ 估算 Muon 对该层的相对 FLOPs 开销，与 $T m / B$ 的捷径口径对照；再答：batch 缩到 $B = 4 \times 10^{4}$（小 batch 微调）时开销变成多少，这与 §9 第 2 条的官方警告有何呼应？校验：batch 取大档时，开销应落在正文所给上界之下。
+3.（代码 · [30]）(a) 用 20 行 Python 实现标量 map $f$（式 (8)(9)），复现 §3 表格的 5 步值与长程 4-环；(b) 用 PyTorch 实现 NS₅（对照 `zeropower_via_newtonschulz5`，教学用，非优化实现），对随机高斯矩阵 $G \in \mathbb{R}^{256 \times 128}$ 验证 $X_5$ 的奇异值落在 $[0.5, 1.5]$ 邻域的比例，并与 SVD 的 $U V^{\top}$ 比较方向差异 $\lVert X_5 - U V^{\top} \rVert_F / \lVert U V^{\top} \rVert_F$。先写下你预测的奇异值比例再跑。校验：五步后的数值与正文表格逐格一致。
+4.（推导 · [30]）秩亏情形的式 (2)：设 $G$ 的秩 $r \lt \min(n, m)$。证明解不唯一，解集为 $\lbrace \Delta = U D V^{\top} : D_{ii} = -\eta \thinspace (i \le r), \thinspace \lVert D \rVert_2 \le \eta \rbrace$；并证明 $\Delta = -\eta \thinspace U_r V_r^{\top}$（即 $\mathrm{msign}$ 的推广：零奇异值的符号取 0）是其中 Frobenius 范数最小的解。
 
 ## 参考
 

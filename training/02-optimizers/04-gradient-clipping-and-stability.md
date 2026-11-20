@@ -14,13 +14,15 @@ $$
 
 **符号**： $\mathcal{P}$：参与裁剪的参数集合（生产上通常是全部可训练参数）； $\lVert g_p \rVert_F$：第 $p$ 个梯度张量的 Frobenius 范数（全部元素平方和开根号，与张量形状无关）； $\tau > 0$：裁剪阈值（PyTorch 接口里的 `max_norm`）； $c$：缩放系数； $\varepsilon = 10^{-6}$：防除零的小量（实现口径，见下文代码走读）。
 
+代一组整数看一眼：三个梯度张量的范数分别是 3、4、12，拼接后的总范数是 13（勾股数）；阈值取 1 时系数为 1/13，全体梯度同除以 13，相对结构原样保留。
+
 式 (1) 里有三个设计点。第一，范数是全局的：分子分母都是全体梯度拼成的向量的范数，不是逐层各裁各的。逐层裁剪与全局裁剪的差别，在 §5 的 GLM-130B 案例里会变成真问题。第二，缩放是等比的：全体 $g_p$ 乘同一个标量 $c$，参数组之间的相对比例不变。第三， $c = \min(1, \cdot)$：范数小于阈值时 $c = 1$，不做任何事。只缩不放——clip 是保险丝，不是归一化。
 
 看官方实现。PyTorch 的实现在 pytorch repo 的 `torch/nn/utils/clip_grad.py`（[PyTorch](../references.md)，教学参照+官方实现），拆成两个函数，与式 (1) 逐步对应：
 
 - `_get_total_norm`：先对每个梯度张量算范数（`torch._foreach_norm`），再对这些范数求一次同阶范数（norm-of-norms）。p = 2 时 $\sqrt{\sum_p \lVert g_p \rVert_2^2}$ 与「拼接后求范数」逐字等价，但省掉了真正的拼接。可选参数 `error_if_nonfinite=True`：总范数为 NaN/Inf 时直接抛错，把「梯度炸了」从静默缩放变成显式异常，生产上配合 skip-step 逻辑使用（7.3 的干预手册）。
 - `_clip_grads_with_norm_`：先算 `clip_coef = max_norm / (total_norm + 1e-6)`，再 `clip_coef_clamped = torch.clamp(clip_coef, max=1.0)`，最后逐张量 `mul_`。注意这里没有 `if clip_coef < 1` 分支。源码注释说明了原因：分支会引入一次 CPU↔GPU 同步，clamp 写法把判断留在 GPU 上。代价是「不裁」时也逐张量乘了一次 1.0。
-- `clip_grad_norm_` 返回裁剪前的 `total_norm`。这个返回值是免费的监控指标：每步记录它，就得到 §3 分位数选阈值和 §5 spike 预警的原始数据流。
+- `clip_grad_norm_` 返回裁剪前的 `total_norm`。这个返回值是免费的监控指标（口径：范数本来就算出来了，返回它不增加任何计算）：每步记录它，就得到 §3 分位数选阈值和 §5 spike 预警的原始数据流。
 
 教学版对照（教学用，非优化实现——直译式 (1)，含一次 `.item()` 同步，无 foreach 融合）：
 
@@ -50,11 +52,15 @@ assert all(torch.allclose(a.grad, b.grad, atol=1e-6)
            for a, b in zip(m1.parameters(), m2.parameters()))
 ```
 
-一个顺序语义注记（与 1.5 衔接）：clip 必须作用于**累加完成后的全 batch 梯度**。在 gradient accumulation 下， $m$ 个 micro-batch 各自的小梯度都可能低于阈值，累加后未必；逐 micro-batch 裁剪会改变累加结果的统计含义。分布式下同理：clip 在梯度 all-reduce 之后、optimizer step 之前（4.1 的 DDP 时序）。
+> **坑**：gradient accumulation 下逐 micro-batch 裁剪—— $m$ 个 micro-batch 各自的小梯度都可能低于阈值，累加后未必；逐 micro-batch 裁剪会改变累加结果的统计含义（顺序语义与 1.5 衔接）。规避：clip 必须作用于**累加完成后的全 batch 梯度**；分布式下同理，clip 在梯度 all-reduce 之后、optimizer step 之前（4.1 的 DDP 时序）。
+
+本章口径一句话：几何反例统一用同一个二维梯度向量；spike 算账统一用一组固定的幅度倍数与 EMA 系数；稳定性案例统一用 GLM-130B 的训练记录，逐家出处只在阈值一节出现。
 
 ## 2. 关键推导：范数裁剪保持方向，逐值裁剪不保持
 
-式 (1) 中 $g' = c \thinspace g$， $c \ge 0$ 为标量。「方向保持」可以写成两条等价的精确命题。
+裁剪之后的梯度还是原来的方向吗？答案决定 clip 能否与下游优化器和平共处。式 (1) 中 $g' = c \thinspace g$， $c \ge 0$ 为标量，由此可以给出严格命题。
+
+**命题**（范数裁剪保持方向）：等比缩放不改变梯度方向。它有两条等价的精确表述。
 
 **(a) 单位方向不变**。 $c > 0$ 时 $g' / \lVert g' \rVert_2 = c \thinspace g / (c \lVert g \rVert_2) = g / \lVert g \rVert_2$；对任意固定方向 $u$， $\langle g', u \rangle = c \thinspace \langle g, u \rangle$ 同步缩放。任意两个坐标的比值 $`g'_i / g'_j = g_i / g_j`$ 也不变——坐标间的相对结构完整保留。
 
@@ -66,7 +72,7 @@ $$
 
 **符号**： $h$：裁剪后的梯度向量（全体参数拼接口径，下同）。
 
-证明只有一行主干：展开 $\lVert h - g \rVert_2^2 = \lVert h \rVert_2^2 - 2 \langle h, g \rangle + \lVert g \rVert_2^2$，固定 $\lVert h \rVert_2$ 时需最大化 $\langle h, g \rangle$；由 Cauchy-Schwarz， $\langle h, g \rangle \le \lVert h \rVert_2 \lVert g \rVert_2$，等号当且仅当 $h \parallel g$。于是 $h = s \thinspace g / \lVert g \rVert_2$（ $s = \lVert h \rVert_2$），目标变成 $\min_{0 \le s \le \tau} (s - \lVert g \rVert_2)^2$，解 $s = \min(\lVert g \rVert_2, \tau)$——即式 (1)。「在可信半径内尽量不动原梯度」这一准则的唯一解就是等比缩放。
+**证明**（(b) 的一行主干）：展开 $\lVert h - g \rVert_2^2 = \lVert h \rVert_2^2 - 2 \langle h, g \rangle + \lVert g \rVert_2^2$，固定 $\lVert h \rVert_2$ 时需最大化 $\langle h, g \rangle$；由 Cauchy-Schwarz， $\langle h, g \rangle \le \lVert h \rVert_2 \lVert g \rVert_2$，等号当且仅当 $h \parallel g$。于是 $h = s \thinspace g / \lVert g \rVert_2$（ $s = \lVert h \rVert_2$），目标变成 $\min_{0 \le s \le \tau} (s - \lVert g \rVert_2)^2$，解 $s = \min(\lVert g \rVert_2, \tau)$——即式 (1)。「在可信半径内尽量不动原梯度」这一准则的唯一解就是等比缩放。
 
 对照物是逐值裁剪（per-value clipping，PyTorch 的 `clip_grad_value_`）： $h_i = \mathrm{sign}(g_i) \min(|g_i|, \tau)$，逐坐标截断。看一个二维例子： $g = (100, 1)$、 $\tau = 1$。逐值裁剪得 $h = (1, 1)$，方向角从 $\arctan(1/100) \approx 0.57^{\circ}$ 扭到 $45^{\circ}$，偏差约 44.4°。范数裁剪得 $h = g / \lVert g \rVert \approx (1.0, 0.01)$，方向偏差精确为 0。
 
@@ -74,7 +80,7 @@ $$
 
 逐值裁剪不是投影到欧氏球，而是投影到 $\ell_\infty$ 盒子。两种投影的几何差异就是方向保持性的全部来源。本书此后「梯度裁剪」默认指式 (1) 的范数口径。
 
-「方向」在高维下的可操作读法：相邻步梯度的余弦相似度、梯度与 momentum buffer 的夹角，都是方向统计的常规监控量。范数裁剪后这些量与裁剪前完全一致；逐值裁剪会把它们系统性推向符号向量的方向。监控曲线上的异常平移，往往就是这种几何扭曲的指纹。
+> **提点**：「方向」在高维下的可操作读法：相邻步梯度的余弦相似度、梯度与 momentum buffer 的夹角，都是方向统计的常规监控量。范数裁剪后这些量与裁剪前完全一致；逐值裁剪会把它们系统性推向符号向量的方向。监控曲线上的异常平移，往往就是这种几何扭曲的指纹。
 
 ## 3. 阈值选择：1.0 惯例的出处链与分位数监控
 
@@ -97,7 +103,7 @@ GLM-130B 的训练笔记里有两条关键观察（[Zeng et al., 2022](../refere
 
 ## 4. clip 与 Adam 的交互：一致裁剪假设与两种 regime
 
-AdamW 的更新（2.2 式推导的结论形式）： $\Delta\theta = -\eta \thinspace \hat{m} / (\sqrt{\hat{v}} + \epsilon) - \eta \lambda \theta$（[Loshchilov & Hutter, 2017](../references.md)，arXiv:1711.05101，[A]）。clip 作用在 optimizer 之前，把 Adam 看到的梯度序列从 $g_t$ 换成 $`g'_t = c_t \thinspace g_t`$。分析这个交互，只需要盯住 $c_t$ 的时间结构。
+clip 改的是梯度，Adam 改的是逐坐标步长——两个机制叠在一起，会不会互相拆台？答案取决于 clip 的触发频率。先写下 AdamW 的更新（2.2 式推导的结论形式）： $\Delta\theta = -\eta \thinspace \hat{m} / (\sqrt{\hat{v}} + \epsilon) - \eta \lambda \theta$（[Loshchilov & Hutter, 2017](../references.md)，arXiv:1711.05101，[A]）。clip 作用在 optimizer 之前，把 Adam 看到的梯度序列从 $g_t$ 换成 $`g'_t = c_t \thinspace g_t`$。分析这个交互，只需要盯住 $c_t$ 的时间结构。
 
 **常数缩放免疫**。若 $c_t \equiv c$（假想情形：每步同倍缩放），则 $m_t \to c \thinspace m_t$、 $v_t \to c^2 \thinspace v_t$，逐坐标比值 $\hat{m} / \sqrt{\hat{v}}$ 精确不变。Adam 对梯度的全局常数缩放免疫。这就是「Adam 自带尺度不变性」的精确版本，也是「clip 只是偶发缩放时几乎不伤 Adam」的底层原因。
 
@@ -135,7 +141,7 @@ EGS 与式 (1) 的对比正好说明全局 clip 的盲区。global norm 被最�
 
 ## 6. 稳定原语 placement 总图
 
-一个训练 step 的数据流上，本书覆盖的稳定原语各有一个确定的作用点：
+warmup、z-loss、QK-norm、grad clip、MuonClip——本书的稳定原语各自作用在训练 step 的哪个位置？画到同一张数据流图上看：每个原语各有一个确定的作用点。
 
 ```
 数据 batch    前向（模型内）        logits      loss        反向梯度        optimizer 更新      参数
@@ -159,17 +165,17 @@ EGS 与式 (1) 的对比正好说明全局 clip 的盲区。global norm 被最�
 | --- | --- | --- |
 | global norm clip | 式 (1)： $c = \min(1, \tau / (\lVert g \rVert_2 + \varepsilon))$ 全体等比缩放 | 全局拼范数；只缩不放；作用于累加与 all-reduce 之后 |
 | 方向保持 | $g' = c \thinspace g$；欧氏投影式 (2) | 逐值裁剪把 $(100,1)$ 扭 44.4°，范数裁剪偏差为 0 |
-| 阈值 | 1.0 惯例：GPT-3 [B] / GLM-130B [A] / DeepSeek-V3 [A] / OLMo 2 [A] | 分位数监控 + 触发率为本书工程口径 |
-| clip × Adam | $c_t$ 恒定则 $\hat{m}/\sqrt{\hat{v}}$ 免疫；spike 的 $v$ 宿醉约 $1/(1-\beta_2) = 20$ 步 | 罕见触发 = 保险丝；一致触发 = 归一化 regime（启发式，非定理） |
+| 阈值 | 1.0 惯例：GPT-3 [B] / GLM-130B [A] / DeepSeek-V3 [A] / OLMo 2 [A] | 分位数监控 + 触发率为本书工程口径；练习 4 把它变成报警线 |
+| clip × Adam | $c_t$ 恒定则 $\hat{m}/\sqrt{\hat{v}}$ 免疫；spike 的 $v$ 宿醉约 $1/(1-\beta_2) = 20$ 步 | 罕见触发 = 保险丝；一致触发 = 归一化 regime（启发式，非定理）；练习 3 复现宿醉窗口 |
 | GLM-130B 案例 | EGS 式 (3)， $\alpha = 0.1$ | grad norm spike 先行于 collapse 数步；embedding 梯度异常大几个数量级 |
 | placement | §6 总图 | 每个原语守住自己的截面；spike 四类机制详拆归 7.3 |
 
 ## 练习
 
-1.（推导）补全式 (2) 的完整论证：设 $g \neq 0$，证明 $\min_{\lVert h \rVert_2 \le \tau} \lVert h - g \rVert_2$ 的解唯一且为 $\min(1, \tau / \lVert g \rVert_2) \thinspace g$（Cauchy-Schwarz 等号条件给出唯一性）。再证：把约束换成 $\ell_\infty$ 盒子 $\lVert h \rVert_\infty \le \tau$ 后，解变为逐值裁剪 $h_i = \mathrm{sign}(g_i) \min(|g_i|, \tau)$——由此说明逐值裁剪同样是投影、只是投影的几何不同。
-2.（计算）二维推广： $g = (M, 1)$、 $\tau = 1$。写出逐值裁剪后的方向角偏差 $\Delta\theta(M)$，求 $M \to \infty$ 的极限；再给范数裁剪在同一 $M$ 扫描下的偏差（应为恒 0）。由此说明「方向扭曲随梯度病态程度无界增长」。
-3.（代码）跑通 §1 教学版与 `torch.nn.utils.clip_grad_norm_` 的等价断言；然后构造合成梯度序列：前 100 步元素 iid $\mathcal{N}(0, 1)$，第 101 步全体乘 100（模拟 spike），分别在「裁 / 不裁」两路下驱动 Adam（ $\beta_1 = 0.9$、 $\beta_2 = 0.95$），画出 $\sqrt{\hat{v}}$ 的轨迹，验证宿醉窗口约为 $1/(1-\beta_2) = 20$ 步量级，并解释为什么被裁一路的 $v$ 曲线无凸起。
-4.（分析）设 spike 出现频率为每 $K$ 步一次、幅度倍数 $k$，在一致裁剪假设与保险丝 regime 的分界上估算：当 $K$ 小到什么程度时， $\hat{v}$ 的统计再也无法「忘记」上一个 spike（提示：比较 $K$ 与 $1/(1-\beta_2)$）？由此给触发率监控一个量化的报警线。
+1.（推导 · [20]）补全式 (2) 的完整论证：设 $g \neq 0$，证明 $\min_{\lVert h \rVert_2 \le \tau} \lVert h - g \rVert_2$ 的解唯一且为 $\min(1, \tau / \lVert g \rVert_2) \thinspace g$（Cauchy-Schwarz 等号条件给出唯一性）。再证：把约束换成 $\ell_\infty$ 盒子 $\lVert h \rVert_\infty \le \tau$ 后，解变为逐值裁剪 $h_i = \mathrm{sign}(g_i) \min(|g_i|, \tau)$——由此说明逐值裁剪同样是投影、只是投影的几何不同。
+2.（计算 · [20]）二维推广： $g = (M, 1)$、 $\tau = 1$。写出逐值裁剪后的方向角偏差 $\Delta\theta(M)$，求 $M \to \infty$ 的极限；再给范数裁剪在同一 $M$ 扫描下的偏差（应为恒 0）。由此说明「方向扭曲随梯度病态程度无界增长」。校验：M 取 100 时，逐值裁剪的方向偏差与正文二维例一致。
+3.（代码 · [30]）跑通 §1 教学版与 `torch.nn.utils.clip_grad_norm_` 的等价断言；然后构造合成梯度序列：前 100 步元素 iid $\mathcal{N}(0, 1)$，第 101 步全体乘 100（模拟 spike），分别在「裁 / 不裁」两路下驱动 Adam（ $\beta_1 = 0.9$、 $\beta_2 = 0.95$），画出 $\sqrt{\hat{v}}$ 的轨迹，验证宿醉窗口约为 $1/(1-\beta_2) = 20$ 步量级，并解释为什么被裁一路的 $v$ 曲线无凸起。先写下你预测的宿醉窗口长度再跑。校验：等价断言通过；宿醉窗口与正文所给时间常数同量级。
+4.（分析 · [30]）设 spike 出现频率为每 $K$ 步一次、幅度倍数 $k$，在一致裁剪假设与保险丝 regime 的分界上估算：当 $K$ 小到什么程度时， $\hat{v}$ 的统计再也无法「忘记」上一个 spike（提示：比较 $K$ 与 $1/(1-\beta_2)$）？由此给触发率监控一个量化的报警线。
 
 ## 参考
 
