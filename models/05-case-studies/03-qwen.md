@@ -22,7 +22,7 @@ Qwen3-235B-A22B-Instruct-2507 的 config.json 里，`num_attention_heads=64` 而
 
 rope_theta 一列也值得竖着读： $10^{6}$（Qwen3-8B）→ $5 \times 10^{6}$（235B）→ $10^{7}$（Qwen3-Next 与 Qwen2.5-1M）。规律是目标窗口越长、base 越高：最长波长 $\lambda_{\max} = 2\pi \cdot \mathrm{base}^{1 - 2/d}$ 随之抬升（2.5 式 (16) 的波长账），慢通道的旋转周期才罩得住长窗里的位置差。
 
-读表得出的结构性观察是双轨制。Qwen2 已有一档 MoE（57B-A14B），但主线是 dense；Qwen3 把双轨制度化——dense 线 6 个尺寸档（谱系表以实测的 Qwen3-8B 为代表）+ MoE 线 2 档（30B-A3B、235B-A22B，report 口径 [A]）；到 Qwen3-Next 一代只发 MoE hybrid，dense 线缺席。命名也把 MoE 口径写进型号：A3B / A22B 即 active 参数量。Qwen3 另有一条模型侧之外的主线：thinking / non-thinking 双模式。这是训练侧配方（post-training 与 RL），架构字段上无改动，归 training 维度；本章只登记其 token 层面的痕迹（§3 的 `<think>` 特殊 token）。
+读表得出的结构性观察是双轨制。Qwen2 已有一档 MoE（57B-A14B），但主线是 dense；Qwen3 把双轨制度化——dense 线 6 个尺寸档（谱系表以实测的 Qwen3-8B 为代表）+ MoE 线 2 档（30B-A3B、235B-A22B，report 口径 [A]）；到 Qwen3-Next 一代只发 MoE hybrid，dense 线缺席。命名也把 MoE 口径写进型号：A3B / A22B 即 active 参数量。Qwen3 另有一条模型侧之外的主线：thinking / non-thinking 双模式。这是训练侧配方（post-training 与 RL），架构字段上无改动，归 training 维度；本章只登记其 token 层面的痕迹（§3 的 `<think>` 特殊 token）。本章口径：多型号谱系章不设单一贯穿实例，算账逐例落到对应型号的 config 实测字段，旗舰与小档对照处随文注明。
 
 Qwen3-Max 单独一段，按 [C] 级约束写。截至 2026-11-12，该模型无 arXiv 论文、无开放权重（HF Qwen/Qwen3-Max 返回 404，本轮实测），仅以 API 形式服务；「>1T 参数」为厂商宣称（公告 URL 在案，页面为 JS 渲染、无法机械取证）。旁证渠道（OpenRouter 模型清单，2026-11-12）显示该 API 线已迭代至 qwen3.7-max / qwen3.8-max-prime（ctx 标称 1M）。除「2025-09 起作为 API-only 旗舰线存在」与上述厂商宣称外，本章不断言它的任何架构字段——它是谱系表里唯一填不出数字的一行，本身就是 [C] 级证据边界的实例。
 
@@ -50,19 +50,19 @@ $$
 \hat{q} = \sqrt{d_k}\thinspace \frac{q}{\lVert q \rVert}, \qquad \hat{k} = \sqrt{d_k}\thinspace \frac{k}{\lVert k \rVert}, \qquad z_{mn} = \frac{\langle R_m \hat{q},\ R_n \hat{k} \rangle}{\sqrt{d_k}} \qquad (2)
 $$
 
-**符号**： $q, k \in \mathbb{R}^{d_k}$：单头投影输出； $R_m$：位置 $m$ 的 RoPE 旋转（2.5）； $z_{mn}$：位置对 $(m, n)$ 的 attention logit。归一化使 $\lVert \hat{q} \rVert = \lVert \hat{k} \rVert = \sqrt{d_k}$。Cauchy–Schwarz 加旋转保范性（ $\lVert R_m x \rVert = \lVert x \rVert$）给出：
+**符号**： $q, k \in \mathbb{R}^{d_k}$：单头投影输出； $R_m$：位置 $m$ 的 RoPE 旋转（2.5）； $z_{mn}$：位置对 $(m, n)$ 的 attention logit。**命题**（logit 的结构上界）：QK-Norm 之后，每个 logit 的绝对值有一个与输入无关的固定上界。**证明**（一步）：归一化使 $\lVert \hat{q} \rVert = \lVert \hat{k} \rVert = \sqrt{d_k}$，Cauchy–Schwarz 加旋转保范性（ $\lVert R_m x \rVert = \lVert x \rVert$）给出：
 
 $$
 |z_{mn}| \le \frac{\lVert R_m \hat{q} \rVert \cdot \lVert R_n \hat{k} \rVert}{\sqrt{d_k}} = \frac{\sqrt{d_k} \cdot \sqrt{d_k}}{\sqrt{d_k}} = \sqrt{d_k} \qquad (3)
 $$
 
-$d_k$ = 128 时，全部 logit 落在 $[-11.3, 11.3]$，与位置差 $m - n$ 无关、与输入幅度无关——饱和区被结构性排除，不再依赖训练运气。注意归一化与 RoPE 的顺序在这里无关：旋转不改变范数，先归一还是先旋转，式 (3) 的界都成立。买到的是这个上界；换掉的是 bias 提供的逐通道常数位移自由度——RMSNorm 无 re-centering（2.7）， $q, k$ 的均值方向信息被移除。QKV bias 的参数量本身微不足道（235B 每层 $(64 + 2 \times 4) \times 128 = 9216$ 个）。这次替换的实质，是把「logit 稳定」从可学参数手里收归结构。
+$d_k$ = 128 时，全部 logit 落在 $[-11.3, 11.3]$，与位置差 $m - n$ 无关、与输入幅度无关——饱和区被结构性排除，不再依赖训练运气。带可学增益时上界如何变化，留作练习 2。注意归一化与 RoPE 的顺序在这里无关：旋转不改变范数，先归一还是先旋转，式 (3) 的界都成立。买到的是这个上界；换掉的是 bias 提供的逐通道常数位移自由度——RMSNorm 无 re-centering（2.7）， $q, k$ 的均值方向信息被移除。QKV bias 的参数量本身微不足道（235B 每层 $(64 + 2 \times 4) \times 128 = 9216$ 个）。这次替换的实质，是把「logit 稳定」从可学参数手里收归结构。
 
 同一问题有另一条解法作对照：Gemma 2 用 logit soft-capping（ $c \cdot \tanh(z / c)$，逐 logit 压回有界区间），Gemma 3 与 Qwen3 一样转用 QK-Norm（2.7 已登记，勿张冠李戴）。两条路线的差别在作用点：soft-capping 在 logit 算完之后压形状，QK-Norm 在 logit 算之前归一化输入。前者保留 $\lVert q \rVert \cdot \lVert k \rVert$ 的相对大小信息再截断，后者直接把幅度信息从 score 里拿掉。Qwen3 的选择意味着它的 attention score 完全由方向（夹角）决定，幅度通道让位给结构的其余部分。公开材料未见该项的逐项消融，独立贡献量化列入 §5 开放问题。
 
 ### 2.3 upcycling：dense→MoE 的权重移植
 
-Qwen2-57B-A14B 的 MoE 化走的是 upcycling，源模型在 report 里有明文：§2.2.3 写道「Qwen2-57B-A14B is upscaled from Qwen2-7B」（ar5iv 全文复核，2026-11-12）。形状证据与之互证：HF config 实测 57B-A14B 为 hidden 3584 / 28 层 / FFN 中间维 18944，与 Qwen2-7B 逐项一致（fix round 1 复核）；而 Qwen1.5-32B 是 5120 / 64 层 / 27392。upcycling 要逐元素搬运 FFN 权重，shape 不同在几何上就不成立，所以「源是 Qwen1.5-32B」的流传说法由明文与形状双重排除。另校正一处归属：该技术常被记到 Moonlight 名下，但 Moonlight 论文全文 0 次提及 upcycling（W3 research pass 逐文核实）。公开谱系里的旗舰级实例是 Qwen2 这一例，5.5 章回引本节。
+所谓 upcycling，是指从训练好的 dense checkpoint 向 MoE 结构移植权重的初始化做法。Qwen2-57B-A14B 的 MoE 化走的就是这条路，源模型在 report 里有明文：§2.2.3 写道「Qwen2-57B-A14B is upscaled from Qwen2-7B」（ar5iv 全文复核，2026-11-12）。形状证据与之互证：HF config 实测 57B-A14B 为 hidden 3584 / 28 层 / FFN 中间维 18944，与 Qwen2-7B 逐项一致（fix round 1 复核）；而 Qwen1.5-32B 是 5120 / 64 层 / 27392。upcycling 要逐元素搬运 FFN 权重，shape 不同在几何上就不成立，所以「源是 Qwen1.5-32B」的流传说法由明文与形状双重排除。另校正一处归属：该技术常被记到 Moonlight 名下，但 Moonlight 论文全文 0 次提及 upcycling（W3 research pass 逐文核实）。公开谱系里的旗舰级实例是 Qwen2 这一例，5.5 章回引本节。
 
 程序层面（report §2.2.2 Expert Initialization 节原文），这套 upcycling 不是朴素拷贝。设 expert 中间维 $h_E$、expert 数 $n$、源 dense FFN 中间维 $h_{\mathrm{FFN}}$，分四步：第一，把 FFN 整体复制 $\lceil n h_E / h_{\mathrm{FFN}} \rceil$ 份，保证可切出 $n$ 个 expert 的总宽度；第二，每份拷贝沿中间维 shuffle，逐拷贝不同，保证跨拷贝多样性；第三，从这些拷贝中切出 $n$ 个 expert，丢弃剩余维度；第四，对每个 fine-grained expert 的 50% 参数随机重初始化。公式化：
 
@@ -104,9 +104,9 @@ $$
 T = \frac{B}{\rho_{\mathrm{tok}}} \qquad (5)
 $$
 
-个 token。byte-level BPE 的保底是 byte fallback：一个 UTF-8 中文字符占 3 字节，词表覆盖不到时按 3 个 byte token 编码。词表规模决定多少常见字符与高频片段能进单 token 档——词表越大，merge 表越长，长尾片段的 $\rho_{\mathrm{tok}}$ 越高，且这一收益在非拉丁文字上最陡（拉丁字母语言的 byte fallback 下界只是 1 token/字符，CJK 是 3）。 $\rho_{\mathrm{tok}}$ 上升同时改善三个量：同一文本的 $T$ 下降（固定 ctx 窗口装下的实际文本变多），每文本训练 FLOPs $6ND$ 中的 $D$ 下降，perplexity 口径变化（1.1 的陷阱二：CE/token 跨 tokenizer 不可比）。2.2 的五档对照（50257 / 128256 / 151936 / 256128 / 262144）是各厂商按语料多语言配比取的不同工作点；Qwen 的 151936 档对应多语言重配比的取点。
+个 token。代一组整数进去：800 MB 的语料在压缩率 4 bytes/token 下切成 2 亿个 token；压缩率掉到 2 bytes/token，同一语料就翻倍到 4 亿——token 数与压缩率严格反比。byte-level BPE 的保底是 byte fallback：一个 UTF-8 中文字符占 3 字节，词表覆盖不到时按 3 个 byte token 编码。词表规模决定多少常见字符与高频片段能进单 token 档——词表越大，merge 表越长，长尾片段的 $\rho_{\mathrm{tok}}$ 越高，且这一收益在非拉丁文字上最陡（拉丁字母语言的 byte fallback 下界只是 1 token/字符，CJK 是 3）。 $\rho_{\mathrm{tok}}$ 上升同时改善三个量：同一文本的 $T$ 下降（固定 ctx 窗口装下的实际文本变多），每文本训练 FLOPs $6ND$ 中的 $D$ 下降，perplexity 口径变化（1.1 的陷阱二：CE/token 跨 tokenizer 不可比）。2.2 的五档对照（50257 / 128256 / 151936 / 256128 / 262144）是各厂商按语料多语言配比取的不同工作点；Qwen 的 151936 档对应多语言重配比的取点。
 
-**成本账一：词表参数 $2Vd$。** 全谱系 `tie_word_embeddings=false`，输入 embedding 与输出头是两份参数： $2Vd = 2 \times 151936 \times 4096 \approx 1.24$ B（ $d$=4096 档）。占比随模型规模稀释：8B 档约 15%（按型号名量级估），235B 档同一绝对值只占约 0.5%；Qwen3-Next 的 $d$=2048 把词表参数降到约 0.62 B，占 80B 的约 0.8%。结论的形状是：多语言大词表是小模型档的奢侈、旗舰档的零头。谱系能把 151936 一路用到 235B，正因为旗舰账里它几乎免费。
+**成本账一：词表参数 $2Vd$。** 全谱系 `tie_word_embeddings=false`，输入 embedding 与输出头是两份参数： $2Vd = 2 \times 151936 \times 4096 \approx 1.24$ B（ $d$=4096 档）。占比随模型规模稀释：8B 档约 15%（按型号名量级估），235B 档同一绝对值只占约 0.5%；Qwen3-Next 的 $d$=2048 把词表参数降到约 0.62 B，占 80B 的约 0.8%。结论的形状是：多语言大词表是小模型档的奢侈、旗舰档的零头。谱系能把 151936 一路用到 235B，正因为旗舰账里它几乎免费（口径：占该档总参数不足 1%）。
 
 **成本账二：输出头 FLOPs 与 softmax。** 每 token 的输出头是 $2Vd \approx 1.24$ GFLOPs 的一次大 matmul，外加对 $V$ 的 softmax 归一化（训练期每个位置都付）。对照 Qwen3-8B 层部分 $2N \approx 14$ GFLOPs 量级，输出头约占整机前向的 8%——这是 2.2 式 $T \times V \times d$ 三方账里 $V$ 侧的价格。另有两笔隐性成本登记在案：初始 loss 地板 $\ln 151936 \approx 11.9$（1.1）、长尾 token 的冷启动（2.2 §5）。
 
@@ -137,7 +137,9 @@ $$
 | `vocab_size` | 151936 | §3 的账 |
 | `moe_intermediate_size` | 512 | routed expert 中间维（与 shared 同宽）；MoE 参数账由此闭合： $48 \times 512 \times 3 \times 2048 \times 512 \approx 77.3$ B，加 attention / GDN 投影、shared expert、router 等小项后与官方「非 embedding 79B」吻合（model card 口径） |
 
-一个对照读法：hybrid 的层型配比在 config 里有三种写法。Qwen3-Next 用 `full_attention_interval` 周期生成；Kimi Linear 用 `linear_attn_config` 下两个显式列表（`kda_layers` / `full_attn_layers`，还带末层例外）；MiniMax-01 用 `attn_type_list` 全列表。同一结构决策的三种序列化方案，5.6 的 config 字段字典表会回收这个例子。
+> **坑**：用 hidden_size ÷ num_attention_heads 反推 head_dim——本模型得到 2048 ÷ 16 = 128，与实际 256 不符，上游投影的 shape 全部推错。读 config 先查显式 head_dim 字段，查不到再回看 modeling 代码的投影定义。
+
+> **提点**：hybrid 的层型配比在 config 里有三种写法。Qwen3-Next 用 `full_attention_interval` 周期生成；Kimi Linear 用 `linear_attn_config` 下两个显式列表（`kda_layers` / `full_attn_layers`，还带末层例外）；MiniMax-01 用 `attn_type_list` 全列表。同一结构决策的三种序列化方案，5.6 的 config 字段字典表会回收这个例子。
 
 ### 4.2 config → 层装配的 shape 走读
 
@@ -178,17 +180,17 @@ rope_theta: 1e7                    所有 full 层共享频率 base；GDN 层不
 | GQA 全系化 | 式 (1)；235B 整窗 47 GiB vs MHA 752 GiB | $g$ 逐代收紧（8B 档 4 → 旗舰 16）；262K 窗的前提而非优化 |
 | QK-Norm 替代 QKV bias | 式 (2)(3)： $\vert z \vert \le \sqrt{d_k} \approx 11.3$ | 结构性排除饱和区；界与位置、输入幅度无关；消融缺失 |
 | upcycling | 式 (4)：复制 $\lceil n h_E / h_{\mathrm{FFN}} \rceil$ 份 + shuffle 切片 + 50% 重初始化 | 归 Qwen2（非 Moonlight）；report §2.2.3 明写源为 Qwen2-7B、shape 互证；对称性在初始化时人为打破 |
-| Qwen3-Next 装配 | 48 = 36 GDN + 12 gated attn；512+1 top-10，$`\rho \approx 2.1\%`$ | 四件套全部出自 P4；创新在装配坐标（3:1、输出门、partial 0.25、zero-centered） |
+| Qwen3-Next 装配 | 48 = 36 GDN + 12 gated attn；512+1 top-10，$`\rho \approx 2.1\%`$ | 四件套全部出自 P4；创新在装配坐标（3:1、输出门、partial 0.25、zero-centered）；层型生成与清点见练习 4 |
 | vocab 151936 | 式 (5)； $2Vd$ ≈ 1.24 B | 四代同一 tokenizer；多语言压缩率换 $T$ 与 $D$；参数占比 15%（8B）→ 0.5%（235B） |
-| config 精读 | `full_attention_interval=4` 生成 `layer_types`；head_dim 256 ≠ 2048/16 | hybrid 层型三种 config 写法（对照 Kimi Linear 双列表、MiniMax-01 全列表） |
+| config 精读 | `full_attention_interval=4` 生成 `layer_types`；head_dim 256 ≠ 2048/16 | hybrid 层型三种 config 写法（对照 Kimi Linear 双列表、MiniMax-01 全列表；练习 4） |
 | 开放问题 | §5 六条 | QK-Norm 消融、 $r$ 扫描、upcycling 下落、router 细节、Max 披露、thinking 架构代价 |
 
 ## 练习
 
-1.（计算）用式 (1) 复核：Qwen3-235B（ $L$=94、 $H_{kv}$=4、 $d_{\mathrm{head}}$=128）在 $T$=262144、bf16、 $B$=1 下的 KV cache 总量；Qwen3-8B（ $L$=36、 $H_{kv}$=8）在 $T$=40960 下的总量。再算两模型的「每 token cache」比值，并结合 $g$=16 与 $g$=4 解释为什么旗舰档反而每层更省。
-2.（推导）补全式 (3)：写出 Cauchy–Schwarz 与旋转保范性的完整步骤。若 QK-Norm 带可学增益 $\gamma \in \mathbb{R}^{d_k}$（逐通道乘在归一化之后），给出 $|z_{mn}|$ 的新上界（用 $\lVert \gamma \rVert_{\infty}$ 表示），并说明该界为何仍与 $m - n$ 无关。
-3.（计算）vocab 账。设某多语言语料在 50257 词表下 $\rho_{\mathrm{tok}}$ = 1.5 bytes/token、在 151936 词表下 $\rho_{\mathrm{tok}}$ = 3.5（假设值）：同一 100 GB 语料的 token 数各是多少？按 $C \approx 6ND$ 口径，训练 FLOPs 差几倍？再算两词表下 Qwen3-8B 尺寸（ $d$=4096、untied）的词表参数 $2Vd$ 各为多少。
-4.（代码）读 transformers 的 `configuration_qwen3_next.py` 中 `layer_types` 的生成逻辑，写约 10 行教学代码：由 `num_hidden_layers=48` 与 `full_attention_interval=4` 生成 48 项层型列表并统计两类层数（教学用，非优化实现）。再打开 `modeling_qwen3_next.py`，指出 gate 切片与 zero-centered norm 各在哪一行表达式里（§4.3 的两处证据）。
+1.（计算 · [20]）用式 (1) 复核：Qwen3-235B（ $L$=94、 $H_{kv}$=4、 $d_{\mathrm{head}}$=128）在 $T$=262144、bf16、 $B$=1 下的 KV cache 总量；Qwen3-8B（ $L$=36、 $H_{kv}$=8）在 $T$=40960 下的总量。再算两模型的「每 token cache」比值，并结合 $g$=16 与 $g$=4 解释为什么旗舰档反而每层更省。校验：两个整窗总量与正文的代入结果一致；每 token cache 之比应等于层数比乘 KV 头数比。
+2.（推导 · [20]）补全式 (3)：写出 Cauchy–Schwarz 与旋转保范性的完整步骤。若 QK-Norm 带可学增益 $\gamma \in \mathbb{R}^{d_k}$（逐通道乘在归一化之后），给出 $|z_{mn}|$ 的新上界（用 $\lVert \gamma \rVert_{\infty}$ 表示），并说明该界为何仍与 $m - n$ 无关。校验：增益全取 1 时，新上界应退回正文的无增益上界。
+3.（计算 · [20]）vocab 账。设某多语言语料在 50257 词表下 $\rho_{\mathrm{tok}}$ = 1.5 bytes/token、在 151936 词表下 $\rho_{\mathrm{tok}}$ = 3.5（假设值）：同一 100 GB 语料的 token 数各是多少？先预测哪个词表下 token 数更少，再动手算。按 $C \approx 6ND$ 口径，训练 FLOPs 差几倍？再算两词表下 Qwen3-8B 尺寸（ $d$=4096、untied）的词表参数 $2Vd$ 各为多少。校验：两词表的词表参数之比应等于词表大小之比。
+4.（代码 · [30]）读 transformers 的 `configuration_qwen3_next.py` 中 `layer_types` 的生成逻辑，写约 10 行教学代码：由 `num_hidden_layers=48` 与 `full_attention_interval=4` 生成 48 项层型列表并统计两类层数（教学用，非优化实现）。动手前先预测两类层各出现多少次。再打开 `modeling_qwen3_next.py`，指出 gate 切片与 zero-centered norm 各在哪一行表达式里（§4.3 的两处证据）。校验：生成的列表中 full_attention 恰出现 12 次、linear_attention 恰出现 36 次。
 
 ## 参考
 

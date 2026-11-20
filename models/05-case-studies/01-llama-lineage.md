@@ -23,7 +23,7 @@
 
 表注三件事。其一，**口径**：Llama-1/2 各行的层数、宽度、头数与参数量出自各自论文的架构表（[Touvron et al., 2023a](../references.md)，arXiv:2302.13971，[A]；[Touvron et al., 2023b](../references.md)，arXiv:2307.09288，[A]）；Llama-3.1-8B/70B 为 config 实测（8.03B 即 2.8 式 (7) 对账到个位的值，70B 行参数量按同口径推算）。**405B 的 config 未公开**（gated 且无公开镜像），该行数字引 herd paper 架构表（[Grattafiori et al., 2024](../references.md)，arXiv:2407.21783，[A]），无法与 config 互证——这是谱系里唯一的证据缺口。其二，Llama-4 两行的 config 字段经 unsloth 镜像实测（2026-11-12，meta-llama gated），total/active 参数引官方 blog 原文口径（[Meta, Llama-4 blog + config](../references.md)，[W]）；norm/activation 等未单列字段以官方 repo 的模型定义为准（[Meta, llama-models repo](../references.md)，[A]）。其三，active 参数照抄 blog 口径（17B），不自行换算——其精确构成是 §7 的开放问题 3。
 
-沿四个变量轴读这张表。KV 头数轴上，MHA 在 70B 处先破（Llama-2），随后 GQA-8 普及全系（Llama-3.1）并固定为默认。词表轴上，32000 冻了两代，然后一步跳到 128256，再到 202048。上下文轴上，2048 → 4096 → 131072 → 10485760，每一步都换一套 RoPE 侧工具（base、staged extension、chunk + 缩放）。FFN 轴上，前三代是 dense SwiGLU，Llama-4 换成 MoE top-1。以下四节逐个轴拆账：每个改动换掉什么、解决什么、代价是什么。
+沿四个变量轴读这张表。KV 头数轴上，MHA 在 70B 处先破（Llama-2），随后 GQA-8 普及全系（Llama-3.1）并固定为默认。词表轴上，32000 冻了两代，然后一步跳到 128256，再到 202048。上下文轴上，2048 → 4096 → 131072 → 10485760，每一步都换一套 RoPE 侧工具（base、staged extension、chunk + 缩放）。FFN 轴上，前三代是 dense SwiGLU，Llama-4 换成 MoE top-1。以下四节逐个轴拆账：每个改动换掉什么、解决什么、代价是什么。本章口径：谱系章没有单一贯穿实例，全部算账数字取自谱系表与各节标明的 config 实测或论文口径，跨档对照处随文注明型号。
 
 ## 2. Llama-1：标准配方的确立
 
@@ -40,7 +40,7 @@ Llama-1 论文的架构一节篇幅很短，因为它做的不是发明新组件
 
 这套配方就是 2.8 式 (1)–(4) 在 MHA 退化形（ $H_{kv} = H_q$，分组映射 $g(h)$ 为恒等）下的完整形态：RMSNorm 两次「读」、attention 与 SwiGLU 两次「写」、final norm 收尾、独立输出头。四档尺寸（32 层 4096 宽 → 80 层 8192 宽）共用同一骨架，只有 $L$ 与 $d$ 在变。训练侧只登记一句：7B/13B 用 1.0T tokens、33B/65B 用 1.4T tokens（论文 §2 口径），数据配比与训练流程归 training 维度。
 
-Llama-1 的谱系意义不在任何单点创新，而在于它把「哪个组件进标准配方」变成了可引用的默认答案。P2 各章推导的每个组件变体——2.5 的 ALiBi/NoPE、2.6 的 GEGLU、2.7 的 reordered norm、4.1 的 MLA——都是以这套配方为基准系的扰动实验。
+> **提点**：Llama-1 的谱系意义不在任何单点创新，而在于它把「哪个组件进标准配方」变成了可引用的默认答案。P2 各章推导的每个组件变体——2.5 的 ALiBi/NoPE、2.6 的 GEGLU、2.7 的 reordered norm、4.1 的 MLA——都是以这套配方为基准系的扰动实验。
 
 ## 3. Llama-2：GQA 的引入点
 
@@ -98,7 +98,7 @@ $$
 N_{\mathrm{vocab}} = 2 V d \qquad (2)
 $$
 
-**符号**： $V$：词表； $d$：hidden 宽。代入 8B 档： $2 \times 128256 \times 4096 = 1.05\times10^{9}$，占 8.03B 总参数的 13.1%；若停留在 32K 词表则为 $2.62\times10^{8}$，这次改动净增约 $7.9\times10^{8}$ 参数。同一改动放到 405B 档： $2 \times 128256 \times 16384 = 4.2\times10^{9}$，占 405B 的 1.0%。**词表升级的相对参数代价，小模型档是旗舰档的 10 倍**—— $2Vd$ 与层参数 $O(Ld^{2})$ 的比值随 $Ld$ 反比下降。
+**符号**： $V$：词表； $d$：hidden 宽。代入 8B 档： $2 \times 128256 \times 4096 = 1.05\times10^{9}$，占 8.03B 总参数的 13.1%；若停留在 32K 词表则为 $2.62\times10^{8}$，这次改动净增约 $7.9\times10^{8}$ 参数。同一改动放到 405B 档： $2 \times 128256 \times 16384 = 4.2\times10^{9}$，占 405B 的 1.0%。**命题**（词表代价随规模反比）：词表升级的相对参数代价，小模型档比旗舰档高一个量级。**证明**（一句话）：词表项 $2Vd$ 与层参数 $O(Ld^{2})$ 的比值随 $Ld$ 反比下降。
 
 **token 数账**。herd paper 给出同族对照：Llama-3 的 128K tokenizer 压缩率 3.94 chars/token，Llama-2 的为 3.17（[Grattafiori et al., 2024](../references.md)，[A]；2.2 §7 已引）。同一文本的 token 数反比于压缩率：
 
@@ -182,7 +182,7 @@ $$
 m(t) = 1 + \alpha \ln\negthinspace\left(1 + \mathrm{floor}\negthinspace\left( \frac{t}{T_c} \right)\right), \qquad \alpha = 0.1,\hspace{5mu}\hspace{5mu} T_c = 8192 \qquad (8)
 $$
 
-**符号**： $t$：query 位置； $\mathrm{floor}(t / T_c)$：chunk 序号。在 Scout 满窗 $t \approx 1.05\times10^{7}$ 处， $m \approx 1 + 0.1 \ln(1281) \approx 1.72$。score 整体放大 $m$ 倍，等效于把可用的 $\Delta$ 预算放大同一倍数——这是对 $\ln T$ 稀释的一阶补偿。要注意，乘性温度不是加性 nat 的精确等价：它同时放大全部 score 差，峰值与噪声一起锐化，这是它的机制边界。诚实声明：3:1 比例、chunk 尺寸、 $\alpha = 0.1$ 三个超参均无公开 ablation；式 (8) 与上文的机制读法是与 2.5/4.6 机制一致的重构，不是论文结论（[W]）。
+**符号**： $t$：query 位置； $\mathrm{floor}(t / T_c)$：chunk 序号。在 Scout 满窗 $t \approx 1.05\times10^{7}$ 处， $m \approx 1 + 0.1 \ln(1281) \approx 1.72$。**命题**（乘性温度的一阶补偿）：score 整体放大 $m$ 倍，等效于把可用的 $\Delta$ 预算放大同一倍数——这是对 $\ln T$ 稀释的一阶补偿。形式化证明留作练习 3。要注意，乘性温度不是加性 nat 的精确等价：它同时放大全部 score 差，峰值与噪声一起锐化，这是它的机制边界。诚实声明：3:1 比例、chunk 尺寸、 $\alpha = 0.1$ 三个超参均无公开 ablation；式 (8) 与上文的机制读法是与 2.5/4.6 机制一致的重构，不是论文结论（[W]）。
 
 Scout 另有 `rope_scaling = {rope_type: llama3, factor: 16, original_max_position_embeddings: 8192}`。这是 llama3 型压缩——慢通道压缩、快通道不动，属 4.6 §2 统一压缩率曲线 $\eta_j$ 所收四族（PI / NTK-aware / YaRN / LongRoPE）之外的另一条参数化——把 RoPE 层的基窗标定到 $8192 \times 16 = 131072$，恰与 3.1 的窗口对齐。Maverick 的 rope_scaling 为 null。两者差异的官方解释缺失，与 10M / 1M 窗的定位差异联动（§7 开放问题 6）。10M 这个数字本身按 4.6 §5 的方法论只能算 claimed context：无第三方 RULER 类评测复核，effective context 存疑（§7 开放问题 5）。
 
@@ -204,7 +204,7 @@ projector ──► 与文本 token 同一 embedding 空间 ──► 同一条 
 
 ## 6. 旗舰 config 精读：Llama-4 Scout
 
-把 2.8 §2 的读法套到 Scout 的 config.json（meta-llama gated，经 unsloth 镜像实测 2026-11-12，[W]）上：每个结构字段对号到公式与账。文本侧（text_config）：
+Scout 的 config.json 有二十余个结构字段，每一个都能对号到本章前面的某条公式或某笔账——本节逐个对号。把 2.8 §2 的读法套到 Scout 的 config.json（meta-llama gated，经 unsloth 镜像实测 2026-11-12，[W]）上：每个结构字段对号到公式与账。文本侧（text_config）：
 
 | config 字段 | 值 | 角色 / 进哪笔账 |
 | --- | --- | --- |
@@ -230,9 +230,11 @@ projector ──► 与文本 token 同一 embedding 空间 ──► 同一条 
 
 顶层与视觉侧：`architectures = Llama4ForConditionalGeneration`（early fusion 的 config 级证据，§5.3）；`vision_config` = 34 层 / hidden 1408 / patch 14 / `pixel_shuffle_ratio = 0.5` / 16 heads（token 账见 §5.3 图）。
 
-按 2.8 式 (6) 的口径起算（每 expert 三矩阵 $3 \times 5120 \times 8192 \approx 125.8\text{M}$；shared expert 按同尺寸计）。routed experts 合计 $16 \times 48 \times 125.8\text{M} \approx 96.6\text{B}$，shared expert $48 \times 125.8\text{M} \approx 6.0\text{B}$；attention 每层 62.9M（Q 26.2M + K/V 10.5M + O 26.2M），48 层约 3.0B；embedding 加输出头 2.07B。合计约 107.7B，再加 vision tower（34 层、 $d$ = 1408，按 $12d^{2}$ 速算 ≈ 0.8B）与 projector、norm 增益，对 blog 的 109B 闭合到约 1B 余量。active 侧同样闭合：attention 3.0B + 每 token 1 routed + 1 shared（ $2 \times 6.0\text{B}$）+ embedding/输出头 2.07B ≈ 17.2B ≈ blog 的 17B——「17B active」的口径由此可读为文本侧每 token 激活参数，不含 vision tower。两个 blog 数字同时对上，是这套字段读法的自洽性检验；剩余余量的逐项归属见练习 4。
+对账路线：先算 MoE 两块（routed 与 shared），再算 attention 与词表，最后用 vision tower 与小项补余量，与 blog 的两个规模数字分别对拍。按 2.8 式 (6) 的口径起算（每 expert 三矩阵 $3 \times 5120 \times 8192 \approx 125.8\text{M}$；shared expert 按同尺寸计）。routed experts 合计 $16 \times 48 \times 125.8\text{M} \approx 96.6\text{B}$，shared expert $48 \times 125.8\text{M} \approx 6.0\text{B}$；attention 每层 62.9M（Q 26.2M + K/V 10.5M + O 26.2M），48 层约 3.0B；embedding 加输出头 2.07B。合计约 107.7B，再加 vision tower（34 层、 $d$ = 1408，按 $12d^{2}$ 速算 ≈ 0.8B）与 projector、norm 增益，对 blog 的 109B 闭合到约 1B 余量。active 侧同样闭合：attention 3.0B + 每 token 1 routed + 1 shared（ $2 \times 6.0\text{B}$）+ embedding/输出头 2.07B ≈ 17.2B ≈ blog 的 17B——「17B active」的口径由此可读为文本侧每 token 激活参数，不含 vision tower。两个 blog 数字同时对上，是这套字段读法的自洽性检验；剩余余量的逐项归属见练习 4。
 
 ## 7. 技术开放问题清单
+
+以下六条是目前没有公开答案、且影响本章结论强度的技术问题，逐条给出已知边界。
 
 1. **405B config 未公开**：谱系表 405B 行引 herd paper 架构表，无法与 config 互证；其 rms_norm_eps、rope_scaling 等字段级细节无公开实测渠道。
 2. **Llama-4 router 的训练侧行为不可见**：打分形态是可见的——config 有 `router_aux_loss_coef = 0.001`（aux loss 路线）与 jitter = 0.0，官方实现用 sigmoid 亲和度。但 128 routed experts top-1 下的实际负载分布、塌缩控制效果与 aux loss 系数的调度过程，无 paper 或训练日志可查。
@@ -259,10 +261,10 @@ projector ──► 与文本 token 同一 embedding 空间 ──► 同一条 
 
 ## 练习
 
-1.（计算）用式 (1) 重算 Llama-2-70B：若把 GQA-8 换成 GQA-2（ $H_{kv} = 2$）， $T = 4096$、 $B = 64$ 时 cache 总量对 138 GB 权重的比值是多少？再算 Llama-3.1-405B 在 $T = 131072$、 $B = 4$ 下 GQA-8 与反事实 MHA-128 的 cache 总量，验证「63 GiB × 4」与「约 3.9 TiB」两个数字。
-2.（计算）词表账的规模扫描：对 $d \in \lbrace4096, 8192, 16384\rbrace$ 三档（对应 8B/70B/405B 宽），分别算 $V$ = 32000 与 128256 的 $2Vd$ 及其占该档总参数（8.03B / 70.6B / 405B）的比例；结合式 (3)，给出「词表升级在 per-byte FLOPs 上何时回本」的定性结论——假设层部分 per-token FLOPs 不变。
-3.（推导）式 (8) 的对数温度与 4.6 §1.3 的 $\Delta \ge \ln T$：设 NoPE 层可见集为 $T$，目标 key 相对随机 key 的 score 优势为 $\Delta_0$。证明：乘性温度 $m$ 把「目标份额不被稀释」所需的 $\Delta_0$ 界降为 $\ln T / m$；并指出这一补偿对「多个候选 key 的 score 接近」的情形为何不成立（乘性缩放保持 score 差的相对比例）。
-4.（代码 / 对账）按 §6 的口径写一段参数对账脚本（教学用，非优化实现）：输入 Scout 的 config 字段（48 层、 $d$ = 5120、40 Q / 8 KV、 $D$ = 128、expert 中间维 8192、16 routed + 1 shared、 $V$ = 202048），逐项加出 routed experts + shared experts + attention + embedding/输出头 + vision tower（34 层、 $d$ = 1408，按 $12d^{2}$ 速算），验证两个 blog 数字（109B total、17B active）闭合到约 1B 余量；再回答两个字段级问题：(a) shared expert 的中间维在 config / 权重清单里叫什么、是否恰等于 routed 的 8192；(b) 用 safetensors 索引核对 blog 的 109B 是否计入了 vision tower 与 projector。
+1.（计算 · [20]）用式 (1) 重算 Llama-2-70B：若把 GQA-8 换成 GQA-2（ $H_{kv} = 2$）， $T = 4096$、 $B = 64$ 时 cache 总量对 138 GB 权重的比值是多少？先预测 GQA-2 相对 GQA-8 的 cache 倍数，再动手算。再算 Llama-3.1-405B 在 $T = 131072$、 $B = 4$ 下 GQA-8 与反事实 MHA-128 的 cache 总量，验证「63 GiB × 4」与「约 3.9 TiB」两个数字。校验：把 KV 头数换回 8、并发换回 32，应回落到正文 70B 表的 40 GiB 行。
+2.（计算 · [20]）词表账的规模扫描：对 $d \in \lbrace4096, 8192, 16384\rbrace$ 三档（对应 8B/70B/405B 宽），分别算 $V$ = 32000 与 128256 的 $2Vd$ 及其占该档总参数（8.03B / 70.6B / 405B）的比例；结合式 (3)，给出「词表升级在 per-byte FLOPs 上何时回本」的定性结论——假设层部分 per-token FLOPs 不变。校验：三档里最窄那档的词表占比，应与正文 8B 档的占比数字一致。
+3.（推导 · [30]）式 (8) 的对数温度与 4.6 §1.3 的 $\Delta \ge \ln T$：设 NoPE 层可见集为 $T$，目标 key 相对随机 key 的 score 优势为 $\Delta_0$。证明：乘性温度 $m$ 把「目标份额不被稀释」所需的 $\Delta_0$ 界降为 $\ln T / m$；并指出这一补偿对「多个候选 key 的 score 接近」的情形为何不成立（乘性缩放保持 score 差的相对比例）。校验：温度恒取 1 时，你的界应退回正文未补偿的原始稀释界。
+4.（代码 / 对账 · [40]）按 §6 的口径写一段参数对账脚本（教学用，非优化实现）：输入 Scout 的 config 字段（48 层、 $d$ = 5120、40 Q / 8 KV、 $D$ = 128、expert 中间维 8192、16 routed + 1 shared、 $V$ = 202048），逐项加出 routed experts + shared experts + attention + embedding/输出头 + vision tower（34 层、 $d$ = 1408，按 $12d^{2}$ 速算），验证两个 blog 数字（109B total、17B active）闭合到约 1B 余量；动手前先预测余量的量级（千万级还是亿级）。再回答两个字段级问题：(a) shared expert 的中间维在 config / 权重清单里叫什么、是否恰等于 routed 的 8192；(b) 用 safetensors 索引核对 blog 的 109B 是否计入了 vision tower 与 projector。校验：两路合计分别与官方 blog 的 109B 与 17B 对拍到约 1B 余量。
 
 ## 参考
 

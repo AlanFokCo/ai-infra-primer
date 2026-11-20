@@ -4,7 +4,7 @@
 
 ## 1. 跨家对照总表
 
-五家旗舰各取一行：Llama-4 Scout（5.1）、DeepSeek-V3.2-Exp（5.2）、Qwen3-Next-80B-A3B（5.3）、GLM-4.6（5.4）、Kimi K3（5.5）。数值口径沿用 P5 约定：config.json 实测 > tech report 架构表 > model card > blog；total/active 照抄官方口径不换算；per-token cache 为 bf16、全量驻留口径的线性斜率。
+五家旗舰各取一行：Llama-4 Scout（5.1）、DeepSeek-V3.2-Exp（5.2）、Qwen3-Next-80B-A3B（5.3）、GLM-4.6（5.4）、Kimi K3（5.5）。数值口径沿用 P5 约定：config.json 实测 > tech report 架构表 > model card > blog；total/active 照抄官方口径不换算；per-token cache 为 bf16、全量驻留口径的线性斜率。口径声明：本章是五家对照章，没有单一数值口径；每格数字沿用该家专章的原始口径，分母差异（含不含 embedding、含不含 MTP）在总表表注登记，一律不自行换算。
 
 | 模型（证据） | attention 方案 | 位置编码 | MoE 粒度与路由 | norm | vocab | ctx（max_position_embeddings） | per-token cache | 激活比（官方口径） | MTP | hybrid |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -17,6 +17,8 @@
 表注四条。其一，**cache 列口径**：GQA/MLA 行是「每 token 新增字节」的斜率；Qwen3-Next 与 K3 是 hybrid，斜率只由 full 层贡献，linear 层另付一份与 $T$ 无关的定长状态（Qwen3-Next 为 36 × 1 MiB = 36 MiB，4.4 §7）。其二，**激活比分母口径不一**：Qwen3-Next 官标「3B 激活、非 embedding 79B」，GLM 为 report 摘要口径（含 MTP 层、不含词表两侧，5.4 §4），Kimi 为 report 摘要口径，Scout 为 blog 口径——照抄不换算。其三，**K3 行只登记三件套坐标**：层数、层型比、full 层位置方案等以 report 正文为准（5.5 §2.5、4.4 §5），本书未锁定的格子标「未锁定」而不臆填——这是 5.4 §3 无 paper 读法纪律在对照表上的执行。其四，**MTP 列**：三家明装里 GLM 的取点最独特—— $D$=1 模块不是小头而是整件 MoE 层（161 expert + attention，`num_nextn_predict_layers=1`，report 原文 "we add an MoE layer as the MTP layer"，5.4 §2.4）。「无签名」= config 与公开 report 均未列该模块；它不等于不存在，只等于公开证据边界到此为止。
 
 沿列读四点观察。（1）**attention 列五落点互不重合**：纯 GQA（GLM）、GQA+chunk+iRoPE（Llama）、MLA+sparse（DeepSeek）、GQA:linear hybrid（Qwen）、KDA:full hybrid（Kimi）——4.1–4.4 的整条技术谱系在五家旗舰上各取一格，没有两家重合同一格。（2）**vocab 列五档**：129280 / 151552 / 151936 / 163840（K3 谱系）/ 202048，2.2 的 vocab 三方账（参数 $2Vd$、压缩率、长尾冷启动）在每家的取点不同；GLM 151552 与 Qwen 151936 同量级不同档，tokenizer 同源与否未锁定（5.4 §4）。（3）**ctx 列跨 64 倍**（163840 → 10,485,760，约 1.8 个数量级）。「声明窗」与「工作窗」要分开读：V3.2 的 163840 是 YaRN f40 外推结果（工作窗 128K），Scout 的 10M 是 blog 宣称口径，K3 的 1M 是 report 口径。4.6 的 RULER 方法论问题（声明窗 ≠ 有效窗）对五行全部适用。（4）**MoE 列五家全勤**，粒度从 16 到 896（56×，约 1.75 个数量级），routing 从 top-1 到 top-16——§2.1 解释为什么这一列必然全勤。
+
+> **坑**：把 config 的 max_position_embeddings 当有效窗长——会把外推宣称误读成实测能力（本章总表里的窗长数字，口径从原生覆盖到 factor 外推再到宣称值各不相同）。读法：先分「原生 / 外推 / 宣称」三档，再查长上下文评测口径。
 
 ## 2. 收敛点：三笔共同的账
 
@@ -67,7 +69,7 @@ $$
 
 **符号**： $D_{\mathrm{TV}}$：全变差距离； $\gamma$：每步验证的草稿长度（MTP $D$=1 即 $\gamma$=1， $\mathbb{E} = 1 + \alpha$）。V3 实测第二 token 接受率 85–90%（跨生成主题）， $\mathbb{E}$ ≈ 1.85–1.9 token/前向，端到端约 1.8× TPS（[DeepSeek-AI, 2024](../references.md)，arXiv:2412.19437，[A]）。
 
-普及的机制原因有三层。**草稿白捡**：MTP 模块与主模型共享 embedding 与输出头，只加 $D$ 个完整 block。相比独立草稿模型，服务端零额外模型成本；且共享表示正是把 $D_{\mathrm{TV}}$ 压小的结构手段（4.5 §6.2）。GLM 的变体把这一个 block 加成整件 MoE 层，也只约占总参 1%（5.4 §4）。**无损**：接受规则 $\min(1, p(x)/q(x))$ 保证输出分布精确等于 $p$——加速不付质量（4.5 §6.2 的推导与练习）。**正交**：MTP 挂在主干之上不占层数预算，与 dense/MoE、full/hybrid 全部架构轴正交（4.4 §3 的登记），任何谱系都能后挂。V3.2 相对 V3 只动 attention 侧、MTP 原样继承（5.2 §1），即为实例。训练侧另有监督加密收益（每个位置对更远 horizon 供监督，4.5 §6.1）。
+普及的机制原因有三层。**草稿白捡**（口径：不新增独立草稿模型，只往主干上多挂 block）：MTP 模块与主模型共享 embedding 与输出头，只加 $D$ 个完整 block。相比独立草稿模型，服务端零额外模型成本；且共享表示正是把 $D_{\mathrm{TV}}$ 压小的结构手段（4.5 §6.2）。GLM 的变体把这一个 block 加成整件 MoE 层，也只约占总参 1%（5.4 §4）。**无损**：接受规则 $\min(1, p(x)/q(x))$ 保证输出分布精确等于 $p$——加速不付质量（4.5 §6.2 的推导与练习）。**正交**：MTP 挂在主干之上不占层数预算，与 dense/MoE、full/hybrid 全部架构轴正交（4.4 §3 的登记），任何谱系都能后挂。V3.2 相对 V3 只动 attention 侧、MTP 原样继承（5.2 §1），即为实例。训练侧另有监督加密收益（每个位置对更远 horizon 供监督，4.5 §6.1）。
 
 证据边界必须写明。公开列装的是三家：DeepSeek（V3 起，[A]）、Qwen3-Next（model card 列装，[W]）与 GLM（4.5 report 明写、4.6 config `num_nextn_predict_layers=1` 实测，5.4 §2.4）。Llama-4 与 K2/K3 的 config 与公开 report 均无 MTP 签名。GLM 的取点值得单独登记：它的 $D$=1 模块不是小头，而是**整件 MoE 层**（161 expert + attention）。训练口径的 355B/32B 都含这一层，推理期可整体弃置（弃置后激活 32.4B → 32.0B，5.4 §4）——MTP 的「模块粒度」由此多出一个公开坐标。「普及」在本书证据边界内的准确表述是：技术包已被三家旗舰验证，接管门槛（一个 block 到一整层 MoE + 接受率校准）低到任何一家都可后挂。是否已挂，以各家 config / report 签名为准，不以传闻为准。
 
@@ -83,7 +85,9 @@ $$
 
 三个维度的读法各一句。**cache 维**：MLA 压斜率（每层的单价），hybrid 压层数（付单价的层数），纯 GQA 不压斜率、靠 chunk 重排可见窗。1M 窗下三者的整窗账 68.6 GiB / 24 GiB / 192+ GiB 已在 §2.2 的图上排开。**计算维**：MLA 的吸收技巧把 decode 内循环压到 576 维 latent 上做（数学上与原式精确等价，4.1），代价是 prefill 与训练侧多一串投影，以及 kernel 需要认识这套重写。hybrid 把 decode 算力变成「大固定项 + 小线性项」，1M 处 full 层打分仍是全模型算力主项（4.4 §7 的两千倍对照）。纯 GQA 的算力侧无任何新机制，省多少完全由 $g$ 决定。**实现复杂度维**：GQA 最低（reshape 级），MLA 居中（一套重写 + 一种 kernel），hybrid 最高（两套 mixer、两种 cache、层型装配）。transformers 的 `modeling_qwen3_next.py` 对 GDN 层直接调 fla 库的 `chunk_gated_delta_rule` 而不自研（5.3 §4.3，[fla-org](../references.md)，[A]），就是这条复杂度账单的具体一笔。
 
-质量证据侧三家也各有锚点。V2 报告 MLA 与同规模 MHA 相当或更强（[DeepSeek-AI, 2024](../references.md)，arXiv:2405.04434，[A]）——「cache 压缩必损检索分辨率」的直觉在 512 维共享 latent 上不成立。Kimi Linear 的 1.4T 同配方公平对照报告全面超过 MLA 基线（[Kimi Team, 2025](../references.md)，arXiv:2510.26692，[A]）。GQA-8（8 KV 组）作为 cache/质量 Pareto 中间点的定位出自原论文（[Ainslie et al., 2023](../references.md)，arXiv:2305.13245，[B]）。还有一个谱系级事实值得登记：K2 的 `architectures = DeepseekV3ForCausalLM`（5.5 §2.3）证明 MLA + DeepSeekMoE 这一组合已成为可跨实验室整体复用的架构类。分歧的各方都在成为公共零件箱的一部分。
+质量证据侧三家也各有锚点。V2 报告 MLA 与同规模 MHA 相当或更强（[DeepSeek-AI, 2024](../references.md)，arXiv:2405.04434，[A]）——「cache 压缩必损检索分辨率」的直觉在 512 维共享 latent 上不成立。Kimi Linear 的 1.4T 同配方公平对照报告全面超过 MLA 基线（[Kimi Team, 2025](../references.md)，arXiv:2510.26692，[A]）。GQA-8（8 KV 组）作为 cache/质量 Pareto 中间点的定位出自原论文（[Ainslie et al., 2023](../references.md)，arXiv:2305.13245，[B]）。
+
+> **提点**（谱系级事实）：K2 的 `architectures = DeepseekV3ForCausalLM`（5.5 §2.3）证明 MLA + DeepSeekMoE 这一组合已成为可跨实验室整体复用的架构类。分歧的各方都在成为公共零件箱的一部分。
 
 ## 4. 方法论：如何独立读懂一个新模型
 
@@ -142,7 +146,7 @@ report 的价值分布极不均匀；五步按信息密度排序，每步配一�
 
 ### 4.4 30 分钟拆解 checklist
 
-面对一个刚发布的新模型，按此时序执行（每格产出即停损点——时间到就登记「未锁定」，不臆填）：
+拿到一个刚发布的新模型，30 分钟能读出什么？按此时序执行（每格产出即停损点——时间到就登记「未锁定」，不臆填）：
 
 | 时段 | 动作 | 产出 |
 | --- | --- | --- |
@@ -168,10 +172,10 @@ report 的价值分布极不均匀；五步按信息密度排序，每步配一�
 
 ## 练习
 
-1.（计算）用式 (2) 重算五家的 per-token cache 斜率：Llama-4 Scout（48 层、 $H_{kv}$=8、 $d_{\mathrm{head}}$=128）、DeepSeek-V3.2（61 层 × 576 元素）、Qwen3-Next（12 full 层 × 1024 元素）、GLM-4.6（92 层、 $H_{kv}$=8、 $d_{\mathrm{head}}$=128）。把 $T$ = 1,048,576 代入验证 §2.2 图上的 192 / 68.6 / 24 / 368 GiB 四个数；再算 Scout 声明窗 10,485,760 下的全量驻留口径（≈1.9 TiB），并说明 chunk 8192 在「cache 是否可逐出」上留下的实现自由度。
-2.（计算）MTP 收益账。 $D$=1、 $\alpha$ = 0.87 时用式 (3) 算 $\mathbb{E}$；若 $D$=2 且两位置接受独立同 $\alpha$， $\mathbb{E}$ 与 TPS 上限各为多少？指出「逐位置独立同分布」这一近似在两个方向上如何偏乐观（提示：相邻位置接受事件正相关时，几何级数高估还是低估长尾）。
-3.（推导 + 分析）MLA 与 hybrid 的 decode 读取账。(a) 用 4.1 的机制说明 MLA 每步读取字节数与 head 数无关（ $W^{UK}$ 吸收后内循环只在 576 维 latent 上）；(b) 设 hybrid 的 linear:full = $r$:1、linear 层每层定长状态 $S$ 字节、full 层斜率 $c$ 字节/token，写出全模型 decode 内存 $M(T)$，证明「 $r$ 增大的边际收益饱和」——即 $M(T)$ 随 $r$ 的下界由哪一项钉死，并代入 Qwen3-Next 的数字（ $S$ = 1 MiB、 $c$ = 2 KiB、 $L$ = 48）找出「 $r$ 再翻倍只省多少」的具体量级。
-4.（代码 + 调研）30 分钟 checklist 实操：任选一个 2025–2026 发布、带开放 config 的旗舰级模型（如 MiniMax-Text-01，其 config 本书 4.4 §6 已锁定，可用来交叉验证你的读法），严格按 §4.4 的六格时序执行并计时；产出一页笔记，必须含：证据等级与口径声明、参数复算与残差归属、cache 斜率与窗长口径、一处 modeling 代码证据、三条可判定的开放问题。对照本书 4.4 §6/§7 的既有数字复核你的第 2–4 格。
+1.（计算 · [20]）用式 (2) 重算五家的 per-token cache 斜率：Llama-4 Scout（48 层、 $H_{kv}$=8、 $d_{\mathrm{head}}$=128）、DeepSeek-V3.2（61 层 × 576 元素）、Qwen3-Next（12 full 层 × 1024 元素）、GLM-4.6（92 层、 $H_{kv}$=8、 $d_{\mathrm{head}}$=128）。把 $T$ = 1,048,576 代入验证 §2.2 图上的 192 / 68.6 / 24 / 368 GiB 四个数；再算 Scout 声明窗 10,485,760 下的全量驻留口径（≈1.9 TiB），并说明 chunk 8192 在「cache 是否可逐出」上留下的实现自由度。校验：斜率乘窗长应复现正文斜率图上的四个整窗 GiB 读数。
+2.（计算 · [20]）MTP 收益账。 $D$=1、 $\alpha$ = 0.87 时用式 (3) 算 $\mathbb{E}$；若 $D$=2 且两位置接受独立同 $\alpha$， $\mathbb{E}$ 与 TPS 上限各为多少？指出「逐位置独立同分布」这一近似在两个方向上如何偏乐观（提示：相邻位置接受事件正相关时，几何级数高估还是低估长尾）。校验：接受率趋于 1 时，期望产出应趋于「草稿长度 + 1」。
+3.（推导 + 分析 · [30]）MLA 与 hybrid 的 decode 读取账。(a) 用 4.1 的机制说明 MLA 每步读取字节数与 head 数无关（ $W^{UK}$ 吸收后内循环只在 576 维 latent 上）；(b) 设 hybrid 的 linear:full = $r$:1、linear 层每层定长状态 $S$ 字节、full 层斜率 $c$ 字节/token，写出全模型 decode 内存 $M(T)$，证明「 $r$ 增大的边际收益饱和」——即 $M(T)$ 随 $r$ 的下界由哪一项决定，并代入 Qwen3-Next 的数字（ $S$ = 1 MiB、 $c$ = 2 KiB、 $L$ = 48）找出「 $r$ 再翻倍只省多少」的具体量级。校验：层型比趋于全 linear 时，全模型 cache 应只剩定长状态项。
+4.（代码 + 调研 · [40]）30 分钟 checklist 实操：任选一个 2025–2026 发布、带开放 config 的旗舰级模型（如 MiniMax-Text-01，其 config 本书 4.4 §6 已锁定，可用来交叉验证你的读法），严格按 §4.4 的六格时序执行并计时。产出一页笔记，分解为五步：(a) 证据等级与口径声明；(b) 参数复算与残差归属；(c) cache 斜率与窗长口径；(d) 一处 modeling 代码证据；(e) 三条可判定的开放问题。校验：对照本书 4.4 §6/§7 的既有数字复核你的第 2–4 格。
 
 ## 参考
 

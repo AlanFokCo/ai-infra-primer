@@ -16,9 +16,11 @@
 
 表注四条。其一，「—」= 本轮 research pass（2026-11-12）未锁定的字段；Moonlight 行的架构事实只有三条经 ar5iv 全文取证（sigmoid routing、shared expert、SwiGLU 各出现 ≥2 次），逐字段 config 未纳入实测序列；论文 §3.3 另明写 from-scratch 预训练、架构采用 deepseek-v3-small（§2.1）。其二，K2 行的 heads 写「名义」：MLA 不逐头存 KV，cache 是一份共享 latent（4.1 §4），`num_key_value_heads` 的同值是占位——5.2 §1 的脚注一在此原样适用。其三，head_dim 列的 128 + 64 = qk_nope + qk_rope（score 内维 192，v 侧 128 另计）——与 DeepSeek-V3 完全同构，2.8 §8「head_dim $\neq$ hidden/heads」的反例在 K2 上再演一次：7168 / 64 = 112，与 192 无关。其四，Kimi Linear 的「3:1」是名义周期：27 层里前 24 层严格 3:1，第 27 层额外加一个 full attention（config `linear_attn_config` 两列表实测，4.4 §1 表注）。
 
+> **坑**：把 MLA 的 `num_key_value_heads` 当 KV 头数读——cache 会按头数虚估一个量级；MLA 每 token 每层只存一份共享 latent（本章实例 576 元素），与头数无关。同理，head_dim 不按 hidden ÷ heads 推算（7168 ÷ 64 = 112，与实际的 score 内维 192 对不上），一律以 config 字段为准。
+
 竖着读两列。vocab 列：K2 与 Kimi Linear 共享 163840，谱系内 tokenizer 口径统一。这与 Qwen 四代共用 151936（5.3 §3）是同一做法：词表是谱系里最黏的字段。ctx 列：131072（K2，YaRN 扩展）→ 1048576（Kimi Linear，hybrid 结构撑 1M）→ 1M（K3）。长窗主战场由 full-attention 谱系移交 hybrid 谱系，机制原因正是 4.4 §7 的斜率账（full 层 cache 随 $T$ 线性，KDA 层定长）。
 
-证据等级横着读也值得一句：全表五个模型全部 [A]——论文、官方 repo、开放权重三齐，这是 P5 六章里证据等级最整齐的一张谱系表（对照 5.1 的 Llama-4 [W]、5.3 的 Qwen3-Max [C]、5.4 的 GLM-4.6/4.7 [W]）。含义是本章每个架构断言都能回指论文原文或 config 实测。唯一的 [W] 条目是 Muon 的原始出处（Keller Jordan 博客，无 arXiv）；它影响的是训练侧细节，不影响任何架构字段的定级。
+证据等级横着读也值得一句：全表五个模型全部 [A]——论文、官方 repo、开放权重三齐，这是 P5 六章里证据等级最整齐的一张谱系表（对照 5.1 的 Llama-4 [W]、5.3 的 Qwen3-Max [C]、5.4 的 GLM-4.6/4.7 [W]）。含义是本章每个架构断言都能回指论文原文或 config 实测。唯一的 [W] 条目是 Muon 的原始出处（Keller Jordan 博客，无 arXiv）；它影响的是训练侧细节，不影响任何架构字段的定级。本章的算账口径固定在 K2 的那组字段上（61 层、hidden 7168、MLA 五字段、384+1 top-8）；Moonlight、Kimi Linear、K3 三段只登记坐标，不取它们的字段复算。
 
 ## 2. 标志性架构决策的公式级分析
 
@@ -34,7 +36,7 @@ $$
 
 归属纠正（与 5.3 §2.3 互查）：dense→MoE 的 upcycling（dense FFN 复制成 $N_e$ 份 expert 初始化）常被记到 Moonlight 名下。但 Moonlight 论文全文 0 次提及 upcycling（W3 research pass 逐文核实）；公开谱系里的旗舰级实例是 Qwen2-57B-A14B。report §2.2.3 明写源为 Qwen2-7B（「Qwen2-57B-A14B is upscaled from Qwen2-7B」，arXiv:2407.10671，2026-11-15 复核 ar5iv 全文），shape 证据互证（公式、shape 证据与对称性代价分析见 5.3 §2.3 式 (4)）。Moonlight 自己的初始化路径，论文正文已答：§3.3 明写 from scratch 预训练，架构写明采用 deepseek-v3-small。DeepSeek 架构基座的跨实验室流通在 Moonlight 一代就已成形，§2.3 的 K2 叙事是它的旗舰规模续集。
 
-另记一笔谱系内回流：Kimi Linear 论文的发布档 checkpoint 用 5.7T tokens，正是「对齐 Moonlight 预训练量」（4.4 §4，论文 Appendix D 口径）——Moonlight 的训练量成了谱系内后续公平对照的基准刻度。
+> **提点**（谱系内回流）：Kimi Linear 论文的发布档 checkpoint 用 5.7T tokens，正是「对齐 Moonlight 预训练量」（4.4 §4，论文 Appendix D 口径）——Moonlight 的训练量成了谱系内后续公平对照的基准刻度。
 
 ### 2.2 MuonClip：qk-logit 越阈时缩放 $\gamma$ 的事后控制器
 
@@ -52,13 +54,13 @@ $$
 S_{\max}^{h} = \max_{X \in \mathcal{B}}\ \max_{i,\thinspace j}\ z_{ij}^{h}(X) \qquad (3)
 $$
 
-**符号**： $\mathcal{B}$：监控 batch；峰值在 batch 内全部序列、全部位置对上取（论文正文口径）。越阈 $\tau$ 即触发。施加方式按 K2 的 MLA 结构特化（4.1 §4：score = 内容项 $z^{C}$ 经共享 latent $+$ 位置项 $z^{R}$ 经 decoupled rope 通道； $q^{R}$ 逐头、 $k^{R}$ 全头共享）：内容侧两个逐头投影因子各乘 $\sqrt{\gamma^{h}}$，rope query 乘 $\gamma^{h}$，共享 rope key 不动：
+**符号**： $\mathcal{B}$：监控 batch；峰值在 batch 内全部序列、全部位置对上取（论文正文口径）。越阈 $\tau$ 即触发（具体数值在后文工作点段落地）。施加方式按 K2 的 MLA 结构特化（4.1 §4：score = 内容项 $z^{C}$ 经共享 latent $+$ 位置项 $z^{R}$ 经 decoupled rope 通道； $q^{R}$ 逐头、 $k^{R}$ 全头共享）：内容侧两个逐头投影因子各乘 $\sqrt{\gamma^{h}}$，rope query 乘 $\gamma^{h}$，共享 rope key 不动：
 
 $$
 \gamma^{h} = \min\left(1,\ \frac{\tau}{S_{\max}^{h}}\right), \qquad W^{QC,h} \leftarrow \sqrt{\gamma^{h}}\thinspace W^{QC,h}, \qquad W^{KC,h} \leftarrow \sqrt{\gamma^{h}}\thinspace W^{KC,h}, \qquad W^{QR,h} \leftarrow \gamma^{h}\thinspace W^{QR,h} \qquad (4)
 $$
 
-**符号**： $W^{QC,h}, W^{KC,h}$：第 $h$ 头内容通道的逐头 Q/K 因子（MLA 吸收形式里的逐头矩阵，4.1 §4.3）； $W^{QR,h}$：第 $h$ 头的 rope query 投影；共享 $W^{KR}$ 不出现在式 (4) 中。对账一行：内容项 $z^{C} \propto W^{QC} (W^{KC})^{\top}$ 缩 $\sqrt{\gamma} \times \sqrt{\gamma} = \gamma$；位置项 $z^{R} \propto W^{QR} (W^{KR})^{\top}$ 缩 $\gamma$；两项同缩 $\gamma^{h}$，总分 $z = z^{C} + z^{R}$ 缩 $\gamma^{h}$，触发后新峰值恰为 $\tau$，未触发头 $\gamma^{h} = 1$ 为恒等。位置项的不对称要单独说： $W^{KR}$ 是共享件，按头缩放会串扰其余头，位置项的 $\gamma$ 只能整个压在逐头的 $q^{R}$ 上。这份不对称是 MLA 结构强制的，不是设计偏好：内容项两侧都有逐头矩阵，可以均摊 $\sqrt{\gamma}$（均摊避免单侧范数塌缩，练习 2 讨论其与 weight decay 的联动）；位置项的 key 侧是共享件，无处可摊。缩放在内容子空间与位置子空间各自均匀，子空间内方向结构不变——该头的 attention 分布被整体「降温」 $\gamma^{h}$ 倍，熵抬升。还要避开一个读法陷阱：「head 内所有 key 同比例缩小」对 MLA 不成立，共享 $k^{R}$ 保持原值，逐头收缩只发生在内容 key 与两条 query 通道上。
+**符号**： $W^{QC,h}, W^{KC,h}$：第 $h$ 头内容通道的逐头 Q/K 因子（MLA 吸收形式里的逐头矩阵，4.1 §4.3）； $W^{QR,h}$：第 $h$ 头的 rope query 投影；共享 $W^{KR}$ 不出现在式 (4) 中。这段对账可以写成一个可判定论断。**命题**（缩放恰好回阈）：施加后内容项与位置项同缩 $\gamma^{h}$，总分 $z = z^{C} + z^{R}$ 同缩 $\gamma^{h}$；触发后新峰值恰为 $\tau$，未触发头 $\gamma^{h} = 1$ 为恒等。**证明**（逐项对账）：内容项 $z^{C} \propto W^{QC} (W^{KC})^{\top}$ 缩 $\sqrt{\gamma} \times \sqrt{\gamma} = \gamma$；位置项 $z^{R} \propto W^{QR} (W^{KR})^{\top}$ 缩 $\gamma$；两项同缩，总分随之同缩；触发时缩放因子取「阈值 ÷ 当前峰值」，故新峰值恰为阈值。位置项的不对称要单独说： $W^{KR}$ 是共享件，按头缩放会串扰其余头，位置项的 $\gamma$ 只能整个压在逐头的 $q^{R}$ 上。这份不对称是 MLA 结构强制的，不是设计偏好：内容项两侧都有逐头矩阵，可以均摊 $\sqrt{\gamma}$（均摊避免单侧范数塌缩，练习 3 讨论其与 weight decay 的联动）；位置项的 key 侧是共享件，无处可摊。缩放在内容子空间与位置子空间各自均匀，子空间内方向结构不变——该头的 attention 分布被整体「降温」 $\gamma^{h}$ 倍，熵抬升。还要避开一个读法陷阱：「head 内所有 key 同比例缩小」对 MLA 不成立，共享 $k^{R}$ 保持原值，逐头收缩只发生在内容 key 与两条 query 通道上。代入量级感觉一下：某头峰值冲到 200 而阈值为 100 时，缩放因子取 1/2，内容侧两个逐头因子各乘约七成，该头总分恰好压回 100。
 
 把式 (3)(4) 放进时间维度读： $S_{\max}^{h}$ 是一条随训练演化的轨迹，式 (4) 是它的反射壁。越界即被精确压回 $\tau$；未越界时优化器照常工作，可以把 logit 再度养大。稳态因此不是不动点，而是贴壁振荡；触发频率由高走低的曲线，对应「logit 漂移速度对监控周期」的赛跑结果。这与 4.5 §3.2 (i) 对 aux-loss-free 偏置的极限环分析同型：控制回路类装置的稳态都不是点，而是围绕目标的带。MuonClip 的名字由此也读得通：Muon 管更新几何（动量更新正交化、谱形受控），QK-clip 管 logit 幅值的事后投影，「优化器 + 控制器」两段拼成一个词。工作点论文给了实数： $\tau = 100$（论文 §2.1；Appendix D 另有 $\tau = 30$ 的小尺度消融）。触发曲线同论文：前 70k 步有 12.7% 的头被触发，其后全部头的峰值低于阈值，控制器自退役（Appendix D 口径）。「贴壁振荡」的实测形状因而是早期密集触发、后期恒等；摘要的 zero loss spike 声明（15.5T tokens 全程，[A]）与这条曲线互证。
 
@@ -70,7 +72,7 @@ $$
 | soft-capping | Gemma 2 独占（[Gemma Team, 2024](../references.md)，arXiv:2408.00118，[A]）；Gemma 3 已弃 | logit 函数形状 $c\tanh(z/c)$ | 恒时、每个前向 | $\vert z' \vert < c$（tanh 值域） | 每步压缩 score，尾部梯度衰减 |
 | QK-clip | K2（[A]） | 参数（MLA 特化： $W^{QC}, W^{KC}, W^{QR}$，共享 $W^{KR}$ 不动） | 事件驱动（越阈才触发）、步后 | $\tau$（触发时精确压回） | 不触发时 forward 逐位不变 |
 
-哲学对照一并登记：QK-clip 不进损失函数、无梯度路径、按监控信号行事——这与 4.5 式 (17)(18) 的 aux-loss-free 偏置控制器是同一设计哲学。DeepSeek-V3 把负载均衡从优化目标降级为控制回路；K2 把 logit 稳定从 norm 结构手里交给事后投影（本书注）。这不是比喻层面的亲缘：K2 的 config 里 `topk_method = "noaux_tc"` 原样继承了那套偏置控制器（§2.3 表）。同一份 config 里住着两个控制回路，一个管负载、一个管 logit。MuonClip 的命名在此补全：Muon 的更新经正交化后谱形受控，但谱形受控不直接给出 $\lVert W_Q \rVert$ 累计漂移的上界。QK-clip 补的是这一缺口的**效果侧**：不改更新规则，改参数的事后投影，监控信号取 logit 而非范数。
+> **提点**（设计哲学对照）：QK-clip 不进损失函数、无梯度路径、按监控信号行事——这与 4.5 式 (17)(18) 的 aux-loss-free 偏置控制器是同一设计哲学。DeepSeek-V3 把负载均衡从优化目标降级为控制回路；K2 把 logit 稳定从 norm 结构手里交给事后投影（本书注）。这不是比喻层面的亲缘：K2 的 config 里 `topk_method = "noaux_tc"` 原样继承了那套偏置控制器（§2.3 表）。同一份 config 里住着两个控制回路，一个管负载、一个管 logit。MuonClip 的命名在此补全：Muon 的更新经正交化后谱形受控，但谱形受控不直接给出 $\lVert W_Q \rVert$ 累计漂移的上界。QK-clip 补的是这一缺口的**效果侧**：不改更新规则，改参数的事后投影，监控信号取 logit 而非范数。
 
 为什么这条路线出现在这个谱系而不是别处？论文自己给了机制答案：「QK-Norm is not applicable to MLA because its Key matrices are not fully materialized」（论文口径）。MLA 的 K 由共享 latent 即时重建（4.1 §4.3 的吸收形式），不存在一个可以归一化的物化 K 矩阵——QK-Norm 的作用对象是空的。config 侧互证：K2 无 QK-Norm 类字段（谱系表 norm 列），稳定性答案整个压在 MuonClip 上。反过来看，QK-Norm 路线在 Qwen3（5.3 §2.2）与 Gemma 3（2.7 §7）走通，前提正是它们的 K 逐头物化。两条路线的逐项质量消融，公开材料未见（§5）。
 
@@ -143,13 +145,13 @@ $$
 M_{\mathrm{KV}} = L \cdot (d_c + d_R) \cdot T \cdot b \qquad (5)
 $$
 
-**符号**： $L$ = 61； $T$：序列长度； $b$ = 2（bf16）。每 token $61 \times 576 \times 2$ B ≈ 68.6 KiB； $T$ = 131072 整窗 ≈ 9.2 GB——与 5.2 §4 的 V3 数字逐项相同（同 $L$、同 576、同窗口量级）。这就是 §2.3 heads 减半读法的另一面：128 → 64 省的是参数与 FLOPs，cache 一分钱没省。MLA 的 cache 由 latent 秩（512）与 rope 维（64）决定，与 head 数解耦。反事实对照留给练习 3（同尺寸 MHA 的 20480 元素 / token / 层、35.6 倍差）。
+**符号**： $L$ = 61； $T$：序列长度； $b$ = 2（bf16）。每 token $61 \times 576 \times 2$ B ≈ 68.6 KiB； $T$ = 131072 整窗 ≈ 9.2 GB——与 5.2 §4 的 V3 数字逐项相同（同 $L$、同 576、同窗口量级）。这就是 §2.3 heads 减半读法的另一面：128 → 64 省的是参数与 FLOPs，cache 一分钱没省。MLA 的 cache 由 latent 秩（512）与 rope 维（64）决定，与 head 数解耦。反事实对照留给练习 2（同尺寸 MHA 的 20480 元素 / token / 层、35.6 倍差）。
 
 decode 侧再补一笔（2.4 §5 的算术强度框架）。每生成一个 token，61 层的 cache 要被完整读一遍： $T$ = 131072 时即每步约 9.2 GB 的 HBM 读取，这是长窗 decode 单序列每 token 延迟的带宽下限。heads 减半不影响这笔读取——它省在投影 FLOPs 上。要压每步读取，只有两条结构路线：一是压每层 cache 的几何（MLA 的 576 已是这一路的成果）；二是压每步要读的层数与行数。后者又分两路：hybrid（Kimi Linear / K3，4.4 §7）与稀疏检索（DeepSeek-V3.2 的 DSA，4.2 §6 与 5.2 §4）。两条路的代表恰好都在本章的邻域里，这是 Kimi 谱系与 DeepSeek 谱系在长窗成本上的分工图。
 
 ## 4. 旗舰 config 精读：moonshotai/Kimi-K2-Instruct config.json
 
-按 2.8 §2 的方法读：每个字段都要指出它在公式里的位置。本轮实测字段摘录如下（教学用摘录，非完整文件；2026-11-12 实测）：
+这份 config 里哪几行最值钱？按 2.8 §2 的方法读：每个字段都要指出它在公式里的位置。本轮实测字段摘录如下（教学用摘录，非完整文件；2026-11-12 实测）：
 
 ```json
 {
@@ -217,10 +219,10 @@ decode 侧再补一笔（2.4 §5 的算术强度框架）。每生成一个 toke
 
 ## 练习
 
-1.（计算）参数复算。(a) 由 §4 字段重算 §3.1：验证 60 个 MoE 层 ≈ 1017.3 B、attention ≈ 6.2 B（101.1 M 逐项列出）；(b) 重算激活侧 ≈ 30.6 B，列出与官方 32B 口径的差额可能落在哪些项；(c) 若 `num_experts_per_tok` 从 8 提到 16（其余不变），激活参数与 $\rho$ 各变为多少？
-2.（推导）QK-clip。(a) 由式 (2) 证明 $z_{ij}^{h}$ 对 $(W_Q^{h}, W_K^{h})$ 联合二次、对各自线性；(b) 验证式 (4) 触发后内容项与位置项各缩 $\gamma^{h}$、新峰值恰为 $\tau$、未触发头为恒等；(c) 设内容侧改为单侧缩放 $W^{QC,h} \leftarrow \gamma^{h} W^{QC,h}$：证明 logit 效果相同，并结合 2.7 的 weight decay 讨论两方案长期范数轨迹的定性差异（提示：衰减把两侧范数往零拉，单侧缩放在下一步衰减后两侧范数比如何变化）；(d) 解释式 (4) 为什么不动共享 $W^{KR}$：若对 $W^{KR}$ 按某触发头缩放，其余头的位置项会发生什么？
-3.（计算）cache 对照。K2 若换成同尺寸 MHA（64 头、qk 192 维、v 128 维、其余不变）：(a) 每 token 每层 cache 是多少元素，对 576 元素是几倍？(b) $T$ = 131072、bf16 下整窗各为多少 GiB？(c) 用 4.1 §4 的机制说明为什么 MLA 的这一比值与 head 数无关。
-4.（代码）config diff 教学代码（教学用，非优化实现）：把 5.2 §6 与本章 §4 的两段 config 摘录存成两个字典，写约 20 行代码输出逐字段 diff 表，并按「架构字段（层型/MLA/路由机制）」「规模字段（expert 数/vocab/heads）」「配方字段（rope_scaling）」三类给每个差异字段打标签——用输出复核 §2.3 表的一行结论。
+1.（计算 · [20]）参数复算。(a) 由 §4 字段重算 §3.1：验证 60 个 MoE 层 ≈ 1017.3 B、attention ≈ 6.2 B（101.1 M 逐项列出）；(b) 重算激活侧 ≈ 30.6 B，列出与官方 32B 口径的差额可能落在哪些项；(c) 若 `num_experts_per_tok` 从 8 提到 16（其余不变），激活参数与 $\rho$ 各变为多少？校验：(a) 的合计应与正文复算同数量级（约 1026 B）。
+2.（计算 · [20]）cache 对照。K2 若换成同尺寸 MHA（64 头、qk 192 维、v 128 维、其余不变）：(a) 每 token 每层 cache 是多少元素，对 576 元素是几倍？(b) $T$ = 131072、bf16 下整窗各为多少 GiB？(c) 用 4.1 §4 的机制说明为什么 MLA 的这一比值与 head 数无关。校验：(a) 的结果应为 64 乘（qk 维 + v 维）= 20480 元素。
+3.（推导 · [30]）QK-clip。(a) 由式 (2) 证明 $z_{ij}^{h}$ 对 $(W_Q^{h}, W_K^{h})$ 联合二次、对各自线性；(b) 验证式 (4) 触发后内容项与位置项各缩 $\gamma^{h}$、新峰值恰为 $\tau$、未触发头为恒等；(c) 设内容侧改为单侧缩放 $W^{QC,h} \leftarrow \gamma^{h} W^{QC,h}$：证明 logit 效果相同，并结合 2.7 的 weight decay 讨论两方案长期范数轨迹的定性差异（提示：衰减把两侧范数往零拉，单侧缩放在下一步衰减后两侧范数比如何变化）；(d) 解释式 (4) 为什么不动共享 $W^{KR}$：若对 $W^{KR}$ 按某触发头缩放，其余头的位置项会发生什么？
+4.（代码 · [30]）config diff 教学代码（教学用，非优化实现）：把 5.2 §6 与本章 §4 的两段 config 摘录存成两个字典，写约 20 行代码输出逐字段 diff 表，并按「架构字段（层型/MLA/路由机制）」「规模字段（expert 数/vocab/heads）」「配方字段（rope_scaling）」三类给每个差异字段打标签——用输出复核 §2.3 表的一行结论。校验：diff 输出里 `num_attention_heads` 与 `n_routed_experts` 两行应落在「规模字段」标签下。
 
 ## 参考
 
