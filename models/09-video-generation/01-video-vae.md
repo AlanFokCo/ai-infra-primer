@@ -2,7 +2,7 @@
 
 > 一段 5 秒 720p 视频是 $3.3 \times 10^{8}$ 个数值，直接进 DiT 的 attention 不可行。Video VAE 的职责是把它压成 $t \times h \times w \times c$ 的连续 latent：通用档 $(\tau, s, s) = (4, 8, 8)$、 $c = 16$，数值体积缩约 48 倍。结构上靠两件事让图像与视频共享同一套 latent：时间维用因果卷积，首帧只做空间压缩。全章先算数据账，再推 3D causal conv 的结构与因果性公式，然后盘点典型配置与 token 账、逐家对照，最后回答压缩率的边界在哪（CogVideoX ablation 与 DC-AE 式深压缩），并以 720p 实例内存账收尾 | 前置：6.3（VAE/ELBO 式 (3)(8)、scaling factor 式 (24)、DC-AE §7.3）、7.6（latent 空间两阶段分工 §1、scaling factor 的扩散语义 §2、DC-AE f32 §8.2）、2.4（KV cache——feature caching 的同构物）、2.7（RMSNorm） | 锚点：CogVideoX [A]、HunyuanVideo [A]、Wan [A]（论文三家）；zai-org/CogVideo、Tencent-Hunyuan/HunyuanVideo、Wan-Video/Wan2.1（官方 repo）[A]；cogvideox-config / hunyuanvideo-vae-config / autoencoderkl-wan（config 与 diffusers 实现实测）[A]；Wan2.2（高压缩 VAE，官方 README）[A]；LTX-Video [A]、StepVideo-T2V [A]、Open-Sora 2.0 [A]、Open-Sora-Plan / WF-VAE [A]；Mochi [C]
 
-记号约定（本 Part 统一）：原始视频记 $V \in \mathbb{R}^{T \times H \times W \times 3}$，latent 记 $z \in \mathbb{R}^{t \times h \times w \times c}$。压缩率记 $(\tau, s, s)$，含义是时间维压 $\tau$ 倍、空间维压 $s \times s$ 倍。token 数 $N = t \cdot h \cdot w$，这是 patchify 等效边长 1 的统一口径；各家在 latent 之上的 patchify 逐家不同，是 9.2 的主题。
+记号约定（本 Part 统一）：原始视频记 $V \in \mathbb{R}^{T \times H \times W \times 3}$，latent 记 $z \in \mathbb{R}^{t \times h \times w \times c}$。压缩率记 $(\tau, s, s)$，含义是时间维压 $\tau$ 倍、空间维压 $s \times s$ 倍。token 数 $N = t \cdot h \cdot w$，这是 patchify 等效边长 1 的统一口径；各家在 latent 之上的 patchify 逐家不同，是 9.2 的主题。本章算账的数值口径：除随文另注明外，视频实例取 720p、每秒 24 帧，VAE 取通用档，字节数按 bf16 计。
 
 ## 1. 视频数据账： $T \times H \times W \times 3$ 的乘法
 
@@ -68,6 +68,8 @@ $$y[c_o, t, i, j] = \sum_{c_i} \sum_{a = 0}^{k_t - 1} \sum_{b = 0}^{k_h - 1} \su
 
 **符号**： $x$：输入特征， $[c_i, T, H, W]$； $\tilde{x}$：补零版本——时间维左侧补 $k_{t} - 1$ 帧、空间维两侧各补 $(k_{h} - 1)/2$ 与 $(k_{w} - 1)/2$（ $k_{h}, k_{w}$ 取奇数），即 $\tilde{x}[\cdot, t', i', j'] = x[\cdot,\ t' - (k_{t} - 1),\ i' - (k_{h} - 1)/2,\ j' - (k_{w} - 1)/2]$，越界处为零； $w$：卷积核； $y$：输出特征。把补零代入求和指标： $y[\cdot, t, i, j]$ 在时间维只读第 $t - k_{t} + 1$ 至第 $t$ 帧、在空间维读以 $(i, j)$ 为中心的 $k_{h} \times k_{w}$ 邻域——时间感受野只向过去延伸（不多不少 $k_{t}$ 帧），空间感受野双向对称，与下文「空间维仍是对称 padding」一致。
 
+最小例子（时间核长取三）：第五帧位置的输出只读第三、四、五帧——更早的帧读不到，更晚的帧读不进。
+
 注意因果性只加在时间轴上，空间维仍是对称 padding。原因是两个维度的消费方式不同。DiT 对同一帧内的空间位置是双向可见的（9.2 的 full 3D attention 没有空间因果 mask），空间感受野向两个方向延伸没有泄漏问题。时间轴不一样：它承载「帧序」，而分块自回归、流式这些生成范式都依赖帧序，所以只有时间轴需要单向约束。
 
 ```
@@ -85,7 +87,7 @@ y[0] ←  pad,x0, x1    ← 首帧读未来  y[0] ←      ·,  ·, x0   ← 首
 
 **分块流式编解码（feature caching）。** 因果卷积按时间分块推进时，块间只需保留前块末尾 $k_{t} - 1$ 帧的特征作状态。这与 2.4 的 KV cache 同构：状态就是一个有限的过去窗口。状态大小的账也好算——单层因果卷积的跨块状态是 $k_{t} - 1$ 帧特征， $L$ 层堆叠的总状态是各层 $k_{t}^{(i)} - 1$ 帧特征之和，与层数线性、与视频总长无关。diffusers 的 Wan-VAE 实现就是这个结构：`WanCausalConv3d` 自定义 3D 因果卷积，加时间维因果 padding，加 feature caching（[autoencoderkl-wan](../references.md)，[A]）。编解码内存因此从 $O(T)$ 降到 $O(\text{chunk})$，这是长视频可编解码的前提。decoder 侧对称成立：生成完的 latent 可以逐块解成像素、流式吐出。生成侧的分块推进范式（9.3），在 VAE 一侧也靠这个接口。
 
-**latent 帧序无未来泄漏。** latent 帧 $j$ 只含第 $j\tau$ 帧及之前的输入信息（具体覆盖区间依赖层栈，是练习 2 的对象）。任何「以过去 latent 为条件推进下一块」的生成范式因此是良定义的。换成非因果 VAE，第 $j$ 块 latent 会混入第 $j + 1$ 块的像素，自回归条件就被污染了。
+**命题（latent 帧序无未来泄漏）**：latent 帧 $j$ 只含第 $j\tau$ 帧及之前的输入信息。证明要点：因果卷积栈的每一层只向过去读（上一小节的因果 padding 公式），层数复合不改变这个方向；具体的覆盖区间依赖层栈，完整推导留作练习 2。任何「以过去 latent 为条件推进下一块」的生成范式因此是良定义的。换成非因果 VAE，第 $j$ 块 latent 会混入第 $j + 1$ 块的像素，自回归条件就被污染了。
 
 ### 2.3 首帧特判与 latent 时间长度
 
@@ -117,7 +119,9 @@ token 账两例（式 (2)(3) 直接代入）：
 
 $N$ 随 $T$ 线性增长（首帧之后每 4 帧加 $1.44 \times 10^{4}$ token），attention 的二次项随 $T^{2}$ 增长。时长翻倍，attention 代价就是 4 倍——这是长视频贵的代数根源，也是 9.2 的拓扑取舍与 9.3 的分块路线各自的出发点。
 
-scaling factor 是 VAE 与扩散之间的分布标定接口。 $z' = s \cdot z$ 把 latent 的逐分量统计对齐到标定点；换 VAE 时只需重测 $s$，扩散侧的 noise schedule 不动。尺度错了，代价是 log-SNR 轴整体平移（机制推导见 7.6 §2 式 (2)(3)）。0.7 与 0.476986 这类常数，出处是各家 config 而非论文——换权重文件时以 config 实测为准。
+scaling factor 是 VAE 与扩散之间的分布标定接口。 $z' = s \cdot z$ 把 latent 的逐分量统计对齐到标定点；换 VAE 时只需重测 $s$，扩散侧的 noise schedule 不动。尺度错了，代价是 log-SNR 轴整体平移（机制推导见 7.6 §2 式 (2)(3)）。
+
+> **坑**：scaling factor 的取值出自各家 config（0.7 与 0.476986 这类常数），不出自论文——换权重文件时若沿用旧 config 的值，VAE 与扩散之间的标定就此错位，代价由生成质量支付。规避只有一条：以新权重自带 config 的实测值为准。
 
 ## 4. 各家 Video VAE 对照
 
@@ -145,7 +149,7 @@ scaling factor 是 VAE 与扩散之间的分布标定接口。 $z' = s \cdot z$ 
 
 ## 5. 压缩率的边界：收敛、重建与 DC-AE 式深压缩
 
-压缩率不是免费旋钮。本书事实源收录的同系 VAE 压缩率对照只有一组，来自 CogVideoX 论文的 ablation（论文 Table 1，记号 = 空间 × 空间 × 时间；此处按本书 $(\tau, s, s, c)$ 记号实列通道）。六档分别是 Baseline $(1, 8, 8, 4)$、A $(4, 8, 8, 8)$、B $(4, 8, 8, 16)$（预训练采用）、C $(4, 8, 8, 32)$、D $(8, 8, 8, 32)$、E $(8, 16, 16, 128)$。逐档代入式 (4)：数值压缩 $R$ = 48 / 96 / 48 / 24 / 48 / 48。通道随压缩率同步加宽， $R$ 始终停在 24–96 区间；真正被推高的是 token 密度 $\tau s^{2}$ = 64 / 256 / 256 / 256 / 512 / 2048。撞墙的是 E 档。原文结论是「even if the channel dimensions are correspondingly increased, the convergence of the model also becomes extremely difficult」——128 通道把 $R$ 压回 48×，仍救不回 $\tau s^{2} = 2048$（8 倍于采用的 B 档）带来的收敛崩塌。最终选定的是 B 档 $(4, 8, 8, 16)$（[Yang et al., 2024](../references.md)，arXiv:2408.06072，[A]）。
+压缩率不是免费旋钮（口径：「免费」指不付出重建质量与收敛性的代价）。本书事实源收录的同系 VAE 压缩率对照只有一组，来自 CogVideoX 论文的 ablation（论文 Table 1，记号 = 空间 × 空间 × 时间；此处按本书 $(\tau, s, s, c)$ 记号实列通道）。六档分别是 Baseline $(1, 8, 8, 4)$、A $(4, 8, 8, 8)$、B $(4, 8, 8, 16)$（预训练采用）、C $(4, 8, 8, 32)$、D $(8, 8, 8, 32)$、E $(8, 16, 16, 128)$。逐档代入式 (4)：数值压缩 $R$ = 48 / 96 / 48 / 24 / 48 / 48。通道随压缩率同步加宽， $R$ 始终停在 24–96 区间；真正被推高的是 token 密度 $\tau s^{2}$ = 64 / 256 / 256 / 256 / 512 / 2048。撞墙的是 E 档。原文结论是「even if the channel dimensions are correspondingly increased, the convergence of the model also becomes extremely difficult」——128 通道把 $R$ 压回 48×，仍救不回 $\tau s^{2} = 2048$（8 倍于采用的 B 档）带来的收敛崩塌。最终选定的是 B 档 $(4, 8, 8, 16)$（[Yang et al., 2024](../references.md)，arXiv:2408.06072，[A]）。
 
 机制读法两条：
 
@@ -184,16 +188,16 @@ DC-AE 式的回答是：要把压缩率继续推高、同时保住重建，需�
 | latent 形状 | 式 (2)(3)： $t = 1 + \lceil (T-1)/\tau \rceil$、 $N = t h w$ | 首帧只空间压缩（Wan 式，源自 MagViT-v2）；81 帧 → 21 latent 帧 |
 | 两本账 | 式 (4)： $R \approx 3 \tau s^{2} / c$ | $N$ 按 $\tau s^{2}$ 缩、数值体积按 $3 \tau s^{2}/c$ 缩； $c$ 是兑换率（WFVAE 例） |
 | 因果 3D conv | 式 (5)：时间维左补 $k_{t} - 1$ | 三机制：图像兼容 / feature caching 流式 / 无未来泄漏 |
-| 通用档 | $(4, 8, 8, 16)$、 $R = 48$×；scaling 0.7 / 0.476986 | 三家 config 实测互证 |
-| 深压缩 | Wan2.2 $(4, 16, 16, 48)$ 64×；LTX 1:192（ $c = 128$ 反推）；WFVAE $(8, 8, 8, 32)$；Video DC-AE | 边界证据：CogVideoX E 档 16×16×8（128 通道， $\tau s^{2} = 2048$）「convergence extremely difficult」——通道加倍救不回 token 密度 8× |
-| 实例账 | $N = 446{,}400$ → $N^{2}$ ≈ 399 GB；单层 $4N^{2}d$ ≈ 4.1 PFLOPs（ $d = 5120$） | $\tau = 4$ 把二次项砍约 15×；VAE 定数量级 |
+| 通用档 | $(4, 8, 8, 16)$、 $R = 48$×；scaling 0.7 / 0.476986 | 三家 config 实测互证（练习 1） |
+| 深压缩 | Wan2.2 $(4, 16, 16, 48)$ 64×；LTX 1:192（ $c = 128$ 反推）；WFVAE $(8, 8, 8, 32)$；Video DC-AE | 边界证据：CogVideoX E 档 16×16×8（128 通道， $\tau s^{2} = 2048$）「convergence extremely difficult」——通道加倍救不回 token 密度 8×（练习 1、4） |
+| 实例账 | $N = 446{,}400$ → $N^{2}$ ≈ 399 GB；单层 $4N^{2}d$ ≈ 4.1 PFLOPs（ $d = 5120$） | $\tau = 4$ 把二次项砍约 15×；VAE 定数量级（练习 4） |
 
 ## 练习
 
-1.（计算）latent 与 token 账。对 10 秒、24 fps（ $T = 240$）视频分别用三档 VAE 计算 $t$、 $h \times w$、 $N$ 与数值压缩比的精确值（式 (2)(3)(4) 的非极限形式）：(a) Wan2.1 档 $(4, 8, 8, 16)$、分辨率 $1280 \times 720$；(b) Wan2.2 档 $(4, 16, 16, 48)$、同分辨率；(c) LTX 档 $(8, 32, 32, 128)$、分辨率换成其论文口径 $768 \times 512$。再算三档单层 attention 得分矩阵的 bf16 字节数，并验证 (b)(c) 的 $R$ 分别收敛到 64× 与 192×。
-2.（推导）因果感受野。设 encoder 时间路径依次堆叠：层 A（ $k_t = 3$、stride 1、因果）→ 层 B（ $k_t = 4$、stride 4、因果时间下采样）。取定补零对齐约定（式 (5)），求 latent 帧 $j$（ $j \ge 1$）读取的输入帧区间；验证上界不越过第 $4j$ 帧，并说明首帧特判（ $j = 0$ 只含帧 0）在该堆叠下如何实现。
-3.（分析）非因果反事实。设 VAE 时间维改用对称 padding（ $k_t = 3$），其余不变。(a) 写出视频首帧 latent $z_0$ 的依赖集；(b) 说明孤立图像（无未来帧，只能补零或复制边界帧）经同一 encoder 得到的 latent 与「同一图像作为视频首帧」的 latent 为何不逐位一致；(c) 由此说明非因果 VAE 要做图视频混训须付出什么（两条 latent 分布、或为图像路径单独关闭时间卷积的工程补丁），并对照 §2.2 的因果方案。
-4.（计算）深压缩的 DiT 侧代价。取 §6 负载（ $T = 120$、 $1280 \times 720$）：(a) 算 Wan2.2 档 $(4, 16, 16, 48)$ 的 $N$ 与 $N^{2}$ 相对 Wan2.1 档的降幅；(b) 算两档 latent 的数值体积与每 token 通道数，用式 (3)(4) 的两本账解释「token 更少、单 token 更稠密」为何不矛盾；(c) 若深压缩使重建误差上升，按 §5 的两条机制说明它如何传导到生成质量与 DiT 收敛。
+1.（计算 · [20]）latent 与 token 账。对 10 秒、24 fps（ $T = 240$）视频分别用三档 VAE 计算 $t$、 $h \times w$、 $N$ 与数值压缩比的精确值（式 (2)(3)(4) 的非极限形式）：(a) Wan2.1 档 $(4, 8, 8, 16)$、分辨率 $1280 \times 720$；(b) Wan2.2 档 $(4, 16, 16, 48)$、同分辨率；(c) LTX 档 $(8, 32, 32, 128)$、分辨率换成其论文口径 $768 \times 512$。再算三档单层 attention 得分矩阵的 bf16 字节数，并验证 (b)(c) 的 $R$ 分别收敛到 64× 与 192×。先写出三档 token 数谁大谁小的定性预测再动手。校验：(b)(c) 的收敛目标即正文对照表相应两档的登记值。
+2.（推导 · [30]）因果感受野。设 encoder 时间路径依次堆叠：层 A（ $k_t = 3$、stride 1、因果）→ 层 B（ $k_t = 4$、stride 4、因果时间下采样）。取定补零对齐约定（式 (5)），求 latent 帧 $j$（ $j \ge 1$）读取的输入帧区间；验证上界不越过第 $4j$ 帧，并说明首帧特判（ $j = 0$ 只含帧 0）在该堆叠下如何实现。本题即正文「latent 帧序无未来泄漏」命题的完整证明。
+3.（分析 · [30]）非因果反事实。设 VAE 时间维改用对称 padding（ $k_t = 3$），其余不变。(a) 写出视频首帧 latent $z_0$ 的依赖集；(b) 说明孤立图像（无未来帧，只能补零或复制边界帧）经同一 encoder 得到的 latent 与「同一图像作为视频首帧」的 latent 为何不逐位一致；(c) 由此说明非因果 VAE 要做图视频混训须付出什么（两条 latent 分布、或为图像路径单独关闭时间卷积的工程补丁），并对照 §2.2 的因果方案。
+4.（计算 · [30]）深压缩的 DiT 侧代价。取 §6 负载（ $T = 120$、 $1280 \times 720$）：(a) 算 Wan2.2 档 $(4, 16, 16, 48)$ 的 $N$ 与 $N^{2}$ 相对 Wan2.1 档的降幅；(b) 算两档 latent 的数值体积与每 token 通道数，用式 (3)(4) 的两本账解释「token 更少、单 token 更稠密」为何不矛盾；(c) 若深压缩使重建误差上升，按 §5 的两条机制说明它如何传导到生成质量与 DiT 收敛。校验：(a) 算出的 token 数与正文实例内存账表相应行的登记值一致。
 
 ## 参考
 

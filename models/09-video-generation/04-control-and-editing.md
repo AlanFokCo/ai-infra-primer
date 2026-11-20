@@ -2,7 +2,7 @@
 
 > 控制一个视频 DiT，能动的只有三种东西。第一，喂给它的条件：I2V 的 latent concat + mask 通道、CLIP 图像 embedding、ControlNet 可训练副本与 zero-conv、相机 Plücker 射线图、drag 轨迹图。第二，它走的去噪轨迹：DDIM inversion 与 null-text 逐步修正。第三，它的权重：LoRA 低秩增量与 DreamBooth 双损失微调。多镜头叙事则是三者之上的组合层（keyframe 链）| 前置：9.1（latent 几何 $(\tau, s, s)$、首帧约定）、9.2（时空 DiT 结构、cross-attn 成本账）、7.4（DDIM 更新式 (5)、CFG 式 (18)、DDIM=PF-ODE §2.4）、7.6（adaLN-Zero 式 (8)、conditioning 三机制）、7.3（Tweedie 式 (10)）、7.5（FM 目标式 (22)） | 锚点：Wan-AI/Wan2.1-I2V-14B-720P config [A]、Wan-Video/Wan2.1（`clip_fea` 走读）[A]、Wan-Video/Wan2.2 [A]、lllyasviel/ControlNet [A]、hehao13/CameraCtrl [A]；ControlNet [A]、CameraCtrl [A]、MotionCtrl [A]、null-text inversion [A]、LoRA [A]、DDIM [A]、DreamBooth [B]
 
-9.2 §7 已经算过，文本条件的成本不到主干账的 2%——文本通道的设计空间是全开的。但文本表达不了的东西恰是视频生成的重头：首帧画面长什么样、逐帧的深度/边缘结构、相机怎么动、画面里某个点往哪拖、主体必须是「这一只」。本章按「控制信号改的是什么」把控制机构分成四族：改输入条件（§1–§4）、改去噪轨迹（§5）、改权重（§6）、改生成的组合结构（§7）。四族共享同一条工程原则——**起点即原模型**：一切控制机构在训练起点必须严格不改变基座的输出；§2 把这条原则的三个实例（adaLN-Zero、zero-conv、LoRA 的 $B$ 因子）归到同一条公式性质上。
+9.2 §7 已经算过，文本条件的成本不到主干账的 2%——文本通道的设计空间是全开的。但文本表达不了的东西恰是视频生成的重头：首帧画面长什么样、逐帧的深度/边缘结构、相机怎么动、画面里某个点往哪拖、主体必须是「这一只」。本章按「控制信号改的是什么」把控制机构分成四族：改输入条件（§1–§4）、改去噪轨迹（§5）、改权重（§6）、改生成的组合结构（§7）。四族共享同一条工程原则——**起点即原模型**：一切控制机构在训练起点必须严格不改变基座的输出；§2 把这条原则的三个实例（adaLN-Zero、zero-conv、LoRA 的 $B$ 因子）归到同一条公式性质上。本章的算账实例沿用上一章的 Wan 14B 主干几何与单位 patch 等效口径，换口径处随文声明。
 
 ## 1. I2V：条件注入公式家族
 
@@ -77,7 +77,7 @@ $$
 
 **符号**： $F$：基座 block； $F_c$：其可训练副本； $c$：dense 条件图（与 $x$ 同空间网格）； $\mathcal{Z}$：zero-conv，初始化 $W_i = 0$、 $b_i = 0$。
 
-**零初始化 = 起点即原模型。** 代入 $W_2 = 0, b_2 = 0$：外层 $\mathcal{Z}$ 恒输出零，式 (4) 严格等于 $F(x; \Theta)$——训练起点处整个控制分支的贡献为零，组合网络逐位等于预训练基座。这不是「扰动很小」的近似，是严格恒等：控制训练从一台完好的生成器出发，要学的只有「控制带来的增量」。
+**命题（起点即原模型）**：训练起点处，整个控制分支的贡献严格为零。证明（直接代入）：代入 $W_2 = 0, b_2 = 0$，外层 $\mathcal{Z}$ 恒输出零，式 (4) 严格等于 $F(x; \Theta)$，组合网络逐位等于预训练基座。这不是「扰动很小」的近似，是严格恒等：控制训练从一台完好的生成器出发，要学的只有「控制带来的增量」。
 
 梯度的不对称性是该构造训得起来的关键。对 $\mathcal{Z}(u) = Wu + b$： $\partial \mathcal{Z} / \partial W = u$ 与 $\partial \mathcal{Z} / \partial b = 1$ 在零初始化处非零（ $\Theta_c$ 随机初始化保证副本输出 $u \neq 0$）——**门先开**；但流进副本 $\Theta_c$ 与内层 $W_1$ 的梯度要乘 $W_2$，第一步严格为零——**支路后动**。训练顺序被自动排好：先学「门开多大」，再学「门里给什么」。
 
@@ -103,11 +103,13 @@ $$
 
 **符号**： $d_f$：世界系单位方向（相机系方向 $K^{-1}[u, v, 1]^{\top}$ 经逆旋转 $R_f^{\top}$ 转回世界系——与 w2c 约定自洽： $q_{world} = R_f^{\top}(q_{cam} - t_f)$）； $o_f$：相机光心（世界系）； $o_f \times d_f$：moment——射线与世界原点张成平面的法向。逐帧逐像素构造、下采样对齐 latent 网格，得条件张量 $P \in \mathbb{R}^{t \times h \times w \times 6}$。
 
+最小正例（相机停在原点、焦距归一、主点居中）：画面正中央像素的方向向量是正前方单位向量；此时所有射线都过世界原点，moment 分量全部为零——moment 只在相机偏离原点之后才携带信息。
+
 Plücker 表示的三个数学性质，各自对应一个工程收益：
 
 1. **moment 与射线上取点无关**：射线上任意点 $q = o + \lambda d$ 满足 $q \times d = o \times d + \lambda\thinspace(d \times d) = o \times d$——表示只依赖射线本身，不依赖在射线上选哪个点当原点。
 2. **旋转与平移分置两半**： $d$ 不含平移（平移不进式 (5) 第一式），moment 含平移—— $\lVert o \times d \rVert$ 恰为世界原点到射线的距离（ $d$ 单位时）；推拉的平移量与环绕的旋转量在条件空间里占据不同通道，可区分、可复合。
-3. **与像素网格同形**：6 通道 dense map 直接对齐 latent 网格，「哪个像素走哪条射线」的对应关系由网格共享自动给出——不需要把相机矩阵压成一个全局向量再广播（那会丢掉全部逐像素对应）。6 通道相对 16 通道 latent 也便宜：条件通道的引入成本与 §1 同量级。
+3. **与像素网格同形**：6 通道 dense map 直接对齐 latent 网格，「哪个像素走哪条射线」的对应关系由网格共享自动给出——不需要把相机矩阵压成一个全局向量再广播（那会丢掉全部逐像素对应）。6 通道相对 16 通道 latent 也便宜（口径：条件通道的引入成本与 §1 的拼接通道同量级）。
 
 CameraCtrl 的系统形态（论文口径）：Plücker 图序列经一个独立的相机编码器提取特征后注入基座；相机模块 plug-and-play——**不动基座权重**，与 §2 的「起点即原模型」同一纪律。MotionCtrl（[Wang et al., 2023](../references.md)，arXiv:2312.03641，[A]；官方 repo TencentARC/MotionCtrl）把控制面再扩一维：相机运动与物体运动统一控制。相机侧以相机位姿序列为条件（内部构造未在本轮事实源展开，以论文为准），物体侧用轨迹条件（§4）。两个条件通道可独立启用也可组合，覆盖「只动相机」「只动物体」「两者复合」三种工况。
 
@@ -202,7 +204,7 @@ I_1 ─► [段 1: p(V_1 | I_1, c_1)] ─► V_1 ─► last(Dec(V_1)) = I_2 ─
 | --- | --- | --- | --- |
 | I2V 输入拼接 | latent concat + mask | 式 (1)(2)：36 = 16+16+4（Wan2.1-I2V config） | 首层增量 $\sim 10^{5}$ 参数；binary mask 官方语义（1=preserved）+ 时间 stride 重排为 4 通道；新增投影层零初始化（起点即原模型）； $\mathcal{A} = \varnothing$ 退化回 T2V |
 | 条件失配 | noise augmentation（SVD 谱系，[B]）/ 数据过滤（Wan，[A]） | 式 (3)： $\hat z_c = z_c + \sigma_c \eta$；SigLIP 相似度阈值过滤 | 破复制捷径 / 收窄训练条件分布——同一失败模式的两端，可叠加 |
-| 语义图像条件 | CLIP embedding cross-attn | `clip_fea`：MLPProj(1280→ $d$) 注入（Wan 代码实测） | 像素级（concat）与语义级（CLIP）双通道分工 |
+| 语义图像条件 | CLIP embedding cross-attn | `clip_fea`：MLPProj(1280→ $d$) 注入（Wan 代码实测） | 像素级（concat）与语义级（CLIP）双通道分工（练习 1） |
 | 结构控制 | ControlNet 可训练副本 + zero-conv | 式 (4)：零初始化 ⇒ 起点即原模型 | 门先开、支路后动；与 adaLN-Zero / LoRA 同族 |
 | 相机控制 | Plücker 射线图 | 式 (5)： $(d,\hspace{5mu} o \times d) \in \mathbb{R}^{6}$ / pixel | moment 与取点无关；旋转/平移分置；与网格同形 |
 | 轨迹控制 | drag point 高斯图 | 式 (6)： $\exp(-\lVert \cdot \rVert^{2} / 2\sigma_g^{2})$ | $\sigma_g$ = 软约束半径；多点可表旋转/形变 |
@@ -212,13 +214,13 @@ I_1 ─► [段 1: p(V_1 | I_1, c_1)] ─► V_1 ─► last(Dec(V_1)) = I_2 ─
 
 ## 练习
 
-1.（计算）I2V 输入账。按 patch=1 等效口径与 Wan 14B 几何（ $d$ = 5,120， $N$ = 302,400）：(a) 算 T2V→I2V 首层投影的参数与 FLOPs 增量（16→36 通道），及其相对 9.2 §2.5 单层总账（2.06 PFLOPs）的占比；(b) 首尾帧控制（ $\mathcal{A} = \lbrace0, t-1\rbrace$）相对单锚点，输入通道数与首层参数变不变？说明理由；(c) 若把 mask 从 4 通道改成 1 通道，首层省多少参数——这个省法为什么不值得做？
+1.（计算 · [20]）I2V 输入账。按 patch=1 等效口径与 Wan 14B 几何（ $d$ = 5,120， $N$ = 302,400）：(a) 算 T2V→I2V 首层投影的参数与 FLOPs 增量（16→36 通道），及其相对 9.2 §2.5 单层总账（2.06 PFLOPs）的占比；(b) 首尾帧控制（ $\mathcal{A} = \lbrace0, t-1\rbrace$）相对单锚点，输入通道数与首层参数变不变？说明理由；(c) 若把 mask 从 4 通道改成 1 通道，首层省多少参数——这个省法为什么不值得做？先写出占比方向的定性预测再动手。校验：(a) 的首层参数增量与正文登记的占比量级一致。
 
-2.（推导）零初始化门控三实例。(a) 对式 (4) 证明： $W_2 = 0$ 时 $\partial y / \partial W_2 = F_c(x + \mathcal{Z}(c);\thinspace \Theta_c) \neq 0$ 而 $\partial y / \partial \Theta_c = 0$，并说明一步梯度更新后这两个梯度如何变化；(b) 对 LoRA（式 (10)， $B = 0$ 初始化）证明对称结论： $\partial L / \partial B \neq 0$、 $\partial L / \partial A = 0$；(c) 对照 7.6 式 (8) 的 adaLN-Zero 推导，抽出三者共享的充分条件（门参数零初始化 + 门处梯度非零），并构造一个「零初始化但门梯度也为零」的反例说明该条件不可缺。
+2.（推导 · [30]）零初始化门控三实例。(a) 对式 (4) 证明： $W_2 = 0$ 时 $\partial y / \partial W_2 = F_c(x + \mathcal{Z}(c);\thinspace \Theta_c) \neq 0$ 而 $\partial y / \partial \Theta_c = 0$，并说明一步梯度更新后这两个梯度如何变化；(b) 对 LoRA（式 (10)， $B = 0$ 初始化）证明对称结论： $\partial L / \partial B \neq 0$、 $\partial L / \partial A = 0$；(c) 对照 7.6 式 (8) 的 adaLN-Zero 推导，抽出三者共享的充分条件（门参数零初始化 + 门处梯度非零），并构造一个「零初始化但门梯度也为零」的反例说明该条件不可缺。本题即正文「起点即原模型」命题在三个实例上的完整证明。
 
-3.（推导）Plücker 几何。取 $K = \mathrm{diag}(f, f, 1)$（主点在原点）、 $R = I$、 $t = [t_x, 0, 0]^{\top}$：(a) 写出像素 $(u, v)$ 的 $d(u, v)$ 与 moment $o \times d$ 的闭式；(b) 验证 moment 与射线上取点无关（§3 性质 1）；(c) 两个平行相机（同 $R$、 $t$ 相差 $x$ 向平移 $\Delta$）在同一像素处的 Plücker 向量差是多少——视差信息落在哪几个通道？(d) $\lVert o \times d \rVert$ 等于什么几何量？
+3.（推导 · [30]）Plücker 几何。取 $K = \mathrm{diag}(f, f, 1)$（主点在原点）、 $R = I$、 $t = [t_x, 0, 0]^{\top}$：(a) 写出像素 $(u, v)$ 的 $d(u, v)$ 与 moment $o \times d$ 的闭式；(b) 验证 moment 与射线上取点无关（§3 性质 1）；(c) 两个平行相机（同 $R$、 $t$ 相差 $x$ 向平移 $\Delta$）在同一像素处的 Plücker 向量差是多少——视差信息落在哪几个通道？(d) $\lVert o \times d \rVert$ 等于什么几何量？
 
-4.（分析）inversion 误差与编辑预算。(a) 设每步局部误差有界 $\lVert \delta_t \rVert \le \delta$、Jacobian 谱范数有界 $\lVert J_t \rVert \le \gamma$，由式 (8) 给出 $\lVert e_T \rVert$ 的界，并讨论 $\gamma < 1$、 $\gamma = 1$、 $\gamma > 1$ 三种情形下步数 $T$ 的角色；(b) 从「反演是在哪个场上积的」论证 $w > 1$ 的引导场为什么使式 (7) 的反演失效，以及式 (9) 的 $\varnothing_t$ 为什么能修复；(c) 一段 81 帧视频做 null-text 编辑（ $K$ = 50 步、每步内循环 $n$ 次迭代、每迭代计 2 NFE）的总 NFE 账（inversion + 优化 + 再生成三项分列），并对照 DreamBooth 式「一次训练多次复用」的固定成本，说明逐样本付费路线的适用边界。
+4.（分析 · [40]）inversion 误差与编辑预算。(a) 设每步局部误差有界 $\lVert \delta_t \rVert \le \delta$、Jacobian 谱范数有界 $\lVert J_t \rVert \le \gamma$，由式 (8) 给出 $\lVert e_T \rVert$ 的界，并讨论 $\gamma < 1$、 $\gamma = 1$、 $\gamma > 1$ 三种情形下步数 $T$ 的角色；(b) 从「反演是在哪个场上积的」论证 $w > 1$ 的引导场为什么使式 (7) 的反演失效，以及式 (9) 的 $\varnothing_t$ 为什么能修复；(c) 一段 81 帧视频做 null-text 编辑（ $K$ = 50 步、每步内循环 $n$ 次迭代、每迭代计 2 NFE）的总 NFE 账（inversion + 优化 + 再生成三项分列），并对照 DreamBooth 式「一次训练多次复用」的固定成本，说明逐样本付费路线的适用边界。校验：(c) 的三项拆分与正文 inversion 代价账的结构一致。
 
 ## 参考
 
