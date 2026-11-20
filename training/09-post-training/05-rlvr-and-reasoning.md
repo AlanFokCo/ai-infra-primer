@@ -2,9 +2,11 @@
 
 > 本章回答一个问题：不训练 reward model，RL 的奖励信号从哪里来？答案是可验证奖励（RLVR）——用规则程序直接判对错，同时划清它的防 hacking 边界。围绕它拆三条已公开配方：DeepSeek-R1 的四阶段训练链（含 R1-Zero 对照支线，逐阶段的依赖与目的）、Kimi K1.5 的 online mirror descent 变体、长度惩罚与 long2short、Qwen3 的 thinking 模式训练；最后收束到长 CoT 训练动力学（response 长度增长的两种归因、entropy 塌缩）与 test-time scaling 的训练侧含义、蒸馏账 | 前置：8.4（GRPO/Dr.GRPO/DAPO 的目标与失效模式，本章直接复用其式 (1)(2) 口径）、9.1（SFT 工程语义）、9.4（拒绝采样的截断分布视角）、3.2（在线/离线分界）；推理侧成本指针 models 4.8 §5 | 锚点：DeepSeek-R1（[DeepSeek-AI, 2025](../references.md)，arXiv:2501.12948，[A]）、Kimi K1.5（[Kimi Team, 2025](../references.md)，arXiv:2501.12599，[A]）、Qwen3（[Qwen Team, 2025](../references.md)，arXiv:2505.09388，[A]）、Understanding R1-Zero / Dr.GRPO（[Liu et al., 2025](../references.md)，arXiv:2503.20783，[A]）、DAPO（[Yu et al., 2025](../references.md)，arXiv:2503.14476，[A]）；实现锚点：verl `verl/utils/reward_score/math_verify.py`（[A]，HybridFlow 官方栈，2026-11-18 核实）、sail-sg/understand-r1-zero `train_zero_math.py`（Dr.GRPO 官方代码，2026-11-18 核实）
 
+本章口径一句：章内数字全部是所引论文的原始报告口径，不做跨论文换算；模型规模随配方走（R1 链的基座是 DeepSeek-V3-Base，Kimi 那条线未公开参数量，Qwen3 的标尺落在其旗舰 MoE 上）。各节数字当各家的实验记录读，不当同一杆秤上的比较。
+
 ## 1. RLVR：reward 不学习，直接验证
 
-RL 的奖励一定要用一个训练出来的 reward model 给吗？RLVR（Reinforcement Learning with Verifiable Rewards，可验证奖励 RL）的回答是：不一定——9.2 的 RLHF 全链里那个 reward model 可以整组拿掉。只要任务的答案可以被程序机械判定——数学题有唯一答案、代码有测试用例——reward 就可以由一个确定性验证程序直接给出。对题目 $x$ 与模型回答 $o$：
+RL 的奖励一定要用一个训练出来的 reward model 给吗？不一定。所谓可验证奖励 RL（Reinforcement Learning with Verifiable Rewards, RLVR），是指 reward 不由学习出来的模型打分、而由一个确定性验证程序直接判定的 RL 形态——9.2 的 RLHF 全链里那个 reward model 可以整组拿掉。只要任务的答案可以被程序机械判定（数学题有唯一答案、代码有测试用例），reward 就能这样给出。对题目 $x$ 与模型回答 $o$：
 
 $$
 r(x, o) = \begin{cases} 1, & \mathrm{verify}(o, y^{\ast}) = \mathrm{pass} \\ 0, & \text{否则} \end{cases} \qquad (1)
@@ -13,6 +15,8 @@ $$
 **符号**： $y^{\ast}$：数据集自带的参考答案； $\mathrm{verify}$：规则验证器（rule-based verifier），一段人工写的判定代码，不含学习成分。
 
 两个主力实例。数学题：提取回答中 `\boxed{}` 内的表达式，与 $y^{\ast}$ 做符号等价判定—— $a^{2} - 4$ 与 $(a+2)(a-2)$ 必须判同，这个等价判定本身是验证器的核心难度。代码题：把模型补全放进沙箱跑预定义单测，全过为 1。R1-Zero 的 reward 系统就是这两类规则（[DeepSeek-AI, 2025](../references.md)，arXiv:2501.12948，[A]，其 §2.2.2）：accuracy rewards（数学等价判定、LeetCode 编译器按测试用例反馈）与 format rewards（强制思考过程落在 think 标签对内）。
+
+算到底的一个实例：数学卷上模型输出 `\boxed{42}`、参考答案 42——提取后判同，reward 得 1；把 42 改成 43，得 0。这是正例。再给一个边界反例：开放式写作没有可判定的标准答案，verify 无从定义——这类任务不在 RLVR 的覆盖域内，reward 只能退回学习路线（RM）。
 
 为什么不干脆训练一个 RM？R1 论文给的是一手理由（其 §2.2.2）：神经 reward model 在大规模 RL 中会被 hack；要修就得重训 RM，既吃额外算力又把管线复杂化。R1-Zero 因此不用任何形式的神经 RM，outcome 和 process 都不用。
 
@@ -30,7 +34,9 @@ $$
 
 实现层长什么样？走读 verl 的规则验证器（`verl/utils/reward_score/math_verify.py`，函数 `compute_score(model_output, ground_truth, timeout_score=0, timeout=30.0)`，2026-11-18 核实）。它把参考答案包成 `\boxed{...}`，调 HuggingFace Math-Verify 库的 `parse`（gold 用 `LatexExtractionConfig`，pred 用 `ExprExtractionConfig + LatexExtractionConfig` 双通道），再做 `verify(gold, pred)` 等价判定；任意 gold-pred 对判同即得 1.0。
 
-有一个值得记的工程细节：整个判定放在 4 worker 的 `ProcessPoolExecutor` 子进程里跑，30 秒超时返回 0。为什么要子进程加超时？验证器挂在 rollout 打分的关键路径上，一次未捕获的死循环会拖停整个 batch，超时护栏是 RLVR 管线的标准件。Dr.GRPO 官方 repo 是同构实现（sail-sg/understand-r1-zero，`train_zero_math.py` 的 `MATHOracle.get_reward` 调 `math_grader.boxed_reward_fn`，多进程打分、异常记 0）。
+工程护栏见下方坑注。Dr.GRPO 官方 repo 是同构实现（sail-sg/understand-r1-zero，`train_zero_math.py` 的 `MATHOracle.get_reward` 调 `math_grader.boxed_reward_fn`，多进程打分、异常记 0）。
+
+> **坑**：规则验证器挂在 rollout 打分的关键路径上——一条让符号判定陷入死循环的畸形回答，会拖停整个 batch 的打分。规避办法是子进程化加超时护栏：verl 把整个判定放进 4 worker 的 `ProcessPoolExecutor` 子进程，30 秒超时返回 0，超时按判错计。
 
 ## 2. R1-Zero：基座上直接 GRPO，长 CoT 涌现
 
@@ -106,6 +112,8 @@ $$
 
 **符号**： $r_{\mathrm{acc}}$：式 (1) 的规则正确性奖励。
 
+代入一组数：一条 CoT 共 100 词、其中 80 词是目标语言，语言一致性项得 80/100；该题答对时正确性项记 1，最终 reward 就是两者相加。题目答错时语言分照加、正确性项为 0——所以该奖励只修饰形态，不掩盖对错。
+
 两个要点都按原文口径。一是归属：这是 R1 阶段 2 的组件，R1-Zero 没有它——Zero 的缺陷正是它要修的东西；其他家的配方里也没有同名组件，K1.5 全文无此机制，勿张冠李戴。二是代价：论文明确报告消融显示该对齐带来轻微的性能下降，接受代价的理由是与人类可读性偏好对齐。组合方式是把两个 reward 直接相加，不加权重系数。
 
 **阶段 3，拒绝采样 + SFT**（其 §2.3.3）。阶段 2 收敛后，其 checkpoint 换了一个角色：数据发生器。对推理 prompt 做拒绝采样，每题采多条、只留正确的。数据域也从「仅规则可验证」扩宽：一部分题由生成式 judge 把关——把 ground truth 与模型预测一起喂给 DeepSeek-V3 判定。同时过滤混杂语言、长段落与代码块的 CoT。最终得约 600k 推理样本。
@@ -120,19 +128,19 @@ $$
 
 ## 4. Kimi K1.5：mirror descent 变体与长度经济
 
-K1.5 先把 reward 写成二值判定 $r(x, y, y^{\ast}) \in \lbrace 0, 1 \rbrace$（[Kimi Team, 2025](../references.md)，arXiv:2501.12599，[A]，其 §2.3.1）：可验证题用规则，自由形式答案用 judge RM。训练目标是最大化期望 reward。优化算法不是 PPO/GRPO 的 clip 家族，而是 online policy mirror descent 的一个变体（其 §2.3.2）：第 $i$ 轮以当前模型 $\pi_{\theta_i}$ 为参考策略，解一个 KL 正则问题
+K1.5 先把 reward 写成二值判定 $r(x, y, y^{\ast}) \in \lbrace 0, 1 \rbrace$（[Kimi Team, 2025](../references.md)，arXiv:2501.12599，[A]，其 §2.3.1）：可验证题用规则，自由形式答案用 judge RM。训练目标是最大化期望 reward。优化算法不是 PPO/GRPO 的 clip 家族，而是 online policy mirror descent 的一个变体（其 §2.3.2）：第 $i$ 轮以当前模型 $\pi_{\theta_i}$ 为参考策略，解一个 KL 正则问题。路线一句话：先解出这个目标的闭式最优，再把闭式解改写成可采样的平方代理损失，最后对代理取梯度——关键一步是把归一化常数用组内采样近似掉
 
 $$
 \max_{\theta}\ \mathbb{E}_{(x, y^{\ast}) \sim \mathcal{D}} \left[ \mathbb{E}_{(y, z) \sim \pi_\theta}\left[ r(x, y, y^{\ast}) \right] - \tau \thinspace \mathrm{KL}\left( \pi_\theta(x) \Vert \pi_{\theta_i}(x) \right) \right] \qquad (3)
 $$
 
-**符号**： $z$：思维链（中间步骤序列）； $y$：最终答案； $\tau \gt 0$：正则强度。式 (3) 有闭式解（练习 1 推导）：
+**符号**： $z$：思维链（中间步骤序列）； $y$：最终答案； $\tau \gt 0$：正则强度。式 (3) 有闭式解（练习 3 推导）：
 
 $$
 \pi^{\ast}(y, z \mid x) = \frac{1}{Z} \thinspace \pi_{\theta_i}(y, z \mid x) \thinspace \exp\left( r(x, y, y^{\ast}) \big/ \tau \right), \qquad Z = \sum_{y', z'} \pi_{\theta_i}(y', z' \mid x) \thinspace \exp\left( r(x, y', y^{\ast}) \big/ \tau \right) \qquad (4)
 $$
 
-闭式解把「最优策略」写成参考策略按 reward 指数倾斜再归一。这个形态与 9.3 的 DPO 闭式解同族——KL 正则 RL 的最优解都是指数倾斜形态。但 $\pi^{\ast}$ 无法直接采样，K1.5 把它转成对数比约束 $r - \tau \log Z = \tau \log(\pi^{\ast} / \pi_{\theta_i})$，再用平方残差做代理损失：
+**命题**（KL 正则目标的闭式解）：上面的 KL 正则目标，其最优策略存在且唯一，形式为「参考策略按 reward 指数倾斜、再归一化」的分布——即上方这个式子。**证明**（路线；完整展开留作练习 3）：把目标看成逐 prompt 上的分布优化，归一化约束以 Lagrange 乘子进入，逐点变分即得指数倾斜；归一化常数 Z 正是乘子的兑现。数值直觉：组内四条回答恰有一条答对时，这一条拿到的相对权重是其余三条的 e 的 1/τ 次幂倍——τ 越小，概率质量向正确答案集中得越狠。这个形态与 9.3 的 DPO 闭式解同族——KL 正则 RL 的最优解都是指数倾斜形态。但 $\pi^{\ast}$ 无法直接采样，K1.5 把它转成对数比约束 $r - \tau \log Z = \tau \log(\pi^{\ast} / \pi_{\theta_i})$，再用平方残差做代理损失：
 
 $$
 L(\theta) = \mathbb{E}_{(x, y^{\ast}) \sim \mathcal{D}} \left[ \mathbb{E}_{(y, z) \sim \pi_{\theta_i}} \left[ \left( r(x, y, y^{\ast}) - \tau \log Z - \tau \log \frac{\pi_\theta(y, z \mid x)}{\pi_{\theta_i}(y, z \mid x)} \right)^{2} \right] \right] \qquad (5)
@@ -144,9 +152,13 @@ $$
 \frac{1}{k} \sum_{j=1}^{k} \left( \nabla_\theta \log \pi_\theta(y_j, z_j \mid x) \thinspace \left( r(x, y_j, y^{\ast}) - \overline{r} \right) - \frac{\tau}{2} \thinspace \nabla_\theta \left( \log \frac{\pi_\theta(y_j, z_j \mid x)}{\pi_{\theta_i}(y_j, z_j \mid x)} \right)^{2} \right) \qquad (6)
 $$
 
+代入玩具数读一遍第一项：组内回答 4 条、reward 依次 1、1、0、0，经验均值为 1/2——前两条的 log 概率梯度按 +1/2 加权，后两条按 −1/2 压低；第二项则把当前策略与参考策略的 log 比向 0 拉回。
+
 式 (6) 的第一项正是「组均值作 baseline 的策略梯度」，与 GRPO 的组基线（8.4 式 (1)，去掉 std 归一）同族。与 GRPO 有两处差异：样本采自参考策略 $\pi_{\theta_i}$ 而非严格 on-policy，迭代内允许 off-policy 复用；正则从「ratio clip」换成「log-ratio 的 $\ell_2$ 惩罚」。
 
 另外两条实现口径。一，不用 value network——论文的理由是长 CoT 需要试错式探索：value 函数的 credit assignment 会惩罚「走错但能救回来」的中间步骤，而这种步骤正是训练反思能力所需的素材。二，每轮换参考策略时重置优化器，因为各轮的优化问题不同。
+
+> **提点**：「每轮重置优化器」在监督训练里几乎没有对应物。它等效于承认每轮的优化问题都不同——动量里攒下的历史曲率信息不但无用，还会把上一轮参考策略的残留带进新一轮。
 
 长度在 K1.5 里是被显式管理的变量。论文观测到 RL 训练中 response 长度持续上涨（overthinking），于是把长度做成奖励项（其 §2.3.3）：组内 $k$ 条回答，记 $\mathrm{len}(i)$ 为第 $i$ 条长度， $\mathrm{min\_len}$ / $\mathrm{max\_len}$ 为组内极值（全相等则全组长度奖励为零）：
 
@@ -154,9 +166,11 @@ $$
 \mathrm{len\_reward}(i) = \begin{cases} \lambda, & r(x, y_i, y^{\ast}) = 1 \\ \min(0, \lambda), & r(x, y_i, y^{\ast}) = 0 \end{cases}, \qquad \lambda = 0.5 - \frac{\mathrm{len}(i) - \mathrm{min\_len}}{\mathrm{max\_len} - \mathrm{min\_len}} \qquad (7)
 $$
 
-语义读一遍：正确的回答在组内按长度线性退火，最短拿 $+0.5$、最长拿 $-0.5$；错误的只罚不奖（ $\lambda \gt 0$ 时取 0）。「错了还写长」被双重惩罚。该奖励加权加到原 reward 上。论文还报告训练初期上长度惩罚会拖慢学习，处置方式很直接：先跑无惩罚的标准阶段，再切到恒定惩罚（warmup 式调度）。
+语义读一遍：正确的回答在组内按长度线性退火，最短拿 $+0.5$、最长拿 $-0.5$；错误的只罚不奖（ $\lambda \gt 0$ 时取 0）。「错了还写长」被双重惩罚。一组具体数（组内长度 200、400、800、1600，对、对、错、错）：首条 λ 为 1/2、末条 λ 为 −1/2，中间两条与错误两条的最终奖励留作练习 2 实算。该奖励加权加到原 reward 上。论文还报告训练初期上长度惩罚会拖慢学习，处置方式很直接：先跑无惩罚的标准阶段，再切到恒定惩罚（warmup 式调度）。
 
 配套还有三件采样与系统件（其 §2.3.4 与 §2.6.2）。第一，curriculum sampling：按难度标签先易后难。第二，prioritized sampling：按 $1 - s_i$ 反比于历史通过率采样， $s_i$ 是逐题成功率——与 8.4 §6 的 DAPO dynamic sampling 同为「把算力花在非饱和题上」，只是实现位置不同：K1.5 动采样权重，DAPO 动组过滤。第三，partial rollout：每条 rollout 设固定 token 预算，超预算的轨迹截断、尾部进 replay buffer 下一轮续算；只有当前轮段是 on-policy，段可从 loss 中剔除；异步 rollout worker 避免长轨迹独占资源；重复检测提前终止。
+
+**命题**（全对全错组零梯度）：组内 reward 全同（全对或全错）时，每条回答减去组均值后恰为零，该组对批梯度无贡献；std 归一只是逐组公共因子（实现上加小常数防除零），不改变零贡献（KL 正则项不在此列，它照常起锚定作用）。**证明**（路线；数值展开留作练习 1）：advantage 的构造是组内 reward 减组均值，全同则逐条为零；单题通过率 p 之下，组内既有对又有错的概率等于 1 减去两个纯态的概率——这个数值形态，以及它在训练后期对批梯度的稀释，练习 1 展开。
 
 long2short（其 §2.4）解决一个反向问题：长 CoT 模型强，但推理贵。目标是把长 CoT 模型的「思考先验」转移给短模型，四条路线并列：model merging（长模型与短模型权重合并）、shortest rejection sampling（同题采样取最短正确回答做 SFT）、DPO（以长/短回答构对）、long2short RL。最后一种的做法：选性能与 token 效率平衡最好的模型为基座，单独跑第二阶段 RL——加式 (7) 的长度惩罚，并把最大 rollout 长度砍小，超长即使正确也罚。论文图 7 的对照显示 long2short RL 的 token 效率最高。数字量级：k1.5-short w/ rl 在 AIME 2024 得 60.8（8 次平均），平均只用 3272 token。长模型本体的标尺：AIME 77.5、MATH 500 96.2、Codeforces 94 百分位、MathVista 74.9。
 
@@ -202,9 +216,9 @@ entropy 塌缩是长 CoT RL 的第二条失效线：朴素 PPO/GRPO 下策略熵
 
 ## 7. 推理预算的内化与蒸馏
 
-test-time scaling 的训练侧含义，一句话：RL 把「花多少 token 想」从推理期超参变成了策略的内生变量。§6 归因一说明策略会自己拉长预算；K1.5 的长度惩罚与 long2short（§4）是把预算往回压的对偶操作；Qwen3 的 thinking budget（§5）把预算控制权暴露给用户。架构侧为这条链付出的账——KV cache 随链长线性增长、串行 decode 步数放大、训推算力配比重写——归 models 4.8 §5。本章只指出一点：训练与推理的接口在「长度」这一个标量上。
+「花多少 token 想」是推理期的超参，还是训练出来的策略性质？本章的回答是后者：RL 把推理预算从推理期超参变成了策略的内生变量。§6 归因一说明策略会自己拉长预算；K1.5 的长度惩罚与 long2short（§4）是把预算往回压的对偶操作；Qwen3 的 thinking budget（§5）把预算控制权暴露给用户。架构侧为这条链付出的账——KV cache 随链长线性增长、串行 decode 步数放大、训推算力配比重写——归 models 4.8 §5。本章只指出一点：训练与推理的接口在「长度」这一个标量上。
 
-蒸馏是推理能力向下传导的便宜通道。R1 的配方（其 §2.4）：把阶段 3 的约 800k 数据直接拿去 SFT 开源小模型——Qwen2.5-Math-1.5B/7B、Qwen2.5-14B/32B、Llama-3.1-8B、Llama-3.3-70B-Instruct——只做 SFT、不加 RL。论文明说加 RL 还能涨，但留给社区；本次只为证明蒸馏本身有效。
+蒸馏是推理能力向下传导的便宜通道（口径：「便宜」指达到同等 AIME 分数所需的训练算力更低；数据由 R1 主流程阶段 3 副产，不另计费）。R1 的配方（其 §2.4）：把阶段 3 的约 800k 数据直接拿去 SFT 开源小模型——Qwen2.5-Math-1.5B/7B、Qwen2.5-14B/32B、Llama-3.1-8B、Llama-3.3-70B-Instruct——只做 SFT、不加 RL。论文明说加 RL 还能涨，但留给社区；本次只为证明蒸馏本身有效。
 
 结果：R1-Distill-Qwen-1.5B 在 AIME 28.9%、MATH 83.9%；R1-Distill-Qwen-7B 的 AIME 55.5% 超过 QwQ-32B-Preview；R1-Distill-Qwen-32B 的 AIME 72.6%、MATH-500 94.3%、LiveCodeBench 57.2%。
 
@@ -228,10 +242,10 @@ test-time scaling 的训练侧含义，一句话：RL 把「花多少 token 想�
 
 ## 练习
 
-1.（推导）从式 (3) 推出式 (4)：把 $\pi(y, z \mid x)$ 当作逐 $x$ 的分布做变分，加归一化约束 $\sum_{y, z} \pi(y, z \mid x) = 1$ 的 Lagrange 乘子，证明最优解为指数倾斜形式 $\pi^{\ast} \propto \pi_{\theta_i} \exp(r / \tau)$；再验证 $\tau \to \infty$ 时 $`\tau \log Z \to \mathbb{E}_{\pi_{\theta_i}}[r]`$（提示： $\exp(r/\tau) \approx 1 + r/\tau$ ），说明 K1.5 用经验均值 $\overline{r}$ 近似 $\tau \log Z$ 的合理性边界（ $\tau$ 小、reward 方差大时该近似往哪边偏）。
-2.（计算）GRPO 组内有效题比例：二值 reward、单题通过率 $p$、组大小 $G$，advantage 非零要求组内既有对也有错，证明有效组概率为 $1 - p^{G} - (1-p)^{G}$；代入 $G = 16$、 $p = 0.9$ 与 $p = 0.99$ 各算一遍（约 0.815 与 0.148），由此解释训练后期「全对组占比上升 ⇒ 批梯度被零 advantage 稀释」的机制（DAPO dynamic sampling 的动机，8.4 §6）。
-3.（计算）式 (7) 的数值形态：组内 4 条回答长度 200 / 400 / 800 / 1600，reward 1 / 1 / 0 / 0。算各条的 $\lambda$ 与最终 $\mathrm{len\_reward}$；再问：若 800 那条改判为对（reward 变 1），组内激励结构怎么变？结合 §4 的 warmup 调度说明为什么训练初期不宜上该惩罚。
-4.（代码）写一个 50 行内的玩具验证器：正则提取回答中 `\boxed{...}` 内容、字符串归一化（去空格、大小写折叠）后与参考答案比对，接进一个手写的小组 GRPO 打分循环。构造两个 false positive 用例（(a) 回答正文出现 "the answer is 42" 但推理全错；(b) 选择题蒙对），对照 §1 的残余攻击面与 K1.5 §2.1 的数据侧过滤，说明你的玩具验证器需要补哪几件才能进训练回路（符号等价、子进程超时、可猜题过滤）。
+1.（计算 · [20]）GRPO 组内有效题比例：二值 reward、单题通过率 $p$、组大小 $G$，advantage 非零要求组内既有对也有错，证明有效组概率为 $1 - p^{G} - (1-p)^{G}$；代入 $G = 16$、 $p = 0.9$ 与 $p = 0.99$ 各算一遍（约 0.815 与 0.148），由此解释训练后期「全对组占比上升 ⇒ 批梯度被零 advantage 稀释」的机制（DAPO dynamic sampling 的动机，8.4 §6）。校验：G 取 2 时公式应退化为 2·p·(1−p)，直接展开即可对照。
+2.（计算 · [20]）式 (7) 的数值形态：组内 4 条回答长度 200 / 400 / 800 / 1600，reward 1 / 1 / 0 / 0。算各条的 $\lambda$ 与最终 $\mathrm{len\_reward}$；再问：若 800 那条改判为对（reward 变 1），组内激励结构怎么变？结合 §4 的 warmup 调度说明为什么训练初期不宜上该惩罚。校验：λ 对长度单调递减，且最短条恒为 1/2、最长条恒为 −1/2——先把四个端点值对上再谈中间两条。
+3.（推导 · [30]）从式 (3) 推出式 (4)：把 $\pi(y, z \mid x)$ 当作逐 $x$ 的分布做变分，加归一化约束 $\sum_{y, z} \pi(y, z \mid x) = 1$ 的 Lagrange 乘子，证明最优解为指数倾斜形式 $\pi^{\ast} \propto \pi_{\theta_i} \exp(r / \tau)$；再验证 $\tau \to \infty$ 时 $`\tau \log Z \to \mathbb{E}_{\pi_{\theta_i}}[r]`$（提示： $\exp(r/\tau) \approx 1 + r/\tau$ ），说明 K1.5 用经验均值 $\overline{r}$ 近似 $\tau \log Z$ 的合理性边界（ $\tau$ 小、reward 方差大时该近似往哪边偏）。校验：把解代回 KL 正则目标，最优值应恰为对数配分常数（τ 乘 log Z）；代不出这个值，说明归一化丢了。
+4.（代码 · [30]）写一个 50 行内的玩具验证器：正则提取回答中 `\boxed{...}` 内容、字符串归一化（去空格、大小写折叠）后与参考答案比对，接进一个手写的小组 GRPO 打分循环。构造两个 false positive 用例（(a) 回答正文出现 "the answer is 42" 但推理全错；(b) 选择题蒙对），对照 §1 的残余攻击面与 K1.5 §2.1 的数据侧过滤，说明你的玩具验证器需要补哪几件才能进训练回路（符号等价、子进程超时、可猜题过滤）。校验：(a)(b) 两例在修补后的验证器上必须判 0，而「`\boxed{42}` 对参考答案 42」必须判 1；三个用例全过才算修好。
 
 ## 参考
 

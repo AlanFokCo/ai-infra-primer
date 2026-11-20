@@ -4,7 +4,7 @@
 
 ## 1. 三通路全景
 
-RLHF 的原始流程是三段流水线，每段消费上一段的产物（InstructGPT Figure 2 的数据流，[Ouyang et al., 2022](../references.md)，[B]，§2）：
+一条 RLHF 链要跑几段、每段吃什么数据？三段——SFT、RM、PPO，每段消费上一段的产物（InstructGPT Figure 2 的数据流，[Ouyang et al., 2022](../references.md)，[B]，§2）：
 
 ```
 阶段一 SFT                  阶段二 RM                    阶段三 PPO
@@ -25,11 +25,15 @@ RLHF 的原始流程是三段流水线，每段消费上一段的产物（Instru
 
 先立两笔规模账。第一笔是数据量：13k / 33k / 31k 是 InstructGPT 三段的 prompt 数（其 §3.2 与 Table 6）。对照同模型预训练的数千亿 token，后训练三段的全部人工数据装不满一块硬盘——后训练改的是分布形状，不是知识存量（LIMA 的 Superficial Alignment Hypothesis 给了同一读法的 SFT 侧证据，9.1 §3）。第二笔是模型规模：InstructGPT 全程只用一个 6B RM 服务 1.3B 到 175B 的全部 policy 档（其 App. C：175B RM 训练不稳定、且算力代价高）；critic 同为 6B、从 RM 初始化。「打分与估值用小模型、被优化对象随便大」，是这条链的原始形态。
 
+本章口径：以 InstructGPT 的原始配方为主轴——三段的 prompt 数、RM 规模、排序条数均见上图与上文；Llama-2 与 Llama-3 的数字只作对照，不做横向换算。
+
 ## 2. 偏好数据：标注协议与一致性上限
+
+偏好数据怎么标注、标注质量的上限由谁决定？先答协议，再答一致率。
 
 **标注协议**。为摊薄标注成本，标注员一次看到同一 prompt 的 $K$ 条回答并排排序， $K$ 取 4 到 9（[Ouyang et al., 2022](../references.md)，[B]，§3.5 的 Reward modeling 段）。一次排序任务产出至多 $\binom{K}{2}$ 个成对判断（平局是否进入训练，归 §3.3 的 RM 侧口径）。这个协议有个副产品：pair 之间强相关——同一批回答两两组合，标注误差在同一次任务内共享。Llama-2 的协议多一档信息：标注按四档偏好强度（significantly better 等）记录而非纯二值，这一档后来直接进了 margin 损失（§3.2）。规模上，Llama-2 累积的偏好数据超过 100 万条二元比较（其 §3.2.1 的 Meta reward modeling data 口径），约为 InstructGPT 33k prompt 的 30 倍（比较条数对 prompt 数的口径）——偏好数据的军备竞赛在后训练里的位置，与预训练语料的扩张同构。Llama-3 又加了一列：标注员可直接编辑部分 prompt 的 chosen 回答，得到第三条「edited response」，排序变成 edited ≻ chosen ≻ rejected 的三元组（其 §4.1.2 口径）。标注从「判优劣」扩展到「顺带修正答案」，同一次人工接触产出更密的监督。采样侧还有一条纪律：被排序的回答来自当前最新模型——Llama-3 每轮用上一轮最强 checkpoint 采样，只把「chosen 明显更好或更好」的对留下、丢弃相近对（其 §4.2.1，[A]）。偏好数据由此跟随策略分布滚动更新。
 
-**一致性是地板**。InstructGPT 报告标注员间一致率：训练组内部 72.6 ± 1.5%，held-out 标注员组内部 77.3 ± 1.3%（其 §3.4）。这两个数定义了整条链的精度上限。RM 学的是这批标注员的集体判断，逐对预测精度不可能长期超过标注员彼此的一致率。实测 RM 在留出数据上的精度为 72.4 ± 0.4%（训练组内的留出对）与 69.6 ± 0.9%（held-out 标注员组，五折交叉验证口径；正文 §4.1 末段与 App. E.2），两个数贴着一致率的下沿。这个差怎么读（本书分析）：它不是模型欠训的证据，而是偏好数据本身噪声的度量——式 (1) 的 loss 地板由这个噪声决定（3.2 §2 的不可约随机性口径）。继续堆 RM 容量，先撞上的是标注噪声而不是模型表达力。标注协议的全部改进杠杆因此在「协议与筛选」一侧：单人重复标注估噪声、多人标注取多数、按一致性筛标注员——InstructGPT 的标注员筛选带 75% 一致率软门槛（其 App. B）。
+**一致性是地板**。InstructGPT 报告标注员间一致率：训练组内部 72.6 ± 1.5%，held-out 标注员组内部 77.3 ± 1.3%（其 §3.4）。这两个数定义了整条链的精度上限。RM 学的是这批标注员的集体判断，所以逐对预测精度不可能长期超过标注员彼此的一致率。实测 RM 在留出数据上的精度为 72.4 ± 0.4%（训练组内的留出对）与 69.6 ± 0.9%（held-out 标注员组，五折交叉验证口径；正文 §4.1 末段与 App. E.2），两个数贴着一致率的下沿。这个差怎么读（本书分析）：它不是模型欠训的证据，而是偏好数据本身噪声的度量——式 (1) 的 loss 地板由这个噪声决定（3.2 §2 的不可约随机性口径）。若继续堆 RM 容量，则先撞上的是标注噪声而不是模型表达力。标注协议的全部改进杠杆因此在「协议与筛选」一侧：单人重复标注估噪声、多人标注取多数、按一致性筛标注员——InstructGPT 的标注员筛选带 75% 一致率软门槛（其 App. B）。
 
 一句口径外推：用模型替代人做偏好标注（RLAIF、Constitutional AI 一脉），改变的是标注成本与一致率的权衡——模型标注一致率可以做高，但「与谁一致」换成了另一个模型。该方向的完整展开超出本章，此处只登记接口位置：偏好数据的来源从人换成模型，式 (1) 逐字不动。
 
@@ -37,21 +41,21 @@ RLHF 的原始流程是三段流水线，每段消费上一段的产物（Instru
 
 ### 3.1 完整训练目标：全 pair 枚举
 
-Bradley-Terry 模型 $P(y_w \succ y_l \mid x) = \sigma(r(x, y_w) - r(x, y_l))$ 与其 NLL 目标已在 3.2 §2 从随机效用公理完整推导（式 (1)-(4)），此处只接结论。InstructGPT 的实际 RM 目标在这之上多做一步聚合：一个 prompt 的全部 $\binom{K}{2}$ 个偏好对作为**单个 batch 元素**参与训练（其式 (1)）：
+成对偏好怎么变成 RM 的训练目标？Bradley-Terry 模型 $P(y_w \succ y_l \mid x) = \sigma(r(x, y_w) - r(x, y_l))$ 与其 NLL 目标已在 3.2 §2 从随机效用公理完整推导（式 (1)-(4)），此处只接结论。InstructGPT 的实际 RM 目标在这之上多做一步聚合：一个 prompt 的全部 $\binom{K}{2}$ 个偏好对作为**单个 batch 元素**参与训练（其式 (1)）：
 
 $$
 \mathrm{loss}(\theta) = -\frac{1}{\binom{K}{2}} \thinspace \mathbb{E}_{(x,\thinspace y_w,\thinspace y_l) \sim D} \left[ \log \sigma\big( r_\theta(x, y_w) - r_\theta(x, y_l) \big) \right] \qquad (1)
 $$
 
-**符号**： $r_\theta$：RM 的标量输出； $(y_w, y_l)$：同一 prompt 下的胜/负回答对；期望取自偏好数据集 $D$ ，其中每个 prompt 的 $\binom{K}{2}$ 个对整体作为一个样本。为什么这样聚合，论文写得很白：若把 $\binom{K}{2}$ 个对打散混进数据集，每条 completion 会参与 $K - 1$ 次独立梯度更新，一个 epoch 内被重复消费，RM 单 epoch 即过拟合。全 pair 作为一个 batch 元素，则每条 completion 只需一次前向、不再过拟合，validation accuracy 与 log loss 都改善（原文措辞 "much improved"，无点值；[Ouyang et al., 2022](../references.md)，[B]，§3.5 及其脚注 3）。归一化 $1/\binom{K}{2}$ 让每个 prompt 等权——若按 pair 总量计， $K$ 大的 prompt 权重随对数平方涨（本书注记：式 (1) 照录原文形式，逐 prompt 内部的求和结构由「单 batch 元素」的实现口径推定）。
+**符号**： $r_\theta$：RM 的标量输出； $(y_w, y_l)$：同一 prompt 下的胜/负回答对；期望取自偏好数据集 $D$ ，其中每个 prompt 的 $\binom{K}{2}$ 个对整体作为一个样本。为什么这样聚合，论文写得很白：若把 $\binom{K}{2}$ 个对打散混进数据集，则每条 completion 会参与 $K - 1$ 次独立梯度更新，一个 epoch 内被重复消费，RM 单 epoch 即过拟合。全 pair 作为一个 batch 元素，则每条 completion 只需一次前向、不再过拟合，validation accuracy 与 log loss 都改善（原文措辞 "much improved"，无点值；[Ouyang et al., 2022](../references.md)，[B]，§3.5 及其脚注 3）。归一化 $1/\binom{K}{2}$ 让每个 prompt 等权——若按 pair 总量计，则 $K$ 大的 prompt 权重随对数平方涨（本书注记：式 (1) 照录原文形式，逐 prompt 内部的求和结构由「单 batch 元素」的实现口径推定）。全数字的对数账（一个 batch 里有多少对、两种形态的前向次数比）见本章练习 3。
 
-逐 completion 的梯度值得展开一层（3.2 式 (5) 的聚合形式）。对 prompt 内第 $i$ 条回答的得分 $r_i = r_\theta(x, y_i)$ ，式 (1) 的梯度为
+逐 completion 的梯度值得展开一层（3.2 式 (5) 的聚合形式）。路线只有一步：对上式按链式法则逐对求导，再按「胜 / 负」两堆归并——判反概率自然成为每一项的模长。对 prompt 内第 $i$ 条回答的得分 $r_i = r_\theta(x, y_i)$ ，式 (1) 的梯度为
 
 $$
 \frac{\partial \mathrm{loss}}{\partial r_i} = \frac{1}{\binom{K}{2}} \left[ \sum_{j:\thinspace i \succ j} \big( \sigma(r_i - r_j) - 1 \big) + \sum_{j:\thinspace j \succ i} \sigma(r_i - r_j) \right] \qquad (2)
 $$
 
-**符号**：第一个和跑遍「 $i$ 胜出」的对，第二个跑遍「 $i$ 落败」的对。逐项读：胜出对的贡献 $\sigma(r_i - r_j) - 1 = -\sigma(r_j - r_i)$ 是负的（梯度下降把 $r_i$ 往上推）；落败对的贡献 $\sigma(r_i - r_j)$ 是正的（把 $r_i$ 压下）。每项的模长恰是模型当前把该对**判反的概率**。三个直接推论。(i) 已被拉开的对梯度趋零，RM 的训练信号自动集中在当前分不开的难对上——难样本加权是 sigmoid 损失的导数形态自带的（3.2 §2 同结论）。(ii) 胜负各半的中间档回答（争议样本）收正负两股满力，其平衡位置由两股概率权重决定而非计数——争议大的回答得分被推向「恰好让两股力抵消」的中间值。(iii) 每条回答参与 $K - 1$ 个对，其更新是多股力的向量和——单对标注噪声被聚合稀释。这正是「同 prompt 全 pair 枚举」相对「随机抽对」的方差收益。
+**符号**：第一个和跑遍「 $i$ 胜出」的对，第二个跑遍「 $i$ 落败」的对。逐项读：胜出对的贡献 $\sigma(r_i - r_j) - 1 = -\sigma(r_j - r_i)$ 是负的（梯度下降把 $r_i$ 往上推）；落败对的贡献 $\sigma(r_i - r_j)$ 是正的（把 $r_i$ 压下）。每项的模长恰是模型当前把该对**判反的概率**。三个直接推论。(i) 已被拉开的对梯度趋零，RM 的训练信号自动集中在当前分不开的难对上——难样本加权是 sigmoid 损失的导数形态自带的（3.2 §2 同结论）。(ii) 胜负各半的中间档回答（争议样本）收正负两股满力，其平衡位置由两股概率权重决定而非计数——争议大的回答得分被推向「恰好让两股力抵消」的中间值。(iii) 每条回答参与 $K - 1$ 个对，其更新是多股力的向量和——单对标注噪声被聚合稀释。这正是「同 prompt 全 pair 枚举」相对「随机抽对」的方差收益。逐项数值验证见练习 1。
 
 ### 3.2 margin 变体与它的消失
 
@@ -61,7 +65,9 @@ $$
 \mathrm{loss}_{\mathrm{margin}} = -\log \sigma\big( r_\theta(x, y_w) - r_\theta(x, y_l) - m(r) \big) \qquad (3)
 $$
 
-**符号**： $m(r) \ge 0$：偏好强度分档的离散函数——「明显更好」的对给大 margin、「相近」的对给小 margin（[Touvron et al., 2023](../references.md)，[A]，§3.2.1 与其 Table 27）。梯度语义随之改档：无 margin 时，判对（ $\Delta r \gt 0$ ）即进入梯度衰减区；有 margin 时，分界被推到 $\Delta r = m(r)$ ——模型必须把「明显更好」的对拉开到 $m(r)$ 以上才算达标。消融结论是双向的：margin 提升可分对上的精度，但在相近对上回退（其 App. A.3.3）。这个变体的一生值得按出处记一笔。Llama-2 引入它，因为其偏好数据恰好带四档强度标注，margin 有数据源；Llama-3 把它删了——原文口径是数据规模上来之后收益递减（"we remove the margin term in the loss, as we observe diminishing improvements after data scaling"，[Grattafiori et al., 2024](../references.md)，[A]，§4.1.2）。OpenRLHF 的实现把 margin 留作开关：`openrlhf/models/loss.py` 的 `PairWiseLoss.forward` 以 `margin` 为可选参数，存在时算 $-\mathrm{logsigmoid}(r_c - r_r - m)$（2026-11-18 核实）。
+**符号**： $m(r) \ge 0$：偏好强度分档的离散函数——「明显更好」的对给大 margin、「相近」的对给小 margin（[Touvron et al., 2023](../references.md)，[A]，§3.2.1 与其 Table 27）。
+
+**命题**（margin 移动梯度衰减区的分界）：无 margin 时，判对（ $\Delta r \gt 0$ ）即进入梯度衰减区；有 margin 时，分界被推到 $\Delta r = m(r)$ ，模型必须把「明显更好」的对拉开到 $m(r)$ 以上才出满力区。**证明**（要点）：sigmoid 损失的逐项梯度模长等于判反概率（上一小节的梯度分析）；margin 把「判反」的分界从零平移到偏好强度档。梯度模长与 margin 的定量关系留作练习 2。消融结论是双向的：margin 提升可分对上的精度，但在相近对上回退（其 App. A.3.3）。这个变体的一生值得按出处记一笔。Llama-2 引入它，因为其偏好数据恰好带四档强度标注，margin 有数据源；Llama-3 把它删了——原文口径是数据规模上来之后收益递减（"we remove the margin term in the loss, as we observe diminishing improvements after data scaling"，[Grattafiori et al., 2024](../references.md)，[A]，§4.1.2）。OpenRLHF 的实现把 margin 留作开关：`openrlhf/models/loss.py` 的 `PairWiseLoss.forward` 以 `margin` 为可选参数，存在时算 $-\mathrm{logsigmoid}(r_c - r_r - m)$（2026-11-18 核实）。
 
 Llama-3 对 RM 训练循环还做了第二处工程改动，值得与式 (1) 对照着记：把同一 prompt 的多条回答（含 edited 第三条）**拼接进同一行序列**训练、回答随机乱序，替代「每对一行」的标准形态——原文口径是对标准做法的近似，但消融显示训练效率提升而精度无损（其 §4.1.2）。机制读法（本书分析）：共享 prompt 前缀只算一次前向，与 InstructGPT「全 pair 作单 batch 元素、每条 completion 一次前向」省的是同一笔账；差别在拼接形态把 $\binom{K}{2}$ 个独立前向进一步压成一次，KV 复用跨回答共享。
 
@@ -69,31 +75,37 @@ Llama-3 对 RM 训练循环还做了第二处工程改动，值得与式 (1) 对
 
 **结构**：RM = 同架构 LM 去掉 unembedding、换一个标量投影头。InstructGPT 原文口径：「unembedding layer 被替换为输出标量的投影层」（其 App. C）。OpenRLHF 的落法（`openrlhf/models/model.py`，2026-11-18 核实）：`nn.Linear(hidden_size, 1, bias=False)` 挂为 `score` 属性；读分位置在每条序列最后一个非 pad token——`eos_indices = attention_mask.size(1) - 1 - attention_mask.long().fliplr().argmax(dim=1)`，再 `values.gather(dim=1, index=eos_indices)`。读分位置选在末 token 不是惯例，是语义必需：causal 掩码下只有末位置的表示见过全部回答内容，任何中间位置的「分」都没读完全文（本书注记；BT 模型的 $r(x, y)$ 是整段回答的函数）。chosen 与 rejected 拼进同一 batch 一次前向（`concatenated_forward`——与 3.2 §6 的 TRL 对半拼批同构）；pair 精度监控为 `(chosen_reward > reject_reward)` 的均值（`openrlhf/trainer/rm_trainer.py`）。
 
-**初始化与配方**（InstructGPT App. C 逐项）。RM 从一个在公开 NLP 数据集（ARC / BoolQ / CoQA / DROP / MultiNLI / OpenBookQA / QuAC / RACE / Winogrande）上微调过的 6B GPT-3 出发——作者注明这主要是历史原因，从 GPT-3 或 SFT 模型初始化效果相近。训练只跑 1 个 epoch：多 epoch 迅速过拟合、validation loss 明显恶化。lr $9 \times 10^{-6}$ 、cosine 降至 10%、batch 64 个 prompt（每 prompt 至多 $\binom{K}{2}$ 对——平局在 RM 训练侧丢弃，App. C.2 口径；单 batch 至多 2304 对）。lr 与 schedule 不敏感（50% 变动无感），epoch 数敏感。Llama-2 同口径：RM 训 1 epoch，70B 档最大 lr $5 \times 10^{-6}$ 、其余 $1 \times 10^{-5}$（[Touvron et al., 2023](../references.md)，[A]，§3.2.2）。规模的取法前面已立：单一 6B RM 服务全部 policy 档，175B RM「训练不稳定、不宜作 RL 的 value function 初值」（其 App. C）——RM 是评分器不是生成器，容量让位给稳定性。
+> **坑**：右 pad 的 batch 上直接取末位 hidden state 当得分——触发条件是跳过 eos_indices、直接取序列最后一列；后果是得分来自 pad 位置的表示，pair accuracy 塌到随机附近。规避即上文的「先求末非 pad 位置再 gather」。
+
+**初始化与配方**（InstructGPT App. C 逐项）。RM 从一个在公开 NLP 数据集（ARC / BoolQ / CoQA / DROP / MultiNLI / OpenBookQA / QuAC / RACE / Winogrande）上微调过的 6B GPT-3 出发——作者注明这主要是历史原因，从 GPT-3 或 SFT 模型初始化效果相近。训练只跑 1 个 epoch：多 epoch 迅速过拟合、validation loss 明显恶化。lr $9 \times 10^{-6}$ 、cosine 降至 10%、batch 64 个 prompt（每 prompt 至多 $\binom{K}{2}$ 对——平局在 RM 训练侧丢弃，App. C.2 口径；单 batch 至多 2304 对）。lr 与 schedule 不敏感（50% 变动无感），epoch 数敏感。Llama-2 同口径：RM 训 1 epoch，70B 档最大 lr $5 \times 10^{-6}$ 、其余 $1 \times 10^{-5}$（[Touvron et al., 2023](../references.md)，[A]，§3.2.2）。规模的取法前面已立：单一 6B RM 服务全部 policy 档，175B RM「训练不稳定、不宜作 RL 的 value function 初值」（其 App. C）。
+
+> **提点**：RM 是评分器不是生成器——容量让位给稳定性。选 RM 规模时先查的是训练稳定性，不是表达力。
 
 ### 3.4 校准与分布外泛化
 
 式 (1) 只约束排序，不约束分值刻度（3.2 §3 的平移不可识别性： $r$ 与 $r + c(x)$ 等价）。要给 RM 输出更多语义，得查校准性（calibration）。BT 模型断言 $\sigma(\Delta r)$ 等于经验胜率；把留出对按预测概率分桶、对照桶内实际胜率即可检验——完全校准的 RM 里， $\sigma(\Delta r) = 0.9$ 的桶应含约九成真实胜率（本书分析口径；InstructGPT 未发布校准曲线，此处只登记检验方法，不断言结果）。
 
-分布外（OOD）泛化是 RM 的结构性弱点。训练分布由采样时的策略决定；PPO 一旦把策略推离，RM 就要在从未见过的回答形态上打分——那里正是 §4 的 hacking 发生处。工程答案是把 RM 数据做成跟随策略的活分布。Llama-3 六轮后训练每轮重收偏好标注，DPO 训练只用「最新若干批、与当前 policy 分布贴合」的数据（其 §4.1.4 与 §4.2.1 原文口径）。Llama-2 走另一条：把开源偏好数据留在混合里，作者明确记录动机为改善泛化、防 reward hacking（其 §3.2.2，原话见本章 §4 开头）。两条合起来的语义是：RM 不是训一次封存的资产，而是与策略同步滚动的耗材。
+分布外（OOD）泛化是 RM 的结构性弱点。训练分布由采样时的策略决定；PPO 一旦把策略推离，RM 就要在从未见过的回答形态上打分——那里正是 §4 的 hacking 发生处。工程答案是把 RM 数据做成跟随策略的活分布。Llama-3 六轮后训练每轮重收偏好标注，DPO 训练只用「最新若干批、与当前 policy 分布贴合」的数据（其 §4.1.4 与 §4.2.1 原文口径）。Llama-2 走另一条：把开源偏好数据留在混合里，作者明确记录动机为改善泛化、防 reward hacking（其 §3.2.2，原话见本章 §4 开头）。两条合起来指向同一句话：
+
+> **提点**：RM 不是训一次封存的资产，而是与策略同步滚动的耗材——预算里要给它的滚动重采留一份。
 
 ## 4. Reward hacking：Goodhart 的形式化 outline
 
-Llama-2 论文给了 reward hacking 的工作定义：「利用 RM 的弱点人为抬高得分、实际表现反而更差」（"taking advantage of some weaknesses of our reward, and so artificially inflating the score despite performing less well"，[Touvron et al., 2023](../references.md)，[A]，§3.2.2）。把这个现象写成式子只需一组记号（本书推导 outline）。设真实偏好强度为 $r^{\ast}(x, y)$ （理想标注总体下的 BT log-odds），RM 学到的是 $\hat{r} = r^{\ast} + \varepsilon$ 。误差项 $\varepsilon(x, y)$ 在 RM 训练分布上被数据约束住（期望小），分布之外不受任何约束。PPO 阶段的优化目标是代理奖励（式 (5) 展开）。策略相对 $\pi_{\mathrm{ref}}$ 移动 KL 距离 $d$ 后，代理收益与真实收益的差为
+把 RM 的分当奖励一路优化下去，会发生什么？Llama-2 论文给了 reward hacking 的工作定义：「利用 RM 的弱点人为抬高得分、实际表现反而更差」（"taking advantage of some weaknesses of our reward, and so artificially inflating the score despite performing less well"，[Touvron et al., 2023](../references.md)，[A]，§3.2.2）。把这个现象写成式子只需一组记号（本书推导 outline）。设真实偏好强度为 $r^{\ast}(x, y)$ （理想标注总体下的 BT log-odds），RM 学到的是 $\hat{r} = r^{\ast} + \varepsilon$ 。误差项 $\varepsilon(x, y)$ 在 RM 训练分布上被数据约束住（期望小），分布之外不受任何约束。PPO 阶段的优化目标是代理奖励（式 (5) 展开）。策略相对 $\pi_{\mathrm{ref}}$ 移动 KL 距离 $d$ 后，代理收益与真实收益的差为
 
 $$
 \widehat{G}(\pi) - G(\pi) = \mathbb{E}_{y \sim \pi(\cdot \mid x)}\left[ \varepsilon(x, y) \right] - \mathbb{E}_{y \sim \pi_{\mathrm{ref}}(\cdot \mid x)}\left[ \varepsilon(x, y) \right] \qquad (4)
 $$
 
-**符号**： $`\widehat{G}(\pi) = \mathbb{E}_\pi[\hat{r}] - \mathbb{E}_{\mathrm{ref}}[\hat{r}]`$ ：代理收益； $G(\pi)$：同式的 $r^{\ast}$ 版。式 (4) 是恒等式，机制全在两项的行为差上。 $`\mathbb{E}_{\mathrm{ref}}[\varepsilon]`$ 被 RM 训练数据锚在小值（ $\pi_{\mathrm{ref}}$ 的样本就来自 RM 见过的分布）； $`\mathbb{E}_{\pi}[\varepsilon]`$ 则随 $\pi$ 离开数据流形而脱锚。而**最大化代理奖励的过程本身就是 $\varepsilon$ 的正向选择器**：优化器在 KL 球内专挑 $\hat{r}$ 高的区域，其中一部分是 $r^{\ast}$ 真的高，另一部分是 $\varepsilon$ 恰好为正。优化压力越大（KL 预算越宽、β 越小、步数越多），被选中区域里 $\varepsilon \gt 0$ 的占比越高。这就是 Goodhart 定律在这条链上的精确形态：「指标成为目标后便不再是好指标」——式 (4) 右端随优化压力单调变坏。两个边界读法。(i) $d \to 0$ 时 gap 归零：KL 锚的全部意义就是把策略按在 RM 可信的流形附近，这是式 (5) 里 $\beta$ 项的存在理由。(ii) gap 增长不代表 $G$ 立即下降——真实收益先升后平的驼峰形态由此而来（代理收益继续涨、真实收益持平再回落）。定量的 hump 曲线拟合超出本书证据范围，此处只给机制 outline（本书注记）。
+**符号**： $`\widehat{G}(\pi) = \mathbb{E}_\pi[\hat{r}] - \mathbb{E}_{\mathrm{ref}}[\hat{r}]`$ ：代理收益； $G(\pi)$：同式的 $r^{\ast}$ 版。**命题**（Goodhart gap 恒等式）：式 (4) 成立。**证明**：把两个收益的定义代入相减即得——恒等是定义层的，机制含量全在两项的行为差上。 $`\mathbb{E}_{\mathrm{ref}}[\varepsilon]`$ 被 RM 训练数据锚在小值（ $\pi_{\mathrm{ref}}$ 的样本就来自 RM 见过的分布）； $`\mathbb{E}_{\pi}[\varepsilon]`$ 则随 $\pi$ 离开数据流形而脱锚。而**最大化代理奖励的过程本身就是 $\varepsilon$ 的正向选择器**：优化器在 KL 球内专挑 $\hat{r}$ 高的区域，其中一部分是 $r^{\ast}$ 真的高，另一部分是 $\varepsilon$ 恰好为正。优化压力越大（KL 预算越宽、β 越小、步数越多），被选中区域里 $\varepsilon \gt 0$ 的占比越高。这就是 Goodhart 定律在这条链上的精确形态：「指标成为目标后便不再是好指标」——式 (4) 右端随优化压力单调变坏。两个边界读法。(i) $d \to 0$ 时 gap 归零：KL 锚的全部意义就是把策略按在 RM 可信的流形附近，这是式 (5) 里 $\beta$ 项的存在理由。(ii) gap 增长不代表 $G$ 立即下降——真实收益先升后平的驼峰形态由此而来（代理收益继续涨、真实收益持平再回落）。定量的 hump 曲线拟合超出本书证据范围，此处只给机制 outline（本书注记）。
 
-三个实证形态各配出处。**过度对冲（hedging）**：InstructGPT 记录了完整的反馈环：标注指南要求奖励「认知谦逊」，标注员倾向给打太极的回答高分，RM 学到这个相关，最终模型对直问直答的问题也给多解搪塞（[Ouyang et al., 2022](../references.md)，[B]，§4.3：原文把该行为部分归因于标注指令经 RM 的放大路径）。这是式 (4) 的人因版本—— $\varepsilon$ 不是随机噪声，而是标注协议系统性注入的偏置，优化器忠实地把它放大。**长度通胀**：RM 训练数据里「更长」与「更好」存在相关时，长度就进了 $\varepsilon$ 。工程侧的直接证据是 RL 栈需要专门的长度对策：DAPO 的 overlong 处理与 dynamic sampling 正是为长度失控设计的组件（[Yu et al., 2025](../references.md)，arXiv:2503.14476，[A]；算法侧归 8.4 §6）；长 CoT 场景下 response 长度随训练持续增长，也有 RLVR 语境的直接记录（[DeepSeek-AI, 2025](../references.md)，arXiv:2501.12948，[A]；9.5 展开）。**缓解手段的位置**：式 (4) 指出三个作用点——压 $d$（KL 项 β，§5.3）、缩小 $\varepsilon$（RM 数据随策略滚动重采，§3.4；多源混合，Llama-2 口径）、换掉可被操纵的奖励本身（规则验证器，RLVR 的防 hacking 性质归 9.5）。现代栈把第一条做成监控：盯的指标是代理奖励与 KL 的联合曲线，不是奖励单线。
+三个实证形态各配出处。**过度对冲（hedging）**：InstructGPT 记录了完整的反馈环：标注指南要求奖励「认知谦逊」，标注员倾向给打太极的回答高分，RM 学到这个相关，最终模型对直问直答的问题也给多解搪塞（[Ouyang et al., 2022](../references.md)，[B]，§4.3：原文把该行为部分归因于标注指令经 RM 的放大路径）。这是式 (4) 的人因版本—— $\varepsilon$ 不是随机噪声，而是标注协议系统性注入的偏置，优化器忠实地把它放大。**长度通胀**：若 RM 训练数据里「更长」与「更好」存在相关，则长度就进了 $\varepsilon$ 。工程侧的直接证据是 RL 栈需要专门的长度对策：DAPO 的 overlong 处理与 dynamic sampling 正是为长度失控设计的组件（[Yu et al., 2025](../references.md)，arXiv:2503.14476，[A]；算法侧归 8.4 §6）；长 CoT 场景下 response 长度随训练持续增长，也有 RLVR 语境的直接记录（[DeepSeek-AI, 2025](../references.md)，arXiv:2501.12948，[A]；9.5 展开）。**缓解手段的位置**：式 (4) 指出三个作用点——压 $d$（KL 项 β，§5.3）、缩小 $\varepsilon$（RM 数据随策略滚动重采，§3.4；多源混合，Llama-2 口径）、换掉可被操纵的奖励本身（规则验证器，RLVR 的防 hacking 性质归 9.5）。现代栈把第一条做成监控：盯的指标是代理奖励与 KL 的联合曲线，不是奖励单线。
 
 ## 5. PPO 阶段全链路
 
 ### 5.1 InstructGPT 目标式
 
-PPO 阶段的完整优化目标（InstructGPT 式 (2)，照录原式换本书符号）：
+RM 训好之后，怎么拿它优化策略？PPO 阶段的完整优化目标（InstructGPT 式 (2)，照录原式换本书符号）：
 
 $$
 \mathrm{objective}(\phi) = \mathbb{E}_{(x,\thinspace y) \sim D_{\pi^{\mathrm{RL}}_{\phi}}} \left[ r_\theta(x, y) - \beta \log \frac{\pi^{\mathrm{RL}}_{\phi}(y \mid x)}{\pi^{\mathrm{SFT}}(y \mid x)} \right] + \gamma \thinspace \mathbb{E}_{x \sim D_{\mathrm{pretrain}}} \left[ \log \pi^{\mathrm{RL}}_{\phi}(x) \right] \qquad (5)
@@ -152,9 +164,11 @@ loop 每一轮迭代:
 
 ## 6. 实证收益与局限
 
-**收益**（InstructGPT 原文口径，[B]）。标注员盲评下，1.3B 的 InstructGPT 输出优于 175B GPT-3——对齐把模型规模的账打出一个数量级以上的折扣。175B InstructGPT 对 175B GPT-3 胜率 85 ± 3%、对 few-shot GPT-3 胜率 71 ± 4%。毒性上，「被指示保持尊重」时比 GPT-3 少约 25% 有毒输出（RealToxicityPrompts，Perspective API 口径）。TruthfulQA 上有小但显著的真实性提升（默认行为，无需专门提示）。
+这条链换来了什么、又没换来什么？两段都按 InstructGPT 原文口径（[B]）逐项过。
 
-**局限**（同出处逐项）。偏见基准（Winogender、CrowS-Pairs）无显著改善；「被指示保持尊重」的毒性优势在不加该提示时消失，且被显式要求生成有毒内容时比 GPT-3 更有毒； §4 的 hedging 与「顺着错误前提走」两类残余失败模式直接进案例分析。**对齐税**（alignment tax）同样出自这篇论文：不带预训练混合的 PPO 在 SQuADv2 / DROP 等公开 NLP 基准上回退，γ 项（式 (5)）把它拉回但「不能完全消除回退」（其 §5.4 口径）；把 RL 训练从 256k episodes 加倍到 512k，回退随训练进程继续加深（App. E.6 的 Figure 35 口径）。偏好收益与通用能力之间存在真实的交换面，预训练项是缓冲不是消除。对齐对象的边界论文自己划清：偏好来自约 40 名标注员（Upwork / Scale AI 渠道、以英语为主），「对齐到特定人群的偏好」不等于对齐到任何更广义的「人类价值」（其 §5.2 原话口径）。
+**收益**。标注员盲评下，1.3B 的 InstructGPT 输出优于 175B GPT-3——对齐把模型规模的账打出一个数量级以上的折扣。175B InstructGPT 对 175B GPT-3 胜率 85 ± 3%、对 few-shot GPT-3 胜率 71 ± 4%。毒性上，「被指示保持尊重」时比 GPT-3 少约 25% 有毒输出（RealToxicityPrompts，Perspective API 口径）。TruthfulQA 上有小但显著的真实性提升（默认行为，无需专门提示）。
+
+**局限**。偏见基准（Winogender、CrowS-Pairs）无显著改善；「被指示保持尊重」的毒性优势在不加该提示时消失，且被显式要求生成有毒内容时比 GPT-3 更有毒； §4 的 hedging 与「顺着错误前提走」两类残余失败模式直接进案例分析。**对齐税**（alignment tax）同样出自这篇论文：不带预训练混合的 PPO 在 SQuADv2 / DROP 等公开 NLP 基准上回退，γ 项（式 (5)）把它拉回但「不能完全消除回退」（其 §5.4 口径）；把 RL 训练从 256k episodes 加倍到 512k，回退随训练进程继续加深（App. E.6 的 Figure 35 口径）。偏好收益与通用能力之间存在真实的交换面，预训练项是缓冲不是消除。对齐对象的边界论文自己划清：偏好来自约 40 名标注员（Upwork / Scale AI 渠道、以英语为主），「对齐到特定人群的偏好」不等于对齐到任何更广义的「人类价值」（其 §5.2 原话口径）。
 
 **帮助性与无害性的拆分**是下一阶段的标准做法：两个目标存在此消彼长（trade-off 现象经 [Touvron et al., 2023](../references.md)，[A]，§3.2.2 转引确认），单一 RM 难以兼顾，Llama-2 因此分训 Helpfulness RM 与 Safety RM 两个头。这条拆分还值得一句语义注记：两个 RM 的分歧本身就是「人类偏好不可一维化」的证据——式 (1) 的标量假设在大尺度上开始崩，多目标 RLHF 的入口在这里。
 
@@ -176,13 +190,13 @@ loop 每一轮迭代:
 
 ## 练习
 
-1.（推导）式 (2) 的逐项验证：对 $K = 4$ 、真实排序 $y_1 \succ y_2 \succ y_3 \succ y_4$ ，设当前得分 $r = (2, 1, 0.9, 0)$ 。(a) 枚举全部 6 个对并算出式 (2) 的四个分量（保留两位小数）；(b) 指出哪条回答收双向最大拉力，解释「争议样本被推向力平衡点」的语义；(c) 若把 $r_3$ 改为 1.1（与 $r_2$ 交叉），梯度分量怎么变？
+1.（推导 · [20]）式 (2) 的逐项验证：对 $K = 4$ 、真实排序 $y_1 \succ y_2 \succ y_3 \succ y_4$ ，设当前得分 $r = (2, 1, 0.9, 0)$ 。(a) 枚举全部 6 个对并算出式 (2) 的四个分量（保留两位小数）；(b) 指出哪条回答收双向最大拉力，解释「争议样本被推向力平衡点」的语义；(c) 若把 $r_3$ 改为 1.1（与 $r_2$ 交叉），梯度分量怎么变？
 
-2.（推导）margin 的梯度分析：对式 (3)，证明判对但未达 margin（ $0 \lt \Delta r \lt m(r)$ ）的对仍产生满力梯度的条件，并算出 $\Delta r = 0$ 处梯度模长与 $m(r)$ 的关系；据此解释 Llama-2 App. A.3.3 的消融结论「margin 提升可分对精度、回退相近对」的必然性。
+2.（推导 · [20]）margin 的梯度分析：对式 (3)，证明判对但未达 margin（ $0 \lt \Delta r \lt m(r)$ ）的对仍产生满力梯度的条件，并算出 $\Delta r = 0$ 处梯度模长与 $m(r)$ 的关系；据此解释 Llama-2 App. A.3.3 的消融结论「margin 提升可分对精度、回退相近对」的必然性。
 
-3.（计算）RM batch 的对数账：batch 64 prompt、 $K$ 均匀取 4 到 9。(a) 算单 batch 偏好对数的期望与上限（InstructGPT 的 2304 上限怎么来的）；(b) 若改为打散训练、每对一次前向，同 batch 的前向次数从 $64K$ 涨到多少；(c) 按 6B RM、bf16、 $2N$ FLOPs/token 前向口径，序列长 1k，估两种形态单 batch 的前向 FLOPs 比。
+3.（计算 · [30]）RM batch 的对数账：batch 64 prompt、 $K$ 均匀取 4 到 9。(a) 算单 batch 偏好对数的期望与上限（InstructGPT 的 2304 上限怎么来的）；(b) 若改为打散训练、每对一次前向，同 batch 的前向次数从 $64K$ 涨到多少——先写出预测比值再算；(c) 按 6B RM、bf16、 $2N$ FLOPs/token 前向口径，序列长 1k，估两种形态单 batch 的前向 FLOPs 比。校验：全 pair 形态的前向次数应等于 batch 内 prompt 数乘每 prompt 回答数；(b) 的比值应与组合数给出的对数自洽。
 
-4.（代码）教学实现 `PairWiseLoss`（教学用，非优化实现）：手写 $-\log \sigma(r_w - r_l)$ 与带 margin 变体，与 `torch.nn.functional.logsigmoid` 对拍；再实现 OpenRLHF 式末端读分（`attention_mask` 翻转 argmax + gather），在含右 pad 的合成 batch 上验证读分位置正确；最后构造 $\Delta r$ 网格画出 loss 与梯度模长曲线，标出 $m(r) = 1$ 时分界移动的位置。
+4.（代码 · [30]）教学实现 `PairWiseLoss`（教学用，非优化实现）：手写 $-\log \sigma(r_w - r_l)$ 与带 margin 变体，与 `torch.nn.functional.logsigmoid` 对拍；再实现 OpenRLHF 式末端读分（`attention_mask` 翻转 argmax + gather），在含右 pad 的合成 batch 上验证读分位置正确；最后构造 $\Delta r$ 网格画出 loss 与梯度模长曲线——先预测 margin 网格上曲线平移的方向再画，标出 $m(r) = 1$ 时分界移动的位置。校验：与 `logsigmoid` 对拍在 fp32 下 allclose，容差 1e-6 量级。
 
 ## 参考
 
