@@ -8,9 +8,11 @@
 
 本章按问题链推进： $V$ 怎么从样本学（§2-3）→ 学到的 $V$ 怎么变成低方差的 advantage 估计（§4-5，GAE）→ 两个网络的 loss 怎么拼、生产实现长什么样（§6）→ LLM 的末端奖励结构让这套机器退化成什么样（§7）。
 
+本章口径一句：一般 MDP 的数值例沿用 CleanRL 默认超参（下文走读处给出并核对）；LLM 段落一律取无折扣（γ 恒为 1）的退化结构。全章数值例不换档。
+
 ## 2. V、Q 与 Bellman 方程
 
-沿 8.1 的记号（ $s_t, a_t, r_t$ ， $\gamma$ ，episodic 视界 $T$ ）。三个价值对象的定义：
+critic 要学的对象到底是什么？先把三个价值对象定义出来。沿 8.1 的记号（ $s_t, a_t, r_t$ ， $\gamma$ ，episodic 视界 $T$ ），定义：
 
 $$
 V^{\pi,\gamma}(s) = \mathbb{E}_{\tau \sim \pi}\left[ \sum_{l=0}^{\infty} \gamma^{l} \thinspace r_{t+l} \mid s_t = s \right], \qquad Q^{\pi,\gamma}(s, a) = \mathbb{E}_{\tau \sim \pi}\left[ \sum_{l=0}^{\infty} \gamma^{l} \thinspace r_{t+l} \mid s_t = s, \thinspace a_t = a \right] \qquad (1)
@@ -32,7 +34,7 @@ $$
 V^{\pi,\gamma}(s) = \mathbb{E}_{a \sim \pi(\cdot|s)}\left[ r(s, a) + \gamma \thinspace \mathbb{E}_{s' \sim P(\cdot|s,a)}\left[ V^{\pi,\gamma}(s') \right] \right], \qquad Q^{\pi,\gamma}(s, a) = r(s, a) + \gamma \thinspace \mathbb{E}_{s'}\left[ V^{\pi,\gamma}(s') \right] \qquad (4)
 $$
 
-**符号**： $r(s, a) = \mathbb{E}[r_t \mid s_t = s, a_t = a]$ ：期望即时奖励。式 (4) 的读法是递归定义：价值 = 一步奖励 + 折扣后的下一步价值。LLM 场景下 $P$ 是确定性拼接（8.1 §2.2），外层对 $s'$ 的期望退化为单点取值。但注意： $r$ 只在末端非零的退化结构，让学习的难度原样保留（§7）。
+**符号**： $r(s, a) = \mathbb{E}[r_t \mid s_t = s, a_t = a]$ ：期望即时奖励。式 (4) 的读法是递归定义：价值 = 一步奖励 + 折扣后的下一步价值。代入数字读一遍这个递归：无折扣、两动作等概率、即时奖励分别为 4 与 0、下一状态估值都为 2——状态价值 V(s) = 4，动作噪声被摊平，这正是它能当 baseline 的道理。LLM 场景下 $P$ 是确定性拼接（8.1 §2.2），外层对 $s'$ 的期望退化为单点取值。但注意： $r$ 只在末端非零的退化结构，让学习的难度原样保留（§7）。
 
 ## 3. Critic 学习：TD(0) 目标与回归 loss
 
@@ -78,7 +80,7 @@ $$
 
 ### 5.1 k 步 advantage 与它的伸缩形式
 
-把式 (7) 的单步残差累加 $k$ 步，即 **k 步 advantage 估计**（GAE 论文式 (12)-(14) 的构造，[Schulman et al., 2016](../references.md)，[B]）：
+GAE 的构造路线一句话：先把单步残差累成 k 步估计，再对 k 做几何加权，最后收集残差系数得到一个封闭形式。把式 (7) 的单步残差累加 $k$ 步，即 **k 步 advantage 估计**（GAE 论文式 (12)-(14) 的构造，[Schulman et al., 2016](../references.md)，[B]）：
 
 $$
 \hat{A}_t^{(k)} = \sum_{l=0}^{k-1} \gamma^{l} \thinspace \delta_{t+l}^{V} = \sum_{l=0}^{k-1} \gamma^{l} \thinspace r_{t+l} + \gamma^{k} \thinspace V(s_{t+k}) - V(s_t) \qquad (9)
@@ -92,7 +94,7 @@ $$
 
 退化为「实测回报减 baseline」——Monte Carlo 形态回到台上。
 
-**偏差分析**（本书推导，与论文「bias generally becomes smaller as $k \to \infty$ 」的论断同口径）。对式 (9) 取条件期望并与真 advantage 比对：真值 $Q^{\pi,\gamma}(s_t, a_t) = \mathbb{E}[\sum_{l \lt k} \gamma^{l} r_{t+l} + \gamma^{k} V^{\pi,\gamma}(s_{t+k}) \mid s_t, a_t]$ ，于是
+**命题**（k 步估计的偏差分解，本书推导，与论文「bias generally becomes smaller as $k \to \infty$ 」的论断同口径）：k 步估计与真 advantage 的条件期望之差，等于「k 步后的价值误差乘折扣」加一个只依赖当前状态的项。**证明**：对式 (9) 取条件期望并与真 advantage 比对：真值 $Q^{\pi,\gamma}(s_t, a_t) = \mathbb{E}[\sum_{l \lt k} \gamma^{l} r_{t+l} + \gamma^{k} V^{\pi,\gamma}(s_{t+k}) \mid s_t, a_t]$ ，于是
 
 $$
 \mathbb{E}\left[ \hat{A}_t^{(k)} \mid s_t, a_t \right] - A^{\pi,\gamma}(s_t, a_t) = \gamma^{k} \thinspace \mathbb{E}\left[ (V - V^{\pi,\gamma})(s_{t+k}) \mid s_t, a_t \right] + \left( V^{\pi,\gamma}(s_t) - V(s_t) \right) \qquad (11)
@@ -108,7 +110,7 @@ $$
 \hat{A}_t^{\mathrm{GAE}(\gamma, \lambda)} = (1-\lambda) \sum_{k=1}^{\infty} \lambda^{k-1} \thinspace \hat{A}_t^{(k)} = \sum_{l=0}^{\infty} (\gamma\lambda)^{l} \thinspace \delta_{t+l}^{V} \qquad (12)
 $$
 
-**推导**（系数收集）： $\delta_{t+l}$ 在 $`\hat{A}_t^{(k)}`$ 中出现当且仅当 $k \gt l$ ，系数为 $\gamma^{l}$ ；加权后其总系数为
+**证明**（系数收集）： $\delta_{t+l}$ 在 $`\hat{A}_t^{(k)}`$ 中出现当且仅当 $k \gt l$ ，系数为 $\gamma^{l}$ ；加权后其总系数为
 
 $$
 (1-\lambda) \sum_{k=l+1}^{\infty} \lambda^{k-1} \gamma^{l} = (1-\lambda) \thinspace \gamma^{l} \thinspace \frac{\lambda^{l}}{1-\lambda} = (\gamma\lambda)^{l} \qquad (13)
@@ -128,13 +130,15 @@ $$
 
 两点读法。其一，sup 范数界是悲观口径：它假设价值误差在 $k$ 步后的状态上仍与当前动作同向。实践中 $\mathbb{E}[(V - V^{\pi,\gamma})(s_{t+k}) \mid s_t, a_t]$ 随混合向误差的平稳均值收缩，同 $\lambda$ 下的真实偏差通常远小于此界。其二，即便按悲观界，因子的形状也说明「 $\lambda$ 微调偏差」的正确理解是把它推向 1 的过程—— $\lambda$ = 0.95 处界仍约 0.83（即 0.84 $\gamma$ ）。 $V$ 的精度始终是前提， $\lambda$ 不是免检牌。
 
-另一面是方差。 $(\gamma\lambda)^{l}$ 的权重让残差求和的有效窗长 $\sim 1/(1-\gamma\lambda)$ ： $\lambda$ 越大、参与求和的随机项越多，方差越接近 Monte Carlo。代入默认配置给这个窗长一个数： $\gamma$ = 0.99、 $\lambda$ = 0.95 时 $\gamma\lambda$ = 0.9405，有效窗长约 17 步； $\lambda$ 降到 0.9 时约 9 步； $\lambda$ = 0 时退到 1 步。换句话说，中等 $\lambda$ 已经把信用分配的时间尺度压到一个 episode 的零头。这是它相对 Monte Carlo（窗长 = 剩余全程）省方差的来源，也是对 $\gamma^{k} \Vert V - V^{\pi} \Vert$ 这条偏差链愿意多付的代价。
+另一面是方差。 $(\gamma\lambda)^{l}$ 的权重让残差求和的有效窗长（口径：几何衰减权重下求和的平均步数）为 $\sim 1/(1-\gamma\lambda)$ ： $\lambda$ 越大、参与求和的随机项越多，方差越接近 Monte Carlo。代入默认配置给这个窗长一个数： $\gamma$ = 0.99、 $\lambda$ = 0.95 时 $\gamma\lambda$ = 0.9405，有效窗长约 17 步； $\lambda$ 降到 0.9 时约 9 步； $\lambda$ = 0 时退到 1 步。换句话说，中等 $\lambda$ 已经把信用分配的时间尺度压到一个 episode 的零头。这是它相对 Monte Carlo（窗长 = 剩余全程）省方差的来源，也是对 $\gamma^{k} \Vert V - V^{\pi} \Vert$ 这条偏差链愿意多付的代价。
 
 论文对两个参数的原始口径值得逐字登记（[Schulman et al., 2016](../references.md)，[B]，§3）：「 $\gamma \lt 1$ 无论价值函数准不准都给策略梯度引入偏差； $\lambda \lt 1$ 只在价值函数不准时引入偏差」。前半句对应 8.1 §4.3 注记二的折扣约定，后半句正是式 (14) 的定性版。论文在其连续控制任务上的经验是：最优 $\lambda$ 明显低于最优 $\gamma$ （同节，其任务域口径；LLM 场景的实现口径随 8.3 / 8.4 展开）。
 
 **精确 $V$ 下的一个强结论**（本书推导）：当 $V = V^{\pi,\gamma}$ 精确成立，对任意 $\lambda$ 有 $`\mathbb{E}[\hat{A}_t^{\mathrm{GAE}} \mid s_t, a_t] = A^{\pi,\gamma}(s_t, a_t)`$ 。理由是： $l \ge 1$ 的残差项经「先对 $a_{t+l} \sim \pi$ 取期望」内层为零（式 (8) 推论与式 (3)），塔性质收尾。即价值精确时 GAE 对任意 $\lambda$ 条件无偏—— $\lambda$ 此时是纯粹的方差旋钮。
 
-**$\gamma$-just 框架**（论文 §2 的分析语言，Definition 1 与 Proposition 1）。论文把折扣策略梯度的实践估计器写成 $g^{\gamma} = \mathbb{E}[\sum_t \nabla_\theta \log \pi_\theta(a_t|s_t) \thinspace A^{\pi,\gamma}(s_t, a_t)]$ （状态的 $\gamma^{t}$ 权重按惯例省略——8.1 §4.3 注记二），并把 $`\hat{A}_t`$ 称为 **$\gamma$-just** ，若 $`\mathbb{E}[\hat{A}_t \thinspace \nabla \log \pi_t] = \mathbb{E}[A^{\pi,\gamma} \thinspace \nabla \log \pi_t]`$ 对每个 $t$ 成立。此时用 $\hat{A}$ 拼出的估计器，期望恰为 $g^{\gamma}$ 。其 Proposition 1 给出一个充分条件： $`\hat{A}_t = Q_t - b_t`$ ，其中 $Q_t$ 是 $Q^{\pi,\gamma}(s_t, a_t)$ 的无偏估计、 $b_t$ 只依赖 $a_t$ 之前的历史。结构正是「无偏未来项减 baseline」。GAE 在 $V$ 精确时落进这个框架（上面的条件无偏结论更强）； $V$ 不准时它是有偏但低方差的折中，论文的策略梯度估计写作 $`g^{\gamma} \approx \mathbb{E}[\sum_t \nabla \log \pi_t \thinspace \hat{A}_t^{\mathrm{GAE}(\gamma,\lambda)}]`$ 。论文另注：该构造与 TD( $\lambda$ )（[Sutton & Barto](../references.md)，[B]）同型——TD( $\lambda$ ) 估计的是价值函数，GAE 估计的是 advantage。
+**$\gamma$-just 框架**（论文 §2 的分析语言，Definition 1 与 Proposition 1）。论文把折扣策略梯度的实践估计器写成 $g^{\gamma} = \mathbb{E}[\sum_t \nabla_\theta \log \pi_\theta(a_t|s_t) \thinspace A^{\pi,\gamma}(s_t, a_t)]$ （状态的 $\gamma^{t}$ 权重按惯例省略——8.1 §4.3 注记二），并把 $`\hat{A}_t`$ 称为 **$\gamma$-just** ，若 $`\mathbb{E}[\hat{A}_t \thinspace \nabla \log \pi_t] = \mathbb{E}[A^{\pi,\gamma} \thinspace \nabla \log \pi_t]`$ 对每个 $t$ 成立。此时用 $\hat{A}$ 拼出的估计器，期望恰为 $g^{\gamma}$ 。其 Proposition 1 给出一个充分条件： $`\hat{A}_t = Q_t - b_t`$ ，其中 $Q_t$ 是 $Q^{\pi,\gamma}(s_t, a_t)$ 的无偏估计、 $b_t$ 只依赖 $a_t$ 之前的历史。结构正是「无偏未来项减 baseline」。边界反例一句：让 b 依赖当前动作的估计器不满足这条充分条件——它会把信号一起减掉（上一章的练习里有数值版本）。GAE 在 $V$ 精确时落进这个框架（上面的条件无偏结论更强）； $V$ 不准时它是有偏但低方差的折中，论文的策略梯度估计写作 $`g^{\gamma} \approx \mathbb{E}[\sum_t \nabla \log \pi_t \thinspace \hat{A}_t^{\mathrm{GAE}(\gamma,\lambda)}]`$ 。
+
+> **提点**：该构造与 TD( $\lambda$ )（[Sutton & Barto](../references.md)，[B]）同型——TD( $\lambda$ ) 估计的是价值函数，GAE 估计的是 advantage（论文原注）。
 
 ## 6. Actor-Critic 联合 loss 与 CleanRL 走读
 
@@ -185,7 +189,11 @@ for t in reversed(range(args.num_steps)):
 returns = advantages + values
 ```
 
-逐行对回公式。 `delta` 行即式 (7)； `lastgaelam` 行即递推 $\Lambda_t = \delta_t + \gamma\lambda \cdot m_{t+1} \cdot \Lambda_{t+1}$ （ $m$ 为终止掩码）。展开看，它恰是式 (12) 在 episode 边界截断的版本： $t$ 处动作导致终止时 `dones[t+1]` = 1，下一步的 bootstrap 值与残差链同被清零。 `dones` 数组的口径值得点破： rollout 循环里 `dones[step]` 存的是与 `obs[step]` 同时到达的终止标志（上一步是否终结了 episode），所以递推里给 $V(s_{t+1})$ 配 mask 用的是 `dones[t + 1]` ——下标错位一位是存储口径，不是笔误。最后一行 `returns = advantages + values` 即 $`\hat{R}_t = \hat{A}_t + V(s_t)`$ ，正是式 (15) 第二项的目标构造（critic 的 $\lambda$ -return 回归目标）。默认超参（同文件 Args）： $\gamma$ = 0.99、 $\lambda$ = 0.95、 `num_envs` = 4、 `num_steps` = 128。
+逐行对回公式。 `delta` 行即式 (7)； `lastgaelam` 行即递推 $\Lambda_t = \delta_t + \gamma\lambda \cdot m_{t+1} \cdot \Lambda_{t+1}$ （ $m$ 为终止掩码）。展开看，它恰是式 (12) 在 episode 边界截断的版本： $t$ 处动作导致终止时 `dones[t+1]` = 1，下一步的 bootstrap 值与残差链同被清零。 `dones` 数组的口径值得点破： rollout 循环里 `dones[step]` 存的是与 `obs[step]` 同时到达的终止标志（上一步是否终结了 episode），所以递推里给 $V(s_{t+1})$ 配 mask 用的是 `dones[t + 1]` ——下标错位一位是存储口径，不是笔误。
+
+> **坑**：GAE 递推里终止掩码挂错下标是静默错误——不报错、loss 照常降，但 episode 边界一侧的 credit 会漏进另一侧，长序列上表现为 advantage 估计被不明所以地拉平。自查法：造两段长度已知的合成 episode，断言边界处的递推值归零。
+
+最后一行 `returns = advantages + values` 即 $`\hat{R}_t = \hat{A}_t + V(s_t)`$ ，正是式 (15) 第二项的目标构造（critic 的 $\lambda$ -return 回归目标）。默认超参（同文件 Args）： $\gamma$ = 0.99、 $\lambda$ = 0.95、 `num_envs` = 4、 `num_steps` = 128。
 
 **更新阶段**的 loss 行与式 (15) 逐项对应（minibatch 内）。 `norm_adv` 开时，先把 advantage 标准化为 `(adv − mean) / (std + 1e-8)` 。 `pg_loss = max(−A·ratio, −A·clamp(ratio))` ——clip 的逐情形分析归 8.3；此处只需注意： `ratio = 1` 处其梯度恰为 $-\hat{A} \thinspace \nabla \log \pi$ ，即式 (15) 第一项。 `v_loss = 0.5 * ((newvalue − b_returns) ** 2).mean()` 即第二项。 `entropy_loss = entropy.mean()` 。总损失 `loss = pg_loss − args.ent_coef * entropy_loss + v_loss * args.vf_coef` （默认 `ent_coef` = 0.01、 `vf_coef` = 0.5）——式 (15) 的符号约定逐字对上。
 
@@ -254,13 +262,13 @@ $$
 
 ## 练习
 
-1.（推导）从式 (7) 出发证明式 (9) 的伸缩形式（写出 $\delta_t + \gamma \delta_{t+1} + \gamma^{2} \delta_{t+2}$ 的展开与相消）；再由式 (9) 证式 (11) 的偏差分解，并说明为什么 $(V^{\pi} - V)(s_t)$ 项不进入策略梯度的偏差。
+1.（计算 · [20]）取 $T = 4$ 、 $(r_0, r_1, r_2, r_3) = (0, 0, 0, 1)$ 、 $(V(s_0), \ldots, V(s_3)) = (0.3, 0.4, 0.2, 0.6)$ 、 $V(s_4) = 0$ （终止）：(a) 手算 $\gamma = 1$ 、 $\lambda = 1$ 与 $\lambda = 0.5$ 两组下的全部 $`\hat{A}_t`$ ，验证 $\lambda = 1$ 组满足式 (18)；(b) 计算 $`\hat{R}_t = \hat{A}_t + V(s_t)`$ 并说明 $\lambda = 0.5$ 组中 critic 目标的构成；(c) 把 $V$ 换成真值 $V^{\pi}(s_t) = \mathbb{E}[R \mid s_t]$（设 $\mathbb{E}[R] = 0.5$ 且前缀无信息，即全部 $V^{\pi}(s_t) = 0.5$ ），重算两组的 $`\mathbb{E}[\hat{A}_t]`$ 并对照练习 3 的结论。校验：(a) 中 λ = 1 组的四个值应逐一等于「末端奖励减当前估值」。
 
-2.（推导）证明「精确 $V$ 下 GAE 对任意 $\lambda$ 条件无偏」：即 $V = V^{\pi,\gamma}$ 时 $`\mathbb{E}[\hat{A}_t^{\mathrm{GAE}(\gamma,\lambda)} \mid s_t, a_t] = A^{\pi,\gamma}(s_t, a_t)`$（提示：对 $l \ge 1$ 的项，先对 $a_{t+l} \sim \pi(\cdot|s_{t+l})$ 取内层期望，用式 (3)）。这个结论与论文「 $\lambda \lt 1$ 只在价值函数不准时引入偏差」如何对上？
+2.（推导 · [30]）从式 (7) 出发证明式 (9) 的伸缩形式（写出 $\delta_t + \gamma \delta_{t+1} + \gamma^{2} \delta_{t+2}$ 的展开与相消）；再由式 (9) 证式 (11) 的偏差分解，并说明为什么 $(V^{\pi} - V)(s_t)$ 项不进入策略梯度的偏差。
 
-3.（计算）取 $T = 4$ 、 $(r_0, r_1, r_2, r_3) = (0, 0, 0, 1)$ 、 $(V(s_0), \ldots, V(s_3)) = (0.3, 0.4, 0.2, 0.6)$ 、 $V(s_4) = 0$ （终止）：(a) 手算 $\gamma = 1$ 、 $\lambda = 1$ 与 $\lambda = 0.5$ 两组下的全部 $`\hat{A}_t`$ ，验证 $\lambda = 1$ 组满足式 (18)；(b) 计算 $`\hat{R}_t = \hat{A}_t + V(s_t)`$ 并说明 $\lambda = 0.5$ 组中 critic 目标的构成；(c) 把 $V$ 换成真值 $V^{\pi}(s_t) = \mathbb{E}[R \mid s_t]$（设 $\mathbb{E}[R] = 0.5$ 且前缀无信息，即全部 $V^{\pi}(s_t) = 0.5$ ），重算两组的 $`\mathbb{E}[\hat{A}_t]`$ 并对照练习 2 的结论。
+3.（推导 · [30]）证明「精确 $V$ 下 GAE 对任意 $\lambda$ 条件无偏」：即 $V = V^{\pi,\gamma}$ 时 $`\mathbb{E}[\hat{A}_t^{\mathrm{GAE}(\gamma,\lambda)} \mid s_t, a_t] = A^{\pi,\gamma}(s_t, a_t)`$（提示：对 $l \ge 1$ 的项，先对 $a_{t+l} \sim \pi(\cdot|s_{t+l})$ 取内层期望，用式 (3)）。这个结论与论文「 $\lambda \lt 1$ 只在价值函数不准时引入偏差」如何对上？
 
-4.（代码）用 §6.2 的教学骨架实现 `compute_gae`，再用 $\sum_l (\gamma\lambda)^{l} \delta_{t+l}$ 的直接求和版对拍（随机 $T = 50$ 、含两个 episode 边界的合成数据，断言逐元素相等）；然后把 $\lambda$ 从 0 扫到 1，在「 $V$ 带固定比例噪声」的合成设定下画出 $`\hat{A}_0`$ 的偏差-方差曲线（5000 次独立重复估计），标出式 (14) 预言的偏差因子形状。
+4.（代码 · [30]）用 §6.2 的教学骨架实现 `compute_gae`，再用 $\sum_l (\gamma\lambda)^{l} \delta_{t+l}$ 的直接求和版对拍（随机 $T = 50$ 、含两个 episode 边界的合成数据，断言逐元素相等）；然后把 $\lambda$ 从 0 扫到 1，在「 $V$ 带固定比例噪声」的合成设定下画出 $`\hat{A}_0`$ 的偏差-方差曲线（5000 次独立重复估计），标出式 (14) 预言的偏差因子形状。动手前先写预测：偏差曲线应单调降、方差曲线应单调升，交点在哪个量级？校验：对拍两端在双精度下应逐元素相等、零容差。
 
 ## 参考
 

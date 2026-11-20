@@ -6,6 +6,8 @@
 
 GRPO 的直接动机来自 8.2 结尾留下的困境。LLM 场景的 reward 只在序列末端给出（outcome reward），critic 却要逐 token 输出 $V(s_t)$：监督信号是一个标量，学习目标是整段前缀的函数，这样的 critic 在长 CoT 上很难训准。同时 critic 通常与 actor 同规模（DeepSeekMath 原文口径：another model of comparable size），显存与算力直接翻倍——四模型驻留的完整账归 8.5。
 
+本章口径一句：组大小、clip 半径与配置数字以各变体论文的实验节为准、逐处带来源；算例统一用短序列玩具尺度（百 token 量级以内）。
+
 GRPO（Group Relative Policy Optimization，[Shao et al., 2024](../references.md)，arXiv:2402.03300，[A]，其 §4.1）的回答是：baseline 不需要学出来。对同一个 prompt 采一组回答，组内 reward 的均值就是 baseline 的蒙特卡洛估计。形式化一下：对每个问题 $q$，旧策略 $\pi_{\theta_{\mathrm{old}}}$ 采 $G$ 条回答 $\lbrace o_i \rbrace_{i=1}^{G}$，奖励模型（或规则验证器）打分得 $\mathbf{r} = \lbrace r_1, \ldots, r_G \rbrace$，组内归一化给出 advantage：
 
 $$
@@ -57,9 +59,11 @@ $$
 
 教学实现对照：TRL 的 `trl/trainer/grpo_trainer.py`（教学参照，2026-11-17 核实路径）把 advantage 写成 `advantages = rewards - mean_grouped_rewards`，再按 `scale_rewards` 配置除以 `std_rewards + 1e-4`。这是式 (1) 的直接落地，分母上的 $10^{-4}$ 是防全同组的数值护栏。
 
+> **坑**：组内 reward 全同时组标准差为零，归一化直接除零——实现靠分母加小常数护栏兜住；但护栏只防崩溃、不防语义：全同组的 advantage 恒零，该 prompt 当轮不产生梯度，等于被静默丢弃。
+
 ## 2. 组基线的偏差-方差分析
 
-组基线的统计学性质是本节的问题。它既是方差缩减装置（baseline 的本职），又是偏差的潜在来源（含己均值与 std 归一化）。先把三个结论摆出来。第一，含己均值的期望梯度是 $\nabla J$ 的 $(G-1)/G$ 倍——严格有偏，但只是常数缩放。第二，std 归一化引入逐问题的权重扭曲——这是真偏置。第三，leave-one-out 版精确无偏。下面逐一推导。
+组基线有没有偏？方差缩了多少？这是本节要回答的两个问题。组基线既是方差缩减装置（baseline 的本职），又是偏差的潜在来源（含己均值与 std 归一化）。先把三个结论摆出来。第一，含己均值的期望梯度是 $\nabla J$ 的 $(G-1)/G$ 倍——严格有偏，但只是常数缩放。第二，std 归一化引入逐问题的权重扭曲——这是真偏置。第三，leave-one-out 版精确无偏。下面逐一推导。
 
 式 (1) 的分子里， $\mathrm{mean}(\mathbf{r})$ 包含了 $r_i$ 自己。8.1 的 baseline 无偏性定理要求 baseline 与当前动作条件独立，组均值违反了这一条。偏差有多大？可以精确算出来（本节为本书推导）。
 
@@ -81,7 +85,7 @@ $$
 \mathbb{E}[\hat{g}] = \nabla J_q - \frac{1}{G} \nabla J_q = \frac{G-1}{G} \thinspace \nabla J_q \qquad (6)
 $$
 
-**结论一：全组均值 baseline 严格有偏**。但偏差是一个与 $q$、 $\theta$ 无关的常数因子 $(G-1)/G$——方向不偏、幅度统一缩小， $G = 64$ 时约 1.6%。这类偏差被学习率直接吸收，实践中无害。它的价值在概念边界上：「baseline 无偏」要求的是 baseline 与动作**条件独立**，含己均值恰好踩在这条线上。
+**命题**（含己均值的常数缩放）：全组均值 baseline 的期望梯度严格有偏，偏差是一个与 $q$、 $\theta$ 无关的常数因子 $(G-1)/G$。**证明**：即上文的展开——估计量取期望，基线项按「是否与当前样本同源」拆开；异源交叉项由样本独立性与 score 函数的零均值性消去，同源项各贡献一份真梯度。关键一步是 score 函数的零均值恒等。**读法**：方向不偏、幅度统一缩小， $G = 64$ 时约 1.6%，这类偏差被学习率直接吸收，实践中无害。它的价值在概念边界上：「baseline 无偏」要求 baseline 与动作**条件独立**，含己均值恰好踩在这条线上。其缩放形式的期望留作练习 3。
 
 **leave-one-out 版精确无偏**： $b_i = \frac{1}{G-1} \sum_{j \neq i} R_j$ 与 $o_i$ 独立，于是
 
@@ -119,7 +123,9 @@ $$
 \widehat{D}_{\mathrm{KL}}\left( \pi_\theta \Vert \pi_{\mathrm{ref}} \right)_{i,t} = \frac{\pi_{\mathrm{ref}}(o_{i,t}|q, o_{i,\lt t})}{\pi_\theta(o_{i,t}|q, o_{i,\lt t})} - \log \frac{\pi_{\mathrm{ref}}(o_{i,t}|q, o_{i,\lt t})}{\pi_\theta(o_{i,t}|q, o_{i,\lt t})} - 1 \qquad (9)
 $$
 
-方向上有一点要注意：样本来自 $\pi_{\mathrm{old}}$（内层首轮即 $\pi_\theta$ ），式 (9) 里的比率是 $\pi_{\mathrm{ref}} / \pi_\theta$，对应前向 KL $D_{\mathrm{KL}}(\pi_\theta \Vert \pi_{\mathrm{ref}})$——量的是「当前策略背离参考多远」。实现注记：8.3 §8 的 CleanRL 诊断位用的是同一对估计器（k1 作 `old_approx_kl`、k3 作 `approx_kl`）；k1/k3 在 PPO 里做监控，在 GRPO 里进损失。
+方向上有一点要注意：样本来自 $\pi_{\mathrm{old}}$（内层首轮即 $\pi_\theta$ ），式 (9) 里的比率是 $\pi_{\mathrm{ref}} / \pi_\theta$，对应前向 KL $D_{\mathrm{KL}}(\pi_\theta \Vert \pi_{\mathrm{ref}})$——量的是「当前策略背离参考多远」。代入一个比率比 1 大一成的样本口算：k1 取负值，k3 为正且绝对值小一个量级——恒正与低方差在单样本上就看得见。实现注记：8.3 §8 的 CleanRL 诊断位用的是同一对估计器（k1 作 `old_approx_kl`、k3 作 `approx_kl`）；k1/k3 在 PPO 里做监控，在 GRPO 里进损失。
+
+> **提点**：同一对估计器在两个算法里角色不同——监控位可以容忍高方差，进损失的位优先低方差。选估计器之前，先看它落在哪个位置。
 
 ## 4. ratio 的粒度：token 级 vs 序列级
 
@@ -129,7 +135,7 @@ $$
 
 其二，IS 的成立条件是**多样本平均**： $`\mathbb{E}_{\mathrm{beh}}[w \cdot f]`$ 靠多个样本上的权重平均逼近目标期望。token 级 ratio 在每个位置上只有一个样本（ $o_{i,t}$ 是 $\pi_{\mathrm{old}}(\cdot|q, o_{i,\lt t})$ 的一次采样），weight 起不到分布校正作用，退化成高方差噪声源；噪声沿序列累积，再被 clip 的开关效应放大。这就是 GSPO 论文对 GRPO 目标「ill-posed」的指控（[Zheng et al., 2025](../references.md)，arXiv:2507.18071，[A]，其 §3），§7 展开其修法。
 
-一个算术例子把粒度差异落到数字上。设每 token 的新旧概率比只在 0.95 与 1.05 之间交替（温和漂移）。100 token 的回答，序列连乘比为 $`(1.05 \times 0.95)^{50} = 0.9975^{50} \approx 0.882`$：单 token 最大偏离 5%，序列级已漂移 12%；1000 token 时约为 $0.9975^{500} \approx 0.29$。也就是说，逐 token 的「小更新」在序列粒度上被连乘成「大漂移」，而 clip 发生在 token 粒度——长 CoT 场景里，负责校正的机制和需要校正的对象之间差着序列长度个数量级（练习 4 把这条算完）。
+一个算术例子把粒度差异落到数字上。设每 token 的新旧概率比只在 0.95 与 1.05 之间交替（温和漂移）。100 token 的回答，序列连乘比为 $`(1.05 \times 0.95)^{50} = 0.9975^{50} \approx 0.882`$：单 token 最大偏离 5%，序列级已漂移 12%；1000 token 时约为 $0.9975^{500} \approx 0.29$。也就是说，逐 token 的「小更新」在序列粒度上被连乘成「大漂移」，而 clip 发生在 token 粒度——长 CoT 场景里，负责校正的机制和需要校正的对象之间差着序列长度个数量级（练习 2 把这条算完）。
 
 ## 5. Dr.GRPO：两处归一化的偏置分析
 
@@ -195,7 +201,7 @@ $$
 
 差别只在 token 梯度的权重：GRPO 给每个 token 乘各自的逐 token ratio（ $`\hat{A}_i \gt 0`$ 时在 $(0, 1+\varepsilon]$、 $`\hat{A}_i \lt 0`$ 时在 $[1-\varepsilon, \infty)$ 内不等），GSPO 给全序列同一个序列级权重 $s_i(\theta)$——逐 token 权重的不相等被整个移除。
 
-clip 半径差一个量级的机制可以算出来。对策略的同一处扰动，逐 token ratio 的连乘把各位置扰动**相加在指数上**（ $\prod_t r_t = \exp(\sum_t \log r_t)$ ，扰动按 $O(T)$ 累积）；而 $s_i$ 的几何平均把同一扰动摊回 $O(1)$（指数上除以 $|o_i|$ ）。所以 GRPO 的 $\varepsilon$ 必须容忍「 $T$ 步扰动累进」的序列漂移，GSPO 的 $\varepsilon$ 只需约束「平均每 token 漂移」。0.2 对 3e-4 的数量级差（约 600 倍）与典型 CoT 长度（数百到数千 token）同阶——这不是调参巧合，是 ratio 定义换单位后的必然换算（练习 4）。
+clip 半径差一个量级的机制可以算出来。对策略的同一处扰动，逐 token ratio 的连乘把各位置扰动**相加在指数上**（ $\prod_t r_t = \exp(\sum_t \log r_t)$ ，扰动按 $O(T)$ 累积）；而 $s_i$ 的几何平均把同一扰动摊回 $O(1)$（指数上除以 $|o_i|$ ）。所以 GRPO 的 $\varepsilon$ 必须容忍「 $T$ 步扰动累进」的序列漂移，GSPO 的 $\varepsilon$ 只需约束「平均每 token 漂移」。0.2 对 3e-4 的数量级差（约 600 倍）与典型 CoT 长度（数百到数千 token）同阶——这不是调参巧合，是 ratio 定义换单位后的必然换算（练习 2）。
 
 实证口径（其 §5.1）：Qwen3-30B-A3B-Base 冷启动模型上，GSPO 训练全程稳定、同等算力下训练精度与基准表现优于 GRPO；MoE 的 RL 训练不再需要 GRPO 所依赖的 Routing Replay 策略；GSPO 已用于 Qwen3 系列模型的 RL 训练。MoE 场景的失效链条在原文里有完整记录：GRPO 的逐 token ratio 在专家路由的稀疏激活下波动更大，clip 的开关效应与路由抖动互相放大，最终触发 collapse。序列级 ratio 把路由层面的逐 token 抖动平均掉，Routing Replay（固定专家分配的重放技巧）因此成为多余。
 
@@ -229,10 +235,10 @@ clip 半径差一个量级的机制可以算出来。对策略的同一处扰动
 
 ## 练习
 
-1.（推导）含己均值的缩放形式：把式 (4) 的估计量改为 $\hat{g}' = \frac{1}{G-1} \sum_i (R_i - \overline{R}) \nabla_\theta \log \pi_\theta(o_i)$，求 $\mathbb{E}[\hat{g}']$；再设 $G = 2$，把含己均值版展开成「成对偏好差」的形式并说明它与 3.2 的 Bradley-Terry 差分结构的相似性。
-2.（计算）k3 的方差优势： $q = \mathcal{N}(0,1)$、 $p = \mathcal{N}(0.1, 1)$，用 $10^{6}$ 个样本蒙特卡洛估计 k1/k2/k3 的均值与标准差，对照 Schulman 博客的表（std/真值：k1 ≈ 20、k3 ≈ 1.42）；再把均值差拉到 1 重算，解释 k2 的偏差为何随真 KL 增大而上升（提示：f-散度的二阶等价只在近端成立）。
-3.（推导）DAPO clip-higher 的算术： $`\hat{A} \gt 0`$、 $\varepsilon_{\mathrm{low}} = 0.2$、 $\varepsilon_{\mathrm{high}} = 0.28$，分别计算 $\pi_{\mathrm{old}}$ = 0.01 / 0.5 / 0.9 三个 token 的概率提升上限；对称 $\varepsilon = 0.2$ 下各是多少？由此定量解释「上界 clip 主要约束探索」。
-4.（计算）GSPO 的长度效应：两条回答逐 token ratio 都在 0.95 与 1.05 间交替，一条长 4 token、一条长 100 token——分别算序列连乘 ratio $\prod_t r_t$ 与式 (12) 的 $s_i(\theta)$，说明长度归一化如何把 clip 半径的语义从 $O(\varepsilon \cdot T)$ 压回 $O(\varepsilon)$。
+1.（推导 · [20]）DAPO clip-higher 的算术： $`\hat{A} \gt 0`$、 $\varepsilon_{\mathrm{low}} = 0.2$、 $\varepsilon_{\mathrm{high}} = 0.28$，分别计算 $\pi_{\mathrm{old}}$ = 0.01 / 0.5 / 0.9 三个 token 的概率提升上限；对称 $\varepsilon = 0.2$ 下各是多少？由此定量解释「上界 clip 主要约束探索」。校验：两端（最低与最高概率）的上限与正文 DAPO 算例一致。
+2.（计算 · [20]）GSPO 的长度效应：两条回答逐 token ratio 都在 0.95 与 1.05 间交替，一条长 4 token、一条长 100 token——分别算序列连乘 ratio $\prod_t r_t$ 与式 (12) 的 $s_i(\theta)$，说明长度归一化如何把 clip 半径的语义从 $O(\varepsilon \cdot T)$ 压回 $O(\varepsilon)$。先预测哪一条会随长度爆掉，再算。校验：短序列上两种 ratio 都接近 1，长序列上连乘版明显偏离而几何平均版贴近。
+3.（推导 · [30]）含己均值的缩放形式：把式 (4) 的估计量改为 $\hat{g}' = \frac{1}{G-1} \sum_i (R_i - \overline{R}) \nabla_\theta \log \pi_\theta(o_i)$，求 $\mathbb{E}[\hat{g}']$；再设 $G = 2$，把含己均值版展开成「成对偏好差」的形式并说明它与 3.2 的 Bradley-Terry 差分结构的相似性。
+4.（计算 · [30]）k3 的方差优势： $q = \mathcal{N}(0,1)$、 $p = \mathcal{N}(0.1, 1)$，用 $10^{6}$ 个样本蒙特卡洛估计 k1/k2/k3 的均值与标准差，对照 Schulman 博客的表（std/真值：k1 ≈ 20、k3 ≈ 1.42）；再把均值差拉到 1 重算，解释 k2 的偏差为何随真 KL 增大而上升（提示：f-散度的二阶等价只在近端成立）。校验：k1 与 k3 的均值应在统计涨落内贴住真值（无偏），k2 在大真值一端有正偏（约真值的四分之一）；标准差排序与前文博客表一致。
 
 ## 参考
 

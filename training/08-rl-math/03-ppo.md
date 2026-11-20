@@ -6,15 +6,17 @@
 
 先看 8.1 的策略梯度 $`\nabla_\theta J(\theta) = \mathbb{E}_{\tau \sim \pi_\theta}[\sum_t \nabla_\theta \log \pi_\theta(a_t|s_t) \thinspace A_t]`$。期望号下的分布是**当前策略自己**：要估计这个梯度，样本必须由被优化的那个分布产生。这带来一个硬约束——参数每更新一步，旧数据的分布假设就失效一步。一批 rollout 支撑一次梯度更新即作废，样本复用率约等于 1。这不是实现不够好，是 on-policy 算法的定义决定的。
 
+本章口径一句：超参与实验数字以论文 MuJoCo 口径为准（其附录 Table 3），算例统一用玩具尺度（clip 半径取默认值）；换 Atari 或 LLM 口径处，随文给一句原因声明。
+
 这个约束在 LLM 场景的代价更高。一条轨迹是一次完整的长序列生成（RLHF 里是整段 response），rollout 的成本远高于一步梯度。监督学习里同一批数据过几十个 epoch 是常态；RL 里却是「采一批、用一次」。
 
-量级上差多少？一条 1024 token 的 response，生成成本约等于它在训练侧一次前向加一次反向的三分之一（ $6N$ FLOPs/token 训练口径对 $2N$ FLOPs/token 推理口径，models 1.2 的账）。但生成必须逐 token 串行走完，训练侧的矩阵乘可以并行摊满。同一 token 数下，rollout 的墙钟时间往往是更新段的数倍到数十倍。8.5 会把 rollout/train 的引擎拆分与权重同步做成正式账；本章只需要一个方向感——样本贵、梯度相对便宜，多花几次梯度换样本是划算的。
+量级上差多少？一条 1024 token 的 response，生成成本约等于它在训练侧一次前向加一次反向的三分之一（ $6N$ FLOPs/token 训练口径对 $2N$ FLOPs/token 推理口径，models 1.2 的账）。但生成必须逐 token 串行走完，训练侧的矩阵乘可以并行摊满。同一 token 数下，rollout 的墙钟时间往往是更新段的数倍到数十倍。8.5 会把 rollout/train 的引擎拆分与权重同步做成正式账；本章只需要一个方向感——样本贵、梯度相对便宜（口径：同 token 数下梯度的墙钟时间更短，不是 FLOPs 更少），多花几次梯度换样本是划算的。
 
 还有一个问题要分清。8.2 的 GAE 解决的是 advantage 估计的偏差-方差权衡，它没有解决数据从哪来的问题。后者要回答的是：能不能用旧策略 $\pi_{\theta_{\mathrm{old}}}$ 采的数据，估计新策略 $\pi_\theta$ 的改进方向？本章的回答分两层：importance sampling 给出修正工具（§2），TRPO 给出「修正多远之内可信」的界（§3），PPO 把界换成一阶的廉价截断（§4-5）。
 
 ## 2. Importance sampling 与 surrogate objective
 
-先从一个精确恒等式说起。记折扣状态访问分布 $\rho_\pi(s) = \sum_{t=0}^{\infty} \gamma^{t} \Pr(s_t = s \mid \pi)$，TRPO 论文（[Schulman et al., 2015](../references.md)，arXiv:1502.05477，[B]，其 §2 式 (2)）给出：
+本节的路线分三步：先给一个精确恒等式，再做状态分布的局部近似，最后写成可采样的轨迹形式；关键一步是「近似与原目标一阶匹配」。先从一个精确恒等式说起。记折扣状态访问分布 $\rho_\pi(s) = \sum_{t=0}^{\infty} \gamma^{t} \Pr(s_t = s \mid \pi)$，TRPO 论文（[Schulman et al., 2015](../references.md)，arXiv:1502.05477，[B]，其 §2 式 (2)）给出：
 
 $$
 \eta(\tilde{\pi}) = \eta(\pi) + \sum_{s} \rho_{\tilde{\pi}}(s) \sum_{a} \tilde{\pi}(a|s) \thinspace A_\pi(s, a) \qquad (1)
@@ -52,7 +54,7 @@ $$
 
 ## 3. TRPO：单调改进界与 KL 硬约束
 
-TRPO 先把「邻域内可信」做成显式界。其 Theorem 1：记 $\alpha = D_{\mathrm{TV}}^{\max}(\pi_{\mathrm{old}}, \pi_{\mathrm{new}}) = \max_s D_{\mathrm{TV}}(\pi_{\mathrm{old}}(\cdot|s) \Vert \pi_{\mathrm{new}}(\cdot|s))$，则
+「邻域内可信」能不能写成一条显式不等式？TRPO 把它做成了。其 Theorem 1：记 $\alpha = D_{\mathrm{TV}}^{\max}(\pi_{\mathrm{old}}, \pi_{\mathrm{new}}) = \max_s D_{\mathrm{TV}}(\pi_{\mathrm{old}}(\cdot|s) \Vert \pi_{\mathrm{new}}(\cdot|s))$，则
 
 $$
 \eta(\pi_{\mathrm{new}}) \ge L_{\pi_{\mathrm{old}}}(\pi_{\mathrm{new}}) - \frac{4 \epsilon \gamma}{(1-\gamma)^{2}} \thinspace \alpha^{2}, \qquad \epsilon = \max_{s,a} |A_\pi(s,a)| \qquad (5)
@@ -73,6 +75,8 @@ TRPO 的求解按约定只给结论与账。先看采样侧。论文给了两种
 再看求解侧。目标对 $\theta$ 一阶展开，KL 二阶展开（Hessian 即 Fisher 信息矩阵 $F$；论文用逐状态解析求积的 FIM，而非梯度外积的经验 FIM），得到一个约束二次规划。它的解是自然梯度方向： $\theta \leftarrow \theta_{\mathrm{old}} + \sqrt{2\delta / (g^{\top} F^{-1} g)} \cdot F^{-1} g$。这里的 $F^{-1} g$ 不显式求逆，而是用共轭梯度（conjugate gradient, CG）解线性系统 $Fx = g$。每次 CG 迭代只需一次 Fisher-向量积，成本与一次梯度回传同量级（通过自动微分的二阶算子实现）；论文取 10 次迭代（其附录 C：更多迭代不再加速策略改进，且 FIM 可在 10% 子采样数据上计算）。最后沿该方向做回溯线搜索，收缩步长，直到 KL 约束满足、且 surrogate 确实改善。
 
 账很短：一次 TRPO 更新 ≈ 十余次 Fisher-向量积加线搜索的数次前向，比一次 Adam 步贵一个数量级以上；换来的是式 (5)-(6) 保证的近似单调性。PPO 的问题由此成形：能不能不碰 FIM、纯用一阶方法，拿到近似的信任域效果？
+
+> **提点**：「不碰二阶、用一阶截断替代显式约束」这个取舍后来在 LLM-RL 里反复出现；clip 一系的总纲就是用目标函数的形状代替求解器的强度。
 
 ## 4. PPO clip 目标：逐情形推导
 
@@ -128,7 +132,7 @@ clip 的几何含义至此可以一句话说透：平台段恰好截掉「继续
 
 两个性质写成命题备查：
 
-**悲观下界（pessimistic bound）**。逐点有 $L^{\mathrm{CLIP}}(\theta) \le L^{\mathrm{CPI}}(\theta)$：min 恒取两者较小，所以 clip 版是原 surrogate 的下界。最大化它至多低估、绝不高估这一步的收益——这与 TRPO「最大化下界」同构，只是下界用逐样本截断来构造，而不是用全局 KL。逐点验证很直接（练习 1）： $`\hat{A}_t \gt 0`$ 时仅 $r_t \gt 1+\epsilon$ 段严格更小、 $r_t \le 1+\epsilon$ 段取等； $`\hat{A}_t \lt 0`$ 时仅 $r_t \lt 1-\epsilon$ 段严格更小。
+**命题**（悲观下界，pessimistic bound）：逐点有 $L^{\mathrm{CLIP}}(\theta) \le L^{\mathrm{CPI}}(\theta)$。**证明**（要点）：min 恒取两者较小，下界直接成立；分段看， $`\hat{A}_t \gt 0`$ 时仅 $r_t \gt 1+\epsilon$ 段严格更小、 $r_t \le 1+\epsilon$ 段取等， $`\hat{A}_t \lt 0`$ 时仅 $r_t \lt 1-\epsilon$ 段严格更小——关键一步是负 advantage 下 min 的选择方向反转（完整展开即练习 1）。读法：最大化它至多低估、绝不高估这一步的收益——这与 TRPO「最大化下界」同构，只是下界用逐样本截断来构造，而不是用全局 KL。
 
 **梯度开关**。平台段梯度恒零，所以越界样本对参数更新零贡献。一批数据中触发截断的比例（clip fraction）因此是 PPO 的一阶健康指标：过高说明 lr、epoch 数或数据陈旧度太激进，有效 batch 在悄悄缩水（§8 的 `clipfracs` 就是它的实现）。与 clipfrac 互补的读数是近似 KL——clipfrac 量「多少样本被关掉」，approx_kl 量「还活着的样本平均走了多远」。两者同高，是 lr 过激；clipfrac 高而 KL 低，则是典型的「少数样本飞出、多数未动」，这时该调小的是每 epoch 的步数，而不是步长。
 
@@ -136,7 +140,7 @@ clip 的几何含义至此可以一句话说透：平台段恰好截掉「继续
 
 ### 4.2 多 epoch 复用的陈旧偏差：importance ratio 偏差分析
 
-PPO 相对 TRPO 省下的算力花在数据复用上：同一批 rollout 跑 $K$ 个 epoch 的 minibatch 更新。复用的代价可以精确刻画（本书推导）。记 rollout 策略为 $\pi_{\mathrm{old}}$，第 $k$ 个 epoch 的参数为 $\theta_k$：
+同一批数据跑很多遍，偏差从哪来？PPO 相对 TRPO 省下的算力花在数据复用上：同一批 rollout 跑 $K$ 个 epoch 的 minibatch 更新。复用的代价可以精确刻画（本书推导）。记 rollout 策略为 $\pi_{\mathrm{old}}$，第 $k$ 个 epoch 的参数为 $\theta_k$：
 
 - $k = 1$ 时 $r_t \approx 1$，截断基本不触发， $`\nabla L^{\mathrm{CLIP}} \approx \hat{\mathbb{E}}[\hat{A}_t \nabla \log \pi_\theta]`$ ——近似 on-policy 策略梯度，无偏性口径同 8.1；
 - $k$ 增大时 $\pi_{\theta_k}$ 偏离 $\pi_{\mathrm{old}}$：数据分布对当前参数而言是陈旧的， $r_t$ 系统性偏离 1，更多样本撞上平台段、梯度被关掉—— $L^{\mathrm{CLIP}}$ 相对 $L^{\mathrm{CPI}}$ 的下压，正是目标函数对陈旧数据的主动折价。
@@ -189,7 +193,7 @@ $$
 
 ## 6. 实现细节清单（逐条配失效模式）
 
-论文式 (7)(9) 到「能复现论文曲线的实现」之间，隔着一层论文里没写的细节。CleanRL 文档把其中核心部分整理为 13 条实现细节，并逐条对齐了 OpenAI Baselines 的曲线（[Huang et al., CleanRL repo](../references.md)，教学参照）。这里挑对训练动力学影响最直接的六条，每条附失效模式。
+论文式 (7)(9) 写的是目标；能复现论文曲线的实现，还隔着一层论文里没写的细节。差在哪？CleanRL 文档把其中核心部分整理为 13 条实现细节，并逐条对齐了 OpenAI Baselines 的曲线（[Huang et al., CleanRL repo](../references.md)，教学参照）。这里挑对训练动力学影响最直接的六条，每条附失效模式。
 
 1. **advantage 归一化**： $\hat{A} \leftarrow (\hat{A} - \mathrm{mean})/(\mathrm{std} + 10^{-8})$，**minibatch 级**而非全 batch 级，CleanRL 默认开。失效模式：minibatch 太小（几十个样本）时，均值与方差本身的估计噪声会直接注入梯度方向；极端情形下一个 minibatch 内 advantage 全同号，归一化把噪声放大成信号。LLM-RL 的批往往只有几十条 prompt 乘组内样本，这一条比在 Atari 上更敏感——8.4 §2 的组内归一化是它的近亲，适用同一套警惕。一个可参考的量级：minibatch 内 advantage 的样本均值本身的标准差约为 $`\sigma_A / \sqrt{M}`$， $M = 64$ 时相对漂移已达 $0.125 \sigma_A$——归一化在降噪的同时也在注入一个 $1/\sqrt{M}$ 量级的随机缩放。
 2. **value clipping**： $L^{\mathrm{VF}} = \max\left[ (V_\theta - V^{\mathrm{targ}})^{2}, \thinspace (\mathrm{clip}(V_\theta, \thinspace V_{\mathrm{old}} \pm \epsilon) - V^{\mathrm{targ}})^{2} \right]$——与 clip 目标同构的价值截断，Baselines 与 CleanRL 默认开。**注意它不在论文式 (9) 里**，是实现层的发明；后续复现研究对其收益结论不一（此句为本书注记，无单一出处）。失效模式：reward 尺度漂移时 $V$ 被锁在 $V_{\mathrm{old}}$ 附近追不上目标， $\hat{A} = V^{\mathrm{targ}} - V$ 出现系统性偏移。
@@ -265,6 +269,8 @@ for epoch in range(K):
 
 **buffer 边界与 bootstrap**。两段代码的接口处有一个容易写错的语义点。rollout 末状态的 $V(s_{T})$ 要用于 GAE 递推的 bootstrap（`next_value` 参与最后一个 $\delta$ ）；`nextnonterminal` 则把 done 处的自举切断——episode 终止时不从下一状态取值。Atari 类环境还要区分 termination（真终止）与 truncation（步数上限截断）：时限感知（time-limit-aware）的做法在截断处保留自举，否则长 episode 的 return 会被系统性低估。CleanRL `ppo.py` 里 `next_done = np.logical_or(terminations, truncations)` 把两者合并，GAE 自举在两处都切断——这是一个已知的简化处理；严格口径应只在真终止处切断。这条语义边界的完整讨论归 8.2 的 GAE 实现注记。
 
+> **坑**：把 truncation 当 termination 一并切断 GAE 自举——触发条件是带步数上限的环境，后果是长 episode 的 return 被系统性低估；规避办法是截断处保留自举。上面的合并写法是已知简化，照抄到这类环境会踩中。
+
 **退火与优化器**。`anneal_lr=True` 时 lr 按 `1 - update / num_updates` 线性衰减到 0（`optimizer.param_groups` 逐 update 改写）；Adam 的构建在 `agent.parameters()` 全体参数上、 $\epsilon = 10^{-5}$——§6 第 6 条的两个细节在此落地。
 
 与真实实现的差别在于：真实栈要处理连续动作分布（`Normal` 的对数概率按维求和）、LSTM 状态重放、多 GPU 与向量环境的边界（truncation 与 termination 分开处理 bootstrap）等分支；骨架只保留语义主线。
@@ -286,10 +292,10 @@ for epoch in range(K):
 
 ## 练习
 
-1.（推导）clip 目标的悲观性：证明对任意 $r \gt 0$ 与 $\hat{A} \neq 0$， $\min(r\hat{A}, \thinspace \mathrm{clip}(r, 1-\epsilon, 1+\epsilon)\hat{A}) \le r\hat{A}$，并分 $\hat{A}$ 正负给出等号成立的 $r$ 区间；由此验证式 (8)(9) 的分段写法与「反向永不截断」的论断。
-2.（推导）IS 方差：设单步动作上 $D_{\mathrm{KL}}(\pi_{\mathrm{old}} \Vert \pi_\theta) = \kappa$ 有界，写出 $`\mathbb{E}_{\mathrm{old}}[r_t^2]`$ 的表达式并说明它随 $\kappa$ 增长；进一步说明序列级 ratio $\prod_{t=1}^{T} r_t$ 的方差为什么随 $T$ 爆炸（与 8.4 §7 的 GSPO 动机衔接）。
-3.（计算）TRPO 界尺度： $\gamma = 0.99$、 $\epsilon = \max_{s,a}|A| = 1$，算 $C = 4\epsilon\gamma/(1-\gamma)^2$ ；取 $D_{\mathrm{KL}}^{\max} = 0.01$，惩罚项多大、相对 $L$ 的典型量级意味着什么？由此解释论文为什么放弃惩罚式 (5) 改约束式 (6)。
-4.（代码）跑 CleanRL `ppo.py`（CartPole-v1， `--no-cuda`），把 `--update-epochs` 从 4 调到 12，读 `losses/clipfrac` 与 `losses/approx_kl` 两条曲线的变化，用 §4.2 的陈旧偏差框架解释；再把 `--norm-adv` 关掉对比收敛差异。
+1.（推导 · [20]）clip 目标的悲观性：证明对任意 $r \gt 0$ 与 $\hat{A} \neq 0$， $\min(r\hat{A}, \thinspace \mathrm{clip}(r, 1-\epsilon, 1+\epsilon)\hat{A}) \le r\hat{A}$，并分 $\hat{A}$ 正负给出等号成立的 $r$ 区间；由此验证式 (8)(9) 的分段写法与「反向永不截断」的论断。
+2.（推导 · [30]）IS 方差：设单步动作上 $D_{\mathrm{KL}}(\pi_{\mathrm{old}} \Vert \pi_\theta) = \kappa$ 有界，写出 $`\mathbb{E}_{\mathrm{old}}[r_t^2]`$ 的表达式并说明它随 $\kappa$ 增长；进一步说明序列级 ratio $\prod_{t=1}^{T} r_t$ 的方差为什么随 $T$ 爆炸（与 8.4 §7 的 GSPO 动机衔接）。
+3.（计算 · [30]）TRPO 界尺度： $\gamma = 0.99$、 $\epsilon = \max_{s,a}|A| = 1$，算 $C = 4\epsilon\gamma/(1-\gamma)^2$ ；取 $D_{\mathrm{KL}}^{\max} = 0.01$，惩罚项多大、相对 $L$ 的典型量级意味着什么？由此解释论文为什么放弃惩罚式 (5) 改约束式 (6)。校验：算出的 C 应在四万量级；若差出两个数量级，先查分母有没有少平方一次。
+4.（代码 · [30]）跑 CleanRL `ppo.py`（CartPole-v1， `--no-cuda`），把 `--update-epochs` 从 4 调到 12，读 `losses/clipfrac` 与 `losses/approx_kl` 两条曲线的变化，用 §4.2 的陈旧偏差框架解释；再把 `--norm-adv` 关掉对比收敛差异。先按上文的陈旧偏差框架，写下你对两条曲线变化方向的预测，再跑实验对照。校验：clipfrac 应随 epoch 数单调不降；同批数据被复用三遍时，approx_kl 的末值应高于默认的一遍配置。
 
 ## 参考
 

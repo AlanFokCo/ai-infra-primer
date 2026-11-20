@@ -12,11 +12,13 @@ $$
 
 注意这个结构的特殊性：期望号下的采样分布依赖 $\theta$ ，被期望的函数 $R$ 却只能前向求值。RM 是另一个网络，verifier 是符号判定，两者都不提供 $\partial R / \partial \theta$ 。「分布含参数、函数只求值」的优化问题有一个通用解法：score function estimator（对数导数技巧）。它就是策略梯度的全部内容。
 
+本章口径一句：LLM 场景一律无折扣（γ 恒为 1）、reward 只在末端；数值例全部用合成小例（三动作算例与 Bernoulli 奖励玩具模型），不引外部模型规模。
+
 ## 2. MDP 形式化与 LLM 的退化结构
 
 ### 2.1 MDP 五元组与轨迹分布
 
-马尔可夫决策过程（Markov decision process, MDP）记为 $\mathcal{M} = (\mathcal{S}, \mathcal{A}, P, r, \gamma)$ 加初始状态分布 $p_0$ ：
+把「生成一个回答」写成 MDP，五个件各对应什么？先给一般定义。所谓马尔可夫决策过程（Markov decision process, MDP），是指 $\mathcal{M} = (\mathcal{S}, \mathcal{A}, P, r, \gamma)$ 加初始状态分布 $p_0$ 这一组对象：
 
 - $\mathcal{S}$ ：状态空间； $\mathcal{A}$ ：动作空间；
 - $P(s'|s, a)$ ：转移核——在状态 $s$ 执行动作 $a$ 后转移到 $s'$ 的概率；
@@ -35,7 +37,7 @@ $$
 G_t = \sum_{l=0}^{T-1-t} \gamma^{l} \thinspace r_{t+l} \qquad (2)
 $$
 
-**符号**： $G_t$ ：从 $t$ 起的折扣回报和； $\gamma = 1$ 时退化为剩余奖励的简单求和。整条轨迹的回报 $R(\tau) = G_0$ 。
+**符号**： $G_t$ ：从 $t$ 起的折扣回报和； $\gamma = 1$ 时退化为剩余奖励的简单求和。整条轨迹的回报 $R(\tau) = G_0$ 。代入数值感受一下：T = 4、γ = 1、逐步奖励为（0, 0, 0, 1）时，从每步出发的 reward-to-go 全等于 1——末端奖励下它退化为常数，本章后半的方差分析会回到这一点。
 
 ### 2.2 LLM 映射：全部随机性都在策略里
 
@@ -72,7 +74,7 @@ reward 的来源交代一句。RLHF 路线里， $R$ 来自人类偏好数据训
 
 ## 3. 目标函数与 log-derivative trick
 
-Episodic 未折扣目标（ $\gamma = 1$ ）写成轨迹期望：
+要优化什么、梯度怎么穿过采样分布？路线三步：梯度先穿过轨迹求和；再用 log-derivative trick 把「对分布求导」变成「对数求导」；最后展开轨迹分布，把环境项清零。先写目标——episodic 未折扣目标（ $\gamma = 1$ ）写成轨迹期望：
 
 $$
 J(\theta) = \mathbb{E}_{\tau \sim \pi_\theta}\left[ R(\tau) \right] = \sum_{\tau} p_\theta(\tau) \thinspace R(\tau) \qquad (3)
@@ -134,7 +136,9 @@ $$
 
 **符号**： $\delta_{ja}$ ：Kronecker delta（ $j = a$ 时为 1，否则 0）。右端是「one-hot 减概率向量」。这个形态似曾相识：1.2 的 softmax-CE 融合反向是同一个 Jacobian（ $p - \delta_y$ 形态）。也就是说，策略梯度的 score 与监督 CE 的 logit 梯度共享同一条反向通路。区别只有两处：CE 里目标 token 由数据给定，这里动作由策略自己采样；这里外面还要多乘一个 credit 权重。式 (8) 的零均值在闭式下可直接验算： $`\mathbb{E}_a[\nabla_z \log \pi] = \sum_a \pi_a (e_a - p) = p - p = 0`$（ $e_a$ 为 one-hot 基向量）。
 
-参数梯度由链式法则经模型内部回传（1.1 的 vjp 机制）。实现层只需 gather 所采 token 的 $\log \pi$ 再 backward（§6 的伪损失写法），logit 闭式由 autograd 自动处理。但这个显式形态解释了一个动力学事实：某 token 被押到 $p_a \to 1$ 时， $e_a - p$ 的各分量趋零。换句话说，高置信区间的 score 幅度自然收缩——策略越确定，梯度信号越弱。这是 entropy 管理与探索问题的第一道数学影子：8.2 的 entropy bonus、8.4 的 entropy 塌缩动机，都在这条性质上做文章。
+参数梯度由链式法则经模型内部回传（1.1 的 vjp 机制）。实现层只需 gather 所采 token 的 $\log \pi$ 再 backward（§6 的伪损失写法），logit 闭式由 autograd 自动处理。但这个显式形态解释了一个动力学事实：某 token 被押到 $p_a \to 1$ 时， $e_a - p$ 的各分量趋零。换句话说，高置信区间的 score 幅度自然收缩——策略越确定，梯度信号越弱。
+
+> **提点**：这条收缩性质是 entropy 管理与探索问题的第一道数学影子——8.2 的 entropy bonus、8.4 的 entropy 塌缩动机，都在它上面做文章。
 
 ## 4. 策略梯度定理：因果引理、Q 形式、状态分布
 
@@ -186,6 +190,8 @@ $$
 V^{\pi}(s) = \mathbb{E}_{\tau \sim \pi}\left[ \sum_{l=0}^{\infty} \gamma^{l} \thinspace r_{t+l} \mid s_t = s \right] \qquad (14)
 $$
 
+**命题**（策略梯度定理，折扣形式）：折扣目标的梯度等于折扣状态分布下「score × Q」的期望。**证明**（路线：Bellman 方程两端求导得不动点方程，逐层展开后几何级数收敛、状态访问测度浮出；全程六步，关键一步是递归的逐层展开）。
+
 **符号**： $V^{\pi}$ ：从 $s$ 出发沿 $\pi$ 的期望折扣回报。这里视界取无穷；episodic 情形用吸收态处理，结论同形。这次的推导不走轨迹 trick，改走另一条路：从 Bellman 方程 $V^{\pi}(s) = \sum_a \pi_\theta(a|s) \thinspace Q^{\pi,\gamma}(s, a)$ 两端对 $\theta$ 求导（Sutton-Barto §13.2 的路线，[Sutton & Barto, 2018](../references.md)，[B]）：
 
 $$
@@ -222,13 +228,13 @@ $$
 
 ### 5.1 无偏性：减任意状态函数都不动期望
 
-式 (13) 中的 $Q^{\pi}$ 可以减去任意只依赖状态的函数 $b(s)$ （baseline），期望不变。对固定的 $s$ ：
+**命题**（baseline 无偏）：式 (13) 中的 $Q^{\pi}$ 可以减去任意只依赖状态的函数 $b(s)$ （baseline），期望不变。**证明**：对固定的 $s$ 逐字展开——
 
 $$
 \mathbb{E}_{a \sim \pi_\theta(\cdot|s)}\left[ \nabla_\theta \log \pi_\theta(a|s) \thinspace b(s) \right] = b(s) \thinspace \sum_a \nabla_\theta \pi_\theta(a|s) = b(s) \thinspace \nabla_\theta 1 = 0 \qquad (20)
 $$
 
-对外层状态分布再取期望仍为零。条件只有一条： $b$ 不依赖当前动作 $a$ ——它可以依赖 $s$ 与 $s$ 之前的历史（练习 2 证推广形式并给反例）。于是对任意 baseline：
+对外层状态分布再取期望仍为零，证毕。条件只有一条： $b$ 不依赖当前动作 $a$ ——它可以依赖 $s$ 与 $s$ 之前的历史（练习 3 证推广形式并给反例）。反例的存在性先记一句：b 若依赖动作，会把信号和噪声一起减掉。于是对任意 baseline：
 
 $$
 \nabla_\theta J = \mathbb{E}\left[ \sum_{t=0}^{T-1} \nabla_\theta \log \pi_\theta(a_t|s_t) \thinspace \left( Q^{\pi}(s_t, a_t) - b(s_t) \right) \right] \qquad (21)
@@ -238,7 +244,7 @@ $$
 
 ### 5.2 最优 baseline：方差最小化推导
 
-哪个 $b(s)$ 把方差压得最狠？逐状态最小化估计器的二阶矩就有答案。固定 $s$ ，记 $g(a) = \nabla_\theta \log \pi_\theta(a|s)$ （向量），估计器 $X(a) = g(a) \thinspace (Q(s, a) - b)$ 。由式 (20)，均值 $\mathbb{E}[X] = \mathbb{E}[g \thinspace Q]$ 与 $b$ 无关，所以最小化方差等价于最小化
+哪个 $b(s)$ 把方差压得最狠？路线：固定状态，把估计器的二阶矩写成 b 的二次型，逐坐标求导置零，一步出闭式。固定 $s$ ，记 $g(a) = \nabla_\theta \log \pi_\theta(a|s)$ （向量），估计器 $X(a) = g(a) \thinspace (Q(s, a) - b)$ 。由式 (20)，均值 $\mathbb{E}[X] = \mathbb{E}[g \thinspace Q]$ 与 $b$ 无关，所以最小化方差等价于最小化
 
 $$
 \mathbb{E}_a\left[ \Vert X \Vert^2 \right] = \mathbb{E}_a\left[ \Vert g(a) \Vert^2 \thinspace \left( Q(s, a) - b \right)^2 \right] \qquad (22)
@@ -265,7 +271,7 @@ $$
 式 (21) 留下的设计空间，按「状态依赖的粒度」排队：
 
 - **常数 baseline**： $b$ = batch 均值回报。§7 的方差分解里它恰好杀掉 $\mu_R^{2}$ 项；零学习成本，每步白拿。
-- **历史依赖 baseline**： $b$ 可依赖直到 $s_t$ 为止的全部历史（练习 2 证其合法性）——§7.2 会看到，这允许 per-token 的 $b(s_t)$ ，是 LLM 退化结构下 credit assignment 的唯一入口。
+- **历史依赖 baseline**： $b$ 可依赖直到 $s_t$ 为止的全部历史（练习 3 证其合法性）——§7.2 会看到，这允许 per-token 的 $b(s_t)$ ，是 LLM 退化结构下 credit assignment 的唯一入口。
 - **价值网络 baseline**： $b(s) = V_\varphi(s)$ ，用回归学出的前缀条件期望——8.2 的全部内容。
 - **同 prompt 组均值**：同一 prompt 下 $G$ 个采样回报的均值作 $b$ ——8.4 GRPO 的选择，免学价值网络。
 
@@ -301,6 +307,8 @@ L(\theta) = -\frac{1}{N_{\mathrm{traj}}} \sum_{i=1}^{N_{\mathrm{traj}}} \sum_{t=
 $$
 
 $\nabla L = -\hat{g}$ ： $\log \pi$ 的梯度由 autograd 产出（1.1 的 vjp 机制）， $\hat{A}$ 只作逐样本权重。「把 credit 当权重、把 log 概率当损失」是全部 RL 训练栈的共用模式，8.2-8.4 的目标函数都写成这个形态。
+
+> **坑**：伪损失里的 credit 权重必须常数化（detach）。忘了这一步，梯度会穿过 credit 回流——若 credit 由另一个网络算出（如后两章的估值网络），两个网络的梯度就串了：loss 照降、策略却学到被污染的方向。
 
 一个退化情形能把「信号从哪来」锁定下来：若所有采样的回报恒为常数 $R \equiv c$ ，式 (25) 的期望为 $c \sum_t \mathbb{E}[\nabla_\theta \log \pi_\theta(a_t|s_t)] = 0$（式 (8) 逐分量作用）——没有任何学习信号。驱动策略移动的不是 reward 的绝对水平，而是 reward 在采样分布下的**变差**。这也是 baseline 不动期望的镜像读法：减掉常数不动信号，只动噪声。
 
@@ -395,13 +403,13 @@ RLHF 语境交代一句：把这套梯度估计机器嵌进后训练完整链路
 
 ## 练习
 
-1.（推导）补全式 (15)→(17) 的不动点展开：把式 (16) 代入式 (15) 后对 $\nabla V^{\pi}$ 递归迭代两次，归纳出 $\sum_k \gamma^{k} \Pr(s \to x, k, \pi)$ 的一般项；说明 $\gamma \lt 1$ 与有限视界两种情形下级数收敛的理由。
+1.（计算 · [20]）§5.2 算例改参数： $\pi = (0.6, 0.2, 0.2)$ 、 $Q = (3, 1, 0)$ 、 $g = (1, -1, -2)$ 。(a) 验证 $\sum_i \pi_i g_i = 0$ ；(b) 算 $V^{\pi}$ 、 $b^{\ast}$ 与三个 baseline（ $0$ 、 $b^{\ast}$ 、 $V^{\pi}$ ）下的估计器方差；(c) 若 score 改为 $g = (1, 1, -4)$ （先验证零均值条件）， $b^{\ast}$ 与 $V^{\pi}$ 的差距拉大还是缩小？解释机制。校验：(b) 中最优 baseline 的方差必为三者最小，且三种 baseline 下估计器的均值相同。
 
-2.（推导）baseline 引理的推广与边界：(a) 证明 $b$ 可依赖 $(s_0, a_0, \ldots, s_t)$ （直到 $s_t$ 为止的历史）仍有 $\mathbb{E}[\nabla_\theta \log \pi_\theta(a_t|s_t) \thinspace b] = 0$ ；(b) 取 §5.2 算例的三动作设置，令 $b$ 依赖动作、取 $b(s, a) = Q(s, a)$ ，验证估计器恒为零向量而 $\mathbb{E}[gQ] \neq 0$ ——动作依赖的 baseline 把信号一起减掉了。
+2.（推导 · [30]）补全式 (15)→(17) 的不动点展开：把式 (16) 代入式 (15) 后对 $\nabla V^{\pi}$ 递归迭代两次，归纳出 $\sum_k \gamma^{k} \Pr(s \to x, k, \pi)$ 的一般项；说明 $\gamma \lt 1$ 与有限视界两种情形下级数收敛的理由。
 
-3.（计算）§5.2 算例改参数： $\pi = (0.6, 0.2, 0.2)$ 、 $Q = (3, 1, 0)$ 、 $g = (1, -1, -2)$ 。(a) 验证 $\sum_i \pi_i g_i = 0$ ；(b) 算 $V^{\pi}$ 、 $b^{\ast}$ 与三个 baseline（ $0$ 、 $b^{\ast}$ 、 $V^{\pi}$ ）下的估计器方差；(c) 若 score 改为 $g = (1, 1, -4)$ （先验证零均值条件）， $b^{\ast}$ 与 $V^{\pi}$ 的差距拉大还是缩小？解释机制。
+3.（推导 · [30]）baseline 无偏命题的推广与边界：(a) 证明 $b$ 可依赖 $(s_0, a_0, \ldots, s_t)$ （直到 $s_t$ 为止的历史）仍有 $\mathbb{E}[\nabla_\theta \log \pi_\theta(a_t|s_t) \thinspace b] = 0$ ；(b) 取 §5.2 算例的三动作设置，令 $b$ 依赖动作、取 $b(s, a) = Q(s, a)$ ，验证估计器恒为零向量而 $\mathbb{E}[gQ] \neq 0$ ——动作依赖的 baseline 把信号一起减掉了。
 
-4.（代码）在 §6 教学代码上把常数 baseline 换成指数移动平均 baseline（ $b \leftarrow 0.9 b + 0.1 \bar{R}$ ），构造合成二值奖励（回答含特定子串记 1 否则 0，可调难度 $p$ ），对单步梯度估计 $\hat{g}$ 做 200 次独立重复、比较两种 baseline 的样本方差；把结果对照式 (27) 的 $\mu_R^{2} / \sigma_R^{2}$ 分解，讨论 $p$ 接近 0.5 与接近 1 时 baseline 收益的变化方向。
+4.（代码 · [30]）在 §6 教学代码上把常数 baseline 换成指数移动平均 baseline（ $b \leftarrow 0.9 b + 0.1 \bar{R}$ ），构造合成二值奖励（回答含特定子串记 1 否则 0，可调难度 $p$ ），对单步梯度估计 $\hat{g}$ 做 200 次独立重复、比较两种 baseline 的样本方差；把结果对照式 (27) 的 $\mu_R^{2} / \sigma_R^{2}$ 分解，讨论 $p$ 接近 0.5 与接近 1 时 baseline 收益的变化方向。动手前先写预测：两种 baseline 的方差比落在哪个区间、随难度怎么动？校验：难度取两端极端时，移动平均 baseline 的收益应逼近常数 baseline 的理论值。
 
 ## 参考
 
