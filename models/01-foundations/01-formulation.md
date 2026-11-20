@@ -20,6 +20,8 @@ Qwen3-8B 的 $\mathrm{tok}$ 是 byte-level BPE（Qwen2Tokenizer 家族）：从�
 
 **符号**： $T_{\max}$ ：模型的上下文窗口（context window），即单次可处理的最大序列长度。
 
+本章口径：词表与窗口的代入一律用上表三个模型的 config 值，全章不换。后文 softmax 瓶颈一节代入 Qwen3-8B，只是因为它的词表最大、瓶颈最显眼。
+
 两个边界 token 需要显式登记，后面的公式要用：GPT-2 用同一个 id 50256（`<|endoftext|>`）充当序列开始与结束符；Qwen3-8B 的 bos_token_id = 151643（`<|endoftext|>`）、eos_token_id = 151645（`<|im_end|>`）。全书统一约定 $x_0$ = bos token：它是人为添加的第 0 个 token，作用是给「第一个 token 的分布」一个条件对象。 $x_0$ 只在 $t$ = 1 的边界条件里出现，不计入序列本身—— $x_{\lt t}$ 的定义（式 (3)）从 $x_1$ 起算。
 
 **样本空间** $X$ 是所有长度 $T$ 满足 $1 \le T \le T_{\max}$ 的 token 序列的并集： $X$ 的每个元素是某个 $V^{T}$ 里的序列。一个语言模型就是 $X$ 上的一个概率分布 $P$ 。
@@ -40,6 +42,8 @@ $$
 
 **符号**： $\theta$ ：全部可学习参数； $t$ ：当前位置； $\Delta^{V-1}$ ： $V$ 个类别上的概率单纯形（probability simplex），即所有分量非负、和为 1 的 $V$ 维向量的集合； $q$ ：单纯形中一点，即词表上的一个分布。
 
+一个正例、一个反例把单纯形的边界钉清楚：词表上的均匀分布在它里面；分量全取 1 的向量不在——分量虽然非负，和却是 V 而不是 1，所以不是分布。
+
 式 (1) 的信息量全在值域上：无论前面见过什么上下文，模型的输出永远是「下一个 token 取词表中每个值的概率」。工程实现分两步：主干网络把上下文压成一个向量，输出头（output head，也叫 unembedding）把它映射成分布：
 
 $$
@@ -50,11 +54,15 @@ $$
 
 锚点数值：Llama-3.1-8B 与 Qwen3-8B 都是 $d$ = 4096，且 tie_word_embeddings = false，即 $W$ 与输入 embedding 矩阵是相互独立的两份参数（[Llama-3.1-8B config](../references.md)、[Qwen3-8B config](../references.md)，均 [A]）。单算输出头：Llama-3.1-8B 的 $W$ 有 $128256 \times 4096 = 525336576$ 个参数（约 5.3 亿），Qwen3-8B 为 $151936 \times 4096 = 622329856$（约 6.2 亿）——输出头自己就是一个 0.5B 量级的矩阵，这就是第 9 节 rank 瓶颈的舞台。weight tying 的取舍见 2.2。
 
-softmax 的一个性质后面会用到： $\exp(z_i) > 0$ 对任何有限 logits 成立，所以 $q_\theta$ 给词表每个 token 的概率都严格大于 0——模型的支持集（support）恒为整个 $V$ 。代价是数值上必须防溢出（实现里先减 $\max_i z_i$ 再取 $\exp$ ，等价性留作思考，2.3 与官方实现对照时再落实）；收益是 $q_\theta(v) = 0$ 导致的 $\log 0$ 在训练里不会出现。
+softmax 的一个性质后面会用到： $\exp(z_i) > 0$ 对任何有限 logits 成立，所以 $q_\theta$ 给词表每个 token 的概率都严格大于 0——模型的支持集（support）恒为整个 $V$ 。代价是数值上必须防溢出：
+
+> **坑**：softmax 里的 exp 遇大 logits 直接溢出，前向产出 NaN——实现里先减 $\max_i z_i$ 再取 $\exp$ ，数学上等价（等价性留作思考，2.3 与官方实现对照时再落实）。
+
+收益则是 $q_\theta(v) = 0$ 导致的 $\log 0$ 在训练里不会出现。
 
 ## 3. 链式法则到自回归分解（完整推导）
 
-式 (1) 只定义了「单步条件分布」， $X$ 上的完整分布 $P(x_{1:T})$ 还没着落。直接列表参数化需要 $V^{T} - 1$ 个自由参数——GPT-2 的规模下是 $50257^{1024}$ ，连写都写不下。概率论的链式法则（chain rule）给出精确分解，一步不跳地推：
+式 (1) 只定义了「单步条件分布」——完整序列的概率怎么算？ $X$ 上的完整分布 $P(x_{1:T})$ 还没着落：直接列表参数化需要 $V^{T} - 1$ 个自由参数——GPT-2 的规模下是 $50257^{1024}$ ，连写都写不下。概率论的链式法则（chain rule）给出精确分解。**命题**（自回归分解）：任何序列的联合分布，都等于它逐位置条件分布的连乘。**证明**（对序列长度做归纳，一步不跳）：
 
 条件概率的定义式为
 
@@ -94,7 +102,7 @@ $$
 P(x_{1:k+1}) = P(x_{k+1} | x_{1:k}) \cdot P(x_{1:k}) = P(x_{k+1} | x_{1:k}) \cdot \prod_{t=1}^{k} P(x_t | x_{\lt t}) = \prod_{t=1}^{k+1} P(x_t | x_{\lt t})
 $$
 
-**注**：上面几行中间推导无新符号—— $A, B$ 沿用定义式注记， $k$ 为归纳变量（序列长度）， $x_{1:k}$ 表示前 $k$ 个 token 的联合。第一步是条件概率定义式（取 $A = \lbrace x_{k+1}\rbrace$ 、 $B = \lbrace x_{1:k}\rbrace$ ），第二步代入归纳假设，第三步把因子并入连乘。归纳成立，得**自回归分解（autoregressive factorization）**。严格性注记：定义式 $P(A, B) = P(A | B) P(B)$ 在 $P(B) = 0$ 时条件概率无定义；对语言数据这不是问题——实际语料里每个出现的前缀都有正概率，而模型侧由 softmax 的严格正性（第 2 节）保证 $q_\theta$ 处处有定义，归纳链条每一步都合法：
+**注**：上面几行中间推导无新符号—— $A, B$ 沿用定义式注记， $k$ 为归纳变量（序列长度）， $x_{1:k}$ 表示前 $k$ 个 token 的联合。第一步是条件概率定义式（取 $A = \lbrace x_{k+1}\rbrace$ 、 $B = \lbrace x_{1:k}\rbrace$ ），第二步代入归纳假设，第三步把因子并入连乘。归纳成立，命题证毕——所得即**自回归分解（autoregressive factorization）**。严格性注记：定义式 $P(A, B) = P(A | B) P(B)$ 在 $P(B) = 0$ 时条件概率无定义；对语言数据这不是问题——实际语料里每个出现的前缀都有正概率，而模型侧由 softmax 的严格正性（第 2 节）保证 $q_\theta$ 处处有定义，归纳链条每一步都合法：
 
 $$
 P(x_{1:T}) = \prod_{t=1}^{T} P(x_t | x_{\lt t}), \qquad x_{\lt t} = (x_1, ..., x_{t-1}) \qquad (3)
@@ -106,11 +114,11 @@ $$
 
 1. **精确，无近似**。式 (3) 是恒等式，任何联合分布都满足，不是模型假设。
 2. **顺序任意**。链式法则对位置的任意排列 $\pi$ 都成立（练习 1 证明）。选从左到右的因果序只有一个原因：生成时未来位置尚不存在，只有因果序的每个因子 $P(x_t | x_{\lt t})$ 在采样时刻是可用的。
-3. **把存不下的表变成共享函数**。 $V^{T}$ 个表项被换成 $T$ 个条件分布，而每个条件分布都由同一个 $f_\theta$ 供给（式 (1)(2)）——指数爆炸被参数共享压掉。
+3. **把存不下的表变成共享函数**。 $V^{T}$ 个表项被换成 $T$ 个条件分布，而每个条件分布都由同一个 $f_\theta$ 供给（式 (1)(2)）——指数爆炸被参数共享压掉。代入 GPT-2 的规模感受这个压缩：存不下的表有 50257 的 1024 次方个表项，分解后只剩 1024 个条件分布，全部由同一个网络供给。
 
 ## 4. 训练目标：NLL 与 cross-entropy 的同一性
 
-训练数据 $D$ 是来自未知真实分布 $p_{\mathrm{data}}$ 的样本。极大似然估计（MLE）等价于最小化负对数似然（negative log-likelihood, NLL）。把式 (3) 代入并除以 token 数，得到 per-token 训练目标：
+用什么目标训练这个分布？训练数据 $D$ 是来自未知真实分布 $p_{\mathrm{data}}$ 的样本，极大似然估计（MLE）等价于最小化负对数似然（negative log-likelihood, NLL）。把式 (3) 代入并除以 token 数，得到 per-token 训练目标：
 
 $$
 \mathrm{NLL}(\theta) = - \frac{1}{T} \sum_{t=1}^{T} \log q_\theta(x_t | x_{\lt t}) \qquad (4)
@@ -126,13 +134,13 @@ $$
 
 **符号**： $p$ ：目标分布； $q$ ：模型分布；求和遍历词表。
 
-NLL 与 CE 是同一个东西，一步展开即可见：训练目标里 $p$ 是真实 token $x_t$ 的 one-hot 分布 $\delta_{x_t}$ （在 $v = x_t$ 处为 1，其余为 0），代入式 (5)：
+**命题**（NLL 与 CE 同一）：目标分布取真实 token 的 one-hot 时，逐位置 cross-entropy 就是逐位置 NLL。**证明**（一步展开）：训练目标里 $p$ 是真实 token $x_t$ 的 one-hot 分布 $\delta_{x_t}$ （在 $v = x_t$ 处为 1，其余为 0），代入式 (5)：
 
 $$
 \mathrm{CE}(\delta_{x_t}, q_\theta) = - \sum_{v=1}^{V} \delta_{x_t}(v) \log q_\theta(v | x_{\lt t}) = - \log q_\theta(x_t | x_{\lt t})
 $$
 
-求和里只有 $v = x_t$ 一项非零。对 $t$ 取平均即式 (4)。所以「训 NLL」「训 cross-entropy」「训 MLE」在 LM 语境下是同一句话。另外记一个反向传播的入口事实：softmax 与 CE 复合后，式 (4) 对 logits $z_i$ 的偏导数有闭式 $q_i - \delta_{x_t}(i)$ ，即「预测概率减真值」，逐位置的分类误差信号直接落在 logits 上。
+求和里只有 $v = x_t$ 一项非零，对 $t$ 取平均即式 (4)，命题成立。所以「训 NLL」「训 cross-entropy」「训 MLE」在 LM 语境下是同一句话。代入锚点数值感受这个目标的形状：Qwen3-8B 下每个位置是一个 151936 类的分类问题，一条 40960 token 的序列给出 40960 个。另外记一个反向传播的入口事实：softmax 与 CE 复合后，式 (4) 对 logits $z_i$ 的偏导数有闭式 $q_i - \delta_{x_t}(i)$ ，即「预测概率减真值」，逐位置的分类误差信号直接落在 logits 上。
 
 计算层面靠 **教师强制（teacher forcing）**：训练时喂给模型的条件 $x_{\lt t}$ 一律是数据里的真实 token，不是模型自己采样的结果。这样 $T$ 个位置的条件分布可以在一次前向里并行算出，loss 再求平均：
 
@@ -191,7 +199,7 @@ KL 散度不对称，方向不是细节。MLE 优化的是 $\mathrm{KL}(p_{\math
 
 ## 6. Perplexity 与两个陷阱
 
-困惑度（perplexity）只是 CE 的指数化：
+怎么把 CE 换成一个直觉可读的数？困惑度（perplexity）只是 CE 的指数化：
 
 $$
 \mathrm{PPL} = \exp(\mathrm{CE}_{\mathrm{nats}}) = 2^{\mathrm{CE}_{\mathrm{bits}}} \qquad (7)
@@ -215,7 +223,7 @@ $$
 
 ## 7. CLM / MLM / prefix-LM：attention mask + loss mask 的统一形式
 
-CLM、MLM、prefix-LM 是三类训练目标，但它们不需要三套定义。统一成三个对象就够：**attention mask** $M \in \lbrace0, -\infty\rbrace^{T \times T}$ 决定位置 $i$ 能看见谁（进入 attention 的 softmax，细节在 2.3），**loss mask** $\ell \in \lbrace0, 1\rbrace^{T}$ 决定哪些位置计入损失，**输入序列** $x'$ 是实际送入模型的 token 序列（可能被腐蚀）：
+CLM、MLM、prefix-LM 三类训练目标，需要三套定义吗？不需要——统一成三个对象就够：**attention mask** $M \in \lbrace0, -\infty\rbrace^{T \times T}$ 决定位置 $i$ 能看见谁（进入 attention 的 softmax，细节在 2.3），**loss mask** $\ell \in \lbrace0, 1\rbrace^{T}$ 决定哪些位置计入损失，**输入序列** $x'$ 是实际送入模型的 token 序列（可能被腐蚀）：
 
 $$
 \alpha_{ij} = \frac{\exp(s_{ij} + M_{ij})}{\sum_{l=1}^{T} \exp(s_{il} + M_{il})}, \qquad L(\theta) = - \sum_{t=1}^{T} \ell_t \log q_\theta(x_t | x'; M) \qquad (8)
@@ -279,13 +287,13 @@ $$
 
 **符号**： $\log P \in \mathbb{R}^{N \times V}$ ：模型在 $N$ 个上下文上的对数概率矩阵； $u \in \mathbb{R}^{N}$ ：逐行归一化常数； $1_V \in \mathbb{R}^{V}$ ：词表维的全 1 列向量， $u 1_V^{\top} \in \mathbb{R}^{N \times V}$ 是 rank 1（第 $c$ 行是常向量 $u_c \cdot 1_V^{\top}$ ）。不含 bias 时上界收紧为 $d + 1$ 。
 
-结论：无论 softmax 怎么训练，模型能表达的对数概率矩阵 rank 以 $d$ 为上界，与 $V$ 无关。真实语言的条件分布矩阵没有理由落在这个低秩子空间里。同一上下文后面接哪些 token，由语义、语法、语用多组近似独立的因素决定；互斥但各自合理的续写集合很大，对应的 $\log P$ 矩阵行与行之间的线性关系接近满秩。只要真实矩阵的 rank 超过 $d + 2$ ，就存在模型永远拟合不了的残差。增加数据、加深主干都无效，因为瓶颈在输出头的线性结构上——这就是 **softmax 瓶颈（softmax bottleneck）**（[Yang et al., 2018](../references.md)，arXiv:1711.03953，[A]）。代入锚点： $d$ = 4096、 $V$ = 151936（Qwen3-8B），rank 上限 4098 对满秩 151936，不到词表大小的 3%。原论文的解法是 Mixture of Softmaxes（MoS）：用多个低秩头的凸组合把 rank 抬上去，公式拆解连同它与 weight tying 的关系放在 2.2。
+**命题**（rank 上界）：无论 softmax 怎么训练，模型能表达的对数概率矩阵 rank 以 $d$ 加 2 为上界，与 $V$ 无关——证明即上文的矩阵分解加两行 rank 估计（乘积 rank 封顶、两次 rank-1 修正）。真实语言的条件分布矩阵没有理由落在这个低秩子空间里。同一上下文后面接哪些 token，由语义、语法、语用多组近似独立的因素决定；互斥但各自合理的续写集合很大，对应的 $\log P$ 矩阵行与行之间的线性关系接近满秩。只要真实矩阵的 rank 超过 $d + 2$ ，就存在模型永远拟合不了的残差。增加数据、加深主干都无效，因为瓶颈在输出头的线性结构上——这就是 **softmax 瓶颈（softmax bottleneck）**（[Yang et al., 2018](../references.md)，arXiv:1711.03953，[A]）。代入锚点： $d$ = 4096、 $V$ = 151936（Qwen3-8B），rank 上限 4098 对满秩 151936，不到词表大小的 3%。原论文的解法是 Mixture of Softmaxes（MoS）：用多个低秩头的凸组合把 rank 抬上去，公式拆解连同它与 weight tying 的关系放在 2.2。
 
 ## 总结
 
 | 概念 | 记号 / 公式 | 要点 |
 | --- | --- | --- |
-| 样本空间 | $X$ = 全体长度 $\le T_{\max}$ 的 token 序列 | $V$ = 词表大小（50257 / 128256 / 151936） |
+| 样本空间 | $X$ = 全体长度 $\le T_{\max}$ 的 token 序列 | $V$ = 词表大小（50257 / 128256 / 151936，练习 2 复用这三个数） |
 | 模型 | $f_\theta: V^{t-1} \to \Delta^{V-1}$ | 输出恒为下一 token 的分布，式 (1)(2) |
 | AR 分解 | $P(x_{1:T}) = \prod_t P(x_t \vert x_{\lt t})$ | 链式法则恒等式；顺序任意，因果序为生成服务，式 (3) |
 | 训练目标 | $\mathrm{NLL}$ = 逐位置 CE 的平均 | NLL = CE = MLE，式 (4)(5) |
@@ -297,10 +305,10 @@ $$
 
 ## 练习
 
-1.（推导）证明式 (3) 的顺序任意性：对位置集合 $\lbrace1, ..., T\rbrace$ 的任意排列 $\pi$ ，用条件概率定义式归纳证明 $P(x_{1:T}) = \prod_{t=1}^{T} P(x_{\pi(t)} | x_{\pi(1)}, ..., x_{\pi(t-1)})$ 。再从生成过程的因果性出发，说明为什么实际系统只取恒等排列。
-2.（计算）某模型在固定测试集上 per-token CE = 3.2 nats。(a) 求 PPL；(b) 折成 bits/token；(c) 设 $V$ = 50257，uniform 基线的 CE 与 PPL 各是多少，该模型相对基线每 token 省多少 bits；(d) 换一个 tokenizer 后同一测试集 token 数翻倍、总 NLL 不变，新的 per-token PPL 是多少？这个数字变化说明了什么？
-3.（推导）完成式 (11) 的细节：设 $H \in \mathbb{R}^{N \times d}$ 、 $W \in \mathbb{R}^{V \times d}$ 、 $b \in \mathbb{R}^{V}$ ，写出 $u$ 的逐分量定义，并证明 $\mathrm{rank}(\log P) \le d + 2$ ；说明无 bias 时为何收紧为 $d + 1$ 。代入 Qwen3-8B 的 $d$ = 4096、 $V$ = 151936，计算上界占满秩的比例。
-4.（代码）教学练习，不使用 torch.nn.functional.cross_entropy：(a) 给定 logits（ $[B, T, V]$ ）与 targets（ $[B, T]$ ），手写 per-token NLL，与官方函数对拍验证；(b) 写单步 nucleus 采样：排序、累积求和、按阈值 $p$ 截断、重归一、multinomial 采样，打印各中间张量 shape。
+1.（推导 · [20]）证明式 (3) 的顺序任意性：对位置集合 $\lbrace1, ..., T\rbrace$ 的任意排列 $\pi$ ，用条件概率定义式归纳证明 $P(x_{1:T}) = \prod_{t=1}^{T} P(x_{\pi(t)} | x_{\pi(1)}, ..., x_{\pi(t-1)})$ 。再从生成过程的因果性出发，说明为什么实际系统只取恒等排列。
+2.（计算 · [20]）某模型在固定测试集上 per-token CE = 3.2 nats。(a) 求 PPL；(b) 折成 bits/token；(c) 设 $V$ = 50257，uniform 基线的 CE 与 PPL 各是多少，该模型相对基线每 token 省多少 bits；(d) 换一个 tokenizer 后同一测试集 token 数翻倍、总 NLL 不变，新的 per-token PPL 是多少？这个数字变化说明了什么？先写下你对 (d) 方向的预测（PPL 升还是降、约多少倍），再计算。校验：(c) 的基线 PPL 恰好等于词表大小本身；(d) 的新 PPL 应为 (a) 的平方根。
+3.（推导 · [20]）完成式 (11) 的细节：设 $H \in \mathbb{R}^{N \times d}$ 、 $W \in \mathbb{R}^{V \times d}$ 、 $b \in \mathbb{R}^{V}$ ，写出 $u$ 的逐分量定义，并证明 $\mathrm{rank}(\log P) \le d + 2$ ；说明无 bias 时为何收紧为 $d + 1$ 。代入 Qwen3-8B 的 $d$ = 4096、 $V$ = 151936，计算上界占满秩的比例。
+4.（代码 · [30]）教学练习，不使用 torch.nn.functional.cross_entropy：(a) 给定 logits（ $[B, T, V]$ ）与 targets（ $[B, T]$ ），手写 per-token NLL，与官方函数对拍验证；(b) 写单步 nucleus 采样：排序、累积求和、按阈值 $p$ 截断、重归一、multinomial 采样，打印各中间张量 shape。动手前先写预测：(a) 的逐位置 NLL 张量形状，(b) 截断集合大小随阈值变化的方向。校验：(a) 与官方函数在 fp32 下 allclose，容差 1e-6；(b) 重归一后概率和为 1，截断集外概率全为 0。
 
 ## 参考
 
