@@ -4,7 +4,7 @@
 
 ## 1. 七家配方对照表
 
-这张表是本章的核心对象。先立口径：batch 一律按 1.5 式 (5) 折成每步 tokens 数（序列数 × 序列长）；lr 指峰值；「步」指 optimizer step。逐字段出处见表下注；原文没披露的一律标「未披露」，不用二手转述补齐。
+七家公开配方的 lr、batch、warmup、decay 各是多少？这张对照表是本章的核心对象。先立口径：batch 一律按 1.5 式 (5) 折成每步 tokens 数（序列数 × 序列长）；lr 指峰值；「步」指 optimizer step；ramp 指训练前期小 batch、随后调大的日程（batch ramp 一节展开）。逐字段出处见表下注；原文没披露的一律标「未披露」，不用二手转述补齐。
 
 | 字段 | GPT-3 175B [B] | Llama-2 70B [A] | Llama-3 405B [A] | DeepSeek-V3 671B/37B [A] | OLMo 2 7B [A] | GLM-4.5 355B/32B [A] | Qwen3 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -60,20 +60,24 @@ lr/peak
 
 四种形态共享的只有一件事：峰值之前都有一段短 warmup，峰值之后都单调不增。在此之上，cosine（Llama-3、GLM-4.5）、梯形加常数尾（DeepSeek-V3）、截断转线性归零（OLMo 2）三种分歧，没有公开的跨家消融可以裁决。2.3 §3 的 MiniCPM 风洞证据支持两条：「decay 段占约 10% tokens 足够」、「梯形 vs cosine 同预算等价」。各家形状差异在当前证据等级下应读作工程偏好，不是性能结论。
 
+口径声明：对照表逐列各回各家原文——模型规模逐列不同正是本章对象；本章自立的约定只有两处：ramp 的线性增长假设与 µP 的宽度记号，分别在 batch ramp 与 µP 两节给出。
+
 ## 2. 读表：tokens 口径与两条规模规律
 
-跨表比较前先做口径换算（1.5 §2 立的规矩）：batch 只认 tokens/step， $B_{\mathrm{tok}} = b \cdot m \cdot d \cdot T$ 。表内的 batch 有四种报告形态：GPT-3 直接按 tokens 报告；Llama-2/3 按 tokens 报告；DeepSeek-V3 按序列数报告（3072/15360 × 4096 折算）；OLMo 2 按序列数报告（1024/2048 × 4096 折算）。全部折成同一列之后才可比较。schedule 的横轴也要换算：GPT-3 的 warmup 按 tokens 计（375M），其余按 step 计，两者相差一个随时间变化的 batch 因子——ramp 期尤其不可混（§3 的账）。读表的标准动作顺序：先折 tokens 口径；再按模型规模排序读 lr 与 batch 两列；然后把 decay 形状与 tokens 预算对着读（decay 的总长在 token 轴上才有意义）；最后核 optimizer 字段（ $\beta_2$ 、 $\epsilon$ 、clip）——这三个字段的变化由稳定性动机驱动（2.2 §4 的 OLMo 2 $\epsilon$ 实验即一例），与规模规律无关。
+表里的 batch 能直接比吗？不能——跨表比较前先做口径换算（1.5 §2 立的规矩）：batch 只认 tokens/step， $B_{\mathrm{tok}} = b \cdot m \cdot d \cdot T$ 。表内的 batch 有四种报告形态：GPT-3 直接按 tokens 报告；Llama-2/3 按 tokens 报告；DeepSeek-V3 按序列数报告（3072/15360 × 4096 折算）；OLMo 2 按序列数报告（1024/2048 × 4096 折算）。全部折成同一列之后才可比较。schedule 的横轴也要换算：GPT-3 的 warmup 按 tokens 计（375M），其余按 step 计，两者相差一个随时间变化的 batch 因子——ramp 期尤其不可混（§3 的账）。读表的标准动作顺序：先折 tokens 口径；再按模型规模排序读 lr 与 batch 两列；然后把 decay 形状与 tokens 预算对着读（decay 的总长在 token 轴上才有意义）；最后核 optimizer 字段（ $\beta_2$ 、 $\epsilon$ 、clip）——这三个字段的变化由稳定性动机驱动（2.2 §4 的 OLMo 2 $\epsilon$ 实验即一例），与规模规律无关。
 
 两条规模规律在表上直接可读（2.3 §6 已立，此处补全字段）：
 
 1. **lr 随规模降**。GPT-3 一族从 125M 的 $6.0 \times 10^{-4}$ 单调降到 175B 的 $0.6 \times 10^{-4}$（Table 2.1 八档全部单调）。跨家族横向看：70B 级 $1.5 \times 10^{-4}$ ，405B 级 $8 \times 10^{-5}$ ，671B 级 MoE $2.2 \times 10^{-4}$ 。MoE 按激活参数读数（37B）偏高半个量级，按总参读数偏低——这个错位本身就是 MoE lr 口径尚未收敛的信号。表内唯一反向数据点是 OLMo 2：13B 的峰值（ $9 \times 10^{-4}$ ）高于 7B（ $3 \times 10^{-4}$ ），且 13B 跑满 5T cosine 未截断。这是原文披露的事实，不强行并入规律。
 2. **batch 随规模涨**。GPT-3 一族 0.5M → 3.2M tokens；2024–2025 落点 4M（7B 级）→ 16M（405B）→ 62.9M（671B MoE）。机制读法归 2.3 §5：噪声尺度在同 loss 水平下与模型尺寸近似无关、随训练推进而涨；更大模型推进到更低的 loss，工作点随之移向大 batch 区； $\epsilon_{\max}$ 则受稳定性约束随规模收紧。
 
-一个工作例把换算流程走一遍。DeepSeek-V3 的 batch 报告值是「15360 序列」：折 tokens 为 $15360 \times 4096 \approx 62.9$ M tokens/step。这是 1.5 式 (5) 的口径—— $b \cdot m \cdot d$ 的分配原文未披露、也不必披露，等效 batch 才是配方语义的全部。全程 14.8T tokens 对应约 23.5 万个 optimizer step（按末值 batch 估下界）。同理，Llama-3 405B 的 1.2M 步日程按末值 16M tokens/step 折算约 19.2T tokens 的吞吐上限，与披露的 15.6T 同量级；差额由 ramp 期的小 batch 吸收（ramp 段约 33 万步运行在 16M 以下；长上下文阶段 batch 恒为 16M，herd Table 4 口径，不参与缺口）。这类「步数 × batch = tokens」的交叉验算是读任何配方表的第一动作：两个口径对不上，多半是有未写明的 ramp 或中途换过序列长。
+一个工作例把换算流程走一遍。DeepSeek-V3 的 batch 报告值是「15360 序列」：折 tokens 为 $15360 \times 4096 \approx 62.9$ M tokens/step。这是 1.5 式 (5) 的口径—— $b \cdot m \cdot d$ 的分配原文未披露、也不必披露，等效 batch 才是配方语义的全部。全程 14.8T tokens 对应约 23.5 万个 optimizer step（按末值 batch 估下界）。同理，Llama-3 405B 的 1.2M 步日程按末值 16M tokens/step 折算约 19.2T tokens 的吞吐上限（口径：步数 × 末值 batch 的包络，非实际消费量），与披露的 15.6T 同量级；差额由 ramp 期的小 batch 吸收（ramp 段约 33 万步运行在 16M 以下；长上下文阶段 batch 恒为 16M，herd Table 4 口径，不参与缺口）。这类「步数 × batch = tokens」的交叉验算是读任何配方表的第一动作：两个口径对不上，多半是有未写明的 ramp 或中途换过序列长。
+
+> **坑**：schedule 横轴混用 step 与 tokens 是复现配方的高发错误——触发条件是 ramp 期（batch 随时间变化），现象是 warmup 在 token 轴上被无声拉长。规避：把日程先统一定义到 tokens 轴，再写代码。
 
 ## 3. Batch ramp-up：两家 ramp 实证与步数账
 
-表中有四家显式做了 batch ramp-up（训练前期用小 batch，随后调大）：GPT-3（32k tokens 线性升至全值，前 4–12B tokens，随规模而异，App. B）、DeepSeek-V3（3072 → 15360 序列，前 469B tokens，§4.2）、Llama-3 405B（两次翻倍，§3.4.1）、GLM-4.5（16M → 64M tokens，前 500B tokens，§2.4）。把 ramp 段单独算账。本书计算的口径：设 batch 随已消费 tokens 线性增长， $B(\tau) = B_0 + (B_1 - B_0) \thinspace \tau / D_r$ 。则 ramp 段的 optimizer step 数为
+表中有四家显式做了 batch ramp-up（训练前期用小 batch，随后调大）：GPT-3（32k tokens 线性升至全值，前 4–12B tokens，随规模而异，App. B）、DeepSeek-V3（3072 → 15360 序列，前 469B tokens，§4.2）、Llama-3 405B（两次翻倍，§3.4.1）、GLM-4.5（16M → 64M tokens，前 500B tokens，§2.4）。把 ramp 段单独算账。推导路线：把 batch 写成已消耗 tokens 的线性函数，ramp 段步数即其倒数的积分；关键一步是换元后积分号下出现 batch 的倒数，对数由此而来。本书计算的口径：设 batch 随已消费 tokens 线性增长， $B(\tau) = B_0 + (B_1 - B_0) \thinspace \tau / D_r$ 。则 ramp 段的 optimizer step 数为
 
 $$
 S_{\mathrm{ramp}} = \int_{0}^{D_r} \frac{d\tau}{B(\tau)} = \frac{D_r}{B_1 - B_0} \thinspace \ln \frac{B_1}{B_0} \qquad (1)
@@ -89,17 +93,17 @@ $$
 \frac{\Delta L_{\mathrm{opt}}(B)}{B} = \frac{\Delta L_{\max}}{B + \mathcal{B}_{\mathrm{noise}}} \qquad (2)
 $$
 
-**符号**：各量同 2.3 式 (7)—— $`\Delta L_{\max}`$ 为 $B \to \infty$ 的单步进展上限， $`\mathcal{B}_{\mathrm{noise}}`$ 为噪声尺度。式 (2) 关于 $B$ 严格单调减：纯按 token 效率，batch 越小越划算。那为什么不全程小 batch？两个下界把它顶住。(i) 稳定性：步长有与 batch 无关的上限 $\epsilon_{\max}$ （2.3 式 (7)）；batch 越小，达到同一 token 预算所需的步数越多，总进展被 $\epsilon_{\max}$ 封顶后，小 batch 的 token 效率优势不再兑现为总 loss 优势。(ii) 墙钟：单步的通信与 kernel 固定开销不随 batch 线性缩（4.x 的通信账与 5.x 的并行账），过小的 batch 让 GPU 喂不饱。ramp 的精确语义由此成立： $B(t)$ 从「硬件能喂饱的最小值」起步，沿噪声尺度漂移的方向追向 $`\mathcal{B}_{\mathrm{crit}}(t)`$ ，终值由并行效率锁定。三家的 ramp 形态各有写法：GPT-3 与 DeepSeek-V3 是 tokens 轴上的线性爬升；Llama-3 是两次倍增的阶梯（含序列长 4096 → 8192 的同步翻倍——batch 与序列长联动，长上下文的成本账归 7.5）；GLM-4.5 是 tokens 轴线性。没有公开证据表明形态差异（线性 vs 阶梯）对终点性能有可分辨的影响；共同点是幅度（3–5 倍区间）与位置（前 2%–5% tokens）高度一致。
+**符号**：各量同 2.3 式 (7)—— $`\Delta L_{\max}`$ 为 $B \to \infty$ 的单步进展上限， $`\mathcal{B}_{\mathrm{noise}}`$ 为噪声尺度。**命题**（token 进展率单调减）：式 (2) 关于 $B$ 严格单调减。**证明**（一句话）：分母严格增、分子为常数。读法：纯按 token 效率，batch 越小越划算。那为什么不全程小 batch？两个下界把它顶住。(i) 稳定性：步长有与 batch 无关的上限 $\epsilon_{\max}$ （2.3 式 (7)）；batch 越小，达到同一 token 预算所需的步数越多，总进展被 $\epsilon_{\max}$ 封顶后，小 batch 的 token 效率优势不再兑现为总 loss 优势。(ii) 墙钟：单步的通信与 kernel 固定开销不随 batch 线性缩（4.x 的通信账与 5.x 的并行账），过小的 batch 让 GPU 喂不饱。ramp 的精确语义由此成立： $B(t)$ 从「硬件能喂饱的最小值」起步，沿噪声尺度漂移的方向追向 $`\mathcal{B}_{\mathrm{crit}}(t)`$ ，终值由并行效率锁定。三家的 ramp 形态各有写法：GPT-3 与 DeepSeek-V3 是 tokens 轴上的线性爬升；Llama-3 是两次倍增的阶梯（含序列长 4096 → 8192 的同步翻倍——batch 与序列长联动，长上下文的成本账归 7.5）；GLM-4.5 是 tokens 轴线性。没有公开证据表明形态差异（线性 vs 阶梯）对终点性能有可分辨的影响；共同点是幅度（3–5 倍区间）与位置（前 2%–5% tokens）高度一致。
 
 ## 4. µP：宽度缩放的结论表与推导 outline
 
-§1 的表按家族逐行核对后，会看到一个共性问题：这些 lr 都是**在该规模上单独调出来或外推出来的**。GPT-3 八档各配一个 lr，OLMo 2 为 7B 扫过一轮 lr（2.3 §3 的交叉点实验）。µP（maximal update parametrization，[Yang et al., 2022](../references.md)，arXiv:2203.03466，[B]）要消掉的正是这项成本：让最优超参在宽度方向上不变，小模型上扫出的 lr 直接搬到大模型。
+大模型的 lr 能不能在小代理上扫完直接搬过去？§1 的表按家族逐行核对后，会看到一个共性问题：这些 lr 都是**在该规模上单独调出来或外推出来的**。GPT-3 八档各配一个 lr，OLMo 2 为 7B 扫过一轮 lr（2.3 §3 的交叉点实验）。µP（maximal update parametrization，[Yang et al., 2022](../references.md)，arXiv:2203.03466，[B]）要消掉的正是这项成本：让最优超参在宽度方向上不变，小模型上扫出的 lr 直接搬到大模型。
 
 **问题现象**（论文 §3）：标准参数化（standard parametrization, SP——框架默认初始化配同一套 lr）下，固定 lr 训不同宽度的网络，最优 lr 随宽度系统性漂移，「更宽更差」的曲线交叉真实出现；同一组超参在 µP 下则随宽度单调改善。漂移的机制根源：SP 的初始化只保证前向激活尺度合理，不保证**更新量**的尺度随宽度不变。把这句话说细：SP 下 Adam 的逐坐标更新幅度与宽度无关（lr 即坐标量级），而隐藏层的输出是 $n$ 个坐标对相关输入的累积。宽度 $n$ 翻倍，同样的 lr 造成的层功能扰动近似翻倍；要维持同样的功能扰动就得把 lr 压小——这就是「最优 lr 随宽度漂移」在 SP 下的形态。µP 的 desideratum (iii) 把这个漂移显式消掉：它要求每层的功能扰动在宽度极限下既不消失也不发散，lr 的宽度指数由此被唯一确定。还有一个等价读法来自 kernel regime 的对照：若初始化与 lr 的缩放使某些层在宽度极限下几乎不动（更新量随宽度趋于零），极限网络就退化为随机特征核、不做特征学习。µP 是「让所有层都保持特征学习」的**唯一**参数化（论文引其系列前作的形式化结论），HP 稳定性是这个唯一性的副产品。
 
 **推导 outline**（论文附录 J 的 Desiderata J.1 路线，逐步对应）：µP 由三条 desiderata 唯一确定——(i) 任意时刻每个（预）激活向量的坐标为 $\Theta(1)$ 量级；(ii) 网络输出为 $O(1)$（初始化处允许趋于零）；(iii) 所有参数在宽度极限下都被「尽可能多地」更新而不发散（maximal feature learning——排除 lazy/kernel regime）。对三类参数分别推出坐标尺度（ $n$ = 层宽）：
 
-- **输出层权重** $W \in \mathbb{R}^{1 \times n}$ ：输入 $x$ 坐标 $\Theta(1)$ ，要 $|Wx| = O(1)$ 须 $W$ 坐标 $\Theta(1/n)$——初始化 $W_{\alpha\beta} \sim \mathcal{N}(0, \Theta(1/n^{2}))$（方差 $1/\mathrm{fan\\_in}^{2}$ ），且 lr 取 $\Theta(1/n)$ ，使 $\Delta W$ 的坐标同样保持 $\Theta(1/n)$ 。
+- **输出层权重** $W \in \mathbb{R}^{1 \times n}$ ：输入 $x$ 坐标 $\Theta(1)$ ，要 $|Wx| = O(1)$ 须 $W$ 坐标 $\Theta(1/n)$——初始化 $W_{\alpha\beta} \sim \mathcal{N}(0, \Theta(1/n^{2}))$（方差 $1/\mathrm{fan\\_in}^{2}$ ），且 lr 取 $\Theta(1/n)$ ，使 $\Delta W$ 的坐标同样保持 $\Theta(1/n)$ （论证的严格补全留作练习 2）。
 - **隐藏层权重** $W \in \mathbb{R}^{n \times n}$ ：前向尺度由 CLT 给出 $`\mathrm{Var}((Wx)_i) = n \cdot \sigma^{2} \cdot \Theta(1)`$ ，坐标 $\Theta(1)$ 要求初始化方差 $\sigma^{2} = \Theta(1/n)$（即 $1/\mathrm{fan\\_in}$ ，与 SP 相同）；更新侧要求 $\Delta W$ 坐标 $\Theta(1/n)$ 才能使 $(W_0 + \Delta W) \thinspace x$ 保持 $\Theta(1)$ ——关键机制是 $\Delta W$ 与 $x$ **相关**（梯度是 $x$ 的函数，逐坐标符号对齐而非随机抵消），故 $`(\Delta W \thinspace x)_i`$ 按 $n$ 倍（ $\Delta W$ 坐标乘以坐标数）而非 $\sqrt{n}$ 倍累积。Adam 的逐坐标更新幅度就是 lr 本身（2.2 §2 的 sign 型结构），于是 Adam lr $= \Theta(1/n)$ ；SGD 下可以算出 $W$ 的梯度坐标为 $\Theta(1/n)$（经输出层的尺度回推）， $\Theta(1)$ 的 lr 已够。
 - **输入层权重与 bias**：fan_in 是词表/输入维，相对宽度为常数，初始化方差 $1/\mathrm{fan\\_in}$ 不变；Adam lr 取 $\Theta(1)$ 即可，SGD lr 取 $\Theta(\mathrm{fan\\_out})$ 。
 
@@ -129,7 +133,7 @@ Transformer 还有一处 µP 特有的改动，在 attention 内部（论文 Def
 
 ## 6. 对照路线：Moonlight 的 RMS 匹配
 
-µP 不是唯一一条「大模型免调参」路线。Moonlight 的处方（2.5 §4 已全推导，此处只收对照）：给 Muon 补上 weight decay（ $\lambda = 0.1$ ），再把每个矩阵参数的更新 RMS 逐形状对齐到 0.2（乘以 $0.2 \cdot \sqrt{\max(A, B)}$ ，抵消引理 1 的形状依赖）。之后 Muon 直接复用 AdamW 搜好的 lr 与 wd，开箱即用（[Liu et al., 2025](../references.md)，arXiv:2502.16982，[A]，§2.2 与 §3.2）。GLM-4.5 的 §1 表行证明这条路线已进入旗舰生产配方（355B 全程 Muon + RMS 0.2）。
+大模型免调参只有 µP 一条路吗？不是。Moonlight 的处方（2.5 §4 已全推导，此处只收对照）：给 Muon 补上 weight decay（ $\lambda = 0.1$ ），再把每个矩阵参数的更新 RMS 逐形状对齐到 0.2（乘以 $0.2 \cdot \sqrt{\max(A, B)}$ ，抵消引理 1 的形状依赖）。之后 Muon 直接复用 AdamW 搜好的 lr 与 wd，开箱即用（[Liu et al., 2025](../references.md)，arXiv:2502.16982，[A]，§2.2 与 §3.2）。GLM-4.5 的 §1 表行证明这条路线已进入旗舰生产配方（355B 全程 Muon + RMS 0.2）。
 
 两条路线的哲学并排：µP 改**参数化**本身，让最优超参成为宽度的不变量，调参在小代理上完成后零样本迁移；RMS 匹配不动参数化，把**更新幅度**固定到一个与形状无关的绝对工作点（RMS = 0.2，对齐 AdamW 的经验区间 $0.2\text{–}0.4$ ），让「为 AdamW 调好的超参」直接可搬。前者的不变量写在初始化与 lr 缩放里，后者的不变量写在更新量纲上。值得补记 RMS 匹配路线的两个技术细节（均出自 Moonlight 原文，2.5 §4 有全推导）。其一，wd 不是可选装饰：放大规模后裸 Muon 的权重与层输出 RMS 持续增长、溢出 bf16 的高精度区间，800M / 100B tokens（约 5 倍 compute-optimal 数据量）的对照实验显示，加 wd 后过训练区段的 validation loss 低于裸 Muon 与 AdamW 两侧。其二，RMS 的目标值 0.2 来自附录 A 的五点扫描（Table 8 口径：2k 步、约 2B tokens 处的 validation loss，0.05 / 0.1 / 0.2 / 0.4 / 0.8 五档依次为 3.503 / 3.374 / 3.325 / 3.314 / 3.543——0.2 与 0.4 两档优于其余三档、彼此之间只差 0.011）。纪律注记（沿 2.5 §8 的裁定）：Moonlight 全文不含 µP / transfer 内容；两条路线的实证对照（不同规模上的迁移精度）目前是开放问题，本章只并陈、不裁决。
 
@@ -155,13 +159,13 @@ Transformer 还有一处 µP 特有的改动，在 attention 内部（论文 Def
 
 ## 练习
 
-1.（推导）补全 §4 输出层一行：设 $W \in \mathbb{R}^{1 \times n}$ 、 $x$ 坐标 $\Theta(1)$ 且各坐标近似独立，(a) 由 $|Wx| = O(1)$ 推出初始化坐标尺度 $\Theta(1/n)$（注意与「随机向量内积按 $\sqrt{n}$ 累积」的直觉对照——输出层在 µP 下为什么取 $1/n$ 而非 $1/\sqrt{n}$ ？提示：desideratum (iii) 要求训练后 $W$ 相对初始化有 $\Theta(1/n)$ 量级的新增相关成分）；(b) 说明 Adam lr 取 $\Theta(1/n)$ 时 $\Delta W$ 坐标为何保持 $\Theta(1/n)$ 。
+1.（计算 · [20]）tokens 口径换算：某报告给出「global batch 15360 序列、seqlen 4096」，训练栈为 $b = 4$ 、 $d = 256$ 。 (a) 求 $m$ 与 $B_{\mathrm{tok}}$ ；(b) 该配方要在 $d = 512$ 、 $b = 2$ 的集群上复现， $m$ 应取多少？激活侧哪一笔账会变化（回链 1.4/1.5）？校验：(b) 的等效 batch 应与 (a) 完全相等（不变式）。
 
-2.（计算）ramp 账复核：用 §3 的线性假设与式 (1)，(a) 复核 DeepSeek-V3（469B tokens、12.6M → 62.9M）与 GLM-4.5（500B、16M → 64M）的 $S_{\mathrm{ramp}}$ 与相对恒定末值的步数放大倍数；(b) 若 DSv3 的 ramp 改为「前 469B 内 batch 翻倍三次」的阶梯式（Llama-3 式），步数与线性 ramp 差多少（按每段等 tokens 均分近似）？(c) 讨论：ramp 段的 lr 是否应随 batch 同步调整？用 2.3 §4-5 的框架给出两种相反意见各自的依据。
+2.（推导 · [20]）补全 §4 输出层一行：设 $W \in \mathbb{R}^{1 \times n}$ 、 $x$ 坐标 $\Theta(1)$ 且各坐标近似独立，(a) 由 $|Wx| = O(1)$ 推出初始化坐标尺度 $\Theta(1/n)$（注意与「随机向量内积按 $\sqrt{n}$ 累积」的直觉对照——输出层在 µP 下为什么取 $1/n$ 而非 $1/\sqrt{n}$ ？提示：desideratum (iii) 要求训练后 $W$ 相对初始化有 $\Theta(1/n)$ 量级的新增相关成分）；(b) 说明 Adam lr 取 $\Theta(1/n)$ 时 $\Delta W$ 坐标为何保持 $\Theta(1/n)$ 。
 
-3.（计算）tokens 口径换算：某报告给出「global batch 15360 序列、seqlen 4096」，训练栈为 $b = 4$ 、 $d = 256$ 。 (a) 求 $m$ 与 $B_{\mathrm{tok}}$ ；(b) 该配方要在 $d = 512$ 、 $b = 2$ 的集群上复现， $m$ 应取多少？激活侧哪一笔账会变化（回链 1.4/1.5）？
+3.（计算 · [30]）ramp 账复核：用 §3 的线性假设与式 (1)，(a) 复核 DeepSeek-V3（469B tokens、12.6M → 62.9M）与 GLM-4.5（500B、16M → 64M）的 $S_{\mathrm{ramp}}$ 与相对恒定末值的步数放大倍数；(b) 若 DSv3 的 ramp 改为「前 469B 内 batch 翻倍三次」的阶梯式（Llama-3 式），步数与线性 ramp 差多少（按每段等 tokens 均分近似）？(c) 讨论：ramp 段的 lr 是否应随 batch 同步调整？用 2.3 §4-5 的框架给出两种相反意见各自的依据。校验：(a) 的两组步数与放大倍数应与正文代入结果逐项相同。
 
-4.（分析）µP 的 Table 3 把输出层的 Adam lr 与隐藏层同取 $1/\mathrm{fan\\_in}$ ，但 embedding（输入权重）取常数 lr。GLM-4.5 与 Moonlight 的工程边界（embedding / lm_head 走 AdamW 系、隐藏矩阵走 Muon 系）与这张表的分区方式有何对应？若要把 µP 与 RMS 匹配叠加使用（隐藏层 µP 化 + Muon 更新），指出 §4 结论表中哪一行的语义会先被破坏，并说明理由。
+4.（分析 · [30]）µP 的 Table 3 把输出层的 Adam lr 与隐藏层同取 $1/\mathrm{fan\\_in}$ ，但 embedding（输入权重）取常数 lr。GLM-4.5 与 Moonlight 的工程边界（embedding / lm_head 走 AdamW 系、隐藏矩阵走 Muon 系）与这张表的分区方式有何对应？若要把 µP 与 RMS 匹配叠加使用（隐藏层 µP 化 + Muon 更新），指出 §4 结论表中哪一行的语义会先被破坏，并说明理由。
 
 ## 参考
 

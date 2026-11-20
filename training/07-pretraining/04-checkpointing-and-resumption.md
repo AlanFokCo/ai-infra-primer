@@ -4,6 +4,8 @@
 
 ## 1. checkpoint 里有什么：精确可恢复性的五个分量
 
+本章口径：字节账与停顿账统一取 Llama-3 405B、16384 卡一档（bf16 混合精度 + AdamW）；中断统计取自同一窗口的公开记录。
+
 从 checkpoint 续训，怎样才算「接上了」？精确可恢复（exact resumption）的语义是：续训后的轨迹与「从未中断」的反事实轨迹逐步一致。注意这个一致是**状态级**的——CUDA kernel 的归约顺序等因素使逐位（bitwise）一致在非确定实现下本就不保证。工程上追求的是状态精确、数值近似一致（本书口径注记）。
 
 要让状态精确，checkpoint 必须装下五个分量，缺一不可：
@@ -16,7 +18,11 @@
 | dataloader 游标 | 全局已消费样本数（consumed samples 口径） | 数据被重复消费或跳过，exactly-once 断裂 |
 | schedule 相位 | 全局 step、LR schedule 相位、batch ramp 进度 | LR 从错的相位继续（等价于一次无意的 LR 跳变，7.3 §3 的 LR 监控行会立刻报警） |
 
-RNG 为什么要单列三处？原因在实现层。`torch.get_rng_state()` 只拿 CPU generator；CUDA 侧每张卡有独立 generator（`torch.cuda.get_rng_state_all()` 返回逐卡列表）；python `random`（以及用了它的话还有 numpy）是第三条独立序列。哪路随机性挂在哪条序列上随实现而变——CUDA 上的 dropout 用 CUDA generator，数据 shuffle 常用 CPU / python 侧序列——审计自己的栈是本书口径的纪律。共同点是：少存任何一路，续训后的随机性就从「同一序列的继续」变成「另一条序列」。教学形态的最小集合（教学用，非优化实现）：
+RNG 为什么要单列三处？原因在实现层。`torch.get_rng_state()` 只拿 CPU generator；CUDA 侧每张卡有独立 generator（`torch.cuda.get_rng_state_all()` 返回逐卡列表）；python `random`（以及用了它的话还有 numpy）是第三条独立序列。哪路随机性挂在哪条序列上随实现而变——CUDA 上的 dropout 用 CUDA generator，数据 shuffle 常用 CPU / python 侧序列——审计自己的栈是本书口径的纪律。共同点是：少存任何一路，续训后的随机性就从「同一序列的继续」变成「另一条序列」。
+
+> **坑**：只存 CPU 的 generator、漏掉逐卡 CUDA 状态——续训后 dropout mask 换成另一条序列，轨迹从恢复点悄悄分叉且 loss 照常下降。规避：三路 RNG 全存（上表第 3 行）。
+
+教学形态的最小集合（教学用，非优化实现）：
 
 ```python
 ckpt = {
@@ -32,17 +38,21 @@ ckpt = {
 
 dataloader 游标的正确粒度是**全局样本序号**，不是 per-rank 偏移。原因：数据顺序在 Megatron 式栈里是（seed, consumed_samples）的确定函数，续训时按同一 seed 重建 sampler、按游标跳过即可。这样游标在并行度变化（ §3 的 resharding）后仍然有效；存 per-rank 偏移则在换 DP 度数后无法拼回全局顺序（Megatron 的 `consumed_samples` 机制，回链 6.2）。
 
+> **坑**：只记各 rank 的消费偏移——换并行度后续训，偏移拼不回全局顺序，数据被重复消费或静默跳过。规避：游标一律存全局已消费样本数。
+
 ## 2. 字节账： $14N$ 、分片与写盘时间
 
-续训级 checkpoint 的内容按 4.2 的账走（bf16 混合精度 + AdamW，models 1.2 式 (8) 的分解）：
+一份续训级 checkpoint 有多大？内容按 4.2 的账走（bf16 混合精度 + AdamW，models 1.2 式 (8) 的分解）：
 
 $$
 B_{\mathrm{ckpt}} = \underbrace{2N}_{\text{bf16 参数}} + \underbrace{4N}_{\text{fp32 master}} + \underbrace{4N + 4N}_{m, \hspace{5mu} v} = 14N \thinspace \text{bytes} \qquad (1)
 $$
 
-**符号**： $N$：参数量。三个变体注记。第一，只服务推理 / 评测的发布 checkpoint 不含优化器态， $2N$（bf16）或 $4N$（fp32）即可。第二，fp32 master 与工作参数同时在场时，存 master 即精确推出工作参数（1.3 式 (2) 的 $`w_t = \mathrm{round}_{16}(\theta_t)`$：对同一 fp32 值重舍入是确定的幂等映射）；反向不可精确恢复——bf16 工作参数的低位信息在 master 里才有。生产栈通常都存。第三，DeepSeek-V3 把两阶矩以 BF16 存储（2.2 §7 已核，其 §3.3.3 口径），该变体下 $B_{\mathrm{ckpt}} = 2N + 4N + 2N + 2N = 10N$ 。
+**符号**： $N$：参数量。
 
 代入 405B 算一笔： $14 \times 405 \times 10^{9} \approx 5.7 \times 10^{12}$ bytes（SI 口径约 5.7 TB）。分片保存时（FSDP / ZeRO 家族每 rank 只持自己那片，4.3 / 4.2），16384 卡下每卡写 $5.7 \times 10^{12} / 16384 \approx 3.5 \times 10^{8}$ bytes ≈ 0.35 GB；8192 卡下约 0.69 GB。这组数落在 herd 论文「每 GPU 的模型状态 1MB 到 4GB」的口径带内（[Grattafiori et al., 2024](../references.md)，arXiv:2407.21783，[A]，§3.3.1）；该带同时覆盖 8B 到 405B 的模型族与不同分片度，本书的对账数值与其相容。
+
+三个变体注记。第一，只服务推理 / 评测的发布 checkpoint 不含优化器态， $2N$（bf16）或 $4N$（fp32）即可。第二，fp32 master 与工作参数同时在场时，存 master 即精确推出工作参数（1.3 式 (2) 的 $`w_t = \mathrm{round}_{16}(\theta_t)`$：对同一 fp32 值重舍入是确定的幂等映射）；反向不可精确恢复——bf16 工作参数的低位信息在 master 里才有。生产栈通常都存。第三，DeepSeek-V3 把两阶矩以 BF16 存储（2.2 §7 已核，其 §3.3.3 口径），该变体下 $B_{\mathrm{ckpt}} = 2N + 4N + 2N + 2N = 10N$ 。
 
 写盘要花多少时间？先看存储侧的口径：herd 的训练存储是 Tectonic 文件系统上的专用 fabric——240 PB 容量、7500 台 SSD 服务器、可持续吞吐 2 TB/s、峰值 7 TB/s（§3.3.1，[A]）。5.7 TB 全量按 2 TB/s 可持续吞吐写，下界约 2.8 s。
 
@@ -52,7 +62,7 @@ $$
 
 ## 3. 分布式 checkpoint：保存与加载的并行度解耦
 
-分布式训练给 checkpoint 加了一个单机不存在的问题：**保存时的并行网格与加载时的网格未必相同**。8B 模型在 64 卡上按 ZeRO-3 分片存下的参数分片，换 32 卡续训时分片边界整体移动；TP/PP 度数变化时分片维度本身改变。逐 rank「各存各的、各读各的」的朴素格式在这个场景下直接失效——这就是 resharding 问题。
+换一批卡续训，旧存档还能读吗？分布式训练给 checkpoint 加了一个单机不存在的问题：**保存时的并行网格与加载时的网格未必相同**。8B 模型在 64 卡上按 ZeRO-3 分片存下的参数分片，换 32 卡续训时分片边界整体移动；TP/PP 度数变化时分片维度本身改变。逐 rank「各存各的、各读各的」的朴素格式在这个场景下直接失效——这就是 resharding 问题。
 
 工程答案是把「逻辑张量」与「物理分片」用元数据分开：每个分片以（key + 全局 shape + 全局 offset + 本地块）登记；保存时各 rank 只写自己那片；加载时按**目标**网格重新规划每个 rank 读哪些分片。两个一手实现：
 
@@ -75,7 +85,7 @@ rank0' ← shard0 + shard1        rank1' ← shard2 + shard3
 
 ## 4. 写盘 stall 与异步 checkpoint
 
-回到 §2 的账：阻塞写一次全量 ≈ 半个 step（405B / 16384 卡 / 2 TB/s 口径）。异步 checkpoint 的目标是把 GPU 可见的停顿从「整次写盘」压到「一次设备到主存的拷贝」。DCP 的官方机制（`torch/distributed/checkpoint/state_dict_saver.py` 的 `async_save`，文档口径，教学参照+官方实现）分两段：
+回到 §2 的账：阻塞写一次全量 ≈ 半个 step（405B / 16384 卡 / 2 TB/s 口径）。异步 checkpoint 的目标是把 GPU 可见的停顿从「整次写盘」压到一次 staging（暂存：state_dict 先拷进主机内存缓冲，再由后台落盘）。DCP 的官方机制（`torch/distributed/checkpoint/state_dict_saver.py` 的 `async_save`，文档口径，教学参照+官方实现）分两段：
 
 ```
 GPU 显存                    主机内存（staging）           持久存储（fabric）
@@ -110,7 +120,7 @@ herd 论文的口径止于需求侧：bursty writes 的账（每 GPU 1MB-4GB、�
 
 ## 6. 容错：MTBF 账与最优 checkpoint 间隔
 
-Llama-3 405B 的 54 天窗口给了一组可算账的中断统计（[Grattafiori et al., 2024](../references.md)，arXiv:2407.21783，[A]，§3.3.4；逐类分解表归 7.3 §2.4）：466 次作业中断（47 次计划内 + 419 次意外）。平均中断间隔：
+Llama-3 405B 的 54 天窗口给了一组可算账的中断统计（[Grattafiori et al., 2024](../references.md)，arXiv:2407.21783，[A]，§3.3.4；逐类分解表归 7.3 §2.4）：466 次作业中断（47 次计划内 + 419 次意外）。平均中断间隔（mean time between failures，MTBF）：
 
 $$
 \mathrm{MTBF} \approx \frac{54 \times 86400}{466} \approx 1.0 \times 10^{4} \thinspace \text{s} \approx 2.8 \thinspace \text{小时} \qquad (2)
@@ -120,7 +130,7 @@ $$
 
 健康检查与自动替换的闭环形态，从这组记录里可以直接读出：检测（flight recorder / watchdog / straggler 工具）→ 定位到具体 rank 与节点 → 隔离替换 → 从最近 checkpoint 按 §5 的语义恢复。闭环里每一环的时延都直接进 $R$。
 
-checkpoint 间隔多久一次最划算？可以一阶建模。设每 $T$ 秒计算时间存一次档、单次 GPU 停顿成本 $\delta$ 秒、重启成本 $R$ 秒；故障间隔均值即式 (2) 的 $\mathrm{MTBF}$ 。均匀故障位置假设下，一次故障的平均丢失工作为 $T/2$ 。单位时间浪费率
+checkpoint 间隔多久一次最划算？先把结论摆出来。**命题**（最优存档间隔）：存档开销与故障损失之和最小时，间隔正比于「单次停顿成本 × 平均故障间隔」的平方根；重启成本只抬总损失，不进最优条件。**证明路线**：写出单位时间浪费率的两项账，对间隔求导，二阶导确认极小。设每 $T$ 秒计算时间存一次档、单次 GPU 停顿成本 $\delta$ 秒、重启成本 $R$ 秒；故障间隔均值即式 (2) 的 $\mathrm{MTBF}$ 。均匀故障位置假设下，一次故障的平均丢失工作为 $T/2$ 。单位时间浪费率
 
 $$
 C(T) = \underbrace{\frac{\delta}{T}}_{\text{存档开销}} + \underbrace{\frac{T / 2 + R}{\mathrm{MTBF}}}_{\text{故障损失}} \qquad (3)
@@ -141,7 +151,7 @@ $$
 | 阻塞写（ §2 下界 2.8 s） | 2.8 s | $\approx 237$ s（约 4 分钟） | $\approx 2.4\text{％}$ |
 | 异步（staging 暴露 0.3 s，本书估计口径） | 0.3 s | $\approx 77$ s | $\approx 0.8\text{％}$ |
 
-读法： $\delta$ 越小，最优间隔**越短**、浪费率越低——存档便宜了，就值得更频繁地存。这正是 herd 「minimize GPU pause time + increase checkpoint frequency」（§3.3.1 原文）的定量形态：异步机制把 $\delta$ 压低一个量级，换来更高频率与更低故障损失。工程注记两条。第一，实际间隔不会顶到式 (4) 的分钟级下限——元数据开销、存储回收、评测节奏等式外因素把实践值推到分钟到小时档（本书工程口径）。第二，故障恢复的总损失还有 $R$（重启 + 重载 + 重建连接）一项；herd 把「压缩启动时间」与「压缩 checkpoint 时间」并列为提效手段（§3.3.4），对应的就是压 $R$。
+读法： $\delta$ 越小，最优间隔**越短**、浪费率越低——存档便宜了（口径：单次存档造成的 GPU 停顿变短），就值得更频繁地存。这正是 herd 「minimize GPU pause time + increase checkpoint frequency」（§3.3.1 原文）的定量形态：异步机制把 $\delta$ 压低一个量级，换来更高频率与更低故障损失。工程注记两条。第一，实际间隔不会顶到式 (4) 的分钟级下限——元数据开销、存储回收、评测节奏等式外因素把实践值推到分钟到小时档（本书工程口径）。第二，故障恢复的总损失还有 $R$（重启 + 重载 + 重建连接）一项；herd 把「压缩启动时间」与「压缩 checkpoint 时间」并列为提效手段（§3.3.4），对应的就是压 $R$。
 
 弹性训练（elastic training）一句：PyTorch 的 elastic 配套（`torch.distributed.elastic` / torchrun 的 rendezvous 机制，pytorch repo，教学参照）支持 worker 增删不终止整个作业；它与 §3 的并行度无关格式组合才是完整闭环——成员变化后按新网格加载、全局游标不动，续训语义逐字成立。
 
@@ -153,19 +163,19 @@ $$
 | 字节账 | 式 (1)： $B_{\mathrm{ckpt}} = 14N$ bytes（bf16 参数 + fp32 master + fp32 $m,v$ ）；405B ≈ 5.7 TB，16384 卡每卡 ≈ 0.35 GB，落在 herd 的 1MB-4GB 带内 | models 1.2 式 (8)；herd §3.3.1 [A] |
 | 写盘时间 | 2 TB/s 可持续口径下 405B 全量 ≈ 2.8 s ≈ 半个 step（Table 4 配置 step ≈ 5.9 s） | herd §3.3.1 / Table 4 [A] |
 | resharding | 逻辑张量 + 全局 offset 元数据，保存 / 加载网格解耦；DCP 的 SPMD save 与 planner；Megatron dist-ckpt 归 6.2 §5 | pytorch repo DCP 文档；arXiv:1909.08053 repo |
-| 异步 checkpoint | staging（默认 CPU）+ 后台线程写盘；`AsyncSaveResponse` 双 future；staging 完成前禁改被存张量 | DCP `async_save` 文档口径（experimental） |
+| 异步 checkpoint | staging（默认 CPU）+ 后台线程写盘；`AsyncSaveResponse` 双 future；staging 完成前禁改被存张量 | DCP `async_save` 文档口径（experimental）；练习 1（c） |
 | 续训语义 | 优化器状态热 ⇒ 免重新 warmup；状态丢 ⇒ 重 warmup；数据游标全局化保 exactly-once | §5（本书论证，基于 2.2 / 2.3） |
 | MTBF 与最优间隔 | 式 (2)：466 次 / 54 天 ⇒ MTBF ≈ 2.8 h；式 (4)： $T^{\ast} = \sqrt{2\delta \cdot \mathrm{MTBF}}$ ；异步压 $\delta$ ⇒ 更密更省 | herd §3.3.4 [A]；式 (3)(4) 本书推导 |
 
 ## 练习
 
-1.（计算）字节与停顿账：某 MoE 模型总参数 $N = 1 \times 10^{12}$、bf16 + AdamW（fp32 master 与矩估计），DP 分片 4096 卡。(a) 按式 (1) 算全量 checkpoint 字节数与每卡分片；(b) 存储可持续吞吐 2 TB/s 时阻塞写的下界时间；(c) 若每 step 2.0 s，求阻塞写相对 step 的占比，并说明异步 staging 把哪一段从 GPU 关键路径上移走。
+1.（计算 · [20]）字节与停顿账：某 MoE 模型总参数 $N = 1 \times 10^{12}$、bf16 + AdamW（fp32 master 与矩估计），DP 分片 4096 卡。(a) 按式 (1) 算全量 checkpoint 字节数与每卡分片；(b) 存储可持续吞吐 2 TB/s 时阻塞写的下界时间；(c) 若每 step 2.0 s，求阻塞写相对 step 的占比，并说明异步 staging 把哪一段从 GPU 关键路径上移走。校验：全量字节数应为参数量的 14 倍（byte 口径）。
 
-2.（推导）式 (4) 的两个推广：(a) 存档成本改为 $\delta_0 + \delta_1$（ $\delta_0$ 为 GPU 停顿、 $\delta_1$ 为不占 GPU 的后台成本），说明只有 $\delta_0$ 进最优间隔；(b) 故障间隔不是指数分布而是「恰好每 $M$ 秒一次」的周期故障，重推最优 $T$ 应满足的离散条件，并说明均匀位置假设在哪一步进入了式 (3)。
+2.（推导 · [30]）式 (4) 的两个推广：(a) 存档成本改为 $\delta_0 + \delta_1$（ $\delta_0$ 为 GPU 停顿、 $\delta_1$ 为不占 GPU 的后台成本），说明只有 $\delta_0$ 进最优间隔；(b) 故障间隔不是指数分布而是「恰好每 $M$ 秒一次」的周期故障，重推最优 $T$ 应满足的离散条件，并说明均匀位置假设在哪一步进入了式 (3)。
 
-3.（计算）MTBF 的规模律：设单卡年均故障率使单卡 MTBF 为 $M_1$ ，集群 $d$ 卡、故障独立，作业级 MTBF $\approx M_1 / d$ 。(a) 用式 (2) 的 2.8 h 与 $d$ = 16384 反推 $M_1$ 的年化口径；(b) 外推到 $d$ = 131072（8 倍）时作业级 MTBF 与式 (4) 下的最优间隔（ $\delta$ = 0.3 s）各变为多少；(c) 讨论这个外推在多大程度上可信（提示： §3.3.4 的故障构成里哪些随 $d$ 线性、哪些不是）。
+3.（计算 · [30]）MTBF 的规模律：设单卡年均故障率使单卡 MTBF 为 $M_1$ ，集群 $d$ 卡、故障独立，作业级 MTBF $\approx M_1 / d$ 。(a) 用式 (2) 的 2.8 h 与 $d$ = 16384 反推 $M_1$ 的年化口径；(b) 外推到 $d$ = 131072（8 倍）时作业级 MTBF 与式 (4) 下的最优间隔（ $\delta$ = 0.3 s）各变为多少；(c) 讨论这个外推在多大程度上可信（提示： §3.3.4 的故障构成里哪些随 $d$ 线性、哪些不是）。校验：（b）的作业级间隔应恰好缩到八分之一。
 
-4.（代码）教学实现续训一致性检查（教学用，非优化实现）：对一个两层 MLP 跑 30 步 AdamW，第 10 步末按 §1 的五分量存 checkpoint；分支 A 继续跑到 30 步，分支 B 在第 10 步读档后跑到 30 步；(a) CPU 固定 seed + `torch.use_deterministic_algorithms(True)` 下比较两分支终参的逐位一致性；(b) 故意不恢复 CUDA / python RNG 分量，比较 loss 轨迹的偏离步点；(c) 故意把 optimizer 的 step 计数器清零，观察 bias correction 因子错配带来的前若干步更新偏差（回链 2.2 式 (4)）。
+4.（代码 · [30]）教学实现续训一致性检查（教学用，非优化实现）：对一个两层 MLP 跑 30 步 AdamW，第 10 步末按 §1 的五分量存 checkpoint；先写出你对（b）的预测——轨迹偏离从哪一步开始——再动手。分支 A 继续跑到 30 步，分支 B 在第 10 步读档后跑到 30 步；(a) CPU 固定 seed + `torch.use_deterministic_algorithms(True)` 下比较两分支终参的逐位一致性；(b) 故意不恢复 CUDA / python RNG 分量，比较 loss 轨迹的偏离步点；(c) 故意把 optimizer 的 step 计数器清零，观察 bias correction 因子错配带来的前若干步更新偏差（回链 2.2 式 (4)）。校验：（a）两分支终参逐位一致（容差为零）。
 
 ## 参考
 
