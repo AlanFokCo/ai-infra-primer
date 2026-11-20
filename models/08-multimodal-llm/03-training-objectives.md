@@ -4,6 +4,8 @@
 
 ## 1. loss masking：loss 只落在 response 上
 
+VLM 的 loss 与纯文本 SFT 差在哪？差别不在 loss 本身，全在掩码怎么取。
+
 ### 1.1 公式与两类被屏蔽的位置
 
 8.1 式 (1) 把 VLM 形式化为条件 LM；训练它就是最大化训练样本中回答部分的似然。设一条样本拼接后的完整序列为 $x_1, \ldots, x_S$（system + user prompt + 视觉段 + assistant 回答，视觉段占其中 $M$ 个位置），定义掩码：
@@ -41,7 +43,7 @@ def build_labels(input_ids, response_spans, ignore_index=-100):
 
 ### 1.3 有效 token 账
 
-训练 FLOPs 按全序列 $S$ 计，监督信号只按 $\sum_s m_s$ 计，两者之比 $\eta = \sum_s m_s / S$ 是这条样本的监督密度。算一笔典型账：AnyRes 4 切图 $M = 2880$（8.1 §4 口径）+ system/prompt 500 token + 回答 150 token，$`\eta \approx 150 / 3530 \approx 4\%`$。 $\eta$ 低不等于浪费：视觉段与 prompt 的 forward 是条件化的必要成本。但它解释了数据工程的两个共同动作。一是把多条 QA 打进一条序列（packing，摊薄条件段的重复成本）；二是把回答写长写密（dense caption，§2.2 的 Molmo 路线——同样的视觉 forward 成本，换取更多 loss token 且逐对象接地）。 $\eta$ 也是读各家数据配方的一把尺：同样的 token 总量，监督密度可以差出一个量级。
+训练 FLOPs 按全序列 $S$ 计，监督信号只按 $\sum_s m_s$ 计，两者之比 $\eta = \sum_s m_s / S$ 是这条样本的监督密度。算一笔典型账：AnyRes 4 切图 $M = 2880$（8.1 §4 口径）+ system/prompt 500 token + 回答 150 token，$`\eta \approx 150 / 3530 \approx 4\%`$。 $\eta$ 低不等于浪费：视觉段与 prompt 的 forward 是条件化的必要成本。但它解释了数据工程的两个共同动作。一是把多条 QA 打进一条序列（packing，摊薄条件段的重复成本）；二是把回答写长写密（dense caption，§2.2 的 Molmo 路线——同样的视觉 forward 成本，换取更多 loss token 且逐对象接地）。 $\eta$ 也是读各家数据配方的一把尺：同样的 token 总量，监督密度可以差出一个量级。本章口径：token 账沿用 AnyRes 4 切（每图 2880 视觉 token）加短回答的样本形状；配方数字一律引各家 report 原表，不另造口径。
 
 ## 2. 多阶段配方：对齐 → 指令 → 偏好
 
@@ -87,7 +89,9 @@ caption 数据             模板与 special token 定型        幻觉专项（
 
 ### 3.1 `<image>` 占位符展开
 
-数据集的原始样本是「文本 + 图像文件指针」，图像不进 tokenizer。交错图文（interleaved image-text）样本的机制链条分三步。第一，文本里的 `<image>` 被编成 special token id，在 ids 序列里占一个位置。第二，collate 时按 8.1 式 (3) 把该位置展开成 $M$ 个视觉 embedding 行；实现有两路：id 层把占位符重复 $M$ 次、embedding 查表后整段替换为 $v$（替换必须在查表之后：占位符 id 查出的行是废值），或者干脆不把占位符编进 ids、按段拼接 embedding。第三，labels 同步：占位符与视觉段恒为 $-100$（§1.2 第二条细节）。
+数据集的原始样本是「文本 + 图像文件指针」，图像不进 tokenizer。交错图文（interleaved image-text）样本的机制链条分三步。第一，文本里的 `<image>` 被编成 special token id，在 ids 序列里占一个位置。第二，collate 时按 8.1 式 (3) 把该位置展开成 $M$ 个视觉 embedding 行；实现有两路：id 层把占位符重复 $M$ 次、embedding 查表后整段替换为 $v$，或者干脆不把占位符编进 ids、按段拼接 embedding。第三，labels 同步：占位符与视觉段恒为 $-100$（§1.2 第二条细节）。
+
+> **坑**：在 embedding 查表之前替换占位符 id——查出来的是一行废值，图像特征被静默写成垃圾，loss 不报错。整段替换必须在查表之后执行（或按段拼接、占位符根本不进 ids）。
 
 展开后序列长度从 $S$ 变为 $S + M - 1$：attention、位置编码、loss mask 全部作用在展开后的序列上。对训练框架而言，图像段就是一段「不在词表里但形状合法的 embedding 行」（8.1 §3.1）。交错图文数据形式的全部工程就在「占位、展开、屏蔽」三件事上，没有第四种机关。
 
@@ -97,7 +101,11 @@ caption 数据             模板与 special token 定型        幻觉专项（
 
 ### 3.3 训练/推理格式一致性
 
-对话模板、special token、占位符位置、图像在轮次内的默认位置，合起来构成模型的分布内格式。训练时图恒在 user 轮开头的模型，推理时把图插到句中，位置编码与 attention 统计即刻出训练分布。这不是能力缺失，是格式失配。部署纪律随之很硬：推理 prompt 模板必须与训练模板逐 token 一致（含空格与换行），这是 VLM 工程事故的高发点。交错图文预训练的价值正在于把「图在任意位置」变成分布内行为。Flamingo 的网页图文交错数据（图像出现在文本序列的任意位置，[Alayrac et al., 2022](../references.md)，arXiv:2204.14198，[B]）支撑了 few-shot 图文交错 prompt 的形态：序列里先给若干「图 + 说明」示例、最后给待答的图，模型按同样的交错规律续写。开放配方（LLaVA-OneVision 的多图/视频阶段、Qwen2.5-VL 的多图数据）把同一能力收进指令微调的数据配比里。
+对话模板、special token、占位符位置、图像在轮次内的默认位置，合起来构成模型的分布内格式。训练时图恒在 user 轮开头的模型，推理时把图插到句中，位置编码与 attention 统计即刻出训练分布。这不是能力缺失，是格式失配。
+
+> **坑**：推理 prompt 模板与训练模板差一个空格或换行——位置编码与 attention 统计即刻出训练分布，输出质量骤降且没有任何报错。部署时模板必须与训练模板逐 token 一致。
+
+交错图文预训练的价值正在于把「图在任意位置」变成分布内行为。Flamingo 的网页图文交错数据（图像出现在文本序列的任意位置，[Alayrac et al., 2022](../references.md)，arXiv:2204.14198，[B]）支撑了 few-shot 图文交错 prompt 的形态：序列里先给若干「图 + 说明」示例、最后给待答的图，模型按同样的交错规律续写。开放配方（LLaVA-OneVision 的多图/视频阶段、Qwen2.5-VL 的多图数据）把同一能力收进指令微调的数据配比里。
 
 ## 4. 幻觉：形式化、机制假设与缓解
 
@@ -177,7 +185,7 @@ tech report 的分数是「在作者的评测协议下」的数字：prompt 模�
 | 概念 | 公式 / 数值 | 要点 |
 | --- | --- | --- |
 | loss masking | 式 (1) | loss 只落在 response；视觉 token 无 ground truth、prompt 是条件非目标；labels 置 $-100$，被 mask 位置不省 forward、梯度照常回传 |
-| 有效 token 账 | $\eta = \sum_s m_s / S$ | AnyRes 图 + 短回答下 $\eta$ 可低至约 4%；packing 与 dense caption 是提 $\eta$ 的两条数据工程路线 |
+| 有效 token 账 | $\eta = \sum_s m_s / S$ | AnyRes 图 + 短回答下 $\eta$ 可低至约 4%；packing 与 dense caption 是提 $\eta$ 的两条数据工程路线（练习 1） |
 | 多阶段配方 | §2.4 表 | stage 1 对齐只训 connector（冻双塔）→ stage 2 指令解冻 LLM（纯文本数据必留）→ stage 3 偏好对齐（幻觉专项 chosen/rejected；算法归 training 维度） |
 | 交错图文 | §3 | `<image>` 占位 → 展开成 $M$ 行 → labels 恒 $-100$；多图 M-RoPE 段基址递增、文本相对结构不变；训练/推理模板须逐 token 一致 |
 | 幻觉形式化 | 式 (2)(3) | 断言集减证据集； $G_t$ = 视觉接地强度， $G_t \approx 0$ 即闭眼续写；三机制：监督不对称、条件稀释、先验泄漏 |
@@ -186,10 +194,10 @@ tech report 的分数是「在作者的评测协议下」的数字：prompt 模�
 
 ## 练习
 
-1.（计算）一条样本：system 100 token + user prompt 200 token + AnyRes 4 切图（ $M = 2880$）+ assistant 回答 150 token。(a) 算 $\eta$。(b) 把 4 条同构 QA pack 进一条序列（各带各的图，共享一份 system），序列总长与 $\eta$ 各是多少？(c) 解释为什么 $\eta$ 不影响 forward FLOPs、只影响监督密度；被 mask 的视觉 token 在反向传播里真的没有梯度吗（提示：它们对 response 的 loss 有贡献路径）？
-2.（推导）VCD 式 (4)。(a) 证明当 $\ell_{noise} = \ell_{img}$（视觉条件无贡献）时 $\tilde p = \mathrm{softmax}(\ell_{img})$。(b) 设 token $`y^{*}`$ 满足 $`\ell_{img}(y^{*}) \ll 0`$ 且 $`\ell_{noise}(y^{*}) < \ell_{img}(y^{*})`$（主分布几乎不要它、受损分布更排斥它）：把式 (4) 的分子项改写为 $\ell_{img} + \alpha(\ell_{img} - \ell_{noise})$，分析它随 $\alpha$ 的行为，说明候选集截断防的是哪种失效模式。(c) 讨论 $\alpha \to \infty$ 时 $\tilde p$ 集中到什么样的 token 上。
-3.（推导）式 (3) 的 $G_t$。(a) 用 KL 散度的性质说明 $G_t \ge 0$、 $G_t = 0$ 当且仅当两分布相等。(b) 构造一个 $G_t$ 大但回答仍幻觉的例子（提示：图像可以改变分布、但改向错误方向），据此说明「 $G_t$ 小是幻觉的高发条件而非必要条件」。(c) 讨论用 $G_t$ 做幻觉探针的漏报与误报来源。
-4.（代码）教学实现 VCD 解码一步（非优化实现）：输入 `logits_img`、`logits_noise`（均 $\mathbb{R}^{|\mathcal{V}|}$）、 $\alpha$、截断阈值 $\beta \in (0, 1)$；先按 $p_{img} \ge \beta \cdot \max p_{img}$ 取候选集，再在候选集上计算式 (4)、集外置零，输出归一化分布。写清与贪心采样的接口。
+1.（计算 · [20]）一条样本：system 100 token + user prompt 200 token + AnyRes 4 切图（ $M = 2880$）+ assistant 回答 150 token。(a) 算 $\eta$。(b) 把 4 条同构 QA pack 进一条序列（各带各的图，共享一份 system），序列总长与 $\eta$ 各是多少？(c) 解释为什么 $\eta$ 不影响 forward FLOPs、只影响监督密度；被 mask 的视觉 token 在反向传播里真的没有梯度吗（提示：它们对 response 的 loss 有贡献路径）？先写出你对 (b) 的 η 升降方向的预测，再计算。校验：(b) 的 η 高于 (a)。
+2.（推导 · [30]）VCD 式 (4)。(a) 证明当 $\ell_{noise} = \ell_{img}$（视觉条件无贡献）时 $\tilde p = \mathrm{softmax}(\ell_{img})$。(b) 设 token $`y^{*}`$ 满足 $`\ell_{img}(y^{*}) \ll 0`$ 且 $`\ell_{noise}(y^{*}) < \ell_{img}(y^{*})`$（主分布几乎不要它、受损分布更排斥它）：把式 (4) 的分子项改写为 $\ell_{img} + \alpha(\ell_{img} - \ell_{noise})$，分析它随 $\alpha$ 的行为，说明候选集截断防的是哪种失效模式。(c) 讨论 $\alpha \to \infty$ 时 $\tilde p$ 集中到什么样的 token 上。校验：(a) 退化为不加对比的原分布。
+3.（推导 · [30]）式 (3) 的 $G_t$。(a) 用 KL 散度的性质说明 $G_t \ge 0$、 $G_t = 0$ 当且仅当两分布相等。(b) 构造一个 $G_t$ 大但回答仍幻觉的例子（提示：图像可以改变分布、但改向错误方向），据此说明「 $G_t$ 小是幻觉的高发条件而非必要条件」。(c) 讨论用 $G_t$ 做幻觉探针的漏报与误报来源。
+4.（代码 · [30]）教学实现 VCD 解码一步（非优化实现）：输入 `logits_img`、`logits_noise`（均 $\mathbb{R}^{|\mathcal{V}|}$）、 $\alpha$、截断阈值 $\beta \in (0, 1)$；先按 $p_{img} \ge \beta \cdot \max p_{img}$ 取候选集，再在候选集上计算式 (4)、集外置零，输出归一化分布。写清与贪心采样的接口。先预测截断阈值升高时候选集大小的变化方向，再运行。校验：候选集外概率为零，候选集内概率归一到一。
 
 ## 参考
 

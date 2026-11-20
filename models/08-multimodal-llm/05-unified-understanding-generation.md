@@ -28,13 +28,13 @@ $$
 
 ### 2.1 统一序列与统一 softmax
 
-离散路线的第一步是 tokenizer：图像 $x$ 经 VQ tokenizer（6.3 式 (11) 的最近邻量化，逐空间位点查 codebook）映成离散 id 网格
+一个图像 patch 怎么变成一个「词」，和文本共用同一套 AR？离散路线的第一步是 tokenizer：图像 $x$ 经 VQ tokenizer（6.3 式 (11) 的最近邻量化，逐空间位点查 codebook）映成离散 id 网格
 
 $$
 x \hspace{5mu}\mapsto\hspace{5mu} \left( k_1, \ldots, k_N \right), \qquad k_i \in \lbrace1, \ldots, K\rbrace, \qquad N = \frac{HW}{f^{2}} \qquad (2)
 $$
 
-**符号**： $K$：视觉 codebook 大小； $f$：空间压缩率（6.3 记号）； $N$：每图 token 数。Emu3（[Wang et al., 2024](../references.md)，arXiv:2409.18869，[A]；走读锚点 [baaivision/Emu3](../references.md)）的实例账已在 7.7 §8 锁过：codebook $K = 32768$、空间 f8、 $512^{2}$ 图 = $64 \times 64 = 4096$ token，视频在同一 tokenizer 上加时域下采样（论文口径）。
+**符号**： $K$：视觉 codebook 大小； $f$：空间压缩率（6.3 记号）； $N$：每图 token 数。Emu3（[Wang et al., 2024](../references.md)，arXiv:2409.18869，[A]；走读锚点 [baaivision/Emu3](../references.md)）的实例账已在 7.7 §8 锁过：codebook $K = 32768$、空间 f8、 $512^{2}$ 图 = $64 \times 64 = 4096$ token，视频在同一 tokenizer 上加时域下采样（论文口径）。本章离散路线的数字实例统一用这档口径，不再换档；连续路线的实例口径到 Transfusion 一节另立。
 
 第二步是把视觉 id 与文本 token 放进同一个词表——词表取不相交并 $V = V_{\text{text}} \cup V_{\text{img}}$，拼接后的序列 $u = (u_1, \ldots, u_S)$ 上只有一个 AR 分解：
 
@@ -44,7 +44,7 @@ $$
 
 **符号**： $p_\theta$：单个 transformer（Emu3 为 8B，论文口径）+ 单个 softmax 头，输出维 $|V_{\text{text}}| + K$。loss 没有模态标记——每个位置的监督都是同一个 next-token CE，「图像 = 语言」的准确含义即此：**对主干而言，一个视觉 code 与一个 BPE token 在嵌入表、softmax、CE 三处地位完全相等**。模态的差别被全部压进 tokenizer（图像如何变成 id）与数据（序列里图文如何排），主干结构零特化。
 
-理解方向在同一条式 (3) 里免费获得：图 → caption 的样本不过是「视觉 code 段在前、文本段在后」的序列，回答位置的 CE 与 8.3 式 (1) 的 loss masking 完全同构（只对回答段计 loss，视觉段与 prompt 屏蔽）。Emu3 论文的主张（摘要口径）：无 diffusion、无组合架构，单一 next-token 目标即在生成与感知任务上超过同期的任务专用模型——「够用」的证据由它提供，「代价」由下一小节算。
+理解方向在同一条式 (3) 里免费获得——口径：不加新目标、不加新参数，只换样本排列。图 → caption 的样本不过是「视觉 code 段在前、文本段在后」的序列，回答位置的 CE 与 8.3 式 (1) 的 loss masking 完全同构（只对回答段计 loss，视觉段与 prompt 屏蔽）。Emu3 论文的主张（摘要口径）：无 diffusion、无组合架构，单一 next-token 目标即在生成与感知任务上超过同期的任务专用模型——「够用」的证据由它提供，「代价」由下一小节算。
 
 ### 2.2 质量 vs VQ 信息瓶颈的账
 
@@ -85,7 +85,7 @@ $$
 s_{ts} = \frac{\left\langle \mathrm{RMSNorm}(q_t),\hspace{5mu} \mathrm{RMSNorm}(k_s) \right\rangle}{\sqrt{d_k}}, \qquad |s| \le \sqrt{d_k} \qquad (5)
 $$
 
-**符号**： $s_{ts}$：位置 $t$ 对 $s$ 的 attention logit；上界为 2.7 式 (16) 的逐 head 口径（Cauchy-Schwarz 一行，RMSNorm 后 $\lVert q_h \rVert = \sqrt{d_k}$）。混合模态为什么更需要它：视觉 code 与文本 token 的 embedding 统计不同，共享的 $W_Q, W_K$ 投影出的 $q, k$ 范数分布因此双模态分化——某些 head 的 logit 被视觉段推出饱和区，梯度经 2.3 式 (9) 的饱和亏空衰减。式 (5) 把 logit 幅度锁定在 $\sqrt{d_k}$，漂移通道只剩归一化增益的学习（2.7 §7 的同一结论）。
+**符号**： $s_{ts}$：位置 $t$ 对 $s$ 的 attention logit；上界为 2.7 式 (16) 的逐 head 口径（Cauchy-Schwarz 一行，RMSNorm 后 $\lVert q_h \rVert = \sqrt{d_k}$）。混合模态为什么更需要它：视觉 code 与文本 token 的 embedding 统计不同，共享的 $W_Q, W_K$ 投影出的 $q, k$ 范数分布因此双模态分化——某些 head 的 logit 被视觉段推出饱和区，梯度经 2.3 式 (9) 的饱和亏空衰减。式 (5) 把 logit 幅度锁定在 $\sqrt{d_k}$，漂移通道只剩归一化增益的学习（2.7 §7 的同一结论）。代入头维 128 这档：上界是 128 的平方根，约 11——任何 head 的注意力分数都出不了这个范围。
 
 ### 3.3 norm 重排：给残差主干的加性增长上闸
 
@@ -95,7 +95,7 @@ $$
 x_{l+1} = x_l + \mathrm{Norm}\left( f_l\left( x_l \right) \right) \qquad (6)
 $$
 
-**符号**： $f_l$：attention 或 FFN 子层；Norm 落在子层**输出**上。尺度效应直接：每层对主干的增量先被压回单位尺度再累加， $\mathrm{Var}(x_L)$ 的加性增长被逐层截断——主干尺度漂移这条失效通道被结构性关闭。代价同样写在 2.7 的账里：恒等主干破缺，反向梯度每层多过一次 Norm 的 Jacobian（谱范数 $O(\sqrt{d} / \lVert x \rVert)$，2.7 引理），深层梯度不再直达——混合模态的稳定性收益与纯文本配方优化的方向相反，Chameleon 选择了前者。
+**符号**： $f_l$：attention 或 FFN 子层；Norm 落在子层**输出**上。尺度效应可以写成一条命题。**命题**（增量截断）：每层对主干的增量先被压回单位尺度再累加， $\mathrm{Var}(x_L)$ 的加性增长被逐层截断——主干尺度漂移这条失效通道被结构性关闭；完整的方差账留作练习 3。代价同样写在 2.7 的账里：恒等主干破缺，反向梯度每层多过一次 Norm 的 Jacobian（谱范数 $O(\sqrt{d} / \lVert x \rVert)$，2.7 引理），深层梯度不再直达——混合模态的稳定性收益与纯文本配方优化的方向相反，Chameleon 选择了前者。
 
 ### 3.4 z-loss：锁住 softmax 的自由平移度
 
@@ -144,7 +144,7 @@ $$
 E\left( x + \delta \right) \approx E(x) \qquad (8)
 $$
 
-**符号**： $\delta$：标签保持的像素扰动子空间。式 (8) 是不变性（invariance）约束：理解梯度把 $E$ 推向**压扁** $\delta$ 方向——这部分信息是理解的噪声。
+**符号**： $\delta$：标签保持的像素扰动子空间。式 (8) 是不变性（invariance）约束：理解梯度把 $E$ 推向**压扁** $\delta$ 方向——这部分信息是理解的噪声。反例：改变语义的扰动（把物体裁出画面）不属于该子空间——理解目标本来就不该对它不变，压扁它反而丢监督。
 
 生成侧的编码器由 VQ 重建目标训练（6.3 式 (14)）： $\lVert x - D(E(x)) \rVert^{2}$ 小要求 $E(x)$ 是 $x$ 的近似充分统计量——扰动 $\delta$ 必须能从 $E(x + \delta)$ 读出来，否则重建项直接受损：
 
@@ -160,7 +160,11 @@ $$
 
 ### 5.1 混合目标：文本 CE + 图像去掩码
 
-Show-o（[Xie et al., 2024](../references.md)，arXiv:2408.12528，[A]；走读锚点 [showlab/Show-o](../references.md)）保留离散 token 形态，但给图像段换生成目标：文本照旧 AR（论文称 NTP，next-token prediction），图像 token 走离散扩散（论文称 MTP，mask token prediction）。图像段的腐蚀过程是吸收-均匀混合（Absorbing-Uniform）离散扩散（论文 Eq 4-5）：每步转移矩阵 $Q_t = Q_t^{a} Q_t^{u}$，吸收分量以概率 $\alpha_t$ 把 token 换成 [MASK]，均匀分量以概率 $\beta_t$ 把非 [MASK] token 均匀扩散到词表的其余 code（逐 code 概率 $\nu_t = \beta_t / (K+1)$， $K$ 为视觉码本大小）——4.8 式 (1)-(3) 的纯吸收态就是 $\beta_t = 0$ 的特例。记号防混：此处的 $\alpha_t$ 是**掩码概率**，与 4.8 式 (1) 的保留率 $\alpha_t$（ $\alpha_0 = 1$ 为干净端）语义相反，各按所在论文的原文口径。总目标（论文 Eq 9-11）：
+Show-o（[Xie et al., 2024](../references.md)，arXiv:2408.12528，[A]；走读锚点 [showlab/Show-o](../references.md)）保留离散 token 形态，但给图像段换生成目标：文本照旧 AR（论文称 NTP，next-token prediction），图像 token 走离散扩散（论文称 MTP，mask token prediction）。图像段的腐蚀过程是吸收-均匀混合（Absorbing-Uniform）离散扩散（论文 Eq 4-5）：每步转移矩阵 $Q_t = Q_t^{a} Q_t^{u}$，吸收分量以概率 $\alpha_t$ 把 token 换成 [MASK]，均匀分量以概率 $\beta_t$ 把非 [MASK] token 均匀扩散到词表的其余 code（逐 code 概率 $\nu_t = \beta_t / (K+1)$， $K$ 为视觉码本大小）——4.8 式 (1)-(3) 的纯吸收态就是 $\beta_t = 0$ 的特例。
+
+> **坑**：跨论文对照时 $\alpha_t$ 的口径相反——本章记号是**掩码概率**，4.8 式 (1) 的 $\alpha_t$ 是保留率（ $\alpha_0 = 1$ 为干净端）。先对齐记号再比较公式，各按所在论文的原文口径。
+
+总目标（论文 Eq 9-11）：
 
 $$
 L = L_{\text{MTP}} + \alpha\thinspace L_{\text{NTP}}, \qquad L_{\text{NTP}} = -\sum_{i} \log p_\theta\left( v_i \mid v_{\lt i},\thinspace u \right) \qquad (10)
@@ -180,7 +184,7 @@ Show-o2（[Xie et al., 2025](../references.md)，arXiv:2506.15564，[A]）在同
 
 ## 6. 路线 2（连续 latent）：Transfusion 完整公式
 
-Transfusion（[Zhou et al., 2024](../references.md)，arXiv:2408.11039，[B]——Meta 未开源，facebookresearch/Transfusion 404 实测；以下公式与结构均为论文口径）回答的是：能不能不经过 VQ 量化、让扩散直接发生在 LLM 主干里？可以——把图像表示从离散 code 换成连续 patch latent，把图像段的目标从 CE 换成扩散回归，其余不动。本节是它的完整组装。
+Transfusion（[Zhou et al., 2024](../references.md)，arXiv:2408.11039，[B]——Meta 未开源，facebookresearch/Transfusion 404 实测；以下公式与结构均为论文口径）回答的是：能不能不经过 VQ 量化、让扩散直接发生在 LLM 主干里？可以——把图像表示从离散 code 换成连续 patch latent，把图像段的目标从 CE 换成扩散回归，其余不动。本节是它的完整组装。本节起换连续 latent 档的实例口径，具体数值统一在成本账与练习 1 给出。
 
 ### 6.1 序列构造：BOI/EOI 与混合类型序列
 
@@ -190,7 +194,9 @@ $$
 u = \left[ \ldots,\hspace{5mu} E(s_a),\hspace{5mu} \mathrm{BOI},\hspace{5mu} \tilde{x}^{(1)}, \ldots, \tilde{x}^{(n)},\hspace{5mu} \mathrm{EOI},\hspace{5mu} E(s_{a+1}), \ldots \right] \qquad (12)
 $$
 
-**符号**： $E(s)$：文本 token 的 embedding 行； $\tilde{x}^{(j)} \in \mathbb{R}^{d}$：图像 patch latent（训练时为加噪版，见式 (13)）；BOI / EOI（begin/end-of-image）：词表里的普通 special token，位置按文本处理。patch 进出主干的局部接口，论文给出两种选项——简单线性层，或小型 U-Net up/down 块（论文口径）；进入线性层之前，每个 patch 向量先加上时间步 $t$ 的 embedding（论文 footnote 口径）。「无 U-Net」的准确含义是**去噪主干**不是独立的 U-Net 塔（§6.4），不否认 patch 接口处可选的小型 U-Net 块。主干是 Llama 式组件（SwiGLU、RMSNorm、RoPE 的标准配方，2.8）。**位置编码沿用 1D RoPE——原文未对图像 patch 引入 2D RoPE**（arXiv 全文无 rotary 位置编码的结构改动，[B] 口径）：patch 按 raster 序排布，2D 结构全靠学。对照 8.2 §9：理解向 VLM 已经用 M-RoPE 把 2D 坐标搬进位置编码，Transfusion 站在同一个 tradeoff 的另一端。
+**符号**： $E(s)$：文本 token 的 embedding 行； $\tilde{x}^{(j)} \in \mathbb{R}^{d}$：图像 patch latent（训练时为加噪版，见式 (13)）；BOI / EOI（begin/end-of-image）：词表里的普通 special token，位置按文本处理。patch 进出主干的局部接口，论文给出两种选项——简单线性层，或小型 U-Net up/down 块（论文口径）；进入线性层之前，每个 patch 向量先加上时间步 $t$ 的 embedding（论文 footnote 口径）。「无 U-Net」的准确含义是**去噪主干**不是独立的 U-Net 塔（§6.4），不否认 patch 接口处可选的小型 U-Net 块。主干是 Llama 式组件（SwiGLU、RMSNorm、RoPE 的标准配方，2.8）。**位置编码沿用 1D RoPE——原文未对图像 patch 引入 2D RoPE**（arXiv 全文无 rotary 位置编码的结构改动，[B] 口径）：patch 按 raster 序排布，2D 结构全靠学。
+
+> **提点**：对照 8.2 §9——理解向 VLM 已经用 M-RoPE 把 2D 坐标搬进位置编码，Transfusion 站在同一个 tradeoff 的另一端。
 
 ```
 序列布局（式 (12)）：
@@ -247,17 +253,17 @@ EOI   1   1   1    1   1   1   1    0
 w3    1   1   1    1   1   1   1    1
 ```
 
-块内双向为什么不泄漏标签——这是与 AR 的本质区别所在，值得写成命题。位置 $i$ 的回归目标是 $\varepsilon^{(i)}$，它从 $x_t^{(j)}$（ $j \ne i$）能读到的信息是 $x_0^{(j)}$ 与 $\varepsilon^{(j)}$ 的混合；而各 patch 的噪声独立采样， $\varepsilon^{(j)} \perp \varepsilon^{(i)}$，故
+块内双向为什么不泄漏标签？这是与 AR 的本质区别所在，写成命题。**命题**（块内无泄漏）：位置 $i$ 的回归目标 $\varepsilon^{(i)}$ 对其余 patch 的加噪输入与序列前缀的条件熵，等于它的无条件熵：
 
 $$
 H\left( \varepsilon^{(i)} \mid \left\lbrace x_t^{(j)} \right\rbrace_{j \ne i},\thinspace \text{prefix} \right) = H\left( \varepsilon^{(i)} \right) \qquad (16)
 $$
 
-**符号**： $H$：条件熵。块内可见性不降低目标噪声的熵——模型要压低回归误差，唯一通道是借其他 patch 推断共享的干净结构 $x_0$，这正是去噪目标想学的方向（与 7.2 §3.3「网络只从 $(x_t, t)$ 推断」同机制，只是条件里多了同图其他加噪 patch）。三向对照把边界划清：Emu3 的严格 AR 下，位置 $i$ 的目标是**干净 id**，若让它看到未来的干净 id 则标签泄漏（泄漏的是答案本身）；Show-o 的图像段双向看到的未被掩位置是干净 id，但目标是**被掩位置**（答案是隐藏的，可见的是条件——BERT 式合法）；Transfusion 看到的是未来的**加噪**版，目标是噪声——可见内容里不含答案（式 (16)）。三种「未来可见性」的合法性，由「目标与可见信息是否共享随机性」一句话裁决。
+**符号**： $H$：条件熵。**证明**（两步）：第一步，它从 $x_t^{(j)}$（ $j \ne i$）能读到的信息是 $x_0^{(j)}$ 与 $\varepsilon^{(j)}$ 的混合；第二步，各 patch 的噪声独立采样， $\varepsilon^{(j)} \perp \varepsilon^{(i)}$，故块内可见性不降低目标噪声的熵。模型要压低回归误差，唯一通道是借其他 patch 推断共享的干净结构 $x_0$，这正是去噪目标想学的方向（与 7.2 §3.3「网络只从 $(x_t, t)$ 推断」同机制，只是条件里多了同图其他加噪 patch）。三向对照把边界划清：Emu3 的严格 AR 下，位置 $i$ 的目标是**干净 id**，若让它看到未来的干净 id 则标签泄漏（泄漏的是答案本身）；Show-o 的图像段双向看到的未被掩位置是干净 id，但目标是**被掩位置**（答案是隐藏的，可见的是条件——BERT 式合法）；Transfusion 看到的是未来的**加噪**版，目标是噪声——可见内容里不含答案（式 (16)）。三种「未来可见性」的合法性，由「目标与可见信息是否共享随机性」一句话裁决。这组对照的展开即练习 2。
 
 ### 6.4 推理回路与成本账
 
-生图时的回路（文本前缀的 KV cache 全程复用）：
+生图时的回路长什么样、每步花多少前向？回路的形状如下（文本前缀的 KV cache 全程复用）：
 
 ```
 1. 文本 AR decode …… 直到模型产出 BOI
@@ -287,7 +293,7 @@ $$
 
 与路线 2 的分界只有一句话：**去噪循环在哪个网络上跑**。Transfusion 是主干自己跑 $T$ 步；head 式是主干前向一次（或逐条件 token AR 若干步）交出 $c$， $T$ 步循环全部在小 head 内。账与弱点同源于此：
 
-- **成本**：式 (17) 第三行——主干成本从 $T \cdot n$ 降为一次性，head 的 $T \cdot n \cdot f$ 项在 $f \ll 1$ 时近乎免费；路线 3 是三条路线里生图延迟结构最接近纯文本 decode 的。
+- **成本**：式 (17) 第三行——主干成本从 $T \cdot n$ 降为一次性，head 的 $T \cdot n \cdot f$ 项在 $f \ll 1$ 时近乎免费（口径：相对主干的一次全量前向而言）；路线 3 是三条路线里生图延迟结构最接近纯文本 decode 的。
 - **条件化带宽**：每步去噪能读到的条件只有 $c$（或逐 patch 的对应行），不是主干全序列的逐层 attention——§6.2 的 in-context 条件注入（patch 全程 attend 前缀）被换成一次性的向量交接，细节条件化的通道收窄。
 - **主干免疫**：主干可以完全不参与扩散训练（甚至冻结），文本能力零风险——这是 8.1 §5「冻结保资产」哲学在生成方向的延伸；代价是生成质量的全部容量压力落在 head 上。
 
@@ -328,14 +334,14 @@ GPT-4o 的原生生图能力证据等级 [C]：无正式论文、无公开架构
 | Show-o 混合目标 | 式 (10)(11)： $L = L_{\text{MTP}} + \alpha L_{\text{NTP}}$ | 图像 MTP = 被掩位置裸 CE（无 $1/t$ 权重）；腐蚀为吸收-均匀混合（ $\alpha_t$ 进 [MASK]、 $\nu_t = \beta_t/(K+1)$ 均匀扩散）；omni-attention = 式 (15) 同族 |
 | Transfusion | 式 (12)(13)(14)(15)(16)(17) | BOI/EOI 包夹连续 patch； $L = L_{LM} + \lambda L_{DDPM}$ 一次前向两 loss；mask = causal 或同块；无泄漏命题式 (16)；1D RoPE（原文无 2D） |
 | diffusion head | 式 (17) 第三行 | 去噪循环移出主干；主干免疫 vs 条件带宽收窄；Bagel = 解耦编码器 + MoT 参数分工 + 主干内扩散（7B active / 14B total，README 口径） |
-| GPT-4o [C] | 无公式 | 官方自回归口径 + 行为兼容性分析；不断言实现 |
+| GPT-4o [C] | 无公式 | 官方自回归口径 + 行为兼容性分析；不断言实现（分析见本章第 8 节） |
 
 ## 练习
 
-1.（推导）norm 重排的方差账。设 Pre-LN 块 $x_{l+1} = x_l + f_l(\mathrm{Norm}(x_l))$ 与重排块 $x_{l+1} = x_l + \mathrm{Norm}(f_l(x_l))$（式 (6)），假设各层子层输出与主干近似不相关。(a) 证明 Pre-LN 下 $\mathrm{Var}(x_L) = \mathrm{Var}(x_0) + \sum_l \mathrm{Var}(f_l)$（加性累加）；(b) 证明重排块下每层增量的方差被 Norm 压回常数级（与 $\mathrm{Var}(x_l)$ 无关），主干方差随深度线性增长的斜率与 Pre-LN 相差多少？(c) 用 2.7 的 Norm Jacobian 谱范数引理（ $O(\sqrt{d}/\lVert x \rVert)$）说明重排块对反向梯度恒等通路的影响——为什么 Chameleon 愿意为稳定性支付这笔梯度税？
-2.（推导）未来可见性的合法性判据。对三种统一设计分别写出「位置 $i$ 的预测目标」「位置 $i$ 能看到的未来信息」与「目标与可见信息是否共享随机性」：(a) Emu3 严格 AR 图像段；(b) Show-o 图像段（部分位置被掩）；(c) Transfusion patch 块（式 (13)-(16)）。由 (c) 证明式 (16)；并说明若把 Transfusion 的回归目标从 $\varepsilon$ 换成 $x_0$、输入保持加噪版，无泄漏结论是否仍成立（提示： $x_t^{(j)}$ 含 $x_0^{(j)}$ 的缩放拷贝）。
-3.（计算）推理成本账。取 $S_0 = 1000$ 文本前缀、Emu3 档 $N = 4096$、Transfusion 档 $n = 1024$ patch 与 $T = 50$ 步、head 档 $n_q = 32$、 $f = 1/50$。(a) 按式 (17) 分别计算三条路线的主干 token 前向数；(b) 按「串行深度」（不可并行的步数）重排三路线；(c) Show-o 档： $T_r = 10$ 轮、每轮全序列 $S_0 + N$ 无 cache，把它加进两表并说明它的成本结构更像哪条路线。
-4.（代码）教学用，非优化实现：(a) 写一个函数，输入序列的模态分段标记（text / BOI / patch / EOI 位置列表），按式 (15) 输出 $S \times S$ 布尔 attention mask，并用 §6.3 的 8 位置实例验证；(b) 写 Transfusion 混合 loss：文本位置 CE + patch 位置 ε 回归（式 (14)），主干用两层 transformer，随机数据跑通一次前向 + 反向，断言两 loss 的梯度都非零且只交汇于主干参数（检查输出头参数的梯度归属）。
+1.（计算 · [20]）推理成本账。取 $S_0 = 1000$ 文本前缀、Emu3 档 $N = 4096$、Transfusion 档 $n = 1024$ patch 与 $T = 50$ 步、head 档 $n_q = 32$、 $f = 1/50$。先写出你对 (b) 排序的预测，再代入计算。(a) 按式 (17) 分别计算三条路线的主干 token 前向数；(b) 按「串行深度」（不可并行的步数）重排三路线；(c) Show-o 档： $T_r = 10$ 轮、每轮全序列 $S_0 + N$ 无 cache，把它加进两表并说明它的成本结构更像哪条路线。校验：把去噪步数取 1 代入，Transfusion 档应退化为一次 patch 段前向加文本前缀。
+2.（推导 · [30]）未来可见性的合法性判据。对三种统一设计分别写出「位置 $i$ 的预测目标」「位置 $i$ 能看到的未来信息」与「目标与可见信息是否共享随机性」：(a) Emu3 严格 AR 图像段；(b) Show-o 图像段（部分位置被掩）；(c) Transfusion patch 块（式 (13)-(16)）。由 (c) 证明式 (16)；并说明若把 Transfusion 的回归目标从 $\varepsilon$ 换成 $x_0$、输入保持加噪版，无泄漏结论是否仍成立（提示： $x_t^{(j)}$ 含 $x_0^{(j)}$ 的缩放拷贝）。本题 (c) 即正文块内无泄漏命题的完整证明。
+3.（推导 · [30]）norm 重排的方差账。设 Pre-LN 块 $x_{l+1} = x_l + f_l(\mathrm{Norm}(x_l))$ 与重排块 $x_{l+1} = x_l + \mathrm{Norm}(f_l(x_l))$（式 (6)），假设各层子层输出与主干近似不相关。(a) 证明 Pre-LN 下 $\mathrm{Var}(x_L) = \mathrm{Var}(x_0) + \sum_l \mathrm{Var}(f_l)$（加性累加）；(b) 证明重排块下每层增量的方差被 Norm 压回常数级（与 $\mathrm{Var}(x_l)$ 无关），主干方差随深度线性增长的斜率与 Pre-LN 相差多少？(c) 用 2.7 的 Norm Jacobian 谱范数引理（ $O(\sqrt{d}/\lVert x \rVert)$）说明重排块对反向梯度恒等通路的影响——为什么 Chameleon 愿意为稳定性支付这笔梯度税？本题 (a)(b) 即正文增量截断命题的完整证明。
+4.（代码 · [30]）教学用，非优化实现：(a) 写一个函数，输入序列的模态分段标记（text / BOI / patch / EOI 位置列表），按式 (15) 输出 $S \times S$ 布尔 attention mask，并用 §6.3 的 8 位置实例验证；(b) 写 Transfusion 混合 loss：文本位置 CE + patch 位置 ε 回归（式 (14)），主干用两层 transformer，随机数据跑通一次前向 + 反向，断言两 loss 的梯度都非零且只交汇于主干参数（检查输出头参数的梯度归属）。校验：(a) 的输出与正文 8 位置 mask 矩阵逐格一致；(b) 文本头参数上回归梯度应为零，噪声头参数上 CE 梯度应为零。
 
 ## 参考
 
