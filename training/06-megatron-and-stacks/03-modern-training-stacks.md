@@ -4,7 +4,7 @@
 
 ## 1. Megatron 家族：Core / NeMo / Bridge 的三层分工
 
-Megatron-LM repo 的 README 把自己拆成两层，原话照录：Megatron Core 是 "a composable library with GPU-optimized building blocks for custom training frameworks"——一个可组合的库，提供 transformer 构件、TP/PP/DP/EP/CP 并行与混合精度；Megatron-LM 是 "a reference example that includes Megatron Core plus pre-configured training scripts"——Core 加预配置脚本的参考实现。6.1/6.2 走读过的全部路径（`megatron/core/` 下的并行原语、进程组、调度、optimizer、dist-ckpt）都在 Core 层。
+Megatron-LM repo 的 README 把自己拆成两层，原话照录：Megatron Core 是 "a composable library with GPU-optimized building blocks for custom training frameworks"——一个可组合的库，提供 transformer 构件、TP/PP/DP/EP/CP 并行与混合精度；Megatron-LM 是 "a reference example that includes Megatron Core plus pre-configured training scripts"——Core 加预配置脚本的参考实现。6.1/6.2 走读过的全部路径（`megatron/core/` 下的并行原语、进程组、调度、optimizer、dist-ckpt）都在 Core 层。先立本章口径：栈事实全部以 2026-11-17 的核实为准，账类数字沿用 bf16 混合精度口径。
 
 ```
 HF 生态模型/权重 ◄──双向转换──► Megatron-Bridge ──┐
@@ -32,7 +32,9 @@ pytorch/torchtitan 的 README 首行标语是 "A PyTorch-native platform for pre
 
 代码组织上，`torchtitan/` 的主要目录为 `models, components, distributed, config, experiments, rl, observability, ops, quantization, tools`（2026-11-17 核实的完整清单）。README 的组织原则是 "Models declare how they shard"——模型代码只声明切分意图，并行策略以组合方式施加；`rl` 目录的存在说明它已从纯预训练栈扩到后训练。分布式层的文件名就是组合面本身：`torchtitan/distributed/` 按维分文件——`fsdp.py`（FSDP2 / HSDP 装配）、`pipeline_parallel.py`（PP schedule 装配）、`context_parallel.py`（CP）、`activation_remat.py`（三档重计算）、`offloading.py`（CPU offload）、`parallelism_context.py`（导出 `ParallelismContext` 与 `DistributedTopology`，把各维进程组与设备网格收进一个显式上下文对象）。
 
-这里有一处与 Megatron 的工程风格对照值得点名：Megatron 的进程组树是全局单例（6.2 §1 的 `parallel_state.py`，其模块 docstring 声明正在向显式传组迁移），TorchTitan 从设计上就是显式上下文对象。分歧不在算法，在并行状态放在哪里。`components/` 层是训练循环的零件盒：`checkpointer`（DCP 封装与异步 save）、`data`（Grain 管线）、`optim`（含 BF16 optimizer states）、`loss.py`、`tokenizer.py`、`validator.py`；顶层以 `train.py` / `trainer.py` / `training_engine.py` 三个文件做入口。
+> **提点**：一处与 Megatron 的工程风格对照：Megatron 的进程组树是全局单例（6.2 §1 的 `parallel_state.py`，其模块 docstring 声明正在向显式传组迁移），TorchTitan 从设计上就是显式上下文对象——分歧不在算法，在并行状态放在哪里。
+
+`components/` 层是训练循环的零件盒：`checkpointer`（DCP 封装与异步 save）、`data`（Grain 管线）、`optim`（含 BF16 optimizer states）、`loss.py`、`tokenizer.py`、`validator.py`；顶层以 `train.py` / `trainer.py` / `training_engine.py` 三个文件做入口。
 
 与 Megatron 的覆盖面对照：
 
@@ -44,7 +46,9 @@ pytorch/torchtitan 的 README 首行标语是 "A PyTorch-native platform for pre
 | checkpoint | dist-ckpt，保存/加载网格解耦（6.2 §5） | DCP，含异步 save |
 | 证据形态 | 论文 + repo（[A]） | repo 锚点（references 登记为教学参照 + 官方实现） |
 
-表里最结构性的一行是 DP 分片档。Megatron 停在 ZeRO-1 族：参数全量常驻、每 step 通信约 $2N$ 元素。TorchTitan 的 DP 直接是 ZeRO-3 语义：参数用时 gather、通信到 $3N$ 上限、显存随 $d$ 线性缩。同样的卡数，两栈落在 4.2 决策表的不同行——选栈之前，先按 4.2 / 5.5 的账算出自己该在哪一行，再谈栈（练习 1 算这个差异）。
+表里最结构性的一行是 DP 分片档。**命题**（分片档差异）：Megatron 停在 ZeRO-1 族——参数全量常驻、每 step 通信约 $2N$ 元素；TorchTitan 的 DP 直接是 ZeRO-3 语义——参数用时 gather、通信到 $3N$ 上限、显存随 $d$ 线性缩。**证明**（要点）：两档口径分别承自各自的 DP 机制——dist-opt 只切优化器状态、参数缓冲全量常驻，FSDP2 连参数也用时取回；数值验证留作练习 1。同样的卡数，两栈落在 4.2 决策表的不同行——选栈之前，先按 4.2 / 5.5 的账算出自己该在哪一行，再谈栈。
+
+先代一组整数账感受档位差（此处换 64B 口径，只为让两档都出整数；练习 1 用 70B 重算）：64 卡、bf16、64B 模型，dist-opt 单卡 (4 + 12/64) × 640 亿字节 = 2680 亿字节（268 GB），FSDP2 单卡 16 × 640 / 64 = 160 亿字节（16 GB）。dist-opt 的 268 GB 单卡装不下——它的显存杠杆本来就在模型并行维，对照表读表段已述。
 
 阅读路径上两栈也互补。要理解并行机制本身，TorchTitan 的组合式写法让「机制 → 原生 API」的映射直接可见：4.3 的 FSDP2、5.3 的 pipelining schedule 都是原生组件，没有中间封装层。要理解生产级大栈的全部边角——进程组树、混合精度状态机、分布式 ckpt 的分片映射——Megatron-Core 是绕不开的。6.1（原语）→ 6.2（运行时）的走读顺序就是推荐阅读顺序。
 
@@ -60,7 +64,7 @@ allenai/OLMo-core 是 OLMo 2 的训练栈（[Team OLMo et al., 2025](../referenc
 
 ## 5. 后训练栈预告：接口定位
 
-P9 的三个栈在这里只立接口定位，数学与系统展开归 8.4 / 8.5 与 P9：
+后训练栈比预训练栈多了哪一层？P9 的三个栈在这里只立接口定位，数学与系统展开归 8.4 / 8.5 与 P9：
 
 - TRL（huggingface/trl，[教学参照 + 官方实现](../references.md)）：HF 生态的 SFT / DPO / GRPO trainer 库，中小规模与教学场景的标准入口。其偏好数据接口（DPOTrainer 的输入格式）已在 3.2 走读过。TRL 与本 Part 各栈的关系是：训练循环全部交给 HF Trainer，并行能力继承 transformers / accelerate 生态——大规模 RL 不是它的设计目标。
 - veRL（[Sheng et al., 2024](../references.md)，arXiv:2409.19256，[A]）：字节的 RL 训练框架。核心是 hybrid 控制模型：数据流编排用单控制器、模型内计算用多控制器；训练引擎可插 Megatron 或 FSDP——8.5 的主走读对象之一。
@@ -88,7 +92,7 @@ P9 的三个栈在这里只立接口定位，数学与系统展开归 8.4 / 8.5 
 
 ## 6. 选型决策表
 
-按「先算账、后选栈」的纪律：账归 4.4 / 5.5，本表只做账到代码的映射。模型规模 × 并行需求两轴之外，还有第三轴——团队栈。已有 NVIDIA 栈运维经验的团队，沿用 Megatron 系的学习成本最低；基建全在 PyTorch 原生分布式（FSDP / DTensor / pipelining）上的团队，选 TorchTitan 可以少维护一层自有并行原语；想把训练栈本身当研究对象逐行读的，从 OLMo-core 与 TorchTitan 入手——两者代码量都远小于 Megatron-LM 全仓（此句为定性判断，无量化口径）。
+六个栈摆在一起，怎么选？纪律只有一条：先算账、后选栈——账归 4.4 / 5.5，本表只做账到代码的映射。模型规模 × 并行需求两轴之外，还有第三轴——团队栈。已有 NVIDIA 栈运维经验的团队，沿用 Megatron 系的学习成本最低；基建全在 PyTorch 原生分布式（FSDP / DTensor / pipelining）上的团队，选 TorchTitan 可以少维护一层自有并行原语；想把训练栈本身当研究对象逐行读的，从 OLMo-core 与 TorchTitan 入手——两者代码量都远小于 Megatron-LM 全仓（此句为定性判断，无量化口径）。
 
 | 场景 | 首选栈 | 依据 |
 | --- | --- | --- |
@@ -108,18 +112,18 @@ P9 的三个栈在这里只立接口定位，数学与系统展开归 8.4 / 8.5 
 | --- | --- | --- |
 | Megatron-Core | 5D 并行 + dist-opt + dist-ckpt 的可组合库 | repo README 双层自述；6.1/6.2 走读 |
 | NeMo / Megatron-Bridge | 框架封装层 / HF↔Megatron 双向转换 | `NVIDIA/NeMo` 重定向至 `NVIDIA-NeMo/Speech`；Bridge 在 `NVIDIA-NeMo/Megatron-Bridge` |
-| TorchTitan | PyTorch 原生最小栈，模型自声明 sharding | FSDP2 + pipelining schedule + Grain + DCP；`rl` 目录已存在 |
+| TorchTitan | PyTorch 原生最小栈，模型自声明 sharding | FSDP2 + pipelining schedule + Grain + DCP；`rl` 目录已存在（练习 2） |
 | DeepSpeed | ZeRO 原厂；Offload/Infinity 独占档 | 主仓日更；Megatron-DeepSpeed 组合仓 2025-08 后无新提交 |
 | OLMo-core | 四者全开的复现锚点 | 包内 data/nn/optim/train/eval 全模块开源 |
 | TRL / veRL / OpenRLHF | 后训练栈，接口定位 | 三段式：训练引擎 + rollout 引擎 + 权重同步（8.5） |
 
 ## 练习
 
-1.（计算）64 卡、bf16、 $N = 70 \times 10^{9}$  dense 模型：分别按 (a) Megatron-Core dist-opt（bf16 梯度口径，6.2 §4 表）与 (b) TorchTitan FSDP2（ZeRO-3 语义，4.2 §4 账）算单卡模型状态显存（GB，SI 口径），并各加激活余量 20 GB 后对照 80 GB 卡判定可行性；说明同样卡数下两栈落点差异来自哪个设计选择。
+1.（计算 · [20]）64 卡、bf16、 $N = 70 \times 10^{9}$  dense 模型：分别按 (a) Megatron-Core dist-opt（bf16 梯度口径，6.2 §4 表）与 (b) TorchTitan FSDP2（ZeRO-3 语义，4.2 §4 账）算单卡模型状态显存（GB，SI 口径），并各加激活余量 20 GB 后对照 80 GB 卡判定可行性；说明同样卡数下两栈落点差异来自哪个设计选择。先写出你对两栈倍数差的数量级预测，再计算。校验：两栈之差应集中在参数与梯度两笔上，优化器状态两栈同量。
 
-2.（查证）拉取 pytorch/torchtitan 与 NVIDIA/Megatron-LM 的当前 README，把两者声明支持的并行维与 schedule 列成表，与 §2 对照表逐行核对。栈的特性清单以一手 README 为准——本题训练的就是不引用二手综述的习惯。
+2.（查证 · [30]）拉取 pytorch/torchtitan 与 NVIDIA/Megatron-LM 的当前 README，把两者声明支持的并行维与 schedule 列成表，与 §2 对照表逐行核对。栈的特性清单以一手 README 为准——本题训练的就是不引用二手综述的习惯。校验：对照物为两仓 README 的 Features 清单节。
 
-3.（设计）8 台 8×H100（80 GB）节点，任务是从 HF 开放权重继续训练一个 32B dense 模型：先按 4.2 / 5.5 的账定并行度数（给出两组合法配置），再按 §6 决策表选栈，写出每个候选方案的取舍（转换成本、DP 分片档、checkpoint 路径）。
+3.（设计 · [40]）8 台 8×H100（80 GB）节点，任务是从 HF 开放权重继续训练一个 32B dense 模型。(a) 先按 4.2 / 5.5 的账定并行度数，给出两组合法配置；(b) 再按 §6 决策表为每组配置选栈；(c) 写出每个候选方案的取舍（转换成本、DP 分片档、checkpoint 路径）。校验：每组配置的并行度乘积等于 64；单卡模型状态显存可用正文对照表的两档口径复算。
 
 ## 参考
 

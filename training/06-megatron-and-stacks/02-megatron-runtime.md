@@ -12,13 +12,17 @@ $$
 
 **符号**： $t$：tensor parallel 度； $c$：context parallel 度； $d$：data parallel 度； $p$：pipeline parallel 度。注意 $d$ 不是独立输入。`initialize_model_parallel`（`megatron/core/parallel_state.py`）先算 `model_size = t · c · p`（再乘 GTP-remat 轴，默认 1）；`world_size % model_size != 0` 就直接报错，否则取 `data_parallel_size = world_size // model_size`。EP 度 $e$ 不进式 (1) 这张 dense 网格——expert 层有另一张网格，下文的双 generator 机制会讲。
 
+代入数字：world = 15360、t = 8、c = 1、p = 12 时，d = 15360 / 96 = 160。本章数字口径先立在这里：进程组示例统一用 world = 16 的网格（引自源码 docstring 的算例另行注明出处），显存账统一 bf16 混合精度、实例取 128 亿参数与 d = 64；练习题的口径随题面另给。
+
 **order 与 stride**。`initialize_model_parallel` 有个 `order` 参数，默认 `"tp-cp-ep-dp-pp"`。语义一句话：order 串从左到右，对应 rank 坐标从低位到高位——**最左的并行维 stride 最小，组内 rank 最相邻；最右的 stride 最大**。默认 order 下，全局 rank 分解为
 
 $$
 r = i_{\mathrm{tp}} + t \cdot \left( i_{\mathrm{cp}} + c \cdot \left( i_{\mathrm{ep}} + e \cdot \left( i_{\mathrm{dp}} + d \cdot i_{\mathrm{pp}} \right) \right) \right) \qquad (2)
 $$
 
-**符号**： $r \in [0, W)$：全局 rank； $i_{\mathrm{tp}} \in [0, t)$ 、 $i_{\mathrm{cp}} \in [0, c)$ 、 $i_{\mathrm{ep}} \in [0, e)$ 、 $i_{\mathrm{dp}} \in [0, d)$ 、 $i_{\mathrm{pp}} \in [0, p)$：五个并行维坐标。等价读法：某轴的 stride 等于 order 串中它左侧各维度数之积（前缀积）。
+**符号**： $r \in [0, W)$：全局 rank； $i_{\mathrm{tp}} \in [0, t)$ 、 $i_{\mathrm{cp}} \in [0, c)$ 、 $i_{\mathrm{ep}} \in [0, e)$ 、 $i_{\mathrm{dp}} \in [0, d)$ 、 $i_{\mathrm{pp}} \in [0, p)$：五个并行维坐标。
+
+**命题**（stride 规则）：所谓 stride，是指同一轴上相邻坐标对应的全局 rank 间隔；默认 order 下，任一轴的 stride 等于它左侧各轴维度数之积（前缀积）。**证明**（要点）：生成函数 `generate_masked_orthogonal_rank_groups` 先用 `prefix_product` 求出各轴 stride，再用 `decompose` 按 stride 分解组号与组内序号，最后内积重组——逐步展开即得上式。正例见下文的 16 卡网格；改 order 后连续性失效的反例，留作练习 2。
 
 同一个 order 串被两个 rank generator 复用。dense 侧 generator 拿 $e = 1$（坐标 $i_{\mathrm{ep}}$ 恒为 0，式 (2) 退化为四维嵌套）；expert 侧 generator 拿 $c = 1$。为什么 CP 与 EP 不同时展开？`RankGenerator.__init__` 里有一条硬断言 `ep == 1 or cp == 1`——同一张网格内两者互斥。
 
@@ -39,7 +43,11 @@ PP 组（stride 4，4 组）: {0,4,8,12} {1,5,9,13} {2,6,10,14} {3,7,11,15}  ←
 
 这个默认 order 不是任意约定，而是 5.5「TP 进节点内、PP 跨节点」组合规则的代码落地。原因按通信频率排。TP 每层两次 all-reduce（5.1 的账），频率最高、延迟最敏感，所以放在最小 stride 上；rank 连续分配时——第 $r$ 块 GPU 在第 $\lfloor r / 8 \rfloor$ 个节点—— $t \le 8$ 的 TP 组就整组落在同一节点的 NVLink 域内。PP 相反：它只传 stage 边界激活（5.3），通信量最小，于是放到最大 stride 上跨节点。想重排也行，改 `order` 参数（比如 `"tp-pp-dp"`）即可，进程组树会整体重算（练习 1、2 考这条性质）。
 
-源码自带的两个 docstring 算例，可以把 stride 语义再验算一遍。第一个在 `generate_masked_orthogonal_rank_groups` 的 docstring 里：进制链是 global_rank = tp_rank + dp_rank × tp_size + pp_rank × tp_size × dp_size，配一个度数 2-3-4（ $W = 24$ ）的算例，两者都对应 order `"tp-dp-pp"`——DP 组为 $\lbrace 0, 2, 4 \rbrace$、 $\lbrace 1, 3, 5 \rbrace$、……、 $\lbrace 19, 21, 23 \rbrace$，DP 轴的 stride 恰为 $t = 2$ ，与式 (2) 逐项一致。这里有一条读法注记：同一段 docstring 的 prose 两处把 order 写成 `"tp-pp-dp"`，与进制链和算例的 tp-dp-pp 口径矛盾——源码自身不一致。本章统一按算例与公式的 tp-dp-pp 口径引用，5.5 引用同一 docstring 时同口径。第二个算例在 `initialize_model_parallel` 的 docstring 里：8 块 GPU、 $t = 4$、 $c = 2$ 时，CP 组为 $\lbrace 0, 4 \rbrace$、 $\lbrace 1, 5 \rbrace$、 $\lbrace 2, 6 \rbrace$、 $\lbrace 3, 7 \rbrace$。CP 轴 stride 为 $t = 4$ ，同一 CP 组的两个 rank 处理同一序列的前后两块。两个算例都是同一条规则的推论：order 最左轴 stride = 1，向右逐轴乘前缀积。
+源码自带的两个 docstring 算例，可以把 stride 语义再验算一遍。第一个在 `generate_masked_orthogonal_rank_groups` 的 docstring 里：进制链是 global_rank = tp_rank + dp_rank × tp_size + pp_rank × tp_size × dp_size，配一个度数 2-3-4（ $W = 24$ ）的算例，两者都对应 order `"tp-dp-pp"`——DP 组为 $\lbrace 0, 2, 4 \rbrace$、 $\lbrace 1, 3, 5 \rbrace$、……、 $\lbrace 19, 21, 23 \rbrace$，DP 轴的 stride 恰为 $t = 2$ ，与式 (2) 逐项一致。
+
+> **提点**：同一段 docstring 的 prose 两处把 order 写成 `"tp-pp-dp"`，与进制链和算例的 tp-dp-pp 口径矛盾——源码自身不一致。本章统一按算例与公式的 tp-dp-pp 口径引用，5.5 引用同一 docstring 时同口径。
+
+第二个算例在 `initialize_model_parallel` 的 docstring 里：8 块 GPU、 $t = 4$、 $c = 2$ 时，CP 组为 $\lbrace 0, 4 \rbrace$、 $\lbrace 1, 5 \rbrace$、 $\lbrace 2, 6 \rbrace$、 $\lbrace 3, 7 \rbrace$。CP 轴 stride 为 $t = 4$ ，同一 CP 组的两个 rank 处理同一序列的前后两块。两个算例都是同一条规则的推论：order 最左轴 stride = 1，向右逐轴乘前缀积。
 
 **`RankGenerator` 机制**（行号以 2026-11-17 的 main 分支为准，下同）。`RankGenerator`（`parallel_state.py`，类定义行 522）收下各维度数与 order 串，把 order 切成 token 序列并映射成度数列表。`get_ranks(token)`（行 589）对目标并行维做布尔 mask，调 `generate_masked_orthogonal_rank_groups`（行 301）。这个函数先用前缀积算出各轴 stride，再把「组号」按未选中轴分解、把「组内序号」按选中轴分解（内部函数 `decompose`，即式 (2) 的逆运算），最后内积重组出每个组的 rank 列表。生成的 rank 集合随后逐个 `create_group` 建成 NCCL 进程组。用同一机制建出的组包括：TP 组（token `"tp"`）、CP 组（`"cp"`，另支持 hierarchical CP 子组）、DP 组（`"dp"`）、PP 组（`"pp"`）、model-parallel 组（`"tp-pp"`，即 TP×PP 复合域）、TP×DP 复合组等。
 
@@ -65,7 +73,7 @@ DP 为什么有两组？`_DATA_PARALLEL_GROUP`（`"dp"`）与 `_DATA_PARALLEL_GR
 
 交错分支多一层 model chunk：每 rank 持有 $v$ 个不连续的层段， `(microbatch_id, model_chunk_id)` 的交替次序由 `get_schedule_table`（行 983）预生成，warmup 段长度与气泡账随之改变（精确推导归 5.3，此处只登记代码位置）。
 
-**反向段**。`backward_step`（行 551）经 `custom_backward`（行 204）把 output_tensor_grad 喂进 autograd。权重梯度不进 `.grad` 字段，而是累加进一块连续大缓冲。机制在 DDP 包装层：`megatron/core/distributed/distributed_data_parallel.py` 的 `DistributedDataParallel`（行 88）把每个参数的 `main_grad` 注册成梯度缓冲里的 view。某 bucket 内全部参数的 wgrad 就绪后，反向 hook 触发 `start_grad_sync`；distributed optimizer 开启时，这就是 per-bucket 的 reduce-scatter（`megatron/core/distributed/param_and_grad_buffer.py` 行 662，底层为 `reduce_scatter_tensor`），`overlap_grad_reduce` 开启时它与后续反向计算重叠。
+**反向段**。`backward_step`（行 551）经 `custom_backward`（行 204）把 output_tensor_grad 喂进 autograd。权重梯度不进 `.grad` 字段，而是累加进一块连续大缓冲。机制在 DDP 包装层：`megatron/core/distributed/distributed_data_parallel.py` 的 `DistributedDataParallel`（行 88）把每个参数的 `main_grad` 注册成梯度缓冲里的 view（view 即共享底层存储的张量视图，不另占显存）。某 bucket 内全部参数的 wgrad 就绪后，反向 hook 触发 `start_grad_sync`；distributed optimizer 开启时，这就是 per-bucket 的 reduce-scatter（`megatron/core/distributed/param_and_grad_buffer.py` 行 662，底层为 `reduce_scatter_tensor`），`overlap_grad_reduce` 开启时它与后续反向计算重叠。
 
 梯度累加的中段怎么办？`no_sync_func`（schedules.py 行 2272 起的 disable / enable 对）把同步整段关掉，最后一个 micro-batch 才放行——1.5 的通信 ÷ $m$ 机制在此落地。schedule 返回后，`finish_grad_sync` 等全部 bucket 的归约落地。
 
@@ -114,7 +122,7 @@ Megatron 的重计算策略就是 1.4 两档账的配置化。配置面只有三
 
 PP 下每个 stage 只持有自己的层，重计算按 stage 独立配置与执行（1.4 的 PP 交互口径）。
 
-防混淆一条：`parallel_state.py` 里的 `gtp_remat` 轴名字也带 "remat"，其 docstring 明确声明 "remat here is NOT activation recomputation"。它沿 out_features 维切权重、每次前向反向用异步 all-gather 重新物化权重，是另一条并行轴（weight rematerialization），与本节的激活重计算无关。
+> **坑**：`parallel_state.py` 里的 `gtp_remat` 轴名字也带 "remat"，但它指 weight rematerialization——沿 out_features 维切权重、每次前向反向用异步 all-gather 重新物化权重——不是 activation recomputation。读源码时把两者混淆会错配并行轴语义；该轴 docstring 有显式声明（"remat here is NOT activation recomputation"），以其为准。本节的激活重计算与它无关。
 
 ## 4. Distributed Optimizer：Megatron 的 ZeRO 同族实现
 
@@ -134,9 +142,9 @@ PP 下每个 stage 只持有自己的层，重计算按 stage 独立配置与执
 | bf16 参数 + fp32 梯度 | 18 | $6 + 12/d$ |
 | fp32 参数 + fp32 梯度 | 16 | $8 + 8/d$ |
 
-非分布式列 = 参数 + 梯度 + fp32 master + $m$ + $v$ 全量复制（如 18 = 2 + 4 + 4 + 4 + 4）；分布式列只把优化器侧状态除以 $d$ ，参数与梯度缓冲保持全量常驻。换成 bf16 参数 + bf16 梯度口径即 $4N + 12N/d$ ——与 4.2 式 (1) 的 ZeRO-1 账逐项相同。
+非分布式列 = 参数 + 梯度 + fp32 master + $m$ + $v$ 全量复制（如 18 = 2 + 4 + 4 + 4 + 4）；分布式列只把优化器侧状态除以 $d$ ，参数与梯度缓冲保持全量常驻。换成 bf16 参数 + bf16 梯度口径即 $4N + 12N/d$ ——与 4.2 式 (1) 的 ZeRO-1 账逐项相同。代入数字（128 亿参数、d = 64，bf16 参数 + fp32 梯度行）：非分布式每 rank 为 18 × 128 = 2304 亿字节，dist-opt 降到 (6 + 12/64) × 128 = 792 亿字节。
 
-**通信账**。梯度 RS（约 $N$ 元素）加参数 AG（约 $N$ 元素），每 rank 约 $2N$ 元素——与 DP all-reduce 及 ZeRO-1 严格同量，4.2 §2 的同构论证逐字适用（ring 下 all-reduce 本来就是 RS + AG 两段）。开关语义写在 `DistributedDataParallelConfig`（`megatron/core/distributed/distributed_data_parallel_config.py`）的字段注释里：`use_distributed_optimizer` 开 = 梯度走 reduce-scatter、参数走 all-gather，关 = 梯度 all-reduce；`bucket_size` 默认 `max(4×10^7, 10^6 × dp_size)` 个参数。分片粒度还有一个旋钮：`num_distributed_optimizer_instances` 把 DP 域再切成若干独立 dist-opt 实例做部分分片（`initialize_model_parallel` 行 668 起，要求 DP 域大小被它整除）。
+**通信账**。先立命题再解释。**命题**（通信同量）：dist-opt 每 rank 每 step 的 DP 域通信与 DP all-reduce 及 ZeRO-1 严格相等——梯度 RS（约 $N$ 元素）加参数 AG（约 $N$ 元素），每 rank 约 $2N$ 元素。**证明**（要点）：ring 下 all-reduce 本来就是 RS + AG 两段，dist-opt 把这两段分别落在梯度归约与参数同步两个本就需要的事件上，通信模式一字未改；4.2 §2 的同构论证逐字适用。开关语义写在 `DistributedDataParallelConfig`（`megatron/core/distributed/distributed_data_parallel_config.py`）的字段注释里：`use_distributed_optimizer` 开 = 梯度走 reduce-scatter、参数走 all-gather，关 = 梯度 all-reduce；`bucket_size` 默认 `max(4×10^7, 10^6 × dp_size)` 个参数。分片粒度还有一个旋钮：`num_distributed_optimizer_instances` 把 DP 域再切成若干独立 dist-opt 实例做部分分片（`initialize_model_parallel` 行 668 起，要求 DP 域大小被它整除）。
 
 **与 DeepSpeed ZeRO 的对照**（4.2 回链，逐维度对齐）：
 
@@ -164,22 +172,22 @@ optimizer 侧，`DistributedOptimizer` 声明了 fully-reshardable 格式集合�
 | 主题 | 结论 | 代码锚点 / 出处 |
 | --- | --- | --- |
 | rank 映射 | order 默认 `"tp-cp-ep-dp-pp"`，最左轴 stride 最小；式 (1)(2) | `parallel_state.py`：`RankGenerator`、`generate_masked_orthogonal_rank_groups` |
-| 进程组树 | dense 网格 $W = t c d p$ 与 expert 网格 $W = t_e e p d_e$ 双 generator；EP×CP 互斥断言；DP 分 dp 与 dp-cp 两口径；embedding group = PP 首末 stage | `initialize_model_parallel`、`default_embedding_ranks` |
+| 进程组树 | dense 网格 $W = t c d p$ 与 expert 网格 $W = t_e e p d_e$ 双 generator；EP×CP 互斥断言；DP 分 dp 与 dp-cp 两口径；embedding group = PP 首末 stage（练习 1、2） | `initialize_model_parallel`、`default_embedding_ranks` |
 | 调度入口 | 三分支：no-pipelining / 非交错 1F1B / 交错 1F1B（vp） | `schedules.py` `get_forward_backward_func` |
-| train step 通信 | DP 域两笔：梯度 per-bucket RS + 参数 AG ≈ $2N$ 元素；PP 走 `P2PCommunicator` 复合算子；累加中段 `no_sync_func` | `distributed_data_parallel.py`、`param_and_grad_buffer.py` |
+| train step 通信 | DP 域两笔：梯度 per-bucket RS + 参数 AG ≈ $2N$ 元素；PP 走 `P2PCommunicator` 复合算子；累加中段 `no_sync_func`（练习 3(c)） | `distributed_data_parallel.py`、`param_and_grad_buffer.py` |
 | 重计算 | `recompute_granularity × recompute_method × recompute_num_layers`；selective = selective recompute 论文 | `transformer_config.py`；arXiv:2205.05198；1.4 回链 |
 | Distributed Optimizer | 显存 = ZeRO-1 口径（bf16+fp32 梯度： $6 + 12/d$ bytes/参数）；通信 = ZeRO-2 同形（per-bucket RS）；参数不切、无 ZeRO-3 二次 gather | `distrib_optimizer.py`；repo `docs/user-guide/features/dist_optimizer.md`；4.2 对照 |
 | dist-ckpt | `ShardedTensor` 元数据登记，保存/加载网格解耦（resharding） | `dist_checkpointing/mapping.py`、`serialization.py`；7.4 前瞻 |
 
 ## 练习
 
-1.（推导）order 取默认 `"tp-cp-ep-dp-pp"`， $W = 32$、 $t = 4$、 $c = 2$、 $d = 2$、 $p = 2$（ $e = 1$）：(a) 实例化式 (2) 并写出五个轴各自的 stride；(b) 求 rank 23 的五维坐标（提示：按 stride 从高位到低位逐次取模）；(c) 列出 rank 23 所在的 TP、CP、DP、PP 组的全部成员；(d) 若每节点 8 块 GPU 且 rank 按节点连续分配，rank 23 的哪些组整组落在单节点内？
+1.（推导 · [20]）order 取默认 `"tp-cp-ep-dp-pp"`， $W = 32$、 $t = 4$、 $c = 2$、 $d = 2$、 $p = 2$（ $e = 1$）：(a) 实例化式 (2) 并写出五个轴各自的 stride；(b) 求 rank 23 的五维坐标（提示：按 stride 从高位到低位逐次取模）；(c) 列出 rank 23 所在的 TP、CP、DP、PP 组的全部成员；(d) 若每节点 8 块 GPU 且 rank 按节点连续分配，rank 23 的哪些组整组落在单节点内？校验：(c) 中每张组的「组大小 × 组数」都等于 32。
 
-2.（推导）证明：默认 order 下 TP 组必为连续 rank 区间 $\lbrace k t, k t + 1, \ldots, k t + t - 1 \rbrace$（ $k \in [0, W/t)$ ）；进一步，若 $t$ 整除每节点 GPU 数 $g$ 且 rank 按节点连续分配，则每个 TP 组整组落在同一节点。改 order 为 `"dp-tp-pp"`（ $W = 16$、 $t = 2$、 $d = 2$、 $p = 4$ ）后该性质是否仍成立？给出反例或证明。
+2.（推导 · [30]）证明正文 stride 规则命题的推论：默认 order 下 TP 组必为连续 rank 区间 $\lbrace k t, k t + 1, \ldots, k t + t - 1 \rbrace$（ $k \in [0, W/t)$ ）；进一步，若 $t$ 整除每节点 GPU 数 $g$ 且 rank 按节点连续分配，则每个 TP 组整组落在同一节点。改 order 为 `"dp-tp-pp"`（ $W = 16$、 $t = 2$、 $d = 2$、 $p = 4$ ）后该性质是否仍成立？给出反例或证明。校验：改 order 后把全部 TP 组完整写出再判定；证明按基例、保持、终止三段写全。
 
-3.（计算）bf16 参数 + fp32 梯度、 $N = 7 \times 10^{9}$、 $d = 64$：(a) 按 §4 官方表算 dist-opt 每 rank 模型状态字节数（GB，SI 口径）；(b) 同条件改用 bf16 梯度重算，并与 4.2 式 (1) 的 ZeRO-1 逐项对照，说明两口径的差异项是什么；(c) 每 step 每 rank 的 DP 域通信字节数（bf16 元素口径），与纯 DDP（4.1）对照。
+3.（计算 · [30]）bf16 参数 + fp32 梯度、 $N = 7 \times 10^{9}$、 $d = 64$：(a) 按 §4 官方表算 dist-opt 每 rank 模型状态字节数（GB，SI 口径）；(b) 同条件改用 bf16 梯度重算，并与 4.2 式 (1) 的 ZeRO-1 逐项对照，说明两口径的差异项是什么；(c) 每 step 每 rank 的 DP 域通信字节数（bf16 元素口径），与纯 DDP（4.1）对照。先写出你对 (b) 两口径倍数差的预测再计算。校验：(b) 两口径之差应恰好等于梯度 dtype 的字节差乘以参数量；(c) 应等于「2 × 参数量 × 2 字节」。
 
-4.（分析）Megatron dist-opt 不需要 ZeRO-3 的「反向二次参数 gather」（4.2 §4.1 时序图里的第二趟 AG）。说明它省掉这趟 gather 的机制原因，并指出代价是哪一笔显存没有随 $d$ 缩小；在什么模型规模与卡数组合下，这笔代价会迫使使用者离开 dist-opt 转向 ZeRO-3 / FSDP 系栈？（结合 4.2 §7 决策表回答。）
+4.（分析 · [30]）Megatron dist-opt 不需要 ZeRO-3 的「反向二次参数 gather」（4.2 §4.1 时序图里的第二趟 AG）。说明它省掉这趟 gather 的机制原因，并指出代价是哪一笔显存没有随 $d$ 缩小；在什么模型规模与卡数组合下，这笔代价会迫使使用者离开 dist-opt 转向 ZeRO-3 / FSDP 系栈？（结合 4.2 §7 决策表回答。）校验：临界规模可用正文显存表的三行口径外推复核。
 
 ## 参考
 
