@@ -4,7 +4,7 @@
 
 ## 1. Patchify：conv(k=p, s=p) ≡ 单线性层
 
-2.3 的 attention 只吃一种输入：序列矩阵 $[B, T, d]$。图像是格点张量 $x \in \mathbb{R}^{H \times W \times C}$（惯例 $C = 3$），与这个输入格式对不上。它既没有天然顺序，也没有 embedding 表可查：图像不是离散符号，查表这条路从第一步就不存在。ViT 的适配层只有两个动作——把空间维切成不重叠的方格，每格做一次线性投影（[Dosovitskiy et al., 2020](../references.md)，arXiv:2010.11929，[A]）。本节证明：这个适配层与一个特定卷积是同一个对象。
+2.3 的 attention 只吃一种输入：序列矩阵 $[B, T, d]$。图像是格点张量 $x \in \mathbb{R}^{H \times W \times C}$（惯例 $C = 3$），与这个输入格式对不上。它既没有天然顺序，也没有 embedding 表可查：图像不是离散符号，查表这条路从第一步就不存在。ViT 的适配层只有两个动作——把空间维切成不重叠的方格，每格做一次线性投影（[Dosovitskiy et al., 2020](../references.md)，arXiv:2010.11929，[A]）。本节证明：这个适配层与一个特定卷积是同一个对象。本章口径：token 数与算力账的数值实例集中在两档输入（224 px 配 patch 16、336 px 配 patch 14），规模数字集中在 ViT-B/16 与 ViT-L/16 两档；Swin 与练习节用到的更高分辨率在各处自带声明。
 
 给定 patch 边长 $p$（设 $p$ 整除 $H, W$），把空间维切成 $(H/p) \times (W/p)$ 的网格；格子 $(i, j)$ 取出的子块为
 
@@ -28,7 +28,7 @@ $$
 
 **等价性命题**。式 (1)(2) 的「切格 + reshape + 线性层」与卷积 $\mathrm{conv}(k = p,\ s = p)$（输出通道 $d$）逐点相同。
 
-**证明**。写出卷积在输出位置 $(i, j)$、输出通道 $o$ 的值：
+**证明**。路线：把两种写法展开成同一个逐像素求和，再做一次指标重命名；关键一步是 kernel 尺寸等于 stride 时滑动窗互不重叠，每个输入像素恰好被采样一次。写出卷积在输出位置 $(i, j)$、输出通道 $o$ 的值：
 
 $$
 (K \ast x)_{i,j,o} = \sum_{u=0}^{p-1} \sum_{v=0}^{p-1} \sum_{c=0}^{C-1} K_{u,v,c,o}\hspace{5mu} x_{ip+u,\hspace{5mu} jp+v,\hspace{5mu} c} + b_o \qquad (4)
@@ -36,7 +36,11 @@ $$
 
 **符号**： $K \in \mathbb{R}^{p \times p \times C \times d}$：卷积核。kernel 尺寸等于 stride 时滑动窗互不重叠：每个输入像素恰好进入一个输出位置、恰好被采样一次。把三重指标 $(u, v, c)$ 按与 $\mathrm{vec}$ 相同的顺序排成 $p^{2}C$ 的长指标，定义 $W_{o,\thinspace (u,v,c)} = K_{u,v,c,o}$，式 (4) 右端即式 (2) 第 $o$ 行——逐分量相等。反方向：任给 $W$，按同一索引映射回填即得对应的 $K$。∎
 
-所以 patch 嵌入不是两种实现任选，而是同一个对象的两种写法。vit_jax 用 conv 写法（google-research/vision_transformer，`vit_jax/models_vit.py` 的 `nn.Conv`，[vision_transformer repo](../references.md)，[A]），多数 PyTorch 实现同法；reshape + `nn.Linear` 是逐元素等价的展开形。这个等价有一个好用的推论：**patch 嵌入的 FLOPs 与 $p$ 无关**。输出共 $HW/p^{2}$ 个，每个代价 $2p^{2}Cd$ FLOPs，合计 $2HWCd$， $p$ 不进这笔账，它影响的是下游： $p$ 减半， $N$ 乘 4，attention 本体的 $O(N^{2})$ 项乘 16，逐 token 的投影与 FFN 项乘 4。可以说，patch 大小就是视觉塔的「分辨率-算力」汇率，型号后缀的 /16、/14 标的就是这个汇率。参数账也顺手算清： $W$ 有 $p^{2}Cd$ 个参数， $p$ = 16、 $d$ = 768 时为 $16^{2} \cdot 3 \cdot 768 \approx 0.59$ M，相对 ViT-B 的 86 M 总量（原文 Table 1）是零头。
+所以 patch 嵌入不是两种实现任选，而是同一个对象的两种写法。vit_jax 用 conv 写法（google-research/vision_transformer，`vit_jax/models_vit.py` 的 `nn.Conv`，[vision_transformer repo](../references.md)，[A]），多数 PyTorch 实现同法；reshape + `nn.Linear` 是逐元素等价的展开形。这个等价有一个好用的推论：**patch 嵌入的 FLOPs 与 $p$ 无关**。输出共 $HW/p^{2}$ 个，每个代价 $2p^{2}Cd$ FLOPs，合计 $2HWCd$， $p$ 不进这笔账，它影响的是下游： $p$ 减半， $N$ 乘 4，attention 本体的 $O(N^{2})$ 项乘 16，逐 token 的投影与 FFN 项乘 4。
+
+> **提点**：patch 大小就是视觉塔的「分辨率-算力」汇率，型号后缀的 /16、/14 标的就是这个汇率。
+
+参数账也顺手算清： $W$ 有 $p^{2}Cd$ 个参数， $p$ = 16、 $d$ = 768 时为 $16^{2} \cdot 3 \cdot 768 \approx 0.59$ M，相对 ViT-B 的 86 M 总量（原文 Table 1）是零头（口径：零头 = 占比不到一个百分点的量级）。
 
 教学实现与等价性断言（教学用，非优化实现）：
 
@@ -57,7 +61,9 @@ out_lin = P @ W_lin.T + conv.bias                    # [B, N, d]
 assert torch.allclose(out_conv.flatten(2).transpose(1, 2), out_lin, atol=1e-5)
 ```
 
-注意：权重的摊平序必须与 patch 的摊平序一致（上例同为 $(u, v, c)$）。两套写法混用时，序一错、结果全错，断言就是为此而写。至此图像已经变成序列，全章的数据流如下：
+> **坑**：conv 写法与 reshape + linear 写法混用时，权重的摊平序必须与 patch 的摊平序一致（上例同为 $(u, v, c)$）。序一错则输出逐元素错位，而 shape 完全合法、不报错——是静默的错误结果。上面的断言就是为此而写。
+
+至此图像已经变成序列，全章的数据流如下：
 
 ```
 x [B, H, W, C]
@@ -80,7 +86,7 @@ y [B, d] → 任务头
 
 ## 2. [CLS] token 与读出（pooling）
 
-序列进 encoder 之前还要做两件事：prepend 一个可学向量 $x_{\mathrm{cls}} \in \mathbb{R}^{d}$，加上位置嵌入 $P \in \mathbb{R}^{(N+1) \times d}$。ViT 的 block 是标准的 Pre-LN encoder 层（[Dosovitskiy et al., 2020](../references.md)，arXiv:2010.11929，[A]；Pre-LN 的稳定性论证在 2.7）：
+整张图的信息最后要汇总成一个向量——读出口设在哪里、用什么聚合？先看输入侧的两个准备动作：prepend 一个可学向量 $x_{\mathrm{cls}} \in \mathbb{R}^{d}$，加上位置嵌入 $P \in \mathbb{R}^{(N+1) \times d}$。ViT 的 block 是标准的 Pre-LN encoder 层（[Dosovitskiy et al., 2020](../references.md)，arXiv:2010.11929，[A]；Pre-LN 的稳定性论证在 2.7）：
 
 $$
 z_0 = \left[ x_{\mathrm{cls}};\hspace{5mu} z^{(1)};\hspace{5mu} \ldots;\hspace{5mu} z^{(N)} \right] + P, \qquad z'_l = z_{l-1} + \mathrm{MHA}\left( \mathrm{LN}(z_{l-1}) \right), \qquad z_l = z'_l + \mathrm{MLP}\left( \mathrm{LN}(z'_l) \right) \qquad (5)
@@ -146,7 +152,7 @@ score 只含两轴相对位移，「向右 2 格、向下 1 格」这类关系�
 
 ## 4. 与文本 decoder 的结构对照
 
-把 ViT 的 block（式 (5)）与 Part 2 的文本 decoder 并排，逐组件看差异：
+同一个 Transformer 骨架，视觉塔和文本 decoder 差在哪几处？把 ViT 的 block（式 (5)）与 Part 2 的文本 decoder 并排，逐组件看差异：
 
 | 组件 | ViT（视觉 encoder） | 文本 decoder（Part 2 基准） |
 | --- | --- | --- |
@@ -172,7 +178,7 @@ $$
 \Omega(\mathrm{MSA}) = 8Nd^{2} + 4N^{2}d, \qquad \Omega(\mathrm{W\negthinspace-\negthinspace MSA}) = 8Nd^{2} + 4M^{2}Nd \qquad (9)
 $$
 
-**符号**： $N$：token 总数； $M$：窗口边长（patch 数）。论文原式以 MACs 计（ $\Omega(\mathrm{MSA}) = 4hwC^{2} + 2(hw)^{2}C$），式 (9) 是同一笔账乘 2 的 FLOPs 口径。二次项从 $N^{2}$ 压到 $M^{2}N$：Swin 用 $p$ = 4 起步， $224$ px 下首 stage $N = 56^{2} = 3136$、 $M$ = 7，二次项缩到 $M^{2}/N = 49/3136 = 1/64$；分辨率越高省得越多（练习 3）。
+**符号**： $N$：token 总数； $M$：窗口边长（patch 数）。论文原式以 MACs 计（ $\Omega(\mathrm{MSA}) = 4hwC^{2} + 2(hw)^{2}C$），式 (9) 是同一笔账乘 2 的 FLOPs 口径。二次项从 $N^{2}$ 压到 $M^{2}N$：Swin 用 $p$ = 4 起步， $224$ px 下首 stage $N = 56^{2} = 3136$、 $M$ = 7，二次项缩到 $M^{2}/N = 49/3136 = 1/64$；分辨率越高省得越多（练习 2）。
 
 **shifted window mask**。纯窗内 attention 的跨窗交互为零，感受野被限制在一个窗内。Swin 交替两种划分：第 $l$ 层常规分窗，第 $l + 1$ 层把窗口原点平移 $(M/2, M/2)$（ $M$ 为奇数时取整数部分， $M$ = 7 即 $(3, 3)$）。新窗横跨旧窗边界，信息于是跨窗流动。高效实现并不真的重排，而是做 cyclic shift：把 token 网格整体滚动 $(3, 3)$，窗口重新对齐成规则批次。代价是滚动后同处一窗的 token 可能来自不同的旧窗（或越界补位区）；这些「假装的邻接」用 mask 拆穿：
 
@@ -232,13 +238,13 @@ $$
 \frac{\partial L_{\mathrm{InfoNCE}}}{\partial \ell_{ij}} = \frac{1}{B} \left( p_{ij} - \delta_{ij} \right), \qquad p_{ij} = \frac{\exp(\ell_{ij})}{\sum_{j'} \exp(\ell_{ij'})} \qquad (15)
 $$
 
-**符号**： $\delta_{ij}$：Kronecker delta。 $p_{ij}$ 依赖第 $i$ 行的全部 logit：任何一个配对的更新都要先看到整行。这就是**跨样本归一化耦合**——分布式实现必须先 all-gather 全 batch 的 embedding 才能算分母；batch 缩小时，负样本池同步缩水（batch 内其余 $B - 1$ 个就是全部负样本，这一视角的展开在 6.2）。sigmoid 侧的梯度（用 $\sigma'(u) = \sigma(u)\thinspace\sigma(-u)$，配合 $\log \sigma$ 的链式，留作练习 2）：
+**符号**： $\delta_{ij}$：Kronecker delta。 $p_{ij}$ 依赖第 $i$ 行的全部 logit：任何一个配对的更新都要先看到整行。这就是**跨样本归一化耦合**——分布式实现必须先 all-gather 全 batch 的 embedding 才能算分母；batch 缩小时，负样本池同步缩水（batch 内其余 $B - 1$ 个就是全部负样本，这一视角的展开在 6.2）。sigmoid 侧的梯度（用 $\sigma'(u) = \sigma(u)\thinspace\sigma(-u)$，配合 $\log \sigma$ 的链式，留作练习 3）：
 
 $$
 \frac{\partial L_{\mathrm{sig}}}{\partial \ell_{ij}} = -\frac{1}{B}\hspace{5mu} z_{ij}\hspace{5mu} \sigma\left( -z_{ij}\thinspace \ell_{ij} \right) \qquad (16)
 $$
 
-右端只含 $(i, j)$ 自身，没有任何跨样本项。三个直接后果：
+**命题**（逐对可分解）：右端只含 $(i, j)$ 自身，没有任何跨样本项——sigmoid 目标对任意配对的梯度只由该配对自身决定。**证明**：对 sigmoid 交叉熵链式一步即得，留作练习 3（同题另证反侧：InfoNCE 的梯度不可能改写成逐对独立的形式）。三个直接后果：
 
 - loss 是 $B^{2}$ 个独立项的和，可以任意分块（chunk）累加。显存占用与通信结构解耦，不再需要为归一化同步全 batch。
 - batch size 改变不改变逐对目标的语义，每一对始终是「是否匹配」的二分类。这就是摘要口径的「小 batch 友好」：sigmoid loss 在小 batch 上优于 softmax 对照，同时允许把 batch 继续放大（[Zhai et al., 2023](../references.md)，[A]）。
@@ -274,10 +280,10 @@ SigLIP 2（[Tschannen et al., 2025](../references.md)，arXiv:2502.14786，[A]�
 
 ## 练习
 
-1.（计算）按式 (3) 与 2.3 式 (12) 的 $c = 4$ 口径、 $d$ = 1024，分别算三档配置的单层 attention 本体 FLOPs：(a) $336$ px、 $p$ = 14；(b) $448$ px、 $p$ = 14；(c) $448$ px、 $p$ = 28。由 (b)(c) 说明「同像素不同 $p$」与 (a)(b) 的「同 $p$ 不同像素」走的是同一条账； $p$ 与分辨率谁对 $N$ 的影响是平方的、谁是通过 $N$ 传导的？
-2.（推导）从式 (14) 出发补全式 (16)：用 $\sigma'(u) = \sigma(u)\thinspace\sigma(-u)$ 与 $\log \sigma$ 的链式逐对求导。再证明式 (15) 不可能改写成逐对独立的形式：即对任意 $i$， $\partial L_{\mathrm{InfoNCE}} / \partial \ell_{ij}$ 必含 $\lbrace \ell_{ij'} \rbrace_{j' \neq j}$ 的项。这条「不可能」正是 SigLIP 解耦的结构根源。
-3.（计算）Swin 口径（ $p$ = 4、 $M$ = 7）：(a) $224$ px（首 stage $N$ = 3136）下式 (9) 两式的二次项各是多少（用 $d$ 表示），比值验证 $1/64$；(b) 分辨率升到 $512$ px（ $N$ = 16384）重算比值，说明为什么高分辨率密集预测必须用 window 类结构；(c) 为什么投影项 $8Nd^{2}$ 不省？窗划分影响的是哪笔账、不影响哪笔账？
-4.（代码）实现式 (7) 的 RoPE-2D（复用 2.5 §4.8 的 cos/sin 预存表，half-split 或 interleaved 任选）：head 维前半按 $h$ 坐标旋转、后半按 $w$ 坐标旋转。随机生成 $q, k$ 与两组 patch 坐标，在 $(h, w)$ 网格上扫描位移，验证式 (8)：同一 $(\Delta h, \Delta w)$ 的所有位置对的 score 一致到 $10^{-5}$。
+1.（计算 · [20]）按式 (3) 与 2.3 式 (12) 的 $c = 4$ 口径、 $d$ = 1024，分别算三档配置的单层 attention 本体 FLOPs：(a) $336$ px、 $p$ = 14；(b) $448$ px、 $p$ = 14；(c) $448$ px、 $p$ = 28。由 (b)(c) 说明「同像素不同 $p$」与 (a)(b) 的「同 $p$ 不同像素」走的是同一条账； $p$ 与分辨率谁对 $N$ 的影响是平方的、谁是通过 $N$ 传导的？动手前先写下 (b) 相对 (a)、(c) 相对 (b) 的倍数预测，再算。校验：(a) 的 token 数应与正文 336 px 档的 576 一致。
+2.（计算 · [20]）Swin 口径（ $p$ = 4、 $M$ = 7）：(a) $224$ px（首 stage $N$ = 3136）下式 (9) 两式的二次项各是多少（用 $d$ 表示），比值验证 $1/64$；(b) 分辨率升到 $512$ px（ $N$ = 16384）重算比值，说明为什么高分辨率密集预测必须用 window 类结构；(c) 为什么投影项 $8Nd^{2}$ 不省？窗划分影响的是哪笔账、不影响哪笔账？
+3.（推导 · [30]）从式 (14) 出发补全式 (16)：用 $\sigma'(u) = \sigma(u)\thinspace\sigma(-u)$ 与 $\log \sigma$ 的链式逐对求导。再证明式 (15) 不可能改写成逐对独立的形式：即对任意 $i$， $\partial L_{\mathrm{InfoNCE}} / \partial \ell_{ij}$ 必含 $\lbrace \ell_{ij'} \rbrace_{j' \neq j}$ 的项。这条「不可能」正是 SigLIP 解耦的结构根源。
+4.（代码 · [30]）实现式 (7) 的 RoPE-2D（复用 2.5 §4.8 的 cos/sin 预存表，half-split 或 interleaved 任选）：head 维前半按 $h$ 坐标旋转、后半按 $w$ 坐标旋转。随机生成 $q, k$ 与两组 patch 坐标，在 $(h, w)$ 网格上扫描位移——先预测哪些位置对应当同分、哪些不必，再验证式 (8)：同一 $(\Delta h, \Delta w)$ 的所有位置对的 score 一致到 $10^{-5}$。
 
 ## 参考
 

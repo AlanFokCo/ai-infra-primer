@@ -6,7 +6,7 @@
 
 一张 $512 \times 512$ 的 RGB 图像是 $786432$ 个标量。把它直接塞进 1.1 的样本空间框架，就是一条长 26 万的序列（每像素 3 个 8-bit 值），任何自回归模型都无法在这个长度上工作。6.1 式 (3) 的硬切 patch $N = HW/p^{2}$ 也只是折中： $p$ 取 8 时仍有 4096 个 token，且每个 patch 内部的高频结构被一次线性投影（6.1 式 (2)）提前丢掉，找不回来。
 
-autoencoder 的回答是把「下采样」从固定算子换成可学映射。encoder $E$ 把 $x \in \mathbb{R}^{H \times W \times C}$ 压成 latent $z \in \mathbb{R}^{h \times w \times c}$，空间压缩率 $f = H/h$（全书约定：f8 即 $h = H/8$，f32 即 $h = H/32$）。decoder $D$ 学近似逆映射 $\hat{x} = D(z)$，训练目标让重建误差足够小。同一张 $512^{2}$ 图：f8 留 $64 \times 64 = 4096$ 个位点，f32 留 $16 \times 16 = 256$ 个，f64 只剩 $8 \times 8 = 64$ 个，已经低于 ViT 224/16 的 196 这一量级。与硬切 patch 的差别在信息论意义上：patch 投影是一个固定的线性算子，丢什么由网格决定； $E$ 是被重建目标监督过的非线性压缩，丢什么、留什么由数据决定。
+autoencoder 的回答是把「下采样」从固定算子换成可学映射。encoder $E$ 把 $x \in \mathbb{R}^{H \times W \times C}$ 压成 latent $z \in \mathbb{R}^{h \times w \times c}$，空间压缩率 $f = H/h$（全书约定：f8 即 $h = H/8$，f32 即 $h = H/32$）。decoder $D$ 学近似逆映射 $\hat{x} = D(z)$，训练目标让重建误差足够小。同一张 $512^{2}$ 图：f8 留 $64 \times 64 = 4096$ 个位点，f32 留 $16 \times 16 = 256$ 个，f64 只剩 $8 \times 8 = 64$ 个，已经低于 ViT 224/16 的 196 这一量级。与硬切 patch 的差别在信息论意义上：patch 投影是一个固定的线性算子，丢什么由网格决定； $E$ 是被重建目标监督过的非线性压缩，丢什么、留什么由数据决定。本章口径：图像实例一律取 512 px 见方、RGB 三通道，词表与级数的数字默认 1024 与 8；唯一的换档是音频侧的帧率实例，随文自带声明。
 
 压缩出来的 latent 分两族接口，本章沿这条线展开：
 
@@ -17,9 +17,11 @@ autoencoder 的回答是把「下采样」从固定算子换成可学映射。en
 
 ## 2. VAE：latent variable 模型与 ELBO
 
+先回答一个更基本的问题：为什么不能直接最大化似然？因为边缘似然里有一个算不出来的高维积分——本节全部推导都围绕这个积分展开。
+
 ### 2.1 模型设定与似然的不可解性
 
-潜变量模型（latent variable model）把图像 $x$ 的生成拆成两步：先从先验采 latent $z \sim p(z)$，再由 decoder 从 $z$ 生成 $x \sim p_{\theta}(x \mid z)$。全章取标准设定 $p(z) = \mathcal{N}(0, I)$，连续图像配高斯 decoder $p_{\theta}(x \mid z) = \mathcal{N}(\mu_{\theta}(z), \sigma_{x}^{2} I)$。这个模型的边缘似然是
+所谓潜变量模型（latent variable model），是指把图像 $x$ 的生成拆成两步的模型：先从先验采 latent $z \sim p(z)$，再由 decoder 从 $z$ 生成 $x \sim p_{\theta}(x \mid z)$。全章取标准设定 $p(z) = \mathcal{N}(0, I)$，连续图像配高斯 decoder $p_{\theta}(x \mid z) = \mathcal{N}(\mu_{\theta}(z), \sigma_{x}^{2} I)$。这个模型的边缘似然是
 
 $$
 p_{\theta}(x) = \int p_{\theta}(x \mid z)\thinspace p(z)\thinspace dz \qquad (1)
@@ -49,7 +51,7 @@ $$
 
 ### 2.3 ELBO 推导 II：KL 非负性路径（gap 的精确含义）
 
-第二条路径得到一个恒等式，不只是不等式。 $\log p_{\theta}(x)$ 不含 $z$，对任意 $q_{\phi}$ 有 $`\log p_{\theta}(x) = \mathbb{E}_{q_{\phi}}[\log p_{\theta}(x)]`$；再用联合分解 $p_{\theta}(x) = p_{\theta}(x, z) / p_{\theta}(z \mid x)$ 代入：
+第二条路径得到一个恒等式，不只是不等式。路线只有三步：把证据写成期望、在对数内同时加减近似后验、按期望线性拆开——关键一步是第二步的配平。 $\log p_{\theta}(x)$ 不含 $z$，对任意 $q_{\phi}$ 有 $`\log p_{\theta}(x) = \mathbb{E}_{q_{\phi}}[\log p_{\theta}(x)]`$；再用联合分解 $p_{\theta}(x) = p_{\theta}(x, z) / p_{\theta}(z \mid x)$ 代入：
 
 $$
 \begin{aligned}
@@ -76,7 +78,7 @@ $$
 
 **符号**：recon 项：后验采样 $z$ 后 decoder 给 $x$ 的对数似然，衡量重建质量；prior matching 项：后验与先验 $p(z)$ 的 KL，把后验往先验上拉。
 
-两项都落在可算闭式上。recon 项用高斯 decoder： $\log p_{\theta}(x \mid z) = -\Vert x - \mu_{\theta}(z)\Vert^{2} / (2\sigma_{x}^{2}) + \mathrm{const}$——固定 $\sigma_{x}$ 时，最大化它就是最小化 MSE，重建损失由此而来。prior matching 项是两个对角高斯之间的 KL，有闭式。逐维推导：设 $q = \mathcal{N}(\mu, \sigma^{2})$、 $p = \mathcal{N}(0, 1)$（单维），
+两项都落在可算闭式上。recon 项用高斯 decoder： $\log p_{\theta}(x \mid z) = -\Vert x - \mu_{\theta}(z)\Vert^{2} / (2\sigma_{x}^{2}) + \mathrm{const}$——固定 $\sigma_{x}$ 时，最大化它就是最小化 MSE，重建损失由此而来。prior matching 项是两个对角高斯之间的 KL，有闭式。路线：写出两个对数密度、消去常数、用方差的两个恒等式逐项取期望。逐维推导：设 $q = \mathcal{N}(\mu, \sigma^{2})$、 $p = \mathcal{N}(0, 1)$（单维），
 
 $$
 \begin{aligned}
@@ -156,6 +158,8 @@ loss = −log p_θ(x|z)（≈ MSE） + β·KL（式 (7)，闭式无采样）
 
 ## 3. VQ-VAE：离散 latent 与 straight-through
 
+连续 latent 怎么变成离散符号？答案分两层：最近邻查表定前向，梯度拷贝定反向。
+
 ### 3.1 最近邻量化：从连续 latent 到 codebook 下标
 
 VQ-VAE（[van den Oord et al., 2017](../references.md)，arXiv:1711.00937，[A]）把 §2 的连续 $z$ 换成离散符号。三件套：encoder $E$ 输出连续 latent $z_e = E(x) \in \mathbb{R}^{h \times w \times d_e}$；codebook（码本） $E_{cb} = \lbrace e_k \rbrace_{k=1}^{K}$， $e_k \in \mathbb{R}^{d_e}$，共 $K$ 个 entry；量化器在每个空间位点独立做最近邻查表：
@@ -205,13 +209,15 @@ $$
 
 与式 (8) 的对照值得停一步：离散化之后不再有解析后验，VAE 框架里的 KL 项去了哪里？VQ-VAE 论文的接法是：取确定性后验 $`q(k^{*} \mid x) = 1`$（one-hot 在 argmin 上）、先验为 $K$ 类均匀分布。此时 ELBO 的 KL 项退化成常数 $\log K$，不进任何梯度——式 (14) 的三项正是这个退化 ELBO 剩下的可优化部分。正则的角色由 codebook loss 与 commitment loss 接管：一个管 code 跟着数据走，一个管数据贴着 code 走。
 
-codebook loss 不必走梯度。对 entry $e_i$ 而言，式 (14) 第二项关于 $e_i$ 的极小有闭式。设 batch 内被分到 $e_i$ 的 encoder 输出集合为 $S_i$，对 $\sum_{z \in S_i} \Vert z - e_i \Vert^{2}$ 求导置零得 $e_i = |S_i|^{-1} \sum_{z \in S_i} z$，即被分配点的均值——这就是 K-Means 更新（练习 2 推这一步）。全量数据的闭式解不能直接用于小 batch 训练，论文在 Appendix A.1 给出它的在线版——EMA 更新：
+codebook loss 不必走梯度。**命题**（codebook 极小即均值）：对 entry $e_i$ 而言，式 (14) 第二项关于 $e_i$ 的全局极小是被分配点的均值——即 K-Means 更新。**证明**：对均方目标求导置零，一步即得；留作练习 2。设 batch 内被分到 $e_i$ 的 encoder 输出集合为 $S_i$，对 $\sum_{z \in S_i} \Vert z - e_i \Vert^{2}$ 求导置零得 $e_i = |S_i|^{-1} \sum_{z \in S_i} z$。全量数据的闭式解不能直接用于小 batch 训练，论文在 Appendix A.1 给出它的在线版——EMA 更新：
 
 $$
 N_i \leftarrow \gamma N_i + (1 - \gamma)\thinspace n_i, \qquad m_i \leftarrow \gamma m_i + (1 - \gamma) \sum_{z \in S_i} z, \qquad e_i = \frac{m_i}{N_i} \qquad (15)
 $$
 
-**符号**： $n_i = |S_i|$：本 batch 分到 code $i$ 的位点数； $N_i, m_i$：滑动平均的计数与向量和； $\gamma$：衰减系数，论文报告 $\gamma = 0.99$ 在实践中效果稳定。机制读法：EMA 把 codebook 从梯度循环里摘出来，code 的更新不与 encoder 共享学习率、不被重建梯度的噪声污染。定位要找准：EMA 在论文里是式 (14) 第二项的替代方案（Appendix A.1），正文明说主实验未用它（"not used for the experiments in this work"）。主实验走的是 codebook loss 的梯度下降，两版不要混为一谈。顺带补一条 commitment 项的原文动机：embedding 空间没有天然的尺度约束，若 code 学得比 encoder 慢， $\Vert z_e \Vert$ 会任意膨胀，commitment 项就是压住这个膨胀的配重。
+**符号**： $n_i = |S_i|$：本 batch 分到 code $i$ 的位点数； $N_i, m_i$：滑动平均的计数与向量和； $\gamma$：衰减系数，论文报告 $\gamma = 0.99$ 在实践中效果稳定。机制读法：EMA 把 codebook 从梯度循环里摘出来，code 的更新不与 encoder 共享学习率、不被重建梯度的噪声污染。定位要找准：EMA 在论文里是式 (14) 第二项的替代方案（Appendix A.1），正文明说主实验未用它（"not used for the experiments in this work"）。主实验走的是 codebook loss 的梯度下降，两版不要混为一谈。
+
+> **提点**：commitment 项的原文动机——embedding 空间没有天然的尺度约束，若 code 学得比 encoder 慢， $\Vert z_e \Vert$ 会任意膨胀，commitment 项就是压住这个膨胀的配重。
 
 ### 3.4 codebook collapse：死锁机制与缓解
 
@@ -327,7 +333,11 @@ $$
 z' = s \cdot z, \qquad s = \frac{1}{\hat{\sigma}_z} = 0.18215 \qquad (24)
 $$
 
-**符号**： $s$：scaling factor。数值自检： $1 / 0.18215 \approx 5.49$，与 $`\hat{\sigma}_z`$ 互倒。式 (24) 就是单位方差化，不是模型结构的一部分，纯粹是分布标定。出处注意：0.18215 不在 diffusers 版 config 里，它的出处是 CompVis/stable-diffusion 的 `configs/stable-diffusion/v1-inference.yaml`（W3 实测）；decode 侧先除以 $s$ 再进 decoder。 $\beta$ 口径上，这条线的 KL 权重压得极小，式 (8) 行为上接近确定性 AE。§2.6 的概率语义只剩一层薄正则，这与「latent 规整」而非「后验推断」的目标一致。
+**符号**： $s$：scaling factor。数值自检： $1 / 0.18215 \approx 5.49$，与 $`\hat{\sigma}_z`$ 互倒。式 (24) 就是单位方差化，不是模型结构的一部分，纯粹是分布标定。decode 侧先除以 $s$ 再进 decoder。
+
+> **坑**：0.18215 不在 diffusers 版 config 里——照 diffusers 找会扑空。它的出处是 CompVis/stable-diffusion 的 `configs/stable-diffusion/v1-inference.yaml`（W3 实测）。
+
+$\beta$ 口径上，这条线的 KL 权重压得极小，式 (8) 行为上接近确定性 AE。§2.6 的概率语义只剩一层薄正则，这与「latent 规整」而非「后验推断」的目标一致。
 
 ### 7.2 SD3/FLUX：f8 16ch
 
@@ -396,10 +406,10 @@ phase 3 的机制依据有两条。第一，重建 loss 单独已足够学到内
 
 ## 练习
 
-1.（推导）补全式 (6) 到式 (7)：对 $q = \mathcal{N}(\mu, \sigma^{2})$、 $p = \mathcal{N}(0, 1)$，从 $`\mathrm{KL}(q \Vert p) = \mathbb{E}_q[\log q - \log p]`$ 出发，写出两个密度的完整形式、逐项取期望，得到单维闭式；再说明多维对角情形为何是逐维求和。验证 $\mu = 0, \sigma = 1$ 时取 0、 $\sigma = 1$ 时退化为 $\mu^{2}/2$。
-2.（推导）EMA 与均值闭式解的关系：证明式 (14) 第二项 $\sum_{z \in S_i} \Vert z - e_i \Vert^{2}$ 关于 $e_i$ 的全局极小是 $`\bar{z}_i = |S_i|^{-1} \sum_{z \in S_i} z`$；再说明式 (15) 在 $N_i$ 收敛（ $`N_i \approx \bar{n}_i`$ 的稳态）时等价于对历史 batch 的 $`\bar{z}_i`$ 做指数滑动平均，并讨论 $\gamma = 0.99$ 对应的有效窗口长度量级。
-3.（计算）(a) 用式 (21) 复算文中实例（ $n_q = 8$、 $K = 1024$、75 fps）；(b) 码率预算压到 1.5 kbps、 $K$ 不变，给出两组可行的 $(n_q, f_{\mathrm{rate}})$ 组合并比较各自的重建风险（提示： $n_q$ 与 $f_{\mathrm{rate}}$ 分别伤什么）；(c) $K = 1024$、 $n_q = 8$ 时有效词表是 $2^{80}$，若换成单级 VQ 达到同容量，词表多大、 $d_e = 256$ 时参数多少？以此说明加法结构的参数效率。
-4.（代码）教学用，非优化实现：实现式 (11)(12) 的 VQ 层——`z_q = z_e + (z_q - z_e).detach()`，随机初始化 codebook、encoder 用两层 MLP，在合成二维数据上训练；(a) 打印训练前后 codebook 使用分布的 perplexity $\exp(H(u))$；(b) 把 codebook 初始化拉到远离数据的位置复训，观察 collapse 的发生与 perplexity 曲线；(c) 加入死码重启（使用率低于阈值的 entry 重置为 batch 内随机 $z_e$）对照。验证 STE：对同一输入，比较 `loss.backward()` 后 `z_e.grad` 与手动拷贝的 decoder 输入端梯度是否一致。
+1.（推导 · [20]）补全式 (6) 到式 (7)：对 $q = \mathcal{N}(\mu, \sigma^{2})$、 $p = \mathcal{N}(0, 1)$，从 $`\mathrm{KL}(q \Vert p) = \mathbb{E}_q[\log q - \log p]`$ 出发，写出两个密度的完整形式、逐项取期望，得到单维闭式；再说明多维对角情形为何是逐维求和。验证 $\mu = 0, \sigma = 1$ 时取 0、 $\sigma = 1$ 时退化为 $\mu^{2}/2$。
+2.（推导 · [30]）EMA 与均值闭式解的关系：证明式 (14) 第二项 $\sum_{z \in S_i} \Vert z - e_i \Vert^{2}$ 关于 $e_i$ 的全局极小是 $`\bar{z}_i = |S_i|^{-1} \sum_{z \in S_i} z`$；再说明式 (15) 在 $N_i$ 收敛（ $`N_i \approx \bar{n}_i`$ 的稳态）时等价于对历史 batch 的 $`\bar{z}_i`$ 做指数滑动平均，并讨论 $\gamma = 0.99$ 对应的有效窗口长度量级。
+3.（计算 · [30]）(a) 用式 (21) 复算文中实例（ $n_q = 8$、 $K = 1024$、75 fps）；(b) 码率预算压到 1.5 kbps、 $K$ 不变，给出两组可行的 $(n_q, f_{\mathrm{rate}})$ 组合并比较各自的重建风险（提示： $n_q$ 与 $f_{\mathrm{rate}}$ 分别伤什么）；(c) $K = 1024$、 $n_q = 8$ 时有效词表是 $2^{80}$，若换成单级 VQ 达到同容量，词表多大、 $d_e = 256$ 时参数多少？以此说明加法结构的参数效率。动手前先预测 (b) 中两组方案各自更伤什么，再算。校验：(a) 的结果应与正文实例的 6 kbps 档一致。
+4.（代码 · [30]）教学用，非优化实现：实现式 (11)(12) 的 VQ 层——`z_q = z_e + (z_q - z_e).detach()`，随机初始化 codebook、encoder 用两层 MLP，在合成二维数据上训练；(a) 打印训练前后 codebook 使用分布的 perplexity $\exp(H(u))$；(b) 把 codebook 初始化拉到远离数据的位置复训——先预测 perplexity 曲线的走向，再观察 collapse 的发生与实际曲线；(c) 加入死码重启（使用率低于阈值的 entry 重置为 batch 内随机 $z_e$）对照。验证 STE：对同一输入，比较 `loss.backward()` 后 `z_e.grad` 与手动拷贝的 decoder 输入端梯度是否一致。
 
 ## 参考
 
