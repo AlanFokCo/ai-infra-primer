@@ -36,7 +36,7 @@
 
 按 Part 分组；research pass 向对应 Part 的表追加，chapter → sources 映射体现在「被引章节」字段。
 
-> **W0 骨架收录说明（2026-11-22）**：下列条目种入自 inference spec 附录「Spec 预核实记录」（arXiv API / GitHub contents API / hf-mirror 核实）与四路对抗审查销项记录，核实日期统一 2026-11-22；本次种入时 50 个 arXiv ID↔标题↔第一作者再经 arXiv API 批量复核，非 arXiv URL（Orca / FlashDecoding / batch-invariance / OCP MX / NVIDIA H100/H200 / hf-mirror config）经 HTTP 200 复核。GitHub 本机不可达，repo URL 沿用 spec 附录 2026-11-22 GitHub API 核实记录原值。`⟨verify⟩` 条目暂不收录，留各波 research pass 复核后追加。「被引章节」按 spec §5 大纲意图填写，各波 research / writing pass 回写精炼。跨 Part 共享锚点收录于首引 Part、被引章节跨组累加；引擎走读 Part 另立 repo 条目（`vllm-repo` / `sglang-repo`）。
+> **W0 骨架收录说明（2026-11-22）**：下列条目种入自 inference spec 附录「Spec 预核实记录」（arXiv API / GitHub contents API / hf-mirror 核实）与四路对抗审查销项记录，核实日期统一 2026-11-22；本次种入时 50 个 arXiv ID↔标题↔第一作者再经 arXiv API 批量复核，非 arXiv URL（Orca / FlashDecoding / batch-invariance / OCP MX / NVIDIA H100/H200 / hf-mirror config）经 HTTP 200 复核。GitHub 本机不可达，repo URL 沿用 spec 附录 2026-11-22 GitHub API 核实记录原值（例外：hybridflow repo URL 沿用 training references 已核实值；top-p / min-p / yoco / punica / s-lora repo URL 为 2026-11-23 终审修复补录，HTTP 200 核实）。`⟨verify⟩` 条目暂不收录，留各波 research pass 复核后追加。「被引章节」按 spec §5 大纲意图填写，各波 research / writing pass 回写精炼。跨 Part 共享锚点收录于首引 Part、被引章节跨组累加；引擎走读 Part 另立 repo 条目（`vllm-repo` / `sglang-repo`）。
 
 ### Part 1 · 推理原理与性能账
 
@@ -109,8 +109,8 @@
 | medusa | Medusa: Simple LLM Inference Acceleration Framework with Multiple Decoding Heads | Cai et al. | arXiv:2401.10774 ; https://github.com/FasterDecoding/Medusa | [A] | 2026-11-22 | 4.5 |
 | rest | REST: Retrieval-Based Speculative Decoding | He et al. | arXiv:2311.08252 ; https://github.com/FasterDecoding/REST | [A] | 2026-11-22 | 4.4, 4.5 |
 | draft-verify | Draft & Verify: Lossless Large Language Model Acceleration via Self-Speculative Decoding | Zhang et al. | arXiv:2309.08168 ; https://github.com/dilab-zju/self-speculative-decoding | [A] | 2026-11-22 | 4.5 |
-| top-p | The Curious Case of Neural Text Degeneration（top-p / nucleus sampling 出处） | Holtzman et al. | arXiv:1904.09751 | [B] | 2026-11-22 | 1.4 |
-| min-p | Turning Up the Heat: Min-p Sampling for Creative and Coherent LLM Outputs | Nguyen et al. | arXiv:2407.01082 | [B] | 2026-11-22 | 1.4 |
+| top-p | The Curious Case of Neural Text Degeneration（top-p / nucleus sampling 出处） | Holtzman et al. | arXiv:1904.09751 ; https://github.com/ari-holtzman/degen | [A]（官方 repo 2026-11-23 核实，终审升 [A]） | 2026-11-22 | 1.4 |
+| min-p | Turning Up the Heat: Min-p Sampling for Creative and Coherent LLM Outputs | Nguyen et al. | arXiv:2407.01082 ; https://github.com/menhguin/minp_paper | [A]（第一作者官方代码 2026-11-23 核实，终审升 [A]） | 2026-11-22 | 1.4 |
 | xgrammar | XGrammar: Flexible and Efficient Structured Generation Engine for Large Language Models | Dong et al. | arXiv:2411.15100 ; https://github.com/mlc-ai/xgrammar | [A] | 2026-11-22 | 1.4, 5.4 |
 | outlines | Efficient Guided Generation for Large Language Models（Outlines） | Willard & Louf | arXiv:2307.09702 ; https://github.com/dottxt-ai/outlines | [A]（原 outlines-dev/outlines，301 更名可跟） | 2026-11-22 | 1.4 |
 | guidance | guidance-ai/guidance repo（结构化生成库；无独立论文） | Guidance | https://github.com/guidance-ai/guidance | 教学参照 | 2026-11-22 | 1.4, 5.4 |
@@ -121,8 +121,8 @@
 | key | 标题 | 作者 | arXiv ID / URL | 证据等级 | 核实日期 | 被引章节 |
 | --- | --- | --- | --- | --- | --- | --- |
 | vllm-repo | vllm-project/vllm repo（V1 模块树 vllm/v1/{engine,core,executor,worker,attention,sample,structured_output,kv_offload,metrics}；spec_decode 实现在 v1/worker/gpu/spec_decode/{eagle,ngram,mtp}/speculator.py；kv_cache_interface / kv_cache_layout 在 v1/ 根目录——2026-11-22 路径核实） | vLLM | https://github.com/vllm-project/vllm | [A]（2309.06180 官方实现） | 2026-11-22 | 1.1, 2.4, 3.4, 4.2, 4.3, 5.1, 5.2, 5.3, 5.4, 8.4, 9.3, 9.4 |
-| punica | Punica: Multi-Tenant LoRA Serving | Chen et al. | arXiv:2310.18547 | [A]（官方实现存在性已核实——四路审查销项；repo URL 留 W3 research pass 补录） | 2026-11-22 | 5.4 |
-| s-lora | S-LoRA: Serving Thousands of Concurrent LoRA Adapters | Sheng et al. | arXiv:2311.03285 | [A]（官方实现存在性已核实——四路审查销项；repo URL 留 W3 research pass 补录） | 2026-11-22 | 5.4 |
+| punica | Punica: Multi-Tenant LoRA Serving | Chen et al. | arXiv:2310.18547 ; https://github.com/punica-ai/punica | [A]（官方实现存在性已核实——四路审查销项；repo URL 2026-11-23 终审补录） | 2026-11-22 | 5.4 |
+| s-lora | S-LoRA: Serving Thousands of Concurrent LoRA Adapters | Sheng et al. | arXiv:2311.03285 ; https://github.com/S-LoRA/S-LoRA | [A]（官方实现存在性已核实——四路审查销项；repo URL 2026-11-23 终审补录） | 2026-11-22 | 5.4 |
 
 ### Part 6 · SGLang 走读
 
@@ -140,7 +140,7 @@
 | 3fs | deepseek-ai/3FS repo（Fire-Flyer File System；DeepInfer kvcache-store 专用存储集群；USRBIO / FUSE 细节留 research pass） | DeepSeek-AI | https://github.com/deepseek-ai/3FS | 教学参照 | 2026-11-22 | 2.4 |
 | deepseek-recipe | deepseek-ai/deepseek-recipe repo（Rust 多协议 Chat Completions / Responses / Messages 统一对话格式、special-token 注入防护、分段并行 BPE、流式状态机 + 增量 KMP + DSML tool args） | DeepSeek-AI | https://github.com/deepseek-ai/deepseek-recipe | 教学参照 | 2026-11-22 | 1.4, 7.4 |
 | tilekernels | deepseek-ai/TileKernels repo（DeepInfer custom TileLang kernel 实例） | DeepSeek-AI | https://github.com/deepseek-ai/TileKernels | 教学参照 | 2026-11-22 | 3.4, 7.3 |
-| yoco | You Only Cache Once: Decoder-Decoder Architectures for Language Models（YOCO 模型侧源头，指引不展开） | Sun et al. | arXiv:2405.05254 | [B] | 2026-11-22 | 7.2 |
+| yoco | You Only Cache Once: Decoder-Decoder Architectures for Language Models（YOCO 模型侧源头，指引不展开） | Sun et al. | arXiv:2405.05254 ; https://github.com/microsoft/unilm/tree/master/YOCO | [A]（官方代码目录 2026-11-23 核实，终审升 [A]） | 2026-11-22 | 7.2 |
 | hyper-connections | Hyper-Connections（V4.1 hc_* 字段模型侧背景；模型侧形式化归 models 维度，V4.1 待补） | Zhu et al. | arXiv:2409.19606 | [B] | 2026-11-22 | 7.1 |
 
 ### Part 8 · 分布式推理与 PD 分离
@@ -158,7 +158,7 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | tensorrt-llm | NVIDIA/TensorRT-LLM repo（Python API 定义 + TRT 编译器路线、inflight batching；disagg 实现形态留 W5 research pass） | NVIDIA | https://github.com/NVIDIA/TensorRT-LLM | 教学参照 | 2026-11-22 | 8.4, 9.2 |
 | lmdeploy | LMDeploy Accelerates Mixed-Precision LLM Inference with TurboMind（EuroSys 2027） | Zhang et al. | arXiv:2508.15601 ; https://github.com/InternLM/lmdeploy | [A]（四路审查 C-S2-2 升 [A]，2026-11-22 arXiv API 核实） | 2026-11-22 | 9.2 |
-| hybridflow | HybridFlow: A Flexible and Efficient RLHF Framework（veRL） | Sheng et al. | arXiv:2409.19256 ; https://github.com/verl-project/verl | [A] | 2026-11-22 | 9.3 |
+| hybridflow | HybridFlow: A Flexible and Efficient RLHF Framework（veRL） | Sheng et al. | arXiv:2409.19256 ; https://github.com/verl-project/verl | [A]（repo URL 沿用 training references 已核实值） | 2026-11-22 | 9.3 |
 
 ## 术语表
 

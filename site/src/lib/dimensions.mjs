@@ -97,7 +97,7 @@ export const DIMENSIONS = {
     ledgerNote: null, // 建设期由各章状态决定，占位为 null 时前台显示章数即可
     depNoteShort: '九个 Part，三十七章。机制线 P1→P2/P3→P4，引擎走读 P5-P7 立于机制之上，P8 收分布式，P9 合流生产。',
     depNote:
-      '机制线 P1 → P2 / P3 → P4：原理与性能账分出 KV cache 系统与推理算子两条支线，合流于调度与 batching。引擎走读 P5（vLLM）/ P6（SGLang）/ P7（DeepInfer 与 DeepSeek 栈）立于机制之上——P2/P3/P4 是它们的公共前置。P8 分布式推理与 PD 分离收三引擎的分布式实现；P9 生产全流程合流 P7 的大规模部署经验与 P8 的分布式账。',
+      '机制线 P1 → P2 / P3 → P4：原理与性能账分出 KV cache 系统与推理算子两条支线，合流于调度与 batching。引擎走读 P5（vLLM）/ P6（SGLang）/ P7（DeepInfer 与 DeepSeek 栈）立于机制之上——P5/P7 以 P2/P3/P4 为前置，P6 以 P2/P4 为前置（无 P3）。P8 分布式推理与 PD 分离收三引擎的分布式实现；P9 生产全流程合流 P7 的大规模部署经验与 P8 的分布式账。',
     prereqs: [
       '<strong>models 维度 Part 1-2 与 Part 4 相关章</strong>——语言建模形式化、参数/计算/内存账、Transformer 组件推导（尤其 2.4 KV cache），以及 4.1 MLA / FlashAttention、4.2 sparse attention、4.5 MoE / MTP，或同等知识',
       '<strong>training 维度 Part 5</strong>——并行算法与通信账（TP/PP/EP/CP），或同等知识',
@@ -127,7 +127,7 @@ export const DIMENSIONS = {
         { path: 'M342 330 C 396 330, 466 300, 466 242' },
         // → P5 vLLM（P2/P3/P4 公共前置）
         { path: 'M342 76 C 450 84, 540 70, 644 70' },
-        { path: 'M342 312 C 400 260, 430 120, 644 74' },
+        { path: 'M342 312 C 400 260, 424 112, 644 74' },
         { path: 'M532 196 C 580 196, 600 90, 644 84' },
         // → P6 SGLang（P2/P4）
         { path: 'M342 110 C 450 136, 540 180, 644 200' },
