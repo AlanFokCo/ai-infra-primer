@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# usage: bash scripts/lint-chapter.sh <models|training>/<part-dir>/<chapter-file>.md
+# usage: bash scripts/lint-chapter.sh <models|training|inference>/<part-dir>/<chapter-file>.md
 set -u
 f="$1"; fail=0
 # 1. AI 味禁令词
@@ -12,6 +12,7 @@ head -8 "$f" | grep -q "^> " || { echo "FAIL: 缺 metadata 块"; fail=1; }
 case "$f" in
   models/*)   refs="models/references.md" ;;
   training/*) refs="training/references.md" ;;
+  inference/*) refs="inference/references.md" ;;
   *)          refs="" ;;
 esac
 if [ -n "$refs" ]; then
