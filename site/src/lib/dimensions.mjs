@@ -87,13 +87,71 @@ export const DIMENSIONS = {
       ],
     },
   },
+
+  inference: {
+    key: 'inference',
+    zh: '推理',
+    orderLabel: 'DIMENSION 03 / 05',
+    scope: '推理原理与性能账、KV cache 系统、推理算子、调度与 batching、vLLM/SGLang/DeepInfer、分布式与 PD 分离、生产全流程',
+    lede: 'LLM 推理 serving 的运行时系统：请求生命周期与 SLO、prefill/decode 算力带宽账、KV cache 系统（PagedAttention/prefix caching/量化/offload）、推理算子与调度 batching、投机解码、vLLM/SGLang/DeepInfer 文件级走读、分布式与 PD 分离、容量成本与生产全流程。公式级推导 + 生产推理栈代码对照 + 吞吐/延迟/显存/成本的账。',
+    ledgerNote: null, // 建设期由各章状态决定，占位为 null 时前台显示章数即可
+    depNoteShort: '九个 Part，三十七章。机制线 P1→P2/P3→P4，引擎走读 P5-P7 立于机制之上，P8 收分布式，P9 合流生产。',
+    depNote:
+      '机制线 P1 → P2 / P3 → P4：原理与性能账分出 KV cache 系统与推理算子两条支线，合流于调度与 batching。引擎走读 P5（vLLM）/ P6（SGLang）/ P7（DeepInfer 与 DeepSeek 栈）立于机制之上——P2/P3/P4 是它们的公共前置。P8 分布式推理与 PD 分离收三引擎的分布式实现；P9 生产全流程合流 P7 的大规模部署经验与 P8 的分布式账。',
+    prereqs: [
+      '<strong>models 维度 Part 1-2 与 Part 4 相关章</strong>——语言建模形式化、参数/计算/内存账、Transformer 组件推导（尤其 2.4 KV cache），以及 4.1 MLA / FlashAttention、4.2 sparse attention、4.5 MoE / MTP，或同等知识',
+      '<strong>training 维度 Part 5</strong>——并行算法与通信账（TP/PP/EP/CP），或同等知识',
+      '<strong>线性代数与概率论</strong>——同 models 维度；采样与投机解码另需条件分布与接受-拒绝采样的直觉（章内建立）',
+      '<strong>Python / PyTorch</strong>——能读推理栈源码；代码走读锚点是 vLLM、SGLang、DeepInfer、FlashInfer、TensorRT-LLM 等 repo 的具体文件与函数',
+    ],
+    prereqNote: '章节自包含：每个公式附符号表；对 models / training 的前置依赖一律纯文字交叉指引（如「models 2.4 §3」），不重复展开。',
+    firstChapter: { slug: '01-principles-and-accounting/01-request-lifecycle-and-slos', label: '从 1.1 开始读' },
+    graph: {
+      viewBox: '0 0 960 400',
+      aria: 'Part 依赖图：机制线 P1 到 P4，引擎走读 P5 到 P7，分布式 P8 与生产 P9 合流',
+      // 五列左→右流：P1 | P2/P3 | P4 | P5/P6/P7 | P8/P9（spec §5 mermaid 18 边逐边对应）
+      nodes: [
+        { x: 60, y: 184, n: 1 },
+        { x: 250, y: 64, n: 2 }, { x: 250, y: 304, n: 3 },
+        { x: 440, y: 184, n: 4 },
+        { x: 650, y: 44, n: 5 }, { x: 650, y: 184, n: 6 }, { x: 650, y: 324, n: 7 },
+        { x: 830, y: 114, n: 8 }, { x: 830, y: 254, n: 9 },
+      ],
+      edges: [
+        // P1 扇出：P1→P2、P1→P3、P1→P4
+        { path: 'M152 196 C 196 196, 200 90, 244 90' },
+        { path: 'M152 224 C 196 224, 200 330, 244 330' },
+        { line: [152, 210, 434, 210] },
+        // P2/P3 → P4（机制合流）
+        { path: 'M342 94 C 396 94, 466 120, 466 178' },
+        { path: 'M342 330 C 396 330, 466 300, 466 242' },
+        // → P5 vLLM（P2/P3/P4 公共前置）
+        { path: 'M342 76 C 450 84, 540 70, 644 70' },
+        { path: 'M342 312 C 400 260, 430 120, 644 74' },
+        { path: 'M532 196 C 580 196, 600 90, 644 84' },
+        // → P6 SGLang（P2/P4）
+        { path: 'M342 110 C 450 136, 540 180, 644 200' },
+        { line: [532, 210, 644, 210] },
+        // → P7 DeepInfer（P2/P3/P4）
+        { path: 'M300 116 C 300 200, 420 280, 520 300 C 580 312, 610 330, 644 336', label: { x: 452, y: 322, text: 'KV 系统' } },
+        { path: 'M342 348 C 450 364, 540 360, 644 356' },
+        { path: 'M510 236 C 510 290, 696 280, 696 318' },
+        // → P8 分布式（P5/P6/P7 三引擎合流）
+        { path: 'M742 76 C 786 80, 786 130, 824 136' },
+        { path: 'M742 196 C 786 192, 786 150, 824 146' },
+        { path: 'M742 340 C 800 330, 810 180, 824 156' },
+        // → P9 生产（P7/P8）
+        { path: 'M742 360 C 786 362, 790 290, 824 284' },
+        { line: [876, 166, 876, 248] },
+      ],
+    },
+  },
 };
 
 export const DIMENSION_ORDER = ['models', 'training', 'inference', 'gpu', 'cluster'];
 
 // 未上线维度的落地页占位文案（live=false 行）
 export const FORTHCOMING = {
-  inference: { zh: '推理', scope: 'continuous batching、PagedAttention、speculative decoding' },
   gpu: { zh: '硬件', scope: '内存层级、roofline、FlashAttention 等算子的实现层' },
   cluster: { zh: '集群', scope: 'EP、all-to-all、Ring Attention、网络拓扑' },
 };

@@ -71,6 +71,22 @@ const DIMENSIONS = [
     // 建设期断言 = 当波应发布章数（滚动收紧）：W1=10 / W2=16 / W3=24 / W4=29 / W5=34 / W6=39
     asserts: { chapters: 39, parts: 9, refsMin: 87 },
   },
+  {
+    key: 'inference',
+    parts: [
+      { num: 1, dir: '01-principles-and-accounting', titleEn: 'Principles & Accounting', titleZh: '推理原理与性能账', tagline: '请求生命周期与 SLO、prefill/decode 算力带宽账、roofline 与排队论、采样与结构化输出', wave: 'W1' },
+      { num: 2, dir: '02-kv-cache-systems', titleEn: 'KV Cache Systems', titleZh: 'KV cache 系统', tagline: 'PagedAttention 块管理、prefix caching/RadixAttention、KV 量化与驱逐、offload 与分层存储', wave: 'W1' },
+      { num: 3, dir: '03-inference-operators', titleEn: 'Inference Operators', titleZh: '推理算子', tagline: 'decode attention 族、权重量化算法、量化 GEMM 与 fused MoE、融合与图捕获', wave: 'W2' },
+      { num: 4, dir: '04-scheduling-and-batching', titleEn: 'Scheduling & Batching', titleZh: '调度与 batching', tagline: 'continuous batching、调度器与抢占、chunked prefill、投机解码原理与系统', wave: 'W2' },
+      { num: 5, dir: '05-vllm', titleEn: 'vLLM', titleZh: 'vLLM 走读', tagline: 'V1 架构、scheduler 与 KV manager、分布式执行、高级特性', wave: 'W3' },
+      { num: 6, dir: '06-sglang', titleEn: 'SGLang', titleZh: 'SGLang 走读', tagline: '架构与 RadixAttention、overlap scheduler、分布式与 PD', wave: 'W3' },
+      { num: 7, dir: '07-deepinfer-and-deepseek', titleEn: 'DeepInfer & DeepSeek Stack', titleZh: 'DeepInfer 与 DeepSeek 栈', tagline: '架构走读、DSpark 与 SWA bounded replay、kernel 栈、大规模 EP 与负载均衡', wave: 'W4' },
+      { num: 8, dir: '08-distributed-and-pd', titleEn: 'Distributed Inference & PD', titleZh: '分布式推理与 PD 分离', tagline: 'serving 并行账、PD 原理 goodput、KV 传输、PD 系统对照、弹性容错', wave: 'W5' },
+      { num: 9, dir: '09-production', titleEn: 'Production', titleZh: '生产全流程', tagline: '容量与成本账、引擎选型、RL rollout serving、多模态与特殊 serving', wave: 'W6' },
+    ],
+    // 建设期断言滚动：W0=0/0 → W1=8/2 → W2=17/4 → W3=24/6 → W4=28/7 → W5=33/8 → W6=37/9 → W7 锁死
+    asserts: { chapters: 0, parts: 0, refsMin: 50 },
+  },
 ];
 
 function main() {
