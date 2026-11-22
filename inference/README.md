@@ -128,19 +128,19 @@ models / training 写于 inference 存在之前，交叉指针现泛指向本维
 
 | 章节 | 文件 | 状态 |
 | --- | --- | --- |
-| 1.1 请求生命周期与 SLO 指标 | 01-request-lifecycle-and-slos.md | 未开始 |
-| 1.2 Prefill / Decode 的算力与带宽账 | 02-prefill-decode-accounting.md | 未开始 |
-| 1.3 Roofline 与延迟-吞吐权衡 | 03-roofline-and-tradeoffs.md | 未开始 |
-| 1.4 采样与解码策略 | 04-sampling-and-decoding.md | 未开始 |
+| 1.1 请求生命周期与 SLO 指标 | 01-request-lifecycle-and-slos.md | 已关闭 |
+| 1.2 Prefill / Decode 的算力与带宽账 | 02-prefill-decode-accounting.md | 已关闭 |
+| 1.3 Roofline 与延迟-吞吐权衡 | 03-roofline-and-tradeoffs.md | 已关闭 |
+| 1.4 采样与解码策略 | 04-sampling-and-decoding.md | 已关闭 |
 
 ### Part 2 · KV cache 系统（W1）
 
 | 章节 | 文件 | 状态 |
 | --- | --- | --- |
-| 2.1 PagedAttention 与块管理 | 01-paged-attention.md | 未开始 |
-| 2.2 Prefix Caching 与 RadixAttention | 02-prefix-caching.md | 未开始 |
-| 2.3 KV 量化、驱逐与压缩 | 03-kv-quantization-and-eviction.md | 未开始 |
-| 2.4 KV Offload 与分层存储 | 04-kv-offload-and-tiering.md | 未开始 |
+| 2.1 PagedAttention 与块管理 | 01-paged-attention.md | 已关闭 |
+| 2.2 Prefix Caching 与 RadixAttention | 02-prefix-caching.md | 已关闭 |
+| 2.3 KV 量化、驱逐与压缩 | 03-kv-quantization-and-eviction.md | 已关闭 |
+| 2.4 KV Offload 与分层存储 | 04-kv-offload-and-tiering.md | 已关闭 |
 
 ### Part 3 · 推理算子（W2）
 
@@ -213,6 +213,7 @@ models / training 写于 inference 存在之前，交叉指针现泛指向本维
 | 波次 | 日期 | 覆盖章节 | 审查轮次 | S1 | S2 | S3 | 未关闭项 | 结论 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | W0 | 2026-11-22/23 | spec 本身（9 Part / 37 章大纲）+ 脚手架 | 四路独立对抗审查 ×1（A: P1–P4 事实与数学 / B: P5–P7 引擎走读与 DeepInfer 一手来源 / C: P8–P9 分布式与 PD / 生产 / D: 设计与一致性）+ builder-check ×1 + 逐任务 fresh reviewer ×6（Tasks 1–6） | 0 | 17（raw 19，去重后全部关闭） | 29（raw 36，去重后全部清零） | 无 | **放行（W1 开工放行）**。spec 审查闭环：四路完整档案见 [inference-spec-review-a](../docs/reviews/inference-spec-review-a.md) / [b](../docs/reviews/inference-spec-review-b.md) / [c](../docs/reviews/inference-spec-review-c.md) / [d](../docs/reviews/inference-spec-review-d.md)，spec 附录有汇总。脚手架全绿：references 9 Part 分组 77 条（术语表 80）；本 README 37 章进度表 + 18 边依赖图 + 28 行跨维度指针盘点；lint inference 分支激活（models 51 + training 39 共 90 章回归全过）；STYLE_GUIDE 泛化至三维度（条款零漂移 + 前言 [A] 让位）；站点 DIMENSIONS inference 起步断言 0/0（refsMin 50）+ 完整 UI 对象 + 18 边依赖图 + FORTHCOMING.inference 移除；全量 QA 绿（116 页 / 3750 站内引用 / 26 截图，2026-11-23 收官终检复跑） |
+| W1 | 2026-11-23 | P1+P2 8 章（1.1–1.4 / 2.1–2.4） | 逐批审查 ×2（P1/P2）+ 修复轮 ×2 + 复审 ×2（fix-review + NB-1/NB-2 scoped） | 2 | 5 | 12 | 无 | **放行**。档案 [inference-w1-review-p1](../docs/reviews/inference-w1-review-p1.md)（S1=0/S2=1/S3=5）/ [p2](../docs/reviews/inference-w1-review-p2.md)（S1=2/S2=3/S3=6）/ [fix-review](../docs/reviews/inference-w1-fix-review.md)（原 S1/S2 全 ADDRESSED + fix-introduced NB-1（S2）/NB-2（S3）修复后 scoped 复核 clean）；强制重推导 1.2/2.1/2.4 全 PASS；16 场景图 QUALITY 五维 ≥4；refs 被引回写（parse 9 组 / 79 条）；站点断言 {8,2} QA 全绿。残留观察 2.2 PCIe 双向/单向口径 S3（robust，重叠结论不变）留 W2 |
 
 **跨维度指针 errata 记录**（spec §2 条款授权，仅限指针句的最小修订；errata 编辑不跑 rewrite-gate）：
 

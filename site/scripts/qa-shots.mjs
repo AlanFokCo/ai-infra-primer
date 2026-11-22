@@ -23,6 +23,12 @@ const PAGES = [
   ['tr-ch-mixed-precision', '/training/01-autograd-and-backprop/03-mixed-precision/'], // 公式密
   ['tr-ch-adamw', '/training/02-optimizers/02-adam-and-adamw/'], // 表格密（超参对照）
   ['tr-ch-muon', '/training/02-optimizers/05-muon-and-spectral/'], // 推导重章
+  // inference 维度（W1 起；spec §8：公式密 / 表格图密 / 推导重章各一，取本波已落地代表章）
+  ['inference', '/inference/'],
+  ['inf-references', '/inference/references/'],
+  ['inf-ch-prefill-decode', '/inference/01-principles-and-accounting/02-prefill-decode-accounting/'], // 公式密（1.2【重】）
+  ['inf-ch-paged-attention', '/inference/02-kv-cache-systems/01-paged-attention/'], // 表格/图密（2.1【重】，块表场景图）
+  ['inf-ch-kv-offload', '/inference/02-kv-cache-systems/04-kv-offload-and-tiering/'], // 推导重章（2.4【重】，分层命中成本账）
 ];
 
 const VIEWPORTS = [
