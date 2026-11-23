@@ -3,7 +3,14 @@
 // 脉冲渐变：用页面级 PULSE_GRAD_DEFS 的固定 id（Chapter.astro 注入），不自建 per-scene defs。
 // 所有 pulse delay < 3.5s（fig-check 截图时刻语义完整）；sig-cell --i ≤ 2.6（3.5s 前点亮完毕）。
 
-import { scene, node, edge, zone, cap, PULSE_GRAD_ID } from '../figure-kit.mjs';
+import { scene, node, edge, zone, cap as kitCap, PULSE_GRAD_ID } from '../figure-kit.mjs';
+
+// CSS .dia-cap 的 fill 会覆盖 cap() 的 fill 属性（类选择器 > 表现属性）——
+// 显式传 color 时补 inline style 提权，保证朱砂强调真正生效（不改 kit API；W7 S3-4 补齐，与 part03-09 一致）。
+const cap = (x, y, t, o = {}) => {
+  const s = kitCap(x, y, t, o);
+  return o.color ? s.replace(`fill="${o.color}"`, `style="fill:${o.color}" fill="${o.color}"`) : s;
+};
 
 // 手工路径上的脉冲（L 形/回环/折线通道用 path 直写；渐变引用页面级固定 id）
 const pathPulse = (d, { dur = 2.4, delay = 0, r = 4.2 } = {}) =>

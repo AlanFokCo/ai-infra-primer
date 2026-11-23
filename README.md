@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | [models/](models/README.md) | 已关闭（W1–W7 全部审结） | 生成式模型的数学：文本 LLM 主干、视觉表征、扩散生图、多模态 LLM、视频生成、语音音频（10 Part / 51 章） |
 | [training/](training/README.md) | 已关闭（W0–W6 全部审结） | 训练动力学与训练系统：autograd 与算子反向、optimizer 与 LR（AdamW / Muon）、混合精度与 FP8、数据并行（DDP / ZeRO / FSDP）与模型并行（TP / SP / CP / PP / EP）、Megatron-LM、预训练全流程、RL 数学（PPO / GRPO）、后训练全流程（SFT / RLHF / DPO / RLVR）（9 Part / 39 章） |
-| [inference/](inference/README.md) | 占位 | serving 系统：continuous batching、PagedAttention、speculative decoding 的系统实现 |
+| [inference/](inference/README.md) | 已关闭（W0–W7 全部审结） | serving 运行时系统：请求生命周期与 SLO、prefill / decode 性能账与 roofline、KV cache 系统（paged / prefix / 量化 / offload / 分层存储）、推理算子与权重量化、调度与 batching、投机解码、三大引擎代码走读（vLLM V1 / SGLang / DeepInfer）、分布式推理与 PD 分离、弹性伸缩与容错、生产全流程（9 Part / 37 章） |
 | [gpu/](gpu/README.md) | 占位 | GPU 硬件与 kernel：内存层级、roofline、FlashAttention 等算子的实现层 |
 | [cluster/](cluster/README.md) | 占位 | 集群与通信：EP、all-to-all、Ring Attention、网络拓扑 |
 
@@ -24,13 +24,17 @@
 
 9 个 Part 的依赖顺序：优化线 P1 Autograd 与反向机制 → P2 Optimizer 与 LR → P3 Loss 函数族；并行线 P4 数据并行（DDP / ZeRO / FSDP）→ P5 模型并行（TP / SP / CP / PP / EP）→ P6 Megatron 与训练栈；P7 预训练全流程合流两线；P8 RL 数学详解 → P9 后训练全流程。完整目录、依赖图与逐章进度表见 [training/README.md](training/README.md)。
 
+## inference 阅读路径
+
+9 个 Part 的依赖顺序：机制线 P1 推理原理与性能账 → P2 KV cache 系统 / P3 推理算子 → P4 调度与 batching；引擎走读 P5 vLLM / P6 SGLang / P7 DeepInfer 与 DeepSeek 栈立于机制之上；P8 分布式推理与 PD 分离收三引擎的分布式实现；P9 生产全流程合流。完整目录、依赖图与逐章进度表见 [inference/README.md](inference/README.md)。
+
 ## 规范
 
 - [STYLE_GUIDE.md](STYLE_GUIDE.md)：写作与审查的唯一标准——语言、公式、代码、图、锚点规则、引用与证据分级（[A] / [B] / [C] / [W]）
-- [models/references.md](models/references.md) 与 [training/references.md](training/references.md)：各维度文献汇总（按 Part 分组，chapter → sources 映射）
+- [models/references.md](models/references.md)、[training/references.md](training/references.md) 与 [inference/references.md](inference/references.md)：各维度文献汇总（按 Part 分组，chapter → sources 映射）
 
 ## 项目状态
 
-`models 维度 51 章已关闭（W1–W7）` `training 维度 39 章已关闭（W0–W6）` `inference / gpu / cluster 占位` `站点上线（models + training）`
+`models 维度 51 章已关闭（W1–W7）` `training 维度 39 章已关闭（W0–W6）` `inference 维度 37 章已关闭（W0–W7）` `gpu / cluster 占位` `站点上线（models + training + inference）`
 
-逐章进度（未开始 / 已写 / 审查中 / 已关闭）见 [models/README.md](models/README.md) 与 [training/README.md](training/README.md) 的进度表。
+逐章进度（未开始 / 已写 / 审查中 / 已关闭）见 [models/README.md](models/README.md)、[training/README.md](training/README.md) 与 [inference/README.md](inference/README.md) 的进度表。

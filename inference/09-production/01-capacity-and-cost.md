@@ -186,7 +186,7 @@ KV 存储要几台服务器？路线（4 步）：先列官方披露的硬件与
 
 > **坑**：doc L113「11 节点 any 10」与 L111「10+2 = 12 节点」存在内部张力（W1 / W4 裁定维持）；且开源 3FS repo 是 CRAQ 链式复制、无 EC 实现，EC 10+2 属生产官方披露（[DeepSeek-AI, 3FS](../references.md)，教学参照；2.4 recap）。引用时区分「生产 EC 口径」与「开源 repo 口径」，本章 sizing 用生产 EC 10+2 → 物理 ×12/10。
 
-**EC 四口径算术（本轮独立重算）**。TB 取十进制 $10^{12}$ B、PiB 取二进制 $2^{50}$ B（§4.3 换算注明）：
+**EC 四口径算术（本轮独立重算）**。TB 取十进制 $10^{12}$ B、PiB 取二进制 $2^{50}$ B（spec §4.3 换算注明）：
 
 $$
 \begin{aligned}
@@ -235,15 +235,15 @@ $$
 
 **DeepInfer 38 USD/GPU-hour 是收入，不是成本（doc L17 逐字，官方披露，核实 2026-11-24）**：「A single cluster currently serves 155 trillion tokens per day, with overall revenue of US\$38 per GPU-hour (at the off-peak price).」逐字关键词是 **overall revenue**（总收入）与 **off-peak price**（低谷价）——这是每 GPU 小时的收入口径，不是成本。把它代入式 (12) 的 $u$ 会算出「收入/M tokens」而非「成本/M tokens」，两者不可混用。
 
-**155T tokens/day 的口径与隐含收入**。 $155 \times 10^{12} / 24 = 6.458 \times 10^{12}$ tokens/h $= 6.458 \times 10^6$ M tokens/h。设集群 GPU 数 $G$ （**doc 未披露**），收入口径：
+**155T tokens/day 的口径与隐含收入**。 $155 \times 10^{12} / 24 = 6.458 \times 10^{12}$ tokens/h $= 6.458 \times 10^6$ M tokens/h。设集群 GPU 数 $n_{\mathrm{GPU}}$ （**doc 未披露**），收入口径：
 
 $$
-\text{收入 USD/M tokens} = \frac{38 \thinspace G}{6.458 \times 10^6} = 5.884 \times 10^{-6} \thinspace G \qquad (13)
+\text{收入 USD/M tokens} = \frac{38 \thinspace n_{\mathrm{GPU}}}{6.458 \times 10^6} = 5.884 \times 10^{-6} \thinspace n_{\mathrm{GPU}} \qquad (13)
 $$
 
-**符号**： $G$ = 单集群 GPU 数（未披露，代入须显式声明假设）。式 (13) 对 $G$ 线性，无 $G$ 则只能给每 GPU 收入强度： $38 \times 24 = 912$ USD/GPU-day（低谷价口径）。**代入算例须显式声明**：设 $G = 4096$ （纯教学假设，非披露），收入 $= 5.884 \times 10^{-6} \times 4096 = 0.0241$ USD/M tokens，每 GPU 日产 token $155 \times 10^{12}/4096 = 3.78 \times 10^{10}$ 。**且 155T 的 token 计数口径 doc 未定义**（输入 / 输出 / cache 命中计否不明），故即便给定 $G$ ，该收入/M 也无法与他系统成本/M 直接比价——三重口径缺口（收入非成本、 $G$ 未披露、计数未定义）必须同时声明。
+**符号**： $n_{\mathrm{GPU}}$ = DeepInfer 单集群 GPU 数（doc 未披露，代入须显式声明假设；与教学负载的 $n_{\mathrm{GPU}} = n_P + n_D = 49$ 是不同部署，勿混）。式 (13) 对 $n_{\mathrm{GPU}}$ 线性，无 $n_{\mathrm{GPU}}$ 则只能给每 GPU 收入强度： $38 \times 24 = 912$ USD/GPU-day（低谷价口径）。**代入算例须显式声明**：设 $n_{\mathrm{GPU}} = 4096$ （纯教学假设，非披露），收入 $= 5.884 \times 10^{-6} \times 4096 = 0.0241$ USD/M tokens，每 GPU 日产 token $155 \times 10^{12}/4096 = 3.78 \times 10^{10}$ 。**且 155T 的 token 计数口径 doc 未定义**（输入 / 输出 / cache 命中计否不明），故即便给定 $n_{\mathrm{GPU}}$ ，该收入/M 也无法与他系统成本/M 直接比价——三重口径缺口（收入非成本、 $n_{\mathrm{GPU}}$ 未披露、计数未定义）必须同时声明。
 
-> **坑**：把 38 USD/GPU-hour 当成本代入式 (12)。触发条件：doc L17 的「revenue」被略读为「cost」；现象：算出的「成本/M tokens」实为收入口径，且 off-peak 价非全时段均价，跨系统比价系统性失真；规避：引用必带「收入（off-peak）非成本」限定 + 声明 $G$ 假设 + 声明 token 计数口径未定义。本章教学成本用独立假设的 2 USD/GPU-hour，与 38 无任何代入关系。
+> **坑**：把 38 USD/GPU-hour 当成本代入式 (12)。触发条件：doc L17 的「revenue」被略读为「cost」；现象：算出的「成本/M tokens」实为收入口径，且 off-peak 价非全时段均价，跨系统比价系统性失真；规避：引用必带「收入（off-peak）非成本」限定 + 声明 $n_{\mathrm{GPU}}$ 假设 + 声明 token 计数口径未定义。本章教学成本用独立假设的 2 USD/GPU-hour，与 38 无任何代入关系。
 
 ## 8. 命中 → 成本节省与 workload mix
 
@@ -310,7 +310,7 @@ $$
 | 100 PiB → ~183（raw）/ ~220（usable）服务器，口径歧义须声明 | 式 (10) 算术 | §6 |
 | 存储 sizing 四约束取最大；教学负载写带宽闸主导（4 台） | 式 (11) | §6、练习 3 |
 | USD/M =（ $u_P n_P + u_D n_D$ ）/（tokens/h ÷ 1e6）；token 计数口径差 7.67× | 式 (12) | §7 |
-| DeepInfer 38 USD/GPU-h = 收入（off-peak）非成本；155T 计数未定义、 $G$ 未披露 → 代入须三重声明 | doc L17、式 (13) | §7、练习 4 |
+| DeepInfer 38 USD/GPU-h = 收入（off-peak）非成本；155T 计数未定义、 $n_{\mathrm{GPU}}$ 未披露 → 代入须三重声明 | doc L17、式 (13) | §7、练习 4 |
 | 命中节省分数 = $\Delta n_P/(n_{P,0}+n_D)$ ；命中省 prefill 不省 decode；TTL 微调二阶 | 命题 3 | §8、练习 3 |
 | chatbot 3d TTL 损 0.5–1% 命中是反事实非生产损失；生产 agent 72h / chatbot 7d 近乎无损 | doc L187 / L211 | §8、2.2 回链 |
 
@@ -322,7 +322,7 @@ $$
 
 3.（计算 · [30]）纯 chatbot 负载全账重算（口径切换）。把章脊混合负载换成纯 chatbot： $\lambda = 100$ req/s、 $T_{\mathrm{in}} = 1024$ 、 $T_{\mathrm{out}} = 256$ 、 $h = 0.5$ ，其余硬件 / SLO / 价格不变， $\rho_P$ 固定 0.72（口径：隔离负载变量，不重解 §2）。(a) 用式 (4)(5)(6) 算 $n_P$；(b) 用式 (7)(8)(9) 算 $n_D$（两闸取最大）；(c) 用式 (11) 算存储服务器数（先算写 / 读率与 24h 容量）；(d) 用式 (12) 算全 token 口径 USD/M，并与混合负载的 0.0578 对照，说明哪段主导哪笔账。校验：(a) $n_P = 3$（需求率 $7.886 \times 10^{14}$ FLOPs/s）；(b) $n_D = 2$（容量闸 1.80 主导）；(c) 3 台（写带宽闸 2.01 主导）；(d) 分母 460.8 M tokens/h、USD/M = 0.0217，混合负载是其 2.66 倍——agent 段主导 decode KV 与存储。
 
-4.（计算 · [30]）DeepInfer 收入口径对账（doc L17）。(a) 把 155T tokens/day 折成 tokens/h 与 M tokens/h；(b) 用式 (13) 写收入 USD/M 关于 $G$ 的表达式，代入 $G = 4096$ 与 $G = 8192$（**显式声明这是教学假设、doc 未披露 $G$**）；(c) 说明为什么 38 不能代入式 (12) 的成本 $u$，以及要把收入换成成本还需哪些假设（毛利率、token 计数口径、off-peak 与全时段均价差）。校验：(a) $6.458 \times 10^{12}$ tokens/h；(b) 系数 $5.884 \times 10^{-6} \times G$，对 $G$ 线性；(c) 38 是「overall revenue（off-peak）」逐字口径，非成本，且 155T 计数口径未定义。
+4.（计算 · [30]）DeepInfer 收入口径对账（doc L17）。(a) 把 155T tokens/day 折成 tokens/h 与 M tokens/h；(b) 用式 (13) 写收入 USD/M 关于 $n_{\mathrm{GPU}}$ 的表达式，代入 $n_{\mathrm{GPU}} = 4096$ 与 $n_{\mathrm{GPU}} = 8192$（**显式声明这是教学假设、doc 未披露 $n_{\mathrm{GPU}}$**）；(c) 说明为什么 38 不能代入式 (12) 的成本 $u$，以及要把收入换成成本还需哪些假设（毛利率、token 计数口径、off-peak 与全时段均价差）。校验：(a) $6.458 \times 10^{12}$ tokens/h；(b) 系数 $5.884 \times 10^{-6} \times n_{\mathrm{GPU}}$，对 $n_{\mathrm{GPU}}$ 线性；(c) 38 是「overall revenue（off-peak）」逐字口径，非成本，且 155T 计数口径未定义。
 
 ## 参考
 

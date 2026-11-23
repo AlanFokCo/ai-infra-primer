@@ -12,7 +12,12 @@
   lt     公式内不允许 < 紧跟 ASCII 字母（math-renderer 组件二次 HTML 解析会把 <t...
          吞作标签，报 Extra open brace or missing close brace）；写 \\lt
   macro  GitHub math-renderer 禁用宏（\\operatorname、\\phantom、\\colorbox 等，命中即整个公式报错）；函数名用 \\mathrm
-代码围栏与多行 display 块内部不检查。
+  rescape display 块（$$...$$，含多行与同行两形）内的反斜杠反转义陷阱形
+         \\, \\! \\; \\: \\{ \\} \\| \\% \\#（STYLE_GUIDE §3）——GitHub Markdown 管线先把
+         `\\`+ASCII 标点反转义再交 MathJax，间距/花括号/竖线变可见标点，渲染受损。
+         白名单替代形 \\thinspace \\negthinspace \\hspace \\lbrace \\rbrace \\Vert 等放行；
+         GFM 表格单元格内 \\| 为表格转义（§3 例外），同行 display 落在表格行时豁免 \\|。
+代码围栏内部不检查；多行 display 块检查 lt/macro/rescape，行内段检查上述各项。
 退出码：0 通过，1 有违规。
 """
 import re
@@ -23,6 +28,18 @@ BANNED_MACROS = ('DeclareMathOperator', 'DeclarePairedDelimiters', 'renewtagform
                  'Newextarrow', 'definecolor', 'mathchoice', 'unicode', 'mmlToken')
 
 BAN_PAT = re.compile(r'\\(?:' + '|'.join(BANNED_MACROS) + r')')  # 与组件 includes() 子串判定一致
+
+# STYLE_GUIDE §3 反转义陷阱：`\`+ASCII 标点被 GitHub Markdown 预处理反转义。
+# 禁用源码形 \{ \} \| \, \; \: \! \% \#；白名单替代（\lbrace \rbrace \Vert \thinspace
+# \negthinspace \hspace{Nmu} \text{％} \text{＃}）均为 `\`+字母，不会被下述模式命中。
+# 子串判定与 lint-chapter.sh check-7 的 grep -F 及 W5 raw 自检口径一致。
+RESCAPE_PAT = re.compile(r'\\[{},|;:!%#]')
+RESCAPE_NOPIPE_PAT = re.compile(r'\\[{},;:!%#]')  # 表格单元格 \| 例外（§3），仅豁免同行 display
+
+
+def rescape_ctx(text, pat):
+    hits = sorted(set(pat.findall(text)))
+    return ' '.join(hits) + ' | ' + text.strip()[:50]
 
 
 def scan_line(line):
@@ -98,6 +115,11 @@ def check_line(line, fname, lineno, problems):
     segs = scan_line(line)
     in_table = line.lstrip().startswith('|')
     for idx, (kind, text) in enumerate(segs):
+        if kind == 'display':
+            pat = RESCAPE_NOPIPE_PAT if in_table else RESCAPE_PAT
+            if pat.search(text):
+                problems.append((fname, lineno, 'rescape', rescape_ctx(text, pat)))
+            continue
         if kind != 'math':
             continue
         inner = text[1:-1]
@@ -152,6 +174,8 @@ def check_file(path):
                 problems.append((path, lineno, 'lt', line.strip()[:50]))
             if BAN_PAT.search(line):
                 problems.append((path, lineno, 'macro', line.strip()[:50]))
+            if RESCAPE_PAT.search(line):
+                problems.append((path, lineno, 'rescape', rescape_ctx(line, RESCAPE_PAT)))
             continue
         check_line(line, path, lineno, problems)
     return problems

@@ -2,7 +2,14 @@
 // 规范见 STYLE.md；组件库见 figure-kit.mjs；风格基准 training-part01.mjs / inference-part01.mjs。
 // 脉冲渐变：页面级 PULSE_GRAD_DEFS 固定 id；pulse delay < 3.5s；sig-cell --i ≤ 2.6。
 
-import { scene, node, edge, zone, cap, PULSE_GRAD_ID } from '../figure-kit.mjs';
+import { scene, node, edge, zone, cap as kitCap, PULSE_GRAD_ID } from '../figure-kit.mjs';
+
+// CSS .dia-cap 的 fill 会覆盖 cap() 的 fill 属性（类选择器 > 表现属性）——
+// 显式传 color 时补 inline style 提权，保证朱砂强调真正生效（不改 kit API；W7 S3-4 补齐，与 part03-09 一致）。
+const cap = (x, y, t, o = {}) => {
+  const s = kitCap(x, y, t, o);
+  return o.color ? s.replace(`fill="${o.color}"`, `style="fill:${o.color}" fill="${o.color}"`) : s;
+};
 
 const pathPulse = (d, { dur = 2.4, delay = 0, r = 4.2 } = {}) =>
   `<circle class="dia-pulse" r="${r}" fill="url(#${PULSE_GRAD_ID})">` +

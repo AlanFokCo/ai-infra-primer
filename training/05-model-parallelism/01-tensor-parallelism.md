@@ -138,7 +138,7 @@ class ReduceFromTPRegion(torch.autograd.Function):
 先看 GPT 式 MLP 块： $Y = \varphi(X W_1)\thinspace W_2$， $W_1 \in \mathbb{R}^{h \times d_{\mathrm{ff}}}$， $W_2 \in \mathbb{R}^{d_{\mathrm{ff}} \times h}$， $\varphi$ 为逐位置激活（GeLU 或 SwiGLU 一族）。切法（Megatron 论文 §3.1）是两刀错开： $W_1$ 列切（每卡持 $[h, d_{\mathrm{ff}}/t]$ ）， $W_2$ 行切（每卡持 $[d_{\mathrm{ff}}/t, h]$ ）。中间维 $d_{\mathrm{ff}}$ 是两个切口的公共轴——对前者是拼接轴，对后者是收缩轴：
 
 $$
-X \;\xrightarrow{\; f \;}\; X \;\xrightarrow{\; W_1^{(p)} \;}\; H_p = X W_1^{(p)} \;\xrightarrow{\; \varphi \;}\; \varphi(H_p) \;\xrightarrow{\; W_2^{(p)} \;}\; \varphi(H_p)\thinspace W_2^{(p)} \;\xrightarrow{\; g \;}\; Y \qquad (7)
+X \hspace{5mu}\xrightarrow{\hspace{5mu} f \hspace{5mu}}\hspace{5mu} X \hspace{5mu}\xrightarrow{\hspace{5mu} W_1^{(p)} \hspace{5mu}}\hspace{5mu} H_p = X W_1^{(p)} \hspace{5mu}\xrightarrow{\hspace{5mu} \varphi \hspace{5mu}}\hspace{5mu} \varphi(H_p) \hspace{5mu}\xrightarrow{\hspace{5mu} W_2^{(p)} \hspace{5mu}}\hspace{5mu} \varphi(H_p)\thinspace W_2^{(p)} \hspace{5mu}\xrightarrow{\hspace{5mu} g \hspace{5mu}}\hspace{5mu} Y \qquad (7)
 $$
 
 **符号**： $W_1^{(p)} \in \mathbb{R}^{h \times (d_{\mathrm{ff}}/t)}$、 $W_2^{(p)} \in \mathbb{R}^{(d_{\mathrm{ff}}/t) \times h}$：rank $p$ 的分片； $H_p \in \mathbb{R}^{m \times (d_{\mathrm{ff}}/t)}$：中间激活分片。为什么拼接可以跳过？靠的是 $\varphi$ 的逐位置性。 $\varphi$ 逐元素作用于 $H = [H_1 \mid \cdots \mid H_t]$ 的每个分量，而列分片之间互不重叠，所以 $\varphi(H)$ 的第 $p$ 段 $= \varphi(H_p)$——**逐位置算子在列切下免通信**，而且逐字精确，不是近似。这同时是一条限制：列切后面接的只能是逐位置算子；换成任何跨分量耦合的算子（比如对 $d_{\mathrm{ff}}$ 维求归一化的 softmax），免通信立即失效。这个约束在 5.2 会从反方向回来：RMSNorm 沿 $h$ 耦合，所以不能留在 TP 区段内。
@@ -188,7 +188,7 @@ $$
 **符号**： $2$：bf16 字节数。每层前向 2 次 all-reduce（attention 块的 g 加 MLP 块的 g）、反向 2 次（两处的 f）。于是一个 micro-batch 的消息量口径是：前向每层 $4bsh$ bytes，反向对称再 $4bsh$，单层单 micro-batch 合计 $8bsh$ bytes； $L$ 层逐层叠加得全模型 $8bshL$（外加 embedding 的一次，见 §9）。换算成每卡收发字节数，乘 4.1 式 (2) 的 ring 系数 $2(t-1)/t$（发送口径，接收同量）：
 
 $$
-C_{\mathrm{rank}} = 8 \thinspace b \thinspace s \thinspace h \thinspace L \cdot 2\thinspace \frac{t-1}{t} \quad \xrightarrow{\; t \to \infty \;} \quad 16 \thinspace b \thinspace s \thinspace h \thinspace L \quad \text{bytes / micro-batch} \qquad (10)
+C_{\mathrm{rank}} = 8 \thinspace b \thinspace s \thinspace h \thinspace L \cdot 2\thinspace \frac{t-1}{t} \quad \xrightarrow{\hspace{5mu} t \to \infty \hspace{5mu}} \quad 16 \thinspace b \thinspace s \thinspace h \thinspace L \quad \text{bytes / micro-batch} \qquad (10)
 $$
 
 两个读数。其一，每卡通信量**与 $t$ 几乎无关**——系数从 $t = 2$ 的 1 饱和到 2。TP 加卡不省通信，省的是每卡计算。其二，消息的全部体量由激活 $bsh$ 与层数决定，与参数量 $N$ 无直接关系。这与 DP 侧「通信 $\approx 4N$ 与 $d$ 无关」（4.4 §4）是同构的另一极。

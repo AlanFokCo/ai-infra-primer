@@ -500,9 +500,9 @@ function chunkPipeline() {
 
   body.push(cap(36, 196, '命题 2（telescoping）：每次发送从上一次终点起（start_send_idx = end_idx），页对齐只推迟不跳段 → 恰好覆盖 [T_hit, T)', { size: 9.5 }));
   body.push(cap(36, 214, '总字节 = κL(T−T_hit) 与 chunk 数无关：4 × 575668224 B = 2302672896 B ≈ 2.14 GiB（与整段一次发送恒等）', { mono: true, size: 9.5 }));
-  body.push(cap(36, 232, 'T_hit=8192（decode radix 命中）：发送 24576 token × 70272 B ≈ 1.61 GiB → 34.5 ms @50 GB/s / 276 ms @6.25 GB/s（每 GPU 份额）', { size: 9.5 }));
+  body.push(cap(36, 232, 'T_hit=8192（decode radix 命中）：发送 24576 token × 70272 B（V3）≈ 1.61 GiB → 34.5 ms @50 GB/s / 276 ms @6.25 GB/s（每 GPU 份额）', { size: 9.5 }));
   body.push(cap(36, 250, '早发 WAR 陷阱：overlap 下上一步 forward 可能还在写前缀页 —— forward_stream record event，transfer worker 等 event 再 RDMA read', { size: 9.5 }));
-  body.push(cap(36, 268, '页粒度：b=64 → 512 页 × 61 层 = 31232 描述符（细粒度拷贝坑）；mooncake group_concurrent_contiguous 连续页聚成大块', { size: 9.5 }));
+  body.push(cap(36, 268, '页粒度：b=64 → 512 页 × 61 层（V3）= 31232 描述符（细粒度拷贝坑）；mooncake group_concurrent_contiguous 连续页聚成大块', { size: 9.5 }));
   body.push(cap(36, 286, '正确性兜底：末 chunk checksum 覆盖发送范围；P/D TP 宽度不一致 → should_verify_kv_checksum=False（跳过而非误报）', { size: 9.5 }));
 
   return scene(720, 300, body, { label: 'chunk 流水时序：prefill 逐 chunk 前向，RDMA 网卡错一拍发送各 chunk KV，传输藏进下一 chunk 计算，decode 预分配后 poll 成功进 DECODE' }).svg();

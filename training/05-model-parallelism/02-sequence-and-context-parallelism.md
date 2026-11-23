@@ -103,7 +103,7 @@ DeepSpeed Ulysses（[Jacobs et al., 2023](../references.md)，arXiv:2309.14509�
 通信账：一次 all-to-all 各卡把本地张量的 $(c-1)/c$ 份发给其余 $c - 1$ 卡。Q、K、V 三个张量合算，每层前向每卡发送
 
 $$
-C_{\mathrm{ulysses}} = \underbrace{6 \thinspace b \thinspace s \thinspace a \thinspace d_{\mathrm{head}}}_{\text{QKV 换维}} \cdot \frac{c-1}{c^{2}} \; + \; \underbrace{2 \thinspace b \thinspace s \thinspace a \thinspace d_{\mathrm{head}}}_{\text{attention 输出换回}} \cdot \frac{c-1}{c^{2}} \hspace{5mu} = \hspace{5mu} 8 \thinspace b \thinspace s \thinspace h \cdot \frac{c-1}{c^{2}} \hspace{5mu} \approx \hspace{5mu} \frac{8bsh}{c} \quad \text{bytes} \qquad (5)
+C_{\mathrm{ulysses}} = \underbrace{6 \thinspace b \thinspace s \thinspace a \thinspace d_{\mathrm{head}}}_{\text{QKV 换维}} \cdot \frac{c-1}{c^{2}} \hspace{5mu} + \hspace{5mu} \underbrace{2 \thinspace b \thinspace s \thinspace a \thinspace d_{\mathrm{head}}}_{\text{attention 输出换回}} \cdot \frac{c-1}{c^{2}} \hspace{5mu} = \hspace{5mu} 8 \thinspace b \thinspace s \thinspace h \cdot \frac{c-1}{c^{2}} \hspace{5mu} \approx \hspace{5mu} \frac{8bsh}{c} \quad \text{bytes} \qquad (5)
 $$
 
 **符号**：末步用 MHA 口径 $h = a \cdot d_{\mathrm{head}}$。与式 (2) 对照，结构差异全在 $c$ 的指数上：Ring 每卡发送量饱和到常数 $4bsh$，Ulysses 随 $1/c$ **下降**。代价藏在消息粒度里：all-to-all 的单对消息是 $\Theta(bsh / c^{2})$， $c$ 翻倍单消息缩四倍，很快跌进延迟主导的区间（4.1 式 (3) 的 $\alpha$ 项）；而且 $c$ 不能超过 head 数 $a$——head 是换维的原子，GQA 下 KV 侧收紧到 $a_{kv}$（同 5.1 §8 的复制问题）。Ring 没有 head 约束：单步消息 $\Theta(bsh / c)$ 只随 $1/c$ 缩，块内计算 $\Theta((s/c)^{2})$ 保证长 $s$ 下始终压得住传输。所以两者的边界互补：Ulysses 适合 head 多、序列中长的 regime（消息还没缩到延迟地板，度数不必超过 head 数）；Ring 服务超长上下文—— $c$ 可以开大到序列本身的极限，KV cache 形态与 head 结构都不挡路。沿用上面那组合成几何：Ulysses 每卡每层前向约 500 MB，约为 Ring 的 1/8。

@@ -98,7 +98,7 @@ release 内引擎走读（file:line，2026-11-23 fresh tarball 核实）。统�
 
 Prefill LB 均衡什么、为什么用 pull 不用 dispatch？先声明 release 边界：三 DP LB（prefill/decode/VE）与 Entrypoint CHECK、kvcache-store 编排**不在 repo**（全 repo grep 无 compute_quota / quadratic 代码，研究笔记语义纠正 7）——本节只讲 doc 披露架构，不推测代码。
 
-架构四件（doc L137-143，官方披露，2026-11-23 核实）。其一，分档（L137）：请求按总上下文长分 4 档 <16K / 16–64K / 64–256K / ≥256K；每档引擎数按上轮 compute-quota 需求份额动态重分，各档独立 per-batch quota cap。分档让同档序列的已算前缀长 $c$ 接近，§4.3 的 all-reduce MIN 保守性损失变小（4.3 §4 已述）。其二，跨 DP 组 pull（L139）：引擎按剩余 compute quota 拉工作；任何引擎可命中任何前缀（专用存储集群，2.2 / 2.4），所以**无 prefix-affinity 路由**——这是 pull 可行的前提（若有亲和，请求只能去持前缀的引擎，pull 退化为亲和路由）。其三，DP 组内（L141）：请求到当前 quota load 最低的 rank。其四，单 GPU（L143）：FIFO 出队，chunk size 不固定而从预算解出。
+架构四件（doc L137-143，官方披露，2026-11-23 核实）。其一，分档（L137）：请求按总上下文长分 4 档 <16K / 16–64K / 64–256K / ≥256K；每档引擎数按上轮 compute-quota 需求份额动态重分，各档独立 per-batch quota cap。分档让同档序列的已算前缀长 $c$ 接近，章 4.3 的 all-reduce MIN 保守性损失变小（4.3 §4 已述）。其二，跨 DP 组 pull（L139）：引擎按剩余 compute quota 拉工作；任何引擎可命中任何前缀（专用存储集群，2.2 / 2.4），所以**无 prefix-affinity 路由**——这是 pull 可行的前提（若有亲和，请求只能去持前缀的引擎，pull 退化为亲和路由）。其三，DP 组内（L141）：请求到当前 quota load 最低的 rank。其四，单 GPU（L143）：FIFO 出队，chunk size 不固定而从预算解出。
 
 compute-quota 求解 recap（4.3 §4 式 (7)(8)，不重推）：每 prefill 步给时间预算 `compute_quota_limit`（ns），拟合二次成本模型 $\mathrm{cost}(q, c)$（ $q$ = chunk token 数、 $c$ = 已算前缀长，沿 doc 原记号、与 CP 度 $c$ 区分），解二次取最大 $q$ 不超 32,768-token 预算且恰耗尽剩余时间，预算再经 DP 组 all-reduce MIN 缩减。4.3 已给二次形来源（参数 GEMM 线性 + 前缀 attention 双线性 + 自 attention 二次）与正根求解，本章只登记生产口径。
 

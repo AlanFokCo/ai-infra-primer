@@ -26,6 +26,8 @@ grep -qE "\[(A|B|C|W)\]|教学参照" "$f" || { echo "FAIL: 无证据等级标�
 # 6. \$\$ 定界符配平
 n=$(grep -o '\$\$' "$f" | wc -l | tr -d ' '); [ $((n % 2)) -eq 0 ] || { echo "FAIL: \$\$ 不配平"; fail=1; }
 # 7. GitHub 渲染陷阱（STYLE_GUIDE §3，2026-11-13 实测确认）：剥掉代码围栏与受保护的 $`...`$ 形式再查
+#    注意：本检查剥掉 display 块，仅覆盖行内/正文；display 块内反转义陷阱（\, \! \; \: \{ \} \| \% \#）
+#    由 check 8 的 lint-math-boundary.py rescape 规则覆盖（W5 advisory，2026-11-24 补）。
 tmp=$(awk '/^```/{x=!x;next} !x' "$f" | awk '/^[[:space:]]*\$\$[[:space:]]*$/{d=!d;next} !d' | sed -e 's/\$\$[^$]*\$\$//g' -e 's/\$`[^`]*`\$//g')
 for pat in '\{' '\}' '\,' '\;' '\!' '\%' '\#'; do
   echo "$tmp" | grep -nF "$pat" >/dev/null && { echo "FAIL: 含反转义陷阱写法 ${pat} （§3 映射表替代）"; fail=1; }
