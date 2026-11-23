@@ -241,7 +241,7 @@ $$
 
 $B$ 小时权重项主导分母， $I \approx B$ ——这是 1.2 §10「拼命凑 batch」结论的适用区。 $B$ 大到 cache 项主导后，强度饱和于 $(2N + 4Ltd) / (2 L H_{kv} d_{\mathrm{head}} t b)$ ；8B 满窗时这个上界约 $8.4 \times 10^{10} / 1.72 \times 10^{10} \approx 4.9$ 。长上下文 regime 里，batch 对强度的提升被 cache 读取封顶，「只要 cache 放得下就凑 batch」的有效区间在短中端。inference 4.1 / 2.3 把 continuous batching 与 cache 压缩放在一起优化，账面原因就在式 (12) 的分母结构。
 
-两阶段瓶颈不同，调度与定价因此分离（prefill 按算力计价、decode 按带宽与显存驻留计价），系统展开属 inference 1.2 / 1.3；roofline 的逐卡 datasheet 参数表归 inference 1.3，微架构来源与测量方法归 gpu 维度。本章交付的是式 (10)–(12) 加上「decode 每步必须读全量 cache」这一机制事实——那两个维度全部讨论的入口。
+两阶段瓶颈不同，调度与定价因此分离（prefill 按算力计价、decode 按带宽与显存驻留计价），系统展开属 inference 1.2 / 1.3 / 8.2；roofline 的逐卡 datasheet 参数表归 inference 1.3，微架构来源与测量方法归 gpu 维度。本章交付的是式 (10)–(12) 加上「decode 每步必须读全量 cache」这一机制事实——那两个维度全部讨论的入口。
 
 ## 7. teacher forcing 与 causality：无泄漏论证
 

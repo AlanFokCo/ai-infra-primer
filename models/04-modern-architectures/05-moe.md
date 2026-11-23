@@ -324,7 +324,7 @@ MoE 的稀疏激活把 dense 层换成一个跨设备分发问题。expert 分�
 
 通信账（每 token 每 MoE 层，bf16，按逐 expert 发送的上界口径）： $2 \cdot k \cdot d \cdot b = 2 \times 8 \times 7168 \times 2 \approx 229$ KB（V3 口径），乘 58 个 MoE 层。node-limited routing（§3.2，每 token $\le 4$ 个目标节点）把 all-to-all 的扇出从「全设备」压成有界子集——路由规则直接为通信服务。负载不均的系统化身是热点卡（straggler）： $f_i$ 不均不只是统计问题，还是尾延迟问题，这是均衡回路的第二层动机。
 
-进一步主题分层归属——训练侧（DualPipe 等计算-通信重叠调度、EP 与 TP 的切分权衡、all-to-all 通信账细化）归 training 维度 5.3 / 5.4；硬件与网络侧（all-to-all 的带宽与拓扑）归 cluster 维度，EPLB 的 serving 侧部署与算法归 inference 7.4（8.1 recap 待 W5）；本章交付的接口量是路由数学（式 (1)–(18)）加两个数：每 token 每 MoE 层 $2kd$ 个元素（bf16 合 $4kd$ 字节）的通信上界、 $\le M$ 节点的扇出上界。
+进一步主题分层归属——训练侧（DualPipe 等计算-通信重叠调度、EP 与 TP 的切分权衡、all-to-all 通信账细化）归 training 维度 5.3 / 5.4；硬件与网络侧（all-to-all 的带宽与拓扑）归 cluster 维度，EPLB 的 serving 侧部署与算法归 inference 7.4（8.1 §4 recap）；本章交付的接口量是路由数学（式 (1)–(18)）加两个数：每 token 每 MoE 层 $2kd$ 个元素（bf16 合 $4kd$ 字节）的通信上界、 $\le M$ 节点的扇出上界。
 
 ## 总结
 
@@ -342,7 +342,7 @@ MoE 的稀疏激活把 dense 层换成一个跨设备分发问题。expert 分�
 | router 病理 | 塌缩 / 死 expert / 振荡 | 诊断： $\max f_i$、熵、死 expert 占比、 $f_i$ 负自相关；练习 3 |
 | MTP | 式 (19)–(21) [A] | 链式模块、共享 Emb/OutHead；训练加密监督；推理 self-speculative： $\alpha = 1 - D_{\mathrm{TV}}$ 式 (22)、 $\mathbb{E} = (1-\alpha^{\gamma+1})/(1-\alpha)$ 式 (23)；V3 接受率 85–90%、约 1.8× TPS |
 | Medusa 对照 | 式 (24) [A] | 并行头、无链；树状验证 |
-| EP 接口 | 每 token 每层 $2kd\thinspace b$ bytes；扇出 $\le M$ | 通信账与切分权衡归 training 5.4；拓扑归 cluster 维度，EPLB serving 侧实现归 inference 7.4（8.1 recap 待 W5） |
+| EP 接口 | 每 token 每层 $2kd\thinspace b$ bytes；扇出 $\le M$ | 通信账与切分权衡归 training 5.4；拓扑归 cluster 维度，EPLB serving 侧实现归 inference 7.4（8.1 §4 recap） |
 
 ## 练习
 

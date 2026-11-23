@@ -191,11 +191,11 @@ models / training 写于 inference 存在之前，交叉指针现泛指向本维
 
 | 章节 | 文件 | 状态 |
 | --- | --- | --- |
-| 8.1 Serving 侧并行策略与账 | 01-serving-parallelism.md | 未开始 |
-| 8.2 PD 分离原理 | 02-pd-disaggregation.md | 未开始 |
-| 8.3 KV 传输与互联 | 03-kv-transfer.md | 未开始 |
-| 8.4 PD 分离系统实现对照 | 04-pd-systems.md | 未开始 |
-| 8.5 弹性伸缩与容错 | 05-elasticity-and-fault-tolerance.md | 未开始 |
+| 8.1 Serving 侧并行策略与账 | 01-serving-parallelism.md | 已关闭 |
+| 8.2 PD 分离原理 | 02-pd-disaggregation.md | 已关闭 |
+| 8.3 KV 传输与互联 | 03-kv-transfer.md | 已关闭 |
+| 8.4 PD 分离系统实现对照 | 04-pd-systems.md | 已关闭 |
+| 8.5 弹性伸缩与容错 | 05-elasticity-and-fault-tolerance.md | 已关闭 |
 
 ### Part 9 · 生产全流程（W6）
 
@@ -217,6 +217,7 @@ models / training 写于 inference 存在之前，交叉指针现泛指向本维
 | W2 | 2026-11-23 | P3+P4 9 章（3.1–3.4 / 4.1–4.5） | 逐批审查 ×2（P3/P4）+ 修复轮 ×1（6 writers）+ 复审 ×1（fix-review） | 0 | 13 | 21 | 无 | **放行**。档案 [inference-w2-review-p3](../docs/reviews/inference-w2-review-p3.md)（S2=9/S3=14）/ [p4](../docs/reviews/inference-w2-review-p4.md)（S2=4/S3=7）/ [fix-review](../docs/reviews/inference-w2-fix-review.md)（13 S2 全 ADDRESSED + 21 S3 全修，无新 S1/S2）；强制重推导 3.1/3.2/3.3/4.2/4.3/4.4 全 PASS；24 场景图 QUALITY 五维 ≥4；refs 被引回写（parse 9 组 / 79 条）；站点断言 {17,4} QA 全绿。W1 残留 2.2 PCIe 口径注 + 2.1 参考补 v41-flash-config 已闭环；fix-review 残留 3 处 S3 外观项（3.1 英中空格 ×2 / 4.4 γ 表 γ=8 格 2.41→2.40 / 3.2 总结表 AWQ 行图 2 口径标）收官顺手清；4.5 EAGLE README 措辞 reconciling 注（可选）留 W3 |
 | W3 | 2026-11-23 | P5+P6 7 章（5.1–5.4 / 6.1–6.3） | 逐批审查 ×2（P5/P6）+ 修复轮 ×1（4 writers）+ 复审 ×1（fix-review，fresh-context） | 0 | 14 | 18 | 无 | **放行**。档案 [inference-w3-review-p5](../docs/reviews/inference-w3-review-p5.md)（S2=11/S3=13）/ [p6](../docs/reviews/inference-w3-review-p6.md)（S2=3/S3=5+ERR-1）/ [fix-review](../docs/reviews/inference-w3-fix-review.md)（14 S2 全 ADDRESSED、18 S3 全修，无新 S1/S2）；强制重推导 6.2 bubble 消除账 + FutureMap resolve 正确性 PASS（pacing 保持步修复后独立重推）；23 场景图 QUALITY 五维 ≥4（part05=14 / part06=9）；refs 被引回写（8 条目按实际引用更新，parse 9 组 / 81 条）；站点断言 {24,6} QA 全绿。收官清 fix-review 残留 3 处 S3 recap-sync（5.4 ASCII / 总结 MTP 薄壳措辞、5.3 总结 kv_hints 消费链顺序）+ 2 条 errata（3.4 编译指针 6.2→6.3、1.4 sampling 新路径），4 章 re-lint OK；W2 carryover errata（11 处指针收窄 + 4.5 EAGLE 注）随本波 commit |
 | W4 | 2026-11-23 | P7 4 章（7.1–7.4）+ 跨波 MLA errata 7 章（1.2 / 2.1 / 2.3 / 2.4 / 3.1 / 5.2 / 5.3） | P7 审查 ×1 + 修复轮 ×1（3 writers + 跨波 errata）+ 复审 ×1（fix-review，fresh-context）+ 5.2 残留 fix | 1（跨波 X-1） | 4 | 12 | 无 | **放行**。档案 [inference-w4-review-p7](../docs/reviews/inference-w4-review-p7.md)（S1=1 跨波 X-1 / S2=4 / S3=12）/ [fix-review](../docs/reviews/inference-w4-fix-review.md)（X-1 ADDRESSED、4 S2 全 ADDRESSED、12 S3 全修或按裁定留 closeout、5.2 残留裁定 fix-to-V4.1 已执行）；强制重推导 7.2 DSpark 期望吞吐 / SWA 恒定成本 / hit policy PASS；16 P7 场景图 QUALITY 五维 ≥4；X-1 跨波数值 errata：V4.1-Flash MLA 几何 576→512 元素（kv_lora_rank 448 + rope 64）纠正 7 章、V3 行不动（四方 config 证据，详见下方专段）；refs 被引回写（9 条目按实际引用更新，parse 9 组 / 82 条）；S3-11 三指针 errata（training 5.4 / models 4.5 EPLB 归属重判 → 7.4，8.1 recap 待 W5）+ W3 carryover errata 闭环（training 8.5 两处指针收窄）；站点断言 {28,7} QA 全绿（build:content inference 28 章 / 7 Part / 82 refs + models 51 / training 39 回归；153 页 / 4797 站内引用 / pagefind 118 页 98566 词 / qa-shots 27 样页 × 桌面移动全过含 W4 3 新样页；og.png 复原）。无大纲偏差。残留：fix-review 非阻塞观察 2 项（7.2 总结 / 练习 3(c) bit-exact 简写可选补「与存储态」限定、7.2 L264 口径注 errata 后读作历史记录）留后续 |
+| W5 | 2026-11-23/24 | P8 5 章（8.1–8.5） | P8 审查 ×1 + 修复轮 ×1（4 writers）+ 复审 ×1（fix-review，fresh-context） | 0 | 6 | 9 | 无 | **放行**。档案 [inference-w5-review-p8](../docs/reviews/inference-w5-review-p8.md)（S1=0/S2=6/S3=9）/ [fix-review](../docs/reviews/inference-w5-fix-review.md)（6/6 S2 全 ADDRESSED、S3 章侧 7/7 修复确认、refs/notes 侧 3 项 closeout 闭环、反转义 5 章 ×9 禁用形全 0、python 53/53 断言 PASS、无新破坏）；强制重推导 8.1 TP 2× 延迟账 / DP attention 通信账 + 8.2 DistServe goodput 调和分解 / xPyD 配比 / 传输 vs 重算 BW* 带宽阈值全 PASS（命题 4 故障吸收不等式方向独立重推 PASS，下界 f_max=1−u ≥ 1−u_max）；19 P8 场景图 QUALITY 五维 ≥4（part08=19；fig-check 收官复跑 19 全渲染、19 data-fig 锚对 census 4/4/5/2/4）；refs 被引回写（12 条目 18 对按章内实际引用更新，S3-7 flagged 全覆盖，forward+reverse 机械交叉核 clean；parse 9 组 / 83 条）+ nixl 插件计数 19→18 收窄（S3-8，evaluator tarball cb66ce83 裁定）+ bounce「均」→「平均」（S2-4，refs tensorrt-llm / research notes / 8.4 总结练习压缩表述补齐）；W5 指针 errata 6 处（models 1.2 §10 / models 2.4 §6 +8.2、models 4.5 §7 + 总结表 / training 5.4 §4 EPLB「8.1 recap 待 W5」→「8.1 §4 recap」、models 2.8 §4 TP 系统展开归属重判 → training 5.1 / inference 8.1，盘点表 W5 裁定行），5 章 re-lint OK；站点断言 {33,8} QA 全绿（build:content inference 33 章 / 8 Part / 83 refs + models 51 / training 39 回归；159 页 / 4973 站内引用 / pagefind 123 页 101251 词 / qa-shots 30 样页 × 桌面移动全过含 W5 3 新样页 8.2/8.3/8.5；og.png 复原）。无大纲偏差。残留：lint display 反转义漏检 advisory（lint-math-boundary.py 剥 display 后扫描不覆盖 `\,`/`\!` 陷阱，本轮 raw 扫描补偿）留 W7；W4 carryover 2 处指针收窄未执行（models 4.1 §4.4 吸收形 → 7.3 部分、models 4.5 §6.2 DSpark → 7.2 部分，目标非 W5 章）留 W6 |
 
 **跨维度指针 errata 记录**（spec §2 条款授权，仅限指针句的最小修订；errata 编辑不跑 rewrite-gate）：
 
@@ -260,6 +261,12 @@ models / training 写于 inference 存在之前，交叉指针现泛指向本维
 | 2026-11-23 | training 5.4 §4（L79） | 「EPLB 一类的系统实现归 cluster 维度」→「EPLB 的 serving 侧部署与算法归 inference 7.4（8.1 recap 待 W5），硬件 / 网络拓扑归 cluster 维度」（重判，spec §2 裁定 (2)；7.4 §3/§4 已交付 EPLB 两套算法走读与 moe_lb 账，8.1 待 W5——W4 S3-11） |
 | 2026-11-23 | models 4.5 §7（L327） | 「硬件与网络侧（all-to-all 的带宽与拓扑、EPLB 的系统实现）归 cluster 维度」→「硬件与网络侧（all-to-all 的带宽与拓扑）归 cluster 维度，EPLB 的 serving 侧部署与算法归 inference 7.4（8.1 recap 待 W5）」（重判，spec §2 裁定 (2)；all-to-all 带宽/拓扑仍归 cluster——W4 S3-11） |
 | 2026-11-23 | models 4.5 总结表 EP 行（L345） | 「拓扑与 EPLB 实现归 cluster 维度」→「拓扑归 cluster 维度，EPLB serving 侧实现归 inference 7.4（8.1 recap 待 W5）」（重判，同上——W4 S3-11） |
+| 2026-11-23 | models 1.2 §10（L247） | 「（系统展开属 inference 1.1 / 1.2 / 4.3）」→「（系统展开属 inference 1.1 / 1.2 / 4.3 / 8.2）」（W1/W2 部分收窄续：prefill/decode 分开调度分开定价 → 8.2 PD 分离原理；9.1 成本账待 W6） |
+| 2026-11-23 | models 2.4 §6（L244） | 「系统展开属 inference 1.2 / 1.3」→「系统展开属 inference 1.2 / 1.3 / 8.2」（W1 部分收窄续：两阶段瓶颈 → 调度与定价分离 → 8.2；roofline 参数表重判句不动） |
+| 2026-11-23 | models 4.5 §7（L327） | 「inference 7.4（8.1 recap 待 W5）」→「inference 7.4（8.1 §4 recap）」（W4 S3-11 收窄续：8.1 §4 已交付 EPLB 冗余副本 + 统计窗 + 重分配与 moe_lb 残差偏斜 recap） |
+| 2026-11-23 | models 4.5 总结表 EP 行（L345） | 「inference 7.4（8.1 recap 待 W5）」→「inference 7.4（8.1 §4 recap）」（同上） |
+| 2026-11-23 | training 5.4 §4（L79） | 「inference 7.4（8.1 recap 待 W5）」→「inference 7.4（8.1 §4 recap）」（同上） |
+| 2026-11-23 | models 2.8 §4 提点（L367） | 「其系统展开属 cluster 维度」→「其系统展开训练侧归 training 5.1、serving 侧归 inference 8.1，硬件互联归 cluster 维度」（重判，spec §2 三层划分同型句：TP serving 侧延迟账 8.1 §2 已交付、训练侧通信账 training 5.1、硬件互联仍归 cluster——盘点表 W5 裁定行，「每层 all-reduce 次数」账面量句不动） |
 
 （W0 只盘点、无编辑；W1 起随章号生效的每次最小修订逐条记入上表。）
 

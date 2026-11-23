@@ -41,6 +41,10 @@ const PAGES = [
   ['inf-ch-deepinfer-arch', '/inference/07-deepinfer-and-deepseek/01-deepinfer-architecture/'], // 架构走读（7.1，release 边界签名图 / config 字段表）
   ['inf-ch-dspark-swa', '/inference/07-deepinfer-and-deepseek/02-dspark-and-swa-replay/'], // 推导重章（7.2【重】，DSpark 期望吞吐 / SWA 恒定成本 / hit policy 命题）
   ['inf-ch-large-ep', '/inference/07-deepinfer-and-deepseek/04-deepseek-large-scale-ep/'], // 表格/图密（7.4，Wide-EP 账 / EPLB 两套算法对照 / 三 LB）
+  // inference W5 样章（P8 分布式推理与 PD 分离落地代表章：公式密 / 表格图密 / 推导重章各一）
+  ['inf-ch-pd-disagg', '/inference/08-distributed-and-pd/02-pd-disaggregation/'], // 公式密（8.2【重】，goodput 调和分解 / xPyD 配比 / BW* 带宽阈值）
+  ['inf-ch-kv-transfer', '/inference/08-distributed-and-pd/03-kv-transfer/'], // 表格/图密（8.3，NIXL descriptor 三型 / bounce buffer / egress-ingress 带宽账）
+  ['inf-ch-elasticity', '/inference/08-distributed-and-pd/05-elasticity-and-fault-tolerance/'], // 推导重章（8.5，迁移 downtime 账 / 命题 4 故障吸收下界 / EP failover）
 ];
 
 const VIEWPORTS = [
