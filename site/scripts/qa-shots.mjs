@@ -29,6 +29,10 @@ const PAGES = [
   ['inf-ch-prefill-decode', '/inference/01-principles-and-accounting/02-prefill-decode-accounting/'], // 公式密（1.2【重】）
   ['inf-ch-paged-attention', '/inference/02-kv-cache-systems/01-paged-attention/'], // 表格/图密（2.1【重】，块表场景图）
   ['inf-ch-kv-offload', '/inference/02-kv-cache-systems/04-kv-offload-and-tiering/'], // 推导重章（2.4【重】，分层命中成本账）
+  // inference W2 样章（P3/P4 落地代表章：公式密 / 表格图密 / 推导重章各一）
+  ['inf-ch-weight-quant', '/inference/03-inference-operators/02-weight-quantization/'], // 公式密（3.2【重】，量化格点 / GPTQ 补偿 / AWQ 等价）
+  ['inf-ch-gemm-moe', '/inference/03-inference-operators/03-quantized-gemm-and-moe-kernels/'], // 表格/图密（3.3，W4A16 mainloop / MoE dispatch 场景图）
+  ['inf-ch-speculative', '/inference/04-scheduling-and-batching/04-speculative-decoding/'], // 推导重章（4.4【重】，分布保持 / 加速比定理 / tree verify）
 ];
 
 const VIEWPORTS = [

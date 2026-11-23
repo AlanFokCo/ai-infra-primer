@@ -292,4 +292,5 @@ $$
 - [Kwon et al., 2023](../references.md)：Efficient Memory Management for Large Language Model Serving with PagedAttention，arXiv:2309.06180，[A]（key: vllm）——碎片上界 §4.3、块表 §4.2、COW §4.4、调度与抢占 §4.5、block size 实验 §7.2、recompute / swap §7.3
 - [vLLM repo](../references.md)：vllm-project/vllm，[A]（key: vllm-repo）——机制片段 `v1/core/{block_pool,kv_cache_manager,kv_cache_coordinator,single_type_kv_cache_manager}.py`、`config/cache.py` L185、`config/scheduler.py` L232、`v1/engine/parallel_sampling.py`、`platforms/interface.py` L711、`v1/attention/backends/mla/{sparse_swa,cpu_mla}.py`（均 2026-11-23 main 核实）
 - [NVIDIA datasheet](../references.md)：H100 SXM 官方 datasheet，[C]（key: nvidia-datasheet，官方规格披露、开放产品页）——80 GB HBM3、3.35 TB/s（拷贝成本例）
+- [DeepSeek-AI, V4.1-Flash config](../references.md)：config.json（key: v41-flash-config，[W]，hf-mirror 传输核实）——sliding_window 128、MLA 几何 512 + 64（§6 混合 KV 几何）
 - 跨维度指引（纯文字）：models 2.4 式 (9)（KV 容量）与 §4 前缀不可变命题；models 4.1（MLA 低秩）；models 4.2（SWA 模型侧）；inference 1.2（ $\kappa$ 几何表）、1.3（datasheet 参数表）、2.2（块 hash 链）、3.1（paged kernel 算法）、4.2（recompute vs swap 成本账）、5.2（四文件模块全量走读）

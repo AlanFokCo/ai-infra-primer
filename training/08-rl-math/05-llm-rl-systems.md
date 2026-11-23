@@ -43,13 +43,13 @@ $$
 \mathrm{Mem}_{\mathrm{PPO}} = \underbrace{16 N_a}_{\text{actor 训练}} + \underbrace{16 N_c}_{\text{critic 训练}} + \underbrace{2 N_a}_{\text{ref}} + \underbrace{2 N_r}_{\text{reward}} + \underbrace{2 N_a}_{\text{rollout 副本}} + \mathrm{KV} \qquad (1)
 $$
 
-**符号**： $N_a$：actor 参数量； $N_c$：critic 参数量； $N_r$：reward 模型参数量； $\mathrm{KV}$：rollout 引擎的 KV cache（随并发序列数与长度线性涨，归 inference 维度的账）。四模型同尺寸 $N$ 时式 (1) 简化为 $38N + \mathrm{KV}$ 。代入数字：全 7B 配置下 $N = 7 \times 10^{9}$ ，模型状态合计 $38 \times 7 = 266$ GB。单卡 80 GB 连一个训练态 actor（ $16 \times 7 = 112$ GB）都装不下，所以切分不是优化选项，而是前提。全 70B 时总量 $2.66$ TB，对照 HybridFlow 论文测试床的 128 × 80 GB（约 10 TB 总量）放得下了，但每张卡放谁、何时用谁，仍是放置问题（§3）。
+**符号**： $N_a$：actor 参数量； $N_c$：critic 参数量； $N_r$：reward 模型参数量； $\mathrm{KV}$：rollout 引擎的 KV cache（随并发序列数与长度线性涨，归 inference 2.1 的账）。四模型同尺寸 $N$ 时式 (1) 简化为 $38N + \mathrm{KV}$ 。代入数字：全 7B 配置下 $N = 7 \times 10^{9}$ ，模型状态合计 $38 \times 7 = 266$ GB。单卡 80 GB 连一个训练态 actor（ $16 \times 7 = 112$ GB）都装不下，所以切分不是优化选项，而是前提。全 70B 时总量 $2.66$ TB，对照 HybridFlow 论文测试床的 128 × 80 GB（约 10 TB 总量）放得下了，但每张卡放谁、何时用谁，仍是放置问题（§3）。
 
 两条标准的省显存手段都能直接改式 (1) 的系数。第一条，训练态两个模型上 ZeRO-1（4.2）：优化器状态除以 $d$ ，每模型从 $16N$ 降到 $4N + 12N/d$ ； $d = 64$ 时 actor 一侧从 $16N_a$ 降到约 $4.2 N_a$ 。第二条，GRPO（8.4）去掉 critic：式 (1) 直接减 $16 N_c$ ；RLVR 场景再把 reward 换成规则验证器（9.5 的口径），又减 $2 N_r$ ——全部同尺寸时从 $38N$ 降到 $20N$ ，省 47%。代价不在显存，在 rollout：GRPO 每个 prompt 采 $G$ 条，生成 token 数与 KV cache 同步乘 $G$ ，式 (1) 省下的预算被搬到 $\mathrm{KV}$ 项与 ① 的时长里。这就是 8.4 组基线「免 critic」在系统侧的价格。
 
 ## 3. rollout / train 引擎拆分
 
-① 为什么不直接复用训练引擎做采样。先看负载形态：自回归解码逐 token 串行，每一步都要把全量权重读一遍，是典型的 memory-bandwidth-bound 负载。推理引擎（vLLM）的 PagedAttention、连续批处理、KV cache 分页管理，正是为这种负载做的——内部机制归 inference 维度，本章只登记接口事实。训练引擎（Megatron 归 6.x、FSDP 归 4.3）的 TP/PP 切分是为训练吞吐优化的，层间通信模式与 decode 完全不匹配。§1 那个 80% 的 profile 已经说明生成阶段是主瓶颈：引擎选错，整轮都被拖慢。
+① 为什么不直接复用训练引擎做采样。先看负载形态：自回归解码逐 token 串行，每一步都要把全量权重读一遍，是典型的 memory-bandwidth-bound 负载。推理引擎（vLLM）的 PagedAttention、连续批处理、KV cache 分页管理，正是为这种负载做的——内部机制归 inference 维度（PagedAttention 与分页管理见 inference 2.1），本章只登记接口事实。训练引擎（Megatron 归 6.x、FSDP 归 4.3）的 TP/PP 切分是为训练吞吐优化的，层间通信模式与 decode 完全不匹配。§1 那个 80% 的 profile 已经说明生成阶段是主瓶颈：引擎选错，整轮都被拖慢。
 
 ② 拆分后的形态（本章核心图）：
 

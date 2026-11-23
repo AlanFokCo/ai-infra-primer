@@ -196,7 +196,7 @@ $$
 - **$d_{\mathrm{head}}$**：head 维，本章锚点家族一律 128；
 - **$T$**：当前序列长。**cache 随生成线性增长**，每步的增量是定长的 $2 L H_{kv} d_{\mathrm{head}} b$ 字节——这是与训练侧 $T^{2}$ scores 内存（2.3 §7）的本质区别：推理从不物化 $T \times T$ 的 score 矩阵，只存随 $T$ 线性的 K/V；
 - **$B$**：batch 内序列数。逐序列内容不同，cache 不可共享；
-- **$b$**：每元素字节数，bf16/fp16 = 2。cache 量化（int8 / fp8 等）直接把 $b$ 砍半再砍半，属 inference 维度。
+- **$b$**：每元素字节数，bf16/fp16 = 2。cache 量化（int8 / fp8 等）直接把 $b$ 砍半再砍半，属 inference 2.3。
 
 **实例账**（bf16、 $B$ = 1、 $T$ 取各模型窗口上限；与 1.2 §8 同口径）：
 
@@ -209,11 +209,11 @@ $$
 
 （[Llama-3.1-8B config](../references.md)、[Llama-3.1-70B config](../references.md)、[OLMo-2-7B config](../references.md)，均 [A]。）全是 2 的幂次的账：8B 一行为 $2 \times 2^{5} \times 2^{3} \times 2^{7} \times 2^{17} \times 2 = 2^{34}$ bytes = 16 GiB。反事实行直接读出 GQA 的收益：同一台 8B 机器若用 MHA，cache 从 16 GiB 涨到 64 GiB——4:1 的 head 分组在 cache 上是精确的 4 倍削减（对照：QKV 投影参数只减 2 倍，不对称性的账见 1.2 练习 1；GQA 机制本身在 4.1）。MQA 再推到底： $H_{kv}$ = 1 时 8B 形态只剩 2 GiB。
 
-读这张表的方式：**cache 与权重是并列的两大显存项**。8B 权重 bf16 约 16 GB（1.2 式 (7)），满窗单序列 cache 16 GiB——一条长上下文请求的 cache 与整个模型的权重同量级。 $B$ 条并发序列把 cache 乘 $B$ 而权重不变： $B$ = 32 时 8B 满窗 cache 达 512 GiB，权重仍是 16 GB——长上下文服务的显存大头是 cache 而不是参数。这就是一批后续工作全部围绕式 (9) 做文章的账面根源：4.1 的 KV 压缩（GQA / MLA 把 $H_{kv} d_{\mathrm{head}}$ 压成低秩）、4.2 的稀疏 attention（DSA 只读选中的 cache 块）、inference 维度的系统手段（paging、offload、量化）。MLA 与 DSA 的特例账分别在 4.1 / 4.2 展开，DeepSeek 全系案例在 5.2。
+读这张表的方式：**cache 与权重是并列的两大显存项**。8B 权重 bf16 约 16 GB（1.2 式 (7)），满窗单序列 cache 16 GiB——一条长上下文请求的 cache 与整个模型的权重同量级。 $B$ 条并发序列把 cache 乘 $B$ 而权重不变： $B$ = 32 时 8B 满窗 cache 达 512 GiB，权重仍是 16 GB——长上下文服务的显存大头是 cache 而不是参数。这就是一批后续工作全部围绕式 (9) 做文章的账面根源：4.1 的 KV 压缩（GQA / MLA 把 $H_{kv} d_{\mathrm{head}}$ 压成低秩）、4.2 的稀疏 attention（DSA 只读选中的 cache 块）、inference 2.1 / 2.4 / 2.3 的系统手段（paging、offload、量化）。MLA 与 DSA 的特例账分别在 4.1 / 4.2 展开，DeepSeek 全系案例在 5.2。
 
 ## 6. prefill vs decode：算术强度分野与 roofline 入口
 
-两个阶段，谁受算力限制、谁受带宽限制？1.2 §10 已把「每 token 前向 $2N$ FLOPs、权重读一遍 $2N$ bytes」放在一起；本节把它接到 prefill / decode 两阶段上，并补上 cache 项。算术强度（arithmetic intensity） $I$ = FLOPs ÷ 访存字节数。屋顶线模型（roofline model）给出的吞吐上限 = $\min($ 峰值算力 $,\ I \times$ 带宽 $)$ ，分界线（ridge point）= 峰值算力 ÷ 带宽；现代加速器的取值在 $10^{2}$ FLOP/byte 量级（逐卡数字与测量方法归 gpu 维度）。
+两个阶段，谁受算力限制、谁受带宽限制？1.2 §10 已把「每 token 前向 $2N$ FLOPs、权重读一遍 $2N$ bytes」放在一起；本节把它接到 prefill / decode 两阶段上，并补上 cache 项。算术强度（arithmetic intensity） $I$ = FLOPs ÷ 访存字节数。屋顶线模型（roofline model）给出的吞吐上限 = $\min($ 峰值算力 $,\ I \times$ 带宽 $)$ ，分界线（ridge point）= 峰值算力 ÷ 带宽；现代加速器的取值在 $10^{2}$ FLOP/byte 量级（逐卡 datasheet 参数表见 inference 1.3，微架构来源与测量方法归 gpu 维度）。
 
 **prefill**： $T_p$ 个 token 一次前向，FLOPs = $2NT_p + 2LT_p^{2}d$ ；权重只从显存读一遍（ $2N$ bytes），激活读写随 $T_p$ 线性、在长 prompt 下被 matmul 摊销：
 
@@ -241,7 +241,7 @@ $$
 
 $B$ 小时权重项主导分母， $I \approx B$ ——这是 1.2 §10「拼命凑 batch」结论的适用区。 $B$ 大到 cache 项主导后，强度饱和于 $(2N + 4Ltd) / (2 L H_{kv} d_{\mathrm{head}} t b)$ ；8B 满窗时这个上界约 $8.4 \times 10^{10} / 1.72 \times 10^{10} \approx 4.9$ 。长上下文 regime 里，batch 对强度的提升被 cache 读取封顶，「只要 cache 放得下就凑 batch」的有效区间在短中端。inference 维度把 continuous batching 与 cache 压缩放在一起优化，账面原因就在式 (12) 的分母结构。
 
-两阶段瓶颈不同，调度与定价因此分离（prefill 按算力计价、decode 按带宽与显存驻留计价），系统展开属 inference 维度；roofline 的逐卡参数属 gpu 维度。本章交付的是式 (10)–(12) 加上「decode 每步必须读全量 cache」这一机制事实——那两个维度全部讨论的入口。
+两阶段瓶颈不同，调度与定价因此分离（prefill 按算力计价、decode 按带宽与显存驻留计价），系统展开属 inference 1.2 / 1.3；roofline 的逐卡 datasheet 参数表归 inference 1.3，微架构来源与测量方法归 gpu 维度。本章交付的是式 (10)–(12) 加上「decode 每步必须读全量 cache」这一机制事实——那两个维度全部讨论的入口。
 
 ## 7. teacher forcing 与 causality：无泄漏论证
 
@@ -253,7 +253,7 @@ $B$ 小时权重项主导分母， $I \approx B$ ——这是 1.2 §10「拼命�
 
 两条边界注记。其一，「精确为 0」依赖 mask 的位置与形式：加性 $-\infty$（或哨兵经 max 减法后下溢）在 softmax 之前给精确 0；若某实现把 mask 乘在 softmax 之后、或用有限小负数导致权重非零，泄漏结论要重查。2.3 §8 的教学代码与官方 eager 路径（`eager_attention_forward`）都是 softmax 前加性，与本节一致。其二，无泄漏不等于无训练-推理落差：1.1 §4 登记的暴露偏差（exposure bias）是条件来源不同（真实前缀 vs 模型自采前缀）的分布失配，与信息泄漏是两个问题。前者是训练动力学议题，归 training 维度；本节保证的是架构层面「该看不见的确实看不见」。
 
-至此式 (4) 结完三笔账： $V(i) \subseteq \lbrace1, \ldots, i\rbrace$ 同时是无泄漏的条件（训练侧）、可生成的条件（推理侧，§2）、可缓存的条件（§4.2 归纳的支点）。causality 一个性质，三处结账。后续章节的分工也按此划开：4.1 压缩的是 §5 的字节账；4.3 的线性 attention 放弃显式 cache，把前缀压回固定维状态（即 2.1 §6 的 recurrence 路线换核重生）；inference 维度接管 §6 的系统后果。
+至此式 (4) 结完三笔账： $V(i) \subseteq \lbrace1, \ldots, i\rbrace$ 同时是无泄漏的条件（训练侧）、可生成的条件（推理侧，§2）、可缓存的条件（§4.2 归纳的支点）。causality 一个性质，三处结账。后续章节的分工也按此划开：4.1 压缩的是 §5 的字节账；4.3 的线性 attention 放弃显式 cache，把前缀压回固定维状态（即 2.1 §6 的 recurrence 路线换核重生）；inference 1.2 / 2.1 接管 §6 的系统后果。
 
 ## 总结
 

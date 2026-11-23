@@ -4,7 +4,7 @@
 
 ## 1. 两笔账，两条战线
 
-先看 2.4 §5 的实例账。Llama-3.1-8B 满窗 131072 token 时，单序列 KV cache 占 16 GiB，与 bf16 权重同量级； $B$ = 32 并发即 512 GiB，权重仍是 16 GB。cache 公式是 $\mathrm{bytes} = 2 L H_{kv} d_{\mathrm{head}} T B b$（2.4 式 (9)）。其中 $L$ 由架构给定， $T$、 $B$ 由负载给定， $b$ 的量化归 inference 维度。本章动的是 $H_{kv} d_{\mathrm{head}}$：每 token 每层必须存下的「键值信息总量」。怎么动？MQA 与 GQA 直接砍头数。MLA 换一条思路：头数不动，把每个 token 的 KV 内容联合压进一个低秩 latent 向量，cache 只存 latent。
+先看 2.4 §5 的实例账。Llama-3.1-8B 满窗 131072 token 时，单序列 KV cache 占 16 GiB，与 bf16 权重同量级； $B$ = 32 并发即 512 GiB，权重仍是 16 GB。cache 公式是 $\mathrm{bytes} = 2 L H_{kv} d_{\mathrm{head}} T B b$（2.4 式 (9)）。其中 $L$ 由架构给定， $T$、 $B$ 由负载给定， $b$ 的量化归 inference 2.3。本章动的是 $H_{kv} d_{\mathrm{head}}$：每 token 每层必须存下的「键值信息总量」。怎么动？MQA 与 GQA 直接砍头数。MLA 换一条思路：头数不动，把每个 token 的 KV 内容联合压进一个低秩 latent 向量，cache 只存 latent。
 
 另一条战线在训练与 prefill 侧。2.3 §7 的账：朴素 attention 物化 $[B, H, T, T]$ 的 scores 与 probs 两张矩阵， $T$ = 131072 时单序列单层 2 TiB，任何单卡装不下。这笔账与 cache 无关（decode 从不物化 $T \times T$），卡的是训练与 prefill 的内存墙。FlashAttention 的答案不改数学——输出与标准 attention 逐点相同——改的是执行：分块 + online softmax，scores 永不落 HBM。
 

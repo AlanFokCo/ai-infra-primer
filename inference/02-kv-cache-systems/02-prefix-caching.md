@@ -145,6 +145,8 @@ $$
 
 **符号**： $\kappa T_p$ = 每层 KV 字节（ $\kappa$ 为每 token 每层字节，2.1 式 (1)）； $\mathrm{BW}$ = H2D 带宽； $t_{\mathrm{layer}}$ = 每层 forward 计算时间。代入章脊口径： $\kappa T_p$ = 4096 × 4096 = 16 MiB/层，PCIe Gen5 128 GB/s（[NVIDIA datasheet](../references.md)，[C]）下 H2D 约 131 μs；每层计算 $2 \times (7.5 \times 10^{9}/32) \times 4096 / 989.5 \times 10^{12}$ ≈ 1.94 ms——131 μs ≪ 1.94 ms，重叠裕量 14.8 倍，逐层搬运完全藏得住。分层存储的正式成本账（各层延迟 × 命中率）归 2.4。
 
+> **口径注**：本例把 PCIe Gen5 128 GB/s 当作单向 H2D 带宽代入（乐观口径）；2.4 §1 钉死同一 datasheet 数为双向合计，单向 D2H / H2D 取半（~64 GB/s）。按 2.4 口径，H2D 约 262 μs、重叠裕量约 7.4 倍——逐层搬运完全藏得住的结论不变。
+
 ## 6. 非前缀复用与分布式前缀调度
 
 RAG 把多篇检索文档拼进 prompt——文档相互独立，谁也不是谁的前缀。它们的 KV 还能复用吗？直接拼接不行：各文档的 KV 独立预计算时没见过其他文档，跨文档 attention 缺失。CacheBlend（[Yao et al., 2024](../references.md)，arXiv:2405.16444，[A]，YaoJiayi/CacheBlend）的解法是选择性重算：拼接预计算 KV 后，挑跨文档 attention 偏差大的 token 重算，把融合误差压回可接受范围（重算份额 workload 依赖，论文口径）。质量口径：论文 benchmark 上测试任务损失可忽略——不外推为普适无损。这是前缀不可变性的受控近似：复用不再精确，用选择性重算买回精度。LMCache 集成与传输账归 2.4。

@@ -146,20 +146,20 @@ models / training 写于 inference 存在之前，交叉指针现泛指向本维
 
 | 章节 | 文件 | 状态 |
 | --- | --- | --- |
-| 3.1 Decode Attention 算子族 | 01-decode-attention-kernels.md | 未开始 |
-| 3.2 权重量化算法 | 02-weight-quantization.md | 未开始 |
-| 3.3 量化 GEMM 与 Fused MoE 算子 | 03-quantized-gemm-and-moe-kernels.md | 未开始 |
-| 3.4 融合、图捕获与编译 | 04-fusion-and-graph-capture.md | 未开始 |
+| 3.1 Decode Attention 算子族 | 01-decode-attention-kernels.md | 已关闭 |
+| 3.2 权重量化算法 | 02-weight-quantization.md | 已关闭 |
+| 3.3 量化 GEMM 与 Fused MoE 算子 | 03-quantized-gemm-and-moe-kernels.md | 已关闭 |
+| 3.4 融合、图捕获与编译 | 04-fusion-and-graph-capture.md | 已关闭 |
 
 ### Part 4 · 调度与 batching（W2）
 
 | 章节 | 文件 | 状态 |
 | --- | --- | --- |
-| 4.1 Continuous Batching 与迭代级调度 | 01-continuous-batching.md | 未开始 |
-| 4.2 调度器架构与抢占 | 02-scheduler-and-preemption.md | 未开始 |
-| 4.3 Chunked Prefill 与混合批 | 03-chunked-prefill.md | 未开始 |
-| 4.4 投机解码原理与账 | 04-speculative-decoding.md | 未开始 |
-| 4.5 投机解码系统实现 | 05-speculative-systems.md | 未开始 |
+| 4.1 Continuous Batching 与迭代级调度 | 01-continuous-batching.md | 已关闭 |
+| 4.2 调度器架构与抢占 | 02-scheduler-and-preemption.md | 已关闭 |
+| 4.3 Chunked Prefill 与混合批 | 03-chunked-prefill.md | 已关闭 |
+| 4.4 投机解码原理与账 | 04-speculative-decoding.md | 已关闭 |
+| 4.5 投机解码系统实现 | 05-speculative-systems.md | 已关闭 |
 
 ### Part 5 · vLLM 走读（W3）
 
@@ -214,13 +214,29 @@ models / training 写于 inference 存在之前，交叉指针现泛指向本维
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | W0 | 2026-11-22/23 | spec 本身（9 Part / 37 章大纲）+ 脚手架 | 四路独立对抗审查 ×1（A: P1–P4 事实与数学 / B: P5–P7 引擎走读与 DeepInfer 一手来源 / C: P8–P9 分布式与 PD / 生产 / D: 设计与一致性）+ builder-check ×1 + 逐任务 fresh reviewer ×6（Tasks 1–6） | 0 | 17（raw 19，去重后全部关闭） | 29（raw 36，去重后全部清零） | 无 | **放行（W1 开工放行）**。spec 审查闭环：四路完整档案见 [inference-spec-review-a](../docs/reviews/inference-spec-review-a.md) / [b](../docs/reviews/inference-spec-review-b.md) / [c](../docs/reviews/inference-spec-review-c.md) / [d](../docs/reviews/inference-spec-review-d.md)，spec 附录有汇总。脚手架全绿：references 9 Part 分组 77 条（术语表 80）；本 README 37 章进度表 + 18 边依赖图 + 28 行跨维度指针盘点；lint inference 分支激活（models 51 + training 39 共 90 章回归全过）；STYLE_GUIDE 泛化至三维度（条款零漂移 + 前言 [A] 让位）；站点 DIMENSIONS inference 起步断言 0/0（refsMin 50）+ 完整 UI 对象 + 18 边依赖图 + FORTHCOMING.inference 移除；全量 QA 绿（116 页 / 3750 站内引用 / 26 截图，2026-11-23 收官终检复跑） |
 | W1 | 2026-11-23 | P1+P2 8 章（1.1–1.4 / 2.1–2.4） | 逐批审查 ×2（P1/P2）+ 修复轮 ×2 + 复审 ×2（fix-review + NB-1/NB-2 scoped） | 2 | 5 | 12 | 无 | **放行**。档案 [inference-w1-review-p1](../docs/reviews/inference-w1-review-p1.md)（S1=0/S2=1/S3=5）/ [p2](../docs/reviews/inference-w1-review-p2.md)（S1=2/S2=3/S3=6）/ [fix-review](../docs/reviews/inference-w1-fix-review.md)（原 S1/S2 全 ADDRESSED + fix-introduced NB-1（S2）/NB-2（S3）修复后 scoped 复核 clean）；强制重推导 1.2/2.1/2.4 全 PASS；16 场景图 QUALITY 五维 ≥4；refs 被引回写（parse 9 组 / 79 条）；站点断言 {8,2} QA 全绿。残留观察 2.2 PCIe 双向/单向口径 S3（robust，重叠结论不变）留 W2 |
+| W2 | 2026-11-23 | P3+P4 9 章（3.1–3.4 / 4.1–4.5） | 逐批审查 ×2（P3/P4）+ 修复轮 ×1（6 writers）+ 复审 ×1（fix-review） | 0 | 13 | 21 | 无 | **放行**。档案 [inference-w2-review-p3](../docs/reviews/inference-w2-review-p3.md)（S2=9/S3=14）/ [p4](../docs/reviews/inference-w2-review-p4.md)（S2=4/S3=7）/ [fix-review](../docs/reviews/inference-w2-fix-review.md)（13 S2 全 ADDRESSED + 21 S3 全修，无新 S1/S2）；强制重推导 3.1/3.2/3.3/4.2/4.3/4.4 全 PASS；24 场景图 QUALITY 五维 ≥4；refs 被引回写（parse 9 组 / 79 条）；站点断言 {17,4} QA 全绿。W1 残留 2.2 PCIe 口径注 + 2.1 参考补 v41-flash-config 已闭环；fix-review 残留 3 处 S3 外观项（3.1 英中空格 ×2 / 4.4 γ 表 γ=8 格 2.41→2.40 / 3.2 总结表 AWQ 行图 2 口径标）收官顺手清；4.5 EAGLE README 措辞 reconciling 注（可选）留 W3 |
 
 **跨维度指针 errata 记录**（spec §2 条款授权，仅限指针句的最小修订；errata 编辑不跑 rewrite-gate）：
 
 | 日期 | 位置 | 修订 |
 | --- | --- | --- |
+| 2026-11-23 | models 1.2 §8（L187） | 「这是 2.4 与 inference 维度展开的话题」→「这是 2.4 与 inference 1.2 / 2.4 展开的话题」（cache 读取带宽账 → 1.2 decode KV 读账 / 2.4 分层传输账） |
+| 2026-11-23 | models 1.2 §10（L245） | 「（具体数值属 gpu 维度）」→「（逐卡 datasheet 参数表见 inference 1.3，微架构来源与测量方法归 gpu 维度）」（重判，spec §2 裁定 (1) 同型句） |
+| 2026-11-23 | models 1.2 §10（L247） | 「（系统展开属 inference 维度）」→「（系统展开属 inference 1.1 / 1.2）」（部分收窄：4.3 / 8.2 部分待 W2 / W5） |
+| 2026-11-23 | models 2.4 §5（L199） | 「属 inference 维度」→「属 inference 2.3」（cache 量化砍每元素字节数） |
+| 2026-11-23 | models 2.4 §5（L212） | 「inference 维度的系统手段（paging、offload、量化）」→「inference 2.1 / 2.4 / 2.3 的系统手段（paging、offload、量化）」 |
+| 2026-11-23 | models 2.4 §6（L216） | 「（逐卡数字与测量方法归 gpu 维度）」→「（逐卡 datasheet 参数表见 inference 1.3，微架构来源与测量方法归 gpu 维度）」（重判，spec §2 裁定 (1)） |
+| 2026-11-23 | models 2.4 §6（L244） | 「系统展开属 inference 维度；roofline 的逐卡参数属 gpu 维度」→「系统展开属 inference 1.2 / 1.3；roofline 的逐卡 datasheet 参数表归 inference 1.3，微架构来源与测量方法归 gpu 维度」（部分收窄：8.2 部分待 W5；重判，裁定 (1)） |
+| 2026-11-23 | models 2.4 §7（L256） | 「inference 维度接管 §6 的系统后果」→「inference 1.2 / 2.1 接管 §6 的系统后果」 |
+| 2026-11-23 | models 4.1 §1（L7） | 「b 的量化归 inference 维度」→「b 的量化归 inference 2.3」 |
+| 2026-11-23 | models 4.8 §5（L96） | 「（prefix caching 的调度与命中归 inference 维度）」→「（prefix caching 的调度与命中归 inference 2.2）」 |
+| 2026-11-23 | models 4.8 总结表（L112） | 「前缀共享（归 inference）」→「前缀共享（归 inference 2.2）」 |
+| 2026-11-23 | training 8.5 §2（L46） | 「归 inference 维度的账」→「归 inference 2.1 的账」（rollout KV 容量账） |
+| 2026-11-23 | training 8.5 §3（L52） | 「内部机制归 inference 维度」→「内部机制归 inference 维度（PagedAttention 与分页管理见 inference 2.1）」（部分收窄：连续批处理 4.1 待 W2、模块走读 5.2 待 W3） |
 
 （W0 只盘点、无编辑；W1 起随章号生效的每次最小修订逐条记入上表。）
+
+**W1 残留修复（2026-11-23，非指针 errata，W2 开工前顺手闭环）**：2.1 参考节补 v41-flash-config 条目（对应 §6 既有行内引用，refs 被引章节字段已含 2.1，无需改 references.md）；2.2 §5 补 PCIe 单向/双向口径注（W1 fix-review R-1 闭环：本例 128 GB/s 为单向 H2D 乐观口径，2.4 §1 双向合计口径下约 262 μs、裕量约 7.4 倍，重叠结论不变，数值未改）。两章 re-lint LINT OK。
 
 ## 跨维度指针盘点
 
