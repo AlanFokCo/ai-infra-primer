@@ -165,18 +165,18 @@ models / training 写于 inference 存在之前，交叉指针现泛指向本维
 
 | 章节 | 文件 | 状态 |
 | --- | --- | --- |
-| 5.1 vLLM V1 架构总览 | 01-vllm-architecture.md | 未开始 |
-| 5.2 vLLM 调度器与 KV 管理器走读 | 02-vllm-scheduler-kv.md | 未开始 |
-| 5.3 vLLM 分布式执行与编译 | 03-vllm-distributed.md | 未开始 |
-| 5.4 vLLM 高级特性 | 04-vllm-features.md | 未开始 |
+| 5.1 vLLM V1 架构总览 | 01-vllm-architecture.md | 已关闭 |
+| 5.2 vLLM 调度器与 KV 管理器走读 | 02-vllm-scheduler-kv.md | 已关闭 |
+| 5.3 vLLM 分布式执行与编译 | 03-vllm-distributed.md | 已关闭 |
+| 5.4 vLLM 高级特性 | 04-vllm-features.md | 已关闭 |
 
 ### Part 6 · SGLang 走读（W3）
 
 | 章节 | 文件 | 状态 |
 | --- | --- | --- |
-| 6.1 SGLang 架构与 RadixAttention 实现 | 01-sglang-architecture.md | 未开始 |
-| 6.2 Overlap Scheduler 与零开销调度 | 02-sglang-overlap-scheduler.md | 未开始 |
-| 6.3 SGLang 分布式与 PD 分离 | 03-sglang-distributed-pd.md | 未开始 |
+| 6.1 SGLang 架构与 RadixAttention 实现 | 01-sglang-architecture.md | 已关闭 |
+| 6.2 Overlap Scheduler 与零开销调度 | 02-sglang-overlap-scheduler.md | 已关闭 |
+| 6.3 SGLang 分布式与 PD 分离 | 03-sglang-distributed-pd.md | 已关闭 |
 
 ### Part 7 · DeepInfer 与 DeepSeek 栈（W4）
 
@@ -215,6 +215,7 @@ models / training 写于 inference 存在之前，交叉指针现泛指向本维
 | W0 | 2026-11-22/23 | spec 本身（9 Part / 37 章大纲）+ 脚手架 | 四路独立对抗审查 ×1（A: P1–P4 事实与数学 / B: P5–P7 引擎走读与 DeepInfer 一手来源 / C: P8–P9 分布式与 PD / 生产 / D: 设计与一致性）+ builder-check ×1 + 逐任务 fresh reviewer ×6（Tasks 1–6） | 0 | 17（raw 19，去重后全部关闭） | 29（raw 36，去重后全部清零） | 无 | **放行（W1 开工放行）**。spec 审查闭环：四路完整档案见 [inference-spec-review-a](../docs/reviews/inference-spec-review-a.md) / [b](../docs/reviews/inference-spec-review-b.md) / [c](../docs/reviews/inference-spec-review-c.md) / [d](../docs/reviews/inference-spec-review-d.md)，spec 附录有汇总。脚手架全绿：references 9 Part 分组 77 条（术语表 80）；本 README 37 章进度表 + 18 边依赖图 + 28 行跨维度指针盘点；lint inference 分支激活（models 51 + training 39 共 90 章回归全过）；STYLE_GUIDE 泛化至三维度（条款零漂移 + 前言 [A] 让位）；站点 DIMENSIONS inference 起步断言 0/0（refsMin 50）+ 完整 UI 对象 + 18 边依赖图 + FORTHCOMING.inference 移除；全量 QA 绿（116 页 / 3750 站内引用 / 26 截图，2026-11-23 收官终检复跑） |
 | W1 | 2026-11-23 | P1+P2 8 章（1.1–1.4 / 2.1–2.4） | 逐批审查 ×2（P1/P2）+ 修复轮 ×2 + 复审 ×2（fix-review + NB-1/NB-2 scoped） | 2 | 5 | 12 | 无 | **放行**。档案 [inference-w1-review-p1](../docs/reviews/inference-w1-review-p1.md)（S1=0/S2=1/S3=5）/ [p2](../docs/reviews/inference-w1-review-p2.md)（S1=2/S2=3/S3=6）/ [fix-review](../docs/reviews/inference-w1-fix-review.md)（原 S1/S2 全 ADDRESSED + fix-introduced NB-1（S2）/NB-2（S3）修复后 scoped 复核 clean）；强制重推导 1.2/2.1/2.4 全 PASS；16 场景图 QUALITY 五维 ≥4；refs 被引回写（parse 9 组 / 79 条）；站点断言 {8,2} QA 全绿。残留观察 2.2 PCIe 双向/单向口径 S3（robust，重叠结论不变）留 W2 |
 | W2 | 2026-11-23 | P3+P4 9 章（3.1–3.4 / 4.1–4.5） | 逐批审查 ×2（P3/P4）+ 修复轮 ×1（6 writers）+ 复审 ×1（fix-review） | 0 | 13 | 21 | 无 | **放行**。档案 [inference-w2-review-p3](../docs/reviews/inference-w2-review-p3.md)（S2=9/S3=14）/ [p4](../docs/reviews/inference-w2-review-p4.md)（S2=4/S3=7）/ [fix-review](../docs/reviews/inference-w2-fix-review.md)（13 S2 全 ADDRESSED + 21 S3 全修，无新 S1/S2）；强制重推导 3.1/3.2/3.3/4.2/4.3/4.4 全 PASS；24 场景图 QUALITY 五维 ≥4；refs 被引回写（parse 9 组 / 79 条）；站点断言 {17,4} QA 全绿。W1 残留 2.2 PCIe 口径注 + 2.1 参考补 v41-flash-config 已闭环；fix-review 残留 3 处 S3 外观项（3.1 英中空格 ×2 / 4.4 γ 表 γ=8 格 2.41→2.40 / 3.2 总结表 AWQ 行图 2 口径标）收官顺手清；4.5 EAGLE README 措辞 reconciling 注（可选）留 W3 |
+| W3 | 2026-11-23 | P5+P6 7 章（5.1–5.4 / 6.1–6.3） | 逐批审查 ×2（P5/P6）+ 修复轮 ×1（4 writers）+ 复审 ×1（fix-review，fresh-context） | 0 | 14 | 18 | 无 | **放行**。档案 [inference-w3-review-p5](../docs/reviews/inference-w3-review-p5.md)（S2=11/S3=13）/ [p6](../docs/reviews/inference-w3-review-p6.md)（S2=3/S3=5+ERR-1）/ [fix-review](../docs/reviews/inference-w3-fix-review.md)（14 S2 全 ADDRESSED、18 S3 全修，无新 S1/S2）；强制重推导 6.2 bubble 消除账 + FutureMap resolve 正确性 PASS（pacing 保持步修复后独立重推）；23 场景图 QUALITY 五维 ≥4（part05=14 / part06=9）；refs 被引回写（8 条目按实际引用更新，parse 9 组 / 81 条）；站点断言 {24,6} QA 全绿。收官清 fix-review 残留 3 处 S3 recap-sync（5.4 ASCII / 总结 MTP 薄壳措辞、5.3 总结 kv_hints 消费链顺序）+ 2 条 errata（3.4 编译指针 6.2→6.3、1.4 sampling 新路径），4 章 re-lint OK；W2 carryover errata（11 处指针收窄 + 4.5 EAGLE 注）随本波 commit |
 
 **跨维度指针 errata 记录**（spec §2 条款授权，仅限指针句的最小修订；errata 编辑不跑 rewrite-gate）：
 
@@ -233,10 +234,25 @@ models / training 写于 inference 存在之前，交叉指针现泛指向本维
 | 2026-11-23 | models 4.8 总结表（L112） | 「前缀共享（归 inference）」→「前缀共享（归 inference 2.2）」 |
 | 2026-11-23 | training 8.5 §2（L46） | 「归 inference 维度的账」→「归 inference 2.1 的账」（rollout KV 容量账） |
 | 2026-11-23 | training 8.5 §3（L52） | 「内部机制归 inference 维度」→「内部机制归 inference 维度（PagedAttention 与分页管理见 inference 2.1）」（部分收窄：连续批处理 4.1 待 W2、模块走读 5.2 待 W3） |
+| 2026-11-23 | models 1.1 §8（L270） | 「属于 inference 维度」→「属于 inference 维度（KV cache 见 2.1、批处理见 4.1、投机采样见 4.4，采样策略工程见 1.4）」（全收窄：四目标章均已发布；README 活链接保留作维度入口） |
+| 2026-11-23 | models 1.2 §8（L155） | 「（量化方法与精度损失属 inference 维度）」→「（量化方法与精度损失属 inference 3.2）」（三族算法 §3–§7 + 质量评估口径 §8） |
+| 2026-11-23 | models 1.2 §10（L247） | 「（系统展开属 inference 1.1 / 1.2）」→「（系统展开属 inference 1.1 / 1.2 / 4.3）」（W1 部分收窄续：prefill/decode 混合批调度 → 4.3；8.2 待 W5） |
+| 2026-11-23 | models 2.4 §6（L242） | 「inference 维度把 continuous batching 与 cache 压缩放在一起优化」→「inference 4.1 / 2.3 把 continuous batching 与 cache 压缩放在一起优化」（章号与两主题按位对应） |
+| 2026-11-23 | models 4.1 §4.4（L213） | 「归 inference 维度」→「归 inference 3.1」（部分收窄：吸收形 kernel 几何 → 3.1 §5 FlashMLA；7.3 待 W4） |
+| 2026-11-23 | models 4.1 §5.4（L298） | 「kernel 实现归 gpu 维度」→「算法与策略级见 inference 3.1，指令级 kernel 实现归 gpu 维度」（重判：FA2/FA3 并行与流水策略级 → 3.1 §3，指令级仍归 gpu） |
+| 2026-11-23 | models 4.1 §6（L302） | 「是 gpu 维度 kernel 章的入口」→「是 inference 3.1 的入口（指令级 kernel 实现归 gpu 维度）」（重判：IO 账经 3.1 §1 recap 为算法级入口） |
+| 2026-11-23 | models 4.1 总结表（L316） | 「细节归 gpu」→「算法级见 inference 3.1，指令级归 gpu」（重判，与 L298 同口径） |
+| 2026-11-23 | models 4.5 §6.2（L309） | 「归 inference 维度」→「归 inference 4.4 / 4.5」（部分收窄：验证-batch 交互 → 4.4 §6 / 4.5 §6，拒绝 KV 回滚与 draft/主干隐藏态复用接口 → 4.5 §3/§5；7.2 待 W4） |
+| 2026-11-23 | training 5.4 §6（L95） | 「kernel 实现归 gpu/cluster 维度，本书不展开」→ 同句 +「（serving 侧 dispatch / combine 语义与账见 inference 3.3）」（补指针：3.3 §6 已 recap training 5.4 §6 并立 serving 侧增量；指令级仍归 gpu/cluster） |
+| 2026-11-23 | training 8.5 §3（L52） | 「（PagedAttention 与分页管理见 inference 2.1）」→「（PagedAttention 与分页管理见 inference 2.1，连续批处理见 4.1）」（W1 部分收窄续；5.2 待 W3） |
+| 2026-11-23 | inference 3.4 §1（L7）+ §4（L99） | 「引擎编译模块全量走读归 5.3 / 6.2」→「归 5.3 / 6.3」；「SGLang 归 6.2」→「SGLang 归 6.3」（维度内指针纠正：compilation 走读在 6.3 §8 交付，6.2 是 overlap scheduler——W3 P6 审查 ERR-1，spec §5 6.3 大纲口径） |
+| 2026-11-23 | inference 1.4 §3（L55）+ 参考（L208） | sampling 实现锚「`vllm/v1/sample/`」→「`vllm/v1/worker/gpu/sample/sampler.py` L42（`v1/sample/` 只剩 ops/，2026-11-23 main 核实；走读见 5.4 §7）」（维度内指针纠正：Sampler 与 processor 链已迁 worker 侧——W3 P5 审查 advisory，5.4 §7 坑注同口径） |
 
 （W0 只盘点、无编辑；W1 起随章号生效的每次最小修订逐条记入上表。）
 
 **W1 残留修复（2026-11-23，非指针 errata，W2 开工前顺手闭环）**：2.1 参考节补 v41-flash-config 条目（对应 §6 既有行内引用，refs 被引章节字段已含 2.1，无需改 references.md）；2.2 §5 补 PCIe 单向/双向口径注（W1 fix-review R-1 闭环：本例 128 GB/s 为单向 H2D 乐观口径，2.4 §1 双向合计口径下约 262 μs、裕量约 7.4 倍，重叠结论不变，数值未改）。两章 re-lint LINT OK。
+
+**W2 残留修复（2026-11-23，非指针 errata，W3 开工前顺手闭环）**：4.5 §1 L41 补 EAGLE README 措辞 reconciling 注（W2 fix-review §3 观察项 2 闭环：README 的「top-layer」泛指 EAGLE-1/2 所用的单层 feature，即 §1 的倒数第二层 feature，论文摘要口径 second-to-top-layer；两处来源措辞各自忠实引用，注只桥接、数值未改）。该章 re-lint LINT OK。
 
 ## 跨维度指针盘点
 

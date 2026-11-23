@@ -52,7 +52,7 @@ $$
 
 截断之前，logits 还要过一条 processor 链。顺序为什么重要？因为有的 processor 是乘性、有的是加性，彼此不可交换。所谓 logits processor，是指在采样前对 logits 逐 token 施加的一个变换（penalty、ban、mask），多个 processor 按固定顺序串成链。
 
-**penalty 三式**（HF transformers / OpenAI API 的通用约定，教学口径；引擎实现见 [vLLM repo](../references.md) `vllm/v1/sample/`、[SGLang repo](../references.md) `srt/layers/sampler.py`）。repetition penalty（乘性，对已出现 token）：
+**penalty 三式**（HF transformers / OpenAI API 的通用约定，教学口径；引擎实现见 [vLLM repo](../references.md) `vllm/v1/worker/gpu/sample/sampler.py` L42（`v1/sample/` 只剩 ops/，2026-11-23 main 核实；走读见 5.4 §7）、[SGLang repo](../references.md) `srt/layers/sampler.py`）。repetition penalty（乘性，对已出现 token）：
 
 $$
 z_i \leftarrow \begin{cases} z_i / r & c_i > 0 \text{ 且 } z_i > 0 \\ z_i \cdot r & c_i > 0 \text{ 且 } z_i \le 0 \\ z_i & c_i = 0 \end{cases} \qquad (5)
@@ -205,7 +205,7 @@ DeepSeek Recipe（[deepseek-recipe repo](../references.md)，教学参照，Rust
 - [guidance repo](../references.md)：guidance-ai/guidance，教学参照（key: guidance）——程序化 token 级约束（§5）
 - [He, 2025](../references.md)：Defeating Nondeterminism in LLM Inference（Thinking Machines 博客，2025-09-10），[C] 开放技术博客、非闭源（key: batch-invariance）——浮点非结合 "the original sin"、batch 组成改变 reduction order、batch-invariant RMSNorm/matmul/attention（§6）
 - [Kwon et al., 2023](../references.md)：PagedAttention / vLLM，arXiv:2309.06180，[A]（key: vllm）——beam / parallel sampling 的 KV 块共享与 COW（§4.4 原文，§4）
-- [vLLM repo](../references.md)：vllm-project/vllm，[A]（key: vllm-repo）——sampling 实现 `vllm/v1/sample/`、batch-invariant `model_executor/determinism/{batch_invariant,batch_invariant_configs}.py`（§3 / §6）
+- [vLLM repo](../references.md)：vllm-project/vllm，[A]（key: vllm-repo）——sampling 实现 `vllm/v1/worker/gpu/sample/sampler.py` L42（`v1/sample/` 只剩 ops/，2026-11-23 main 核实）、batch-invariant `model_executor/determinism/{batch_invariant,batch_invariant_configs}.py`（§3 / §6）
 - [SGLang repo](../references.md)：sgl-project/sglang，[A]（key: sglang-repo）——sampling `srt/layers/sampler.py`、batch-invariant `srt/batch_invariant_ops/batch_invariant_ops.py`（§3 / §6）
 - [DeepInfer repo](../references.md)：deepseek-ai/DeepInfer，教学参照（key: deepinfer-repo）——`DEEPINFER_BATCH_INVARIANT` 环境变量（`deepinfer/model_executor/models/v4_modules/attn.py` 消费）（§6）
 - [DeepInfer doc](../references.md)：doc/inference_deployment_qa.md，教学参照 + 官方披露（key: deepinfer-doc）——DeepSeek Recipe encoding/decoding 与 special-token 注入防护（L35，§7）

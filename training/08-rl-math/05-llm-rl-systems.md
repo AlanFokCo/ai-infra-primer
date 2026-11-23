@@ -49,7 +49,7 @@ $$
 
 ## 3. rollout / train 引擎拆分
 
-① 为什么不直接复用训练引擎做采样。先看负载形态：自回归解码逐 token 串行，每一步都要把全量权重读一遍，是典型的 memory-bandwidth-bound 负载。推理引擎（vLLM）的 PagedAttention、连续批处理、KV cache 分页管理，正是为这种负载做的——内部机制归 inference 维度（PagedAttention 与分页管理见 inference 2.1），本章只登记接口事实。训练引擎（Megatron 归 6.x、FSDP 归 4.3）的 TP/PP 切分是为训练吞吐优化的，层间通信模式与 decode 完全不匹配。§1 那个 80% 的 profile 已经说明生成阶段是主瓶颈：引擎选错，整轮都被拖慢。
+① 为什么不直接复用训练引擎做采样。先看负载形态：自回归解码逐 token 串行，每一步都要把全量权重读一遍，是典型的 memory-bandwidth-bound 负载。推理引擎（vLLM）的 PagedAttention、连续批处理、KV cache 分页管理，正是为这种负载做的——内部机制归 inference 维度（PagedAttention 与分页管理见 inference 2.1，连续批处理见 4.1），本章只登记接口事实。训练引擎（Megatron 归 6.x、FSDP 归 4.3）的 TP/PP 切分是为训练吞吐优化的，层间通信模式与 decode 完全不匹配。§1 那个 80% 的 profile 已经说明生成阶段是主瓶颈：引擎选错，整轮都被拖慢。
 
 ② 拆分后的形态（本章核心图）：
 

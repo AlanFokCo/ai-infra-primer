@@ -85,7 +85,7 @@ const DIMENSIONS = [
       { num: 9, dir: '09-production', titleEn: 'Production', titleZh: '生产全流程', tagline: '容量与成本账、引擎选型、RL rollout serving、多模态与特殊 serving', wave: 'W6' },
     ],
     // 建设期断言滚动：W0=0/0 → W1=8/2 → W2=17/4 → W3=24/6 → W4=28/7 → W5=33/8 → W6=37/9 → W7 锁死
-    asserts: { chapters: 17, parts: 4, refsMin: 50 },
+    asserts: { chapters: 24, parts: 6, refsMin: 50 },
   },
 ];
 

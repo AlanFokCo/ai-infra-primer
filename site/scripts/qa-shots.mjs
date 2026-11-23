@@ -33,6 +33,10 @@ const PAGES = [
   ['inf-ch-weight-quant', '/inference/03-inference-operators/02-weight-quantization/'], // 公式密（3.2【重】，量化格点 / GPTQ 补偿 / AWQ 等价）
   ['inf-ch-gemm-moe', '/inference/03-inference-operators/03-quantized-gemm-and-moe-kernels/'], // 表格/图密（3.3，W4A16 mainloop / MoE dispatch 场景图）
   ['inf-ch-speculative', '/inference/04-scheduling-and-batching/04-speculative-decoding/'], // 推导重章（4.4【重】，分布保持 / 加速比定理 / tree verify）
+  // inference W3 样章（P5/P6 引擎走读落地代表章：调度/KV 走读 / 特性表格密 / 推导重章各一）
+  ['inf-ch-vllm-scheduler-kv', '/inference/05-vllm/02-vllm-scheduler-kv/'], // 表格/图密（5.2，scheduler 钳位链 / hybrid KV 不动点场景图）
+  ['inf-ch-vllm-features', '/inference/05-vllm/04-vllm-features/'], // 特性表格密（5.4，spec_decode 继承链 / LoRA SGMV / sleep 边界）
+  ['inf-ch-sglang-overlap', '/inference/06-sglang/02-sglang-overlap-scheduler/'], // 推导重章（6.2【重】，bubble 消除账 + FutureMap resolve 证明）
 ];
 
 const VIEWPORTS = [

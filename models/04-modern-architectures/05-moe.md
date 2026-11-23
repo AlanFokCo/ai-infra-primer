@@ -306,7 +306,7 @@ $$
 \mathbb{E}[\text{tokens}] = \sum_{j=0}^{\gamma} \Pr\lbrace j \text{ accepted}\rbrace = \sum_{j=0}^{\gamma} \alpha^{j} = \frac{1 - \alpha^{\gamma+1}}{1 - \alpha} \qquad (23)
 $$
 
-（几何级数；逐位置接受独立同分布是近似，实际相邻位置相关。） $D = 1$ 即 $\gamma = 1$： $\mathbb{E} = 1 + \alpha$。V3 报告第二 token 接受率 85%–90%（跨生成主题，[A]），期望产出 1.85–1.9 token/前向，论文实测端到端约 1.8× TPS。系统侧问题——验证步与 batch 的交互、拒绝时 KV cache 的处置、草稿与主模型的算子融合——归 inference 维度。
+（几何级数；逐位置接受独立同分布是近似，实际相邻位置相关。） $D = 1$ 即 $\gamma = 1$： $\mathbb{E} = 1 + \alpha$。V3 报告第二 token 接受率 85%–90%（跨生成主题，[A]），期望产出 1.85–1.9 token/前向，论文实测端到端约 1.8× TPS。系统侧问题——验证步与 batch 的交互、拒绝时 KV cache 的处置、草稿与主模型的算子融合——归 inference 4.4 / 4.5。
 
 ### 6.3 Medusa：并行头的对照
 

@@ -152,7 +152,7 @@ $$
 
 **符号**：此处的 $N$ 是全部参数（含 embedding——embedding 不占 FLOPs 但占字节，两笔账的 $N$ 口径不同）。
 
-系数 2 是精度选择：fp32 是 $4N$ ，bf16/fp16 是 $2N$ ，8-bit 量化是 $N$ ，4-bit 是 $N/2$ ——权重压缩线性地移动这笔账（量化方法与精度损失属 inference 维度）。Llama-3.1-8B 总参数 $8.03 \times 10^{9}$ （第 9 节逐项加），bf16 下 $1.61 \times 10^{10}$ bytes ≈ 16 GB，这是推理显存的地板——任何显存大于 16 GB 的卡都装得下权重，剩下的预算全给 KV cache 与激活。
+系数 2 是精度选择：fp32 是 $4N$ ，bf16/fp16 是 $2N$ ，8-bit 量化是 $N$ ，4-bit 是 $N/2$ ——权重压缩线性地移动这笔账（量化方法与精度损失属 inference 3.2）。Llama-3.1-8B 总参数 $8.03 \times 10^{9}$ （第 9 节逐项加），bf16 下 $1.61 \times 10^{10}$ bytes ≈ 16 GB，这是推理显存的地板——任何显存大于 16 GB 的卡都装得下权重，剩下的预算全给 KV cache 与激活。
 
 **账二：激活**。式 (3) 第二式要求反向时前向的输入还在：每个 matmul 的输入与若干中间量都要存。一份无重计算、非 FlashAttention 的实现，逐层清点（每 token，bf16）：
 
@@ -244,7 +244,7 @@ $$
 
 算力和带宽，谁先卡住推理？把式 (2) 与式 (7) 放在一起相除，得到答案——推理 decode 阶段的关键比率。每生成一个 token，要算约 $2N$ FLOPs（长上下文时外加随 $t$ 线性增长的 attention 项，见本节末），同时至少把全部权重从显存读一遍，即 $2N$ bytes。两者的比值叫算术强度（arithmetic intensity，FLOPs 与访存字节之比），decode 下约等于 1 FLOP/byte。任何实际 GPU 的「峰值 FLOPS ÷ 显存带宽」都比 1 高两个数量级以上（逐卡 datasheet 参数表见 inference 1.3，微架构来源与测量方法归 gpu 维度），所以 decode 吞吐的上限由带宽决定、算力大量闲置——这就是「decode 是访存瓶颈」的精确含义。
 
-prefill 相反：一次前向处理 $T$ 个 prompt token，算 $2NT$ FLOPs 而权重只读一遍，算术强度 $\approx T$ ， $T$ 上千时进入计算瓶颈区。decode 侧的补救也写在同一公式里：把 $B$ 条序列的请求合成一个 batch，每步算 $2NB$ FLOPs、权重仍只读一遍，算术强度升到 $\approx B$ 。只要 KV cache 放得下，batch 越大每卡吞吐越高——这就是推理服务拼命凑 batch 的算术根源。同一个模型、同一份权重，不同阶段瓶颈不同，推理系统因此把 prefill 与 decode 分开调度、分开定价（系统展开属 inference 1.1 / 1.2）。训练侧同理：一个 step 里 $B \cdot T$ 个 token 摊一份权重读取与更新，算术强度 $\propto B \cdot T$ 。这就是训练追求大 batch 的硬件原因，也是激活账（随 $B \cdot T$ 线性）必须被重计算压住的硬件原因。
+prefill 相反：一次前向处理 $T$ 个 prompt token，算 $2NT$ FLOPs 而权重只读一遍，算术强度 $\approx T$ ， $T$ 上千时进入计算瓶颈区。decode 侧的补救也写在同一公式里：把 $B$ 条序列的请求合成一个 batch，每步算 $2NB$ FLOPs、权重仍只读一遍，算术强度升到 $\approx B$ 。只要 KV cache 放得下，batch 越大每卡吞吐越高——这就是推理服务拼命凑 batch 的算术根源。同一个模型、同一份权重，不同阶段瓶颈不同，推理系统因此把 prefill 与 decode 分开调度、分开定价（系统展开属 inference 1.1 / 1.2 / 4.3）。训练侧同理：一个 step 里 $B \cdot T$ 个 token 摊一份权重读取与更新，算术强度 $\propto B \cdot T$ 。这就是训练追求大 batch 的硬件原因，也是激活账（随 $B \cdot T$ 线性）必须被重计算压住的硬件原因。
 
 KV cache 的存在性也写在这个框架里。decode 生成第 $t$ 个 token 时，若无 cache，要对长度 $t$ 的前缀重跑整条前向：单 attention 一项就是 $2Lt^{2}d$ （式 (6) 代入 $T=t$ ），且随 $t$ 平方累积。有 cache 时，该步只算当前 query 对 $t$ 个缓存 key 的打分与加权和，每层 $4td$ 、共 $4Ltd$ ——从二次降到线性。代价是第 8 节账三的字节数。可缓存性的推导（为什么 K、V 足够、为什么不需要缓存 Q）在 2.4。
 
