@@ -263,7 +263,7 @@ CUDAGraphWrapper L144 ── CUDAGraphEntry L127（捕获 size → 图）
 
 ## 7. hisparse 与 kv_hints：稀疏 attention 的本地 offload 与编排协议
 
-DSA 模型每步主 attention 只读 512 行 KV（3.1 式 (10) 的 22.5 MiB），全量 131072 行为什么还要留在 GPU？答案是没必要——这正是 HiSparse 的账面动机。所谓 HiSparse，是指 DSA / QSA 系模型的**本地** KV offload 方案：GPU 只留 per-request hot buffer，全量 KV 常驻 host，按 attention 的选择结果换入（官方 `docs/design/hisparse.md`，321 行，Status: experimental，2026-11-23 核实；配置类 HiSparseConfig docstring 逐字「Configuration for HiSparse DSA and QSA KV offloading」）。**两层纪律**：2.4 已交付三层存储账、临界带宽与 SGLang HiSparse 机制，本节只走读 vLLM 侧实现落点与两个新模块的语义。
+DSA 模型每步主 attention 只读 512 行 KV（3.1 式 (10) 的 20 MiB），全量 131072 行为什么还要留在 GPU？答案是没必要——这正是 HiSparse 的账面动机。所谓 HiSparse，是指 DSA / QSA 系模型的**本地** KV offload 方案：GPU 只留 per-request hot buffer，全量 KV 常驻 host，按 attention 的选择结果换入（官方 `docs/design/hisparse.md`，321 行，Status: experimental，2026-11-23 核实；配置类 HiSparseConfig docstring 逐字「Configuration for HiSparse DSA and QSA KV offloading」）。**两层纪律**：2.4 已交付三层存储账、临界带宽与 SGLang HiSparse 机制，本节只走读 vLLM 侧实现落点与两个新模块的语义。
 
 三角色分工（doc 口径）：KV cache system 管 GPU 块分配；HiSparseCoordinator 管 host 逻辑块与 residency（驻留状态）；HiSparseConnector + HiSparseWorker + HiSparseRuntime 管 scheduler ↔ worker 的传输与数据面。doc 逐字划清分配权：「Neither worker-side object allocates or frees logical blocks. HMA provides the GPU allocation shared by the resident and hot groups」——worker 侧对象不分配也不释放逻辑块，GPU 分配由 HMA 提供、resident 与 hot 两组共享（HMA 缩写沿 doc 原文，指统一 GPU 分配层）。
 
@@ -288,9 +288,9 @@ $$
 f_{\mathrm{hot}} = \frac{2K}{T}, \qquad M_{\mathrm{hot}} = 2K \thinspace \kappa \thinspace L \thinspace B \qquad (4)
 $$
 
-**符号**： $f_{\mathrm{hot}}$ = GPU 驻留行数占全量 KV 行数的比例（记 $f$ 不记 $\rho$ ： $\rho$ 按 spec §4.3 专归利用率）； $M_{\mathrm{hot}}$ = 全 batch 的 hot buffer 字节数； $K$ = index_topk； $B$ = batch 内请求数。换 V4.1-Flash 口径（原因：HiSparse 只服务 DSA/QSA 系模型； $K$ = 512、 $L$ = 40 取自 config [W]， $\kappa$ = 1152 字节为 MLA bf16 教学口径，生产主 KV 用 per-16 e4m3 低精度、格式账归 2.3 / 2.4）： $T$ = 131072 时 $f_{\mathrm{hot}}$ = 1024/131072 = **0.78%**；单请求 hot buffer = 1024 × 1152 × 40 = 47.2 MB（45 MiB），全量对照 6.04 GB； $B$ = 64 时 hot 合计 3.02 GB，全量对照 386.5 GB——GPU 侧容量需求降两个数量级，这就是「decode 不被容量约束」之外的另一条路（2.4 §9 的 DeepInfer 口径是不 offload，HiSparse 是 offload 但只换入 top-k）。
+**符号**： $f_{\mathrm{hot}}$ = GPU 驻留行数占全量 KV 行数的比例（记 $f$ 不记 $\rho$ ： $\rho$ 按 spec §4.3 专归利用率）； $M_{\mathrm{hot}}$ = 全 batch 的 hot buffer 字节数； $K$ = index_topk； $B$ = batch 内请求数。换 V4.1-Flash 口径（原因：HiSparse 只服务 DSA/QSA 系模型； $K$ = 512、 $L$ = 40 取自 config [W]， $\kappa$ = 1024 字节为 MLA bf16 教学口径，V4.1 共享 KV 向量 512 元素 = 448 latent + 64 rope、见 1.2 §3；生产主 KV 用 per-16 e4m3 低精度、格式账归 2.3 / 2.4）： $T$ = 131072 时 $f_{\mathrm{hot}}$ = 1024/131072 = **0.78%**；单请求 hot buffer = 1024 × 1024 × 40 = 41.9 MB（40 MiB），全量对照 5.37 GB； $B$ = 64 时 hot 合计 2.68 GB，全量对照 343.6 GB——GPU 侧容量需求降两个数量级，这就是「decode 不被容量约束」之外的另一条路（2.4 §9 的 DeepInfer 口径是不 offload，HiSparse 是 offload 但只换入 top-k）。
 
-换入的带宽账 recap 2.4 式 (3) 同形：全 miss 一步要换入 $K \kappa L$ = 512 × 1152 × 40 = 22.5 MiB，PCIe 单向 64 GB/s（2.4 §1 口径）下 0.37 ms——与 3.1 式 (10) 的主路读取量同值（主路读多少就得换入多少，全 miss 时）。hot buffer 的 LRU slack 与 eager_host_mirror 就是把这笔摊薄的两个机制：前者让跨步重复选中的行不换入，后者让 decode 新写的行立刻有 host 副本、不必等驱逐再写。
+换入的带宽账 recap 2.4 式 (3) 同形：全 miss 一步要换入 $K \kappa L$ = 512 × 1024 × 40 = 20 MiB，PCIe 单向 64 GB/s（2.4 §1 口径）下 0.33 ms——与 3.1 式 (10) 的主路读取量同值（主路读多少就得换入多少，全 miss 时）。hot buffer 的 LRU slack 与 eager_host_mirror 就是把这笔摊薄的两个机制：前者让跨步重复选中的行不换入，后者让 decode 新写的行立刻有 host 副本、不必等驱逐再写。
 
 **命题 2**（active tail 不外借）。HiSparse 的 page 外借指 `_unpin_pages` 把 resident 块释放回池复用（coordinator.py L395-407；eager_host_mirror 下 host 副本已在，unpin = 放弃 GPU 驻留，不是写回 host），该操作跳过每请求末尾 ACTIVE_TAIL_PAGES = 2 页（L402：num_unpinnable = num_resident − ACTIVE_TAIL_PAGES）。若单步写入的 token 数不超过 $2b$ （ $b$ = block size），则任一 in-flight step 正在写入的 page 在该步结束前不会被释放回池。
 
@@ -377,7 +377,7 @@ PD KV 接口的基线细节（为 8.4 立，本章不展开传输账）：`distr
 | EP all-to-all 八类 manager（DeepEPV2All2AllManager L1222 为当前统一接口落点）；all2all_backend "auto" L332 | §4 表 | §4、3.3 |
 | attention backend 选择 = 六项能力约束下的可行性筛选（get_attn_backend L111 / AttentionBackend L57）；block size 默认 64，SWA 256 为偏好覆盖、CPU_MLA 16 为 supports_block_size 硬约束 + 平台强制 | §5 两表 | §5、2.1 式 (7)、3.1 |
 | 编译链：support_torch_compile L88 → split_graph L580（partition_rules）→ PiecewiseBackend L86 / RangeEntry L80 → CUDAGraphWrapper L144 / CUDAGraphEntry L127 | §6 表 + 图 | §6、3.4 |
-| HiSparse = DSA/QSA 本地 offload，三角色分工 + ACTIVE_TAIL_PAGES=2；默认 hot buffer 2K 行，V4.1 口径驻留 0.78%、B=64 热区 3.02 GB vs 全量 386.5 GB | 式 (4)、命题 2 | §7、练习 3 |
+| HiSparse = DSA/QSA 本地 offload，三角色分工 + ACTIVE_TAIL_PAGES=2；默认 hot buffer 2K 行，V4.1 口径驻留 0.78%、B=64 热区 2.68 GB vs 全量 343.6 GB | 式 (4)、命题 2 | §7、练习 3 |
 | 命题 2：单步写入 ≤ 2b token 时 active tail 覆盖写入页，外借不相交；大 chunk prefill 是边界反例 | 命题 2 | §7 |
 | kv_hints = orchestrator 版本化 KV 动作协议（KvHintAction / KvHintsEnvelope），Request L85 → connector L172 → ReqContext L109 | §7 | §7、5.4 §4 |
 | 命题 3：DBO 两半 ping-pong 单步 makespan = max + min/2（步间不重叠前提），加速上界 4/3（C=M 取到）；C=6/M=4 → 1.25× | 命题 3 | §8、练习 3 |
@@ -388,7 +388,7 @@ PD KV 接口的基线细节（为 8.4 立，本章不展开传输账）：`distr
 
 1.（计算 · [10]）进程与消息量代入：(a) 用式 (1) 算 $d$ = 1、 $p$ = 1、 $t$ = 8 与 $d$ = 4、 $p$ = 2、 $t$ = 2 的进程数（ $A = d$ ）；(b) 用式 (2) 算 $B$ = 64 与 $B$ = 1 的 $M_{\mathrm{msg}}$ （ $d_{\mathrm{model}}$ = 4096、bf16），并换算 KiB。校验：(a) 第一组与 §1 的 tp=4 例同构（ $t$ 翻倍则 worker 项翻倍）；(b) 512 KiB / 8 KiB，与 §3 一致。
 2.（推导 · [20]）命题 1 与延迟主导：(a) 从 f/g 共轭定义独立证明 serving 每层归约位点为 2，指出哪一步用到「推理无反向图」；(b) 说明 sequence parallelism 为何换原语不换位点；(c) 用式 (3) 算 $B$ = 1 与 $B$ = 64 的 $\tau_{\mathrm{TP}}$ （ $t$ = 8、 $\tau_{\mathrm{lat}}$ = 5 μs、NVLink 900 GB/s），解释消息量缩 64 倍而时间只降 16.7% 的机制。校验：(c) 321 μs / 385 μs，与 §3 一致；(a) 结论应蕴含「embedding 的额外一次归约不在层计数内」。
-3.（推导 · [30]）命题 3 证明闭环 + HiSparse 账：(a) 画两半 ping-pong 时序，独立推出单步 makespan $\max(C,M) + \min(C,M)/2$（步间不重叠前提）；(b) 证加速上界 4/3 且 $C = M$ 取等；(c) 给三条前提失效方向（通信占 SM、半批 kernel 效率、步间重叠）并说明各使上界往哪个方向偏；(d) 用式 (4) 算 V4.1 口径（ $K$ = 512、 $T$ = 131072、 $\kappa$ = 1152 字节、 $L$ = 40、 $B$ = 64）的驻留比与热区容量，并算全 miss 一步的换入时间（PCIe 64 GB/s，2.4 §1 口径）。校验：(b) $C$ = 6、 $M$ = 4 → 8 ms / 1.25×；(d) 0.78% / 3.02 GB / 0.37 ms，与 §7 一致。
+3.（推导 · [30]）命题 3 证明闭环 + HiSparse 账：(a) 画两半 ping-pong 时序，独立推出单步 makespan $\max(C,M) + \min(C,M)/2$（步间不重叠前提）；(b) 证加速上界 4/3 且 $C = M$ 取等；(c) 给三条前提失效方向（通信占 SM、半批 kernel 效率、步间重叠）并说明各使上界往哪个方向偏；(d) 用式 (4) 算 V4.1 口径（ $K$ = 512、 $T$ = 131072、 $\kappa$ = 1024 字节、 $L$ = 40、 $B$ = 64）的驻留比与热区容量，并算全 miss 一步的换入时间（PCIe 64 GB/s，2.4 §1 口径）。校验：(b) $C$ = 6、 $M$ = 4 → 8 ms / 1.25×；(d) 0.78% / 2.68 GB / 0.33 ms，与 §7 一致。
 4.（代码 · [30]）走读 selector 与编译链（vllm main，2026-11-23）：先写出预测——(a) get_attn_backend（L111）的缓存键来自哪个结构、选择每步发生还是每模型发生；(b) split_graph（L580）的切分点由哪个文件决定、切分点算子为什么必须排除在图外；(c) RangeEntry（L80）与 CUDAGraphEntry（L127）各按什么索引、两者能否互相替代。再对照 `v1/attention/selector.py`、`compilation/{backends,piecewise_backend,cuda_graph,partition_rules}.py` 验证。校验：(b) 答案应指向 partition_rules.py（74 行）与 3.4 命题 2 的动态 launch 参数前提；(c) 前者按 shape 区间、后者按捕获 size，与 §6 一致。
 
 ## 参考

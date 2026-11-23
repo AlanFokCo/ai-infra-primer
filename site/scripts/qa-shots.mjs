@@ -37,6 +37,10 @@ const PAGES = [
   ['inf-ch-vllm-scheduler-kv', '/inference/05-vllm/02-vllm-scheduler-kv/'], // 表格/图密（5.2，scheduler 钳位链 / hybrid KV 不动点场景图）
   ['inf-ch-vllm-features', '/inference/05-vllm/04-vllm-features/'], // 特性表格密（5.4，spec_decode 继承链 / LoRA SGMV / sleep 边界）
   ['inf-ch-sglang-overlap', '/inference/06-sglang/02-sglang-overlap-scheduler/'], // 推导重章（6.2【重】，bubble 消除账 + FutureMap resolve 证明）
+  // inference W4 样章（P7 DeepInfer 与 DeepSeek 栈落地代表章：架构走读 / 推导重章 / 表格图密各一）
+  ['inf-ch-deepinfer-arch', '/inference/07-deepinfer-and-deepseek/01-deepinfer-architecture/'], // 架构走读（7.1，release 边界签名图 / config 字段表）
+  ['inf-ch-dspark-swa', '/inference/07-deepinfer-and-deepseek/02-dspark-and-swa-replay/'], // 推导重章（7.2【重】，DSpark 期望吞吐 / SWA 恒定成本 / hit policy 命题）
+  ['inf-ch-large-ep', '/inference/07-deepinfer-and-deepseek/04-deepseek-large-scale-ep/'], // 表格/图密（7.4，Wide-EP 账 / EPLB 两套算法对照 / 三 LB）
 ];
 
 const VIEWPORTS = [

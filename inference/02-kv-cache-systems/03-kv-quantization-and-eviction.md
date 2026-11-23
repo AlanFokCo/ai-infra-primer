@@ -12,7 +12,7 @@ $$
 
 符号表： $\kappa$ = 每 token 每层 KV 字节数（MHA / GQA 取 $2 H_{kv} d_{\mathrm{head}} \cdot \mathrm{bytes}$ ，MLA 取 $(d_{\mathrm{latent}} + d_{\mathrm{rope}}) \cdot \mathrm{bytes}$ ，几何对照表在 1.2，MLA 低秩推导在 models 4.1）； $L$ = 层数； $T$ = 序列长； $B$ = batch 内序列数。式 (1) 与 models 2.4 式 (9) 是同一笔账的两种写法，增量只在 $\kappa$ 的几何分列。
 
-**本章口径**：Llama-3.1-8B GQA（ $L$ = 32、 $H_{kv}$ = 8、 $d_{\mathrm{head}}$ = 128、 $d_{\mathrm{model}}$ = 4096、bf16），全章例题复用；§4 的低精度格式事实换 V4.1-Flash MLA 口径（40 层、 $d_{\mathrm{latent}}$ = 512、 $d_{\mathrm{rope}}$ = 64，config [W]，hf-mirror 传输核实），换口径原因：DeepInfer 的格式披露只存在于 V4.1 生产口径。代入章脊： $\kappa$ = 2 × 8 × 128 × 2 = 4096 B/token/层， $\kappa L$ = 131072 B = 128 KiB/token； $T$ = 131072、 $B$ = 1 时总量 16 GiB——与 models 2.4 §5 表的 8B 行一致。
+**本章口径**：Llama-3.1-8B GQA（ $L$ = 32、 $H_{kv}$ = 8、 $d_{\mathrm{head}}$ = 128、 $d_{\mathrm{model}}$ = 4096、bf16），全章例题复用；§4 的低精度格式事实换 V4.1-Flash MLA 口径（40 层、共享 KV 向量 512 元素 = $d_{\mathrm{latent}}$ 448 + $d_{\mathrm{rope}}$ 64；config head_dim 512 已含 rope、kv_lora_rank 448 由引擎导出，[W]，hf-mirror 传输核实），换口径原因：DeepInfer 的格式披露只存在于 V4.1 生产口径。代入章脊： $\kappa$ = 2 × 8 × 128 × 2 = 4096 B/token/层， $\kappa L$ = 131072 B = 128 KiB/token； $T$ = 131072、 $B$ = 1 时总量 16 GiB——与 models 2.4 §5 表的 8B 行一致。
 
 式 (1) 的三个可砍因子对应三条路线，本章逐一算账：
 
@@ -87,9 +87,9 @@ $$
 
 NVFP4 是 NVIDIA 的块格式（[NVIDIA, cuBLAS / TensorRT-LLM 官方文档](../references.md)，[C] 开放文档、非闭源；blog 正文反爬不可达，格式事实以这两份官方文档为据）：E2M1 元素 + **每 16 元素一个 UE4M3 block scale** + **tensor-wide FP32 global scale**，要求 Blackwell（compute capability 10.0+，Hopper 无 FP4）。cuBLAS 原文：「a dedicated scaling factor stored as an 8-bit CUDA_R_8F_UE4M3 value for each 16-element block in the innermost dimension」（CUBLASLT_MATMUL_MATRIX_SCALE_VEC16_UE4M3）；全局 scale 对应 CUBLASLT_MATMUL_MATRIX_SCALE_SCALAR_32F。两级 scale 的分工：per-16 block scale 管局部极差，FP32 global scale 管 tensor 级动态范围（UE4M3 可表示范围有限，单级 scale 罩不住整个 tensor）。代入式 (4)：(16 × 0.5 + 1)/16 = 0.5625 B/元素（global scale 每 tensor 4 字节，长 tensor 摊薄可忽略），对 bf16 ≈ 3.56×。TensorRT-LLM 的 KV cache 支持 `dtype='nvfp4'`（需 ModelOpt 离线量化）。
 
-DeepInfer 生产口径（官方披露，doc 逐字，核实 2026-11-23）：doc 在「Where is FP4 used?」标题下列出主 KV——「Main KV: per-16, e4m3 — like NVFP4 but without the global scale.」「Indexer KV: per-32, ue8m0, MXFP4.」格式读法：元素是 FP4 E2M1（0.5 字节，与 NVFP4 相同；cuBLAS 类型表 CUDA_R_4F_E2M1 为 4-bit 浮点），doc 的「e4m3」指 **scale 类型**——每 16 元素一个 e4m3 scale；与 NVFP4 的差别正是省掉 tensor 级 FP32 global scale 一项。代入式 (4)：(16 × 0.5 + 1)/16 = 0.5625 B/元素——字节账与 NVFP4 一致（global scale 每 tensor 4 字节摊薄可忽略），差别在动态范围处理，不在字节数。换 V4.1-Flash 口径（原因见 §1）：MLA 每 token 每层 576 元素（ $d_{\mathrm{latent}} + d_{\mathrm{rope}}$ = 512 + 64，models 4.1 recap），576/16 = 36 个块、36 字节 scale，数据 576 × 0.5 = 288 字节，故主 KV $\kappa$ = 288 + 36 = 324 B/token/层（推导口径）；bf16 为 1152 B，压缩 1152/324 ≈ 3.56×。40 层合计 12960 B/token ≈ 12.7 KiB；满窗 $T$ = 1048576（config `max_position_embeddings` [W]）单序列主 KV ≈ 12.7 GiB，bf16 口径则 45 GiB（上界口径：按 40 层全量驻留计，SWA 层实际只留窗口内 KV，state 账见 2.4 §8；indexer K 另计，其 MXFP4 格式同式 (4) 的 0.53125 B/元素）。
+DeepInfer 生产口径（官方披露，doc 逐字，核实 2026-11-23）：doc 在「Where is FP4 used?」标题下列出主 KV——「Main KV: per-16, e4m3 — like NVFP4 but without the global scale.」「Indexer KV: per-32, ue8m0, MXFP4.」格式读法：元素是 FP4 E2M1（0.5 字节，与 NVFP4 相同；cuBLAS 类型表 CUDA_R_4F_E2M1 为 4-bit 浮点），doc 的「e4m3」指 **scale 类型**——每 16 元素一个 e4m3 scale；与 NVFP4 的差别正是省掉 tensor 级 FP32 global scale 一项。代入式 (4)：(16 × 0.5 + 1)/16 = 0.5625 B/元素——字节账与 NVFP4 一致（global scale 每 tensor 4 字节摊薄可忽略），差别在动态范围处理，不在字节数。换 V4.1-Flash 口径（原因见 §1）：MLA 每 token 每层 512 元素（ $d_{\mathrm{latent}} + d_{\mathrm{rope}}$ = 448 + 64；config head_dim 512 已含 rope，kv_lora_rank = 512 − 64 = 448 由引擎导出，读法见 7.2 §9——V3 的 576 元素（512 + 64）不适用 V4.1），512/16 = 32 个块、32 字节 scale，数据 512 × 0.5 = 256 字节，故主 KV $\kappa$ = 256 + 32 = 288 B/token/层（推导口径；与 2.4 §8 StateBlock 的 MXFP8 528 B = 512 + 16 同一 512 元素几何）；bf16 为 1024 B，压缩 1024/288 ≈ 3.56×。40 层合计 11520 B/token = 11.25 KiB；满窗 $T$ = 1048576（config `max_position_embeddings` [W]）单序列主 KV = 11.25 GiB，bf16 口径则 40 GiB（上界口径：按 40 层全量驻留计，SWA 层实际只留窗口内 KV，state 账见 2.4 §8；indexer K 另计，其 MXFP4 格式同式 (4) 的 0.53125 B/元素）。
 
-> **坑**：把「Main KV: per-16, e4m3」读成元素 = e4m3（1 字节）——该行在「Where is FP4 used?」标题下，元素是 FP4 E2M1（0.5 字节），e4m3 是 scale 类型；误读使 $\kappa$ 虚高 1.89×（612 vs 324 B）。规避：格式读法对标题上下文 + 官方类型表（cuBLAS CUDA_R_4F_E2M1）双重核对。
+> **坑**：把「Main KV: per-16, e4m3」读成元素 = e4m3（1 字节）——该行在「Where is FP4 used?」标题下，元素是 FP4 E2M1（0.5 字节），e4m3 是 scale 类型；误读使 $\kappa$ 虚高 1.89×（544 vs 288 B）。规避：格式读法对标题上下文 + 官方类型表（cuBLAS CUDA_R_4F_E2M1）双重核对。
 
 > **坑**：把 NVFP4_PLUS 当成 NVFP4——后者是 Rubin（SM107）的另一格式：per-32 UE5M3 scale、无 FP32 global scale，块大小与 scale 类型都不同。触发条件：跨代际文档混读；后果：式 (4) 代入错误的 $k$ 与 scale 字节，开销账全错。规避：格式名绑定代际（NVFP4 = SM100，NVFP4_PLUS = SM107），逐字核对官方文档。
 
@@ -139,7 +139,7 @@ $$
 | 持久 outlier 前提（M ≥ 3m）下，per-channel 把正常通道误差限回自身极差 | 正常通道界 0.333 vs per-token ≥ 1.17（M=8、m=1、q=2） | 命题 2、§2 |
 | scale 开销 = $16/(g q)$ （fp16 scale、对称口径） | $g$ = 32、 $q$ = 2 → 25%； $g$ = 128 → 6.25% | 式 (3)、§2 |
 | MXFP8 1.03125 / NVFP4 0.5625 / MXFP4 0.53125 B/元素 | 对 bf16 1.94× / 3.56× / 3.76× | 式 (4)、§4 |
-| DeepInfer 主 KV = FP4 E2M1 元素 + per-16 e4m3 scale（类 NVFP4 无 global scale）→ 324 B/token/层 | 对 bf16 3.56×；满窗单序列 12.7 GiB | §4 官方披露 |
+| DeepInfer 主 KV = FP4 E2M1 元素 + per-16 e4m3 scale（类 NVFP4 无 global scale）→ 288 B/token/层 | 对 bf16 3.56×；满窗单序列 11.25 GiB | §4 官方披露 |
 | 静态窗口召回 = $(w + n_{\mathrm{sink}})/T$ ；动态打分召回上限 = 打分器召回率 | 12.5% @ $T$ = 32768、 $w$ = 4096 | 式 (5)、命题 3、练习 4 |
 | 先驱逐后量化，节省账 $\eta \times q/16$ 相乘 | 0.2 × 2/16 = 1/40 → 0.4 GiB | §6 |
 
@@ -160,4 +160,4 @@ $$
 - [OCP, 2023](../references.md)：OCP Microscaling Formats (MX) Specification v1.0，[C]（key: ocp-mx，官方格式规范、开放标准、非闭源）——block 32 + E8M0、MXFP4 元素 E2M1
 - [NVIDIA, cuBLAS / TensorRT-LLM 官方文档](../references.md)：NVFP4 格式，[C]（key: nvidia-nvfp4，开放文档、非闭源；blog 正文反爬，格式事实以官方文档为据）——per-16 UE4M3 + tensor-wide FP32、SM100、KV cache nvfp4
 - [DeepSeek-AI, DeepInfer doc](../references.md)：doc/inference_deployment_qa.md（key: deepinfer-doc，教学参照 + 官方实现，官方披露，核实 2026-11-23）——主 KV per-16 e4m3 / indexer per-32 ue8m0 MXFP4 逐字口径
-- [DeepSeek-AI, V4.1-Flash config](../references.md)：config.json（key: v41-flash-config，[W]，hf-mirror 传输核实）——MLA 几何 512 + 64、40 层、max_position_embeddings 1048576
+- [DeepSeek-AI, V4.1-Flash config](../references.md)：config.json（key: v41-flash-config，[W]，hf-mirror 传输核实）——MLA 几何 head_dim 512 含 rope 64（kv_lora_rank 448，引擎导出）、40 层、max_position_embeddings 1048576

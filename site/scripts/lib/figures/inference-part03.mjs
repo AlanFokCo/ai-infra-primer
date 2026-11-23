@@ -157,7 +157,7 @@ function cascadeTwoLevel() {
 /* ============================================================
  * 3.1 §7（block 2）— DSA decode 选择链（V4.1：T=131072、K=512）
  * 原文：indexer K cache → 打分 → candidate_block_max(b_c=16) → 块 TopK
- *       → DeepSelect token TopK → restore → sparse MLA；主路 22.5 MiB vs indexer 1.25 GiB
+ *       → DeepSelect token TopK → restore → sparse MLA；主路 20 MiB vs indexer 1.25 GiB
  * ============================================================ */
 function dsaSelectChain() {
   const UID = 'i3c';
@@ -190,15 +190,15 @@ function dsaSelectChain() {
   body.push(cap(204, 324, '与 2.1 式 (3) 同形', { size: 9, anchor: 'end' }));
   body.push(cap(204, 386, '主路只读选中行', { size: 9, anchor: 'end' }));
   // 右栏注记
-  body.push(cap(558, 76, '128 维 ≪ 主路 576', { size: 9 }));
+  body.push(cap(558, 76, '128 维 ≪ 主路 512', { size: 9 }));
   body.push(cap(558, 138, '但读取是全量 T', { size: 9, color: 'var(--seal-deep)' }));
   body.push(cap(558, 200, '最后有效块强制 +inf', { size: 9 }));
   body.push(cap(558, 262, '2–20× torch.topk', { size: 9 }));
   body.push(cap(558, 324, '无效位置 −1', { size: 9 }));
   body.push(cap(558, 386, '256× 稀疏', { size: 9 }));
 
-  body.push(cap(36, 430, '读取账（式 10）：主路 512×1152×40 = 22.5 MiB/步（全量对照 5.625 GiB）· indexer 131072×128×2×40 = 1.25 GiB = 56.9× 主路', { mono: true, size: 9.5 }));
-  body.push(cap(36, 448, '换 MXFP4 indexer（0.53125 字节/元素）→ ≈340 MiB，仍 15× 主路、较 bf16 省 3.76× —— indexer 精度/格式成为新杠杆（2.3 / 3.2）', { size: 10 }));
+  body.push(cap(36, 430, '读取账（式 10）：主路 512×1024×40 = 20 MiB/步（全量对照 5 GiB）· indexer 131072×128×2×40 = 1.25 GiB = 64× 主路', { mono: true, size: 9.5 }));
+  body.push(cap(36, 448, '换 MXFP4 indexer（0.53125 字节/元素）→ ≈340 MiB，仍 17× 主路、较 bf16 省 3.76× —— indexer 精度/格式成为新杠杆（2.3 / 3.2）', { size: 10 }));
 
   return scene(720, 460, body, { label: 'DSA 选择链：indexer 对全历史打分，块级预选压实候选，DeepSelect 选出 512 行，还原页地址后稀疏 MLA 只 gather 选中行；瓶颈搬到 indexer 读取' }).svg();
 }

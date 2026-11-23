@@ -171,7 +171,7 @@ function twoLevelPool() {
   body.push(edge([186, 133], vb, { nodes, portTo: vb.left, pulse: true, dur: 1.4, delay: 0.5, uid: UID, eid: 'v' }));
   body.push(arrowHead(vb.left[0], vb.left[1], 1, 0));
   body.push(cap(186, 204, 'req_to_token[7, t] = 4242', { mono: true, size: 8.5, anchor: 'middle' }));
-  body.push(cap(522, 182, 'MLA 池：单 kv_buffer [rows, 1, 576] —— 无因子 2、无 H_kv 乘', { size: 8, anchor: 'middle' }));
+  body.push(cap(522, 182, 'MLA 池（V3）：单 kv_buffer [rows, 1, 576] —— 无因子 2、无 H_kv 乘', { size: 8, anchor: 'middle' }));
 
   const tn = node({ id: 'tn', x: 36, y: 210, w: 300, h: 44, role: 'attn', title: 'TreeNode.value = [4242, 4243, …]', sub: '索引切片：可共享 / 可分裂（分裂只拷索引，KV 本体不动）', mono: true, titleSize: 9.5, subSize: 7 });
   nodes.push(tn); body.push(tn.svg);

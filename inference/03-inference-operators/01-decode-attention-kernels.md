@@ -271,10 +271,10 @@ DeepSelect token TopK（K=512；式 (9) 期望账）
    ▼ indices [B, s_q, 512]（页地址已 bake）
 sparse MLA decode（FlashMLA）：只 gather 512 行
    ▼ (O, LSE)
-主路读 22.5 MiB/步；indexer 读 1.25 GiB/步（bf16）→ 瓶颈搬家
+主路读 20 MiB/步；indexer 读 1.25 GiB/步（bf16）→ 瓶颈搬家
 ```
 
-indexer K cache：每 token 每层 d_I = 128 元素、头间共享一份（models 4.2 §6 口径）；DeepSelect 的 indexer 场景用 bf16，DeepInfer 生产 indexer KV 用 per-32 ue8m0 MXFP4（官方披露，[DeepSeek-AI, inference_deployment_qa.md](../references.md)，教学参照；格式账归 2.3 / 3.2）。容量小（128 对主路 576），读取却是全量 T——账见式 (10)。打分 kernel（weighted ReLU MQA logits，fp8/fp4）属 DeepGEMM 组件（[DeepSeek-AI, DeepGEMM](../references.md)，教学参照），走读归 3.3。
+indexer K cache：每 token 每层 d_I = 128 元素、头间共享一份（models 4.2 §6 口径）；DeepSelect 的 indexer 场景用 bf16，DeepInfer 生产 indexer KV 用 per-32 ue8m0 MXFP4（官方披露，[DeepSeek-AI, inference_deployment_qa.md](../references.md)，教学参照；格式账归 2.3 / 3.2）。容量小（128 对主路 512），读取却是全量 T——账见式 (10)。打分 kernel（weighted ReLU MQA logits，fp8/fp4）属 DeepGEMM 组件（[DeepSeek-AI, DeepGEMM](../references.md)，教学参照），走读归 3.3。
 
 DeepSelect（[DeepSeek-AI, DeepSelect](../references.md)，教学参照，README + deep-dive 2026-11-23 核实）：DSA indexer 与 sampler 的 TopK kernel，2–20× vs torch.topk；indexer 场景 bf16 / topk ≤ 4096 / 主优化 topk = 512（与 V4.1 config 一致），sampling 场景 fp32 / vocab 约 128K；CUDA + Ascend（Ascend 仅 bf16）。性能度量 = 有效内存带宽（口径：TopK 无浮点运算，FLOP rate 无意义——README 逐字）。算法（deep-dive 口径）：维护当前第 K 大阈值（初始 −∞），三步循环——Scan（按 b_s 块读输入，随机块序）/ Filter（只有 > 阈值的元素进候选 buffer）/ Compact（buffer 达 K + b_2 触发 shared memory 内 radix-select，压回 K 个、更新阈值）。阈值单调不降，后面的块越难通过；随机块序保证对任意输入的期望界。每个输入元素恰读一遍（带宽最优），额外空间 O(K + b_s + b_2) 驻留 shared memory。期望处理量（doc 定理，符号翻译：doc 的 k → K、B → b_s、B_2 → b_2、N → T、L → C_buf = K + b_s + b_2，避免与 batch B、层数 L、block b 冲突）：
 
@@ -300,7 +300,7 @@ $$
 M_{\mathrm{main}} = K \kappa L, \qquad M_{\mathrm{idx}} = T d_I \cdot \mathrm{bytes}_I \cdot L \qquad (10)
 $$
 
-**符号**：M_main = 主路每步 KV 读字节（选中 K 行）；M_idx = indexer 每步 K cache 读字节（全量 T 行）；d_I = index_head_dim = 128 [W]；$`\mathrm{bytes}_I`$ = indexer 每元素字节数（bf16 = 2）；κ = 576 × 2 = 1152 字节（MLA bf16）；L = 40。代入 T = 131072：M_main = 512 × 1152 × 40 = 22.5 MiB（全量对照 5.625 GiB，0.39%）；M_idx（bf16）= 131072 × 128 × 2 × 40 = 1.25 GiB = 56.9× M_main。换 MXFP4 indexer（每元素 0.5 + 1/32 = 0.53125 字节，[OCP MX](../references.md)，[C]）：M_idx ≈ 340 MiB，仍 15× M_main，较 bf16 省 3.76×。结论：DSA 把带宽瓶颈从主 KV 搬到 indexer K——indexer 精度 / 格式成为新杠杆（2.3 量化、3.2 格式账）；MLA 吸收形的 57× 读取削减（对展开形，models 4.1）与 DSA 的 256× 稀疏（131072/512）都叠加在这个杠杆之上。
+**符号**：M_main = 主路每步 KV 读字节（选中 K 行）；M_idx = indexer 每步 K cache 读字节（全量 T 行）；d_I = index_head_dim = 128 [W]；$`\mathrm{bytes}_I`$ = indexer 每元素字节数（bf16 = 2）；κ = 512 × 2 = 1024 字节（MLA bf16；V4.1 共享 KV 向量 512 元素 = 448 latent + 64 rope，见 1.2 §3，V3 的 576 不适用）；L = 40。代入 T = 131072：M_main = 512 × 1024 × 40 = 20 MiB（全量对照 5 GiB，0.39%）；M_idx（bf16）= 131072 × 128 × 2 × 40 = 1.25 GiB = 64× M_main。换 MXFP4 indexer（每元素 0.5 + 1/32 = 0.53125 字节，[OCP MX](../references.md)，[C]）：M_idx ≈ 340 MiB，仍 17× M_main，较 bf16 省 3.76×。结论：DSA 把带宽瓶颈从主 KV 搬到 indexer K——indexer 精度 / 格式成为新杠杆（2.3 量化、3.2 格式账）；MLA 吸收形的 57× 读取削减（对展开形，models 4.1）与 DSA 的 256× 稀疏（131072/512）都叠加在这个杠杆之上。
 
 sparse MLA 接口（FlashMLA README，2026-11-23 核实；Hopper kernel 内部锚 ba89a34）：indices 为 [B, s_q, K] int32，值 = 页块号 × page_block_size + 块内偏移——页地址已 bake 进 indices，kernel 不再消费 block_table（参数仍必传，None 即可）；无效位置 −1。对照 §6 的 dense paged 接口：dense 传块表、kernel 做翻译；DSA sparse 传翻译好的 indices、kernel 直接 gather——选择与寻址合进一个 tensor，这是稀疏化在接口层的落点。
 
@@ -318,7 +318,7 @@ sparse MLA 接口（FlashMLA README，2026-11-23 核实；Hopper kernel 内部�
 | 命题 2：cascade 两级合并 = 全量 attention（不相交并 + 命题 1）；前缀读 B → ceil(B/行块) 次；B = 32 例省 86.1% IO，论文 e2e 峰值 ITL −13.73%（8B，n = 4） | 命题 2、式 (5) | §4、练习 3 |
 | 命题 3：吸收形 ≡ 展开形（结合律 + 线性性）；score 内维 576、读取 57× 削减；I_MLA = H_q s_q (d_k + d_v)/d_k ≈ 242（V3），H800 throttled ridge 的 94%——compute-bound 边缘 | 命题 3、式 (6)-(8) | §5 |
 | 寄存器预算 32768/65536 → ping-pong 不可行 → O 竖切 + seesaw（半区 online softmax 不变量）；FlashMLA Hopper 锚 ba89a34（2026.09.30 移除） | §5 | §5 |
-| 命题 4：分数互异下 block-max 预选 K_b ≥ K 精确（无强制名额），K_b < K 损失恒 ≤ K − K_b 且可达；实现强制当前块占一名额，条件收紧 K_b ≥ K + 1；DSA 把带宽瓶颈搬到 indexer K（bf16 口径 56.9× 主路，MXFP4 省 3.76×） | 命题 4、式 (9)(10) | §7 |
+| 命题 4：分数互异下 block-max 预选 K_b ≥ K 精确（无强制名额），K_b < K 损失恒 ≤ K − K_b 且可达；实现强制当前块占一名额，条件收紧 K_b ≥ K + 1；DSA 把带宽瓶颈搬到 indexer K（bf16 口径 64× 主路，MXFP4 省 3.76×） | 命题 4、式 (9)(10) | §7 |
 | LSE 是标准输出：split 归约 / cascade / 跨实例合并共用 ⊕；vLLM max_num_splits 三态（0 启发式 / CG 固定 / batch-invariant = 1） | §6 表 | §6、练习 4 |
 
 ## 练习

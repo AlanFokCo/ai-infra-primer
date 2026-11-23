@@ -49,7 +49,7 @@ $$
 
 ## 3. rollout / train 引擎拆分
 
-① 为什么不直接复用训练引擎做采样。先看负载形态：自回归解码逐 token 串行，每一步都要把全量权重读一遍，是典型的 memory-bandwidth-bound 负载。推理引擎（vLLM）的 PagedAttention、连续批处理、KV cache 分页管理，正是为这种负载做的——内部机制归 inference 维度（PagedAttention 与分页管理见 inference 2.1，连续批处理见 4.1），本章只登记接口事实。训练引擎（Megatron 归 6.x、FSDP 归 4.3）的 TP/PP 切分是为训练吞吐优化的，层间通信模式与 decode 完全不匹配。§1 那个 80% 的 profile 已经说明生成阶段是主瓶颈：引擎选错，整轮都被拖慢。
+① 为什么不直接复用训练引擎做采样。先看负载形态：自回归解码逐 token 串行，每一步都要把全量权重读一遍，是典型的 memory-bandwidth-bound 负载。推理引擎（vLLM）的 PagedAttention、连续批处理、KV cache 分页管理，正是为这种负载做的——内部机制归 inference 维度（PagedAttention 与分页管理见 inference 2.1，连续批处理见 4.1，模块走读见 5.2），本章只登记接口事实。训练引擎（Megatron 归 6.x、FSDP 归 4.3）的 TP/PP 切分是为训练吞吐优化的，层间通信模式与 decode 完全不匹配。§1 那个 80% 的 profile 已经说明生成阶段是主瓶颈：引擎选错，整轮都被拖慢。
 
 ② 拆分后的形态（本章核心图）：
 
@@ -216,7 +216,7 @@ OpenRLHF 的设计取舍与 veRL 几乎逐项对偶（[Hu et al., 2024](../refer
 
 - [Sheng et al., 2024](../references.md)：HybridFlow: A Flexible and Efficient RLHF Framework（veRL 论文），arXiv:2409.19256，[A]（key: verl）——hybrid 控制模型与分层 API（§4）、3D-HybridEngine 与 Table 2（§5）、实现与实测口径（§7-§8）；repo 走读：verl-project/verl 的 `verl/trainer/main_ppo.py`、`verl/trainer/ppo/v1/`（`trainer_base.py` 的 `_compute_old_log_prob` 双模式、`trainer_sync.py` / `trainer_colocate_async.py` / `trainer_separate_async.py`）、`verl/trainer/ppo/core_algos.py`（`AdvantageEstimator`、`kl_penalty`、KL 控制器）、`verl/trainer/ppo/trainer_utils.py`（`apply_kl_penalty`）、`verl/trainer/ppo/rollout_corr_helper.py`（截断 IS 与拒采样）、`verl/workers/engine/`（`BaseEngine` 与 fsdp / megatron 实现）、`verl/workers/rollout/vllm_rollout/`（`update_weights`、`release` / `resume`）、`verl/checkpoint_engine/`（NCCL / NIXL / Mooncake 多后端）、`verl/single_controller/`；路径核实于 2026-11-17
 - [Hu et al., 2024](../references.md)：OpenRLHF: An Easy-to-use, Scalable and High-performance RLHF Framework，arXiv:2405.11143，[A]（key: openrlhf）——分卡放置立场（§3.1）、生成阶段 80% profile（§3.2）、摘要加速比口径；repo 走读：OpenRLHF/OpenRLHF 的 `openrlhf/cli/train_ppo_ray.py`、`openrlhf/trainer/ppo_trainer.py`、`openrlhf/trainer/ray/ppo_actor.py`（`broadcast_to_vllm`、NCCL 广播与 CUDA IPC 双路径）、`openrlhf/trainer/ray/vllm_engine.py`（`update_weight` / `update_weight_cuda_ipc`）；路径核实于 2026-11-17
-- [Kwon et al., 2023](../references.md)：vLLM: Efficient Memory Management for Large Language Model Serving with PagedAttention，arXiv:2309.06180，[A]（key: vllm）——rollout 引擎锚点（内部机制归 inference 维度）
+- [Kwon et al., 2023](../references.md)：vLLM: Efficient Memory Management for Large Language Model Serving with PagedAttention，arXiv:2309.06180，[A]（key: vllm）——rollout 引擎锚点（内部机制归 inference 5.1 / 5.2）
 - [Shoeybi et al., 2019](../references.md)：Megatron-LM，arXiv:1909.08053，[A]（key: megatron-lm）——训练引擎锚点之一（运行时归 6.2）
 - [Zhao et al., 2023](../references.md)：PyTorch FSDP，arXiv:2304.11277，[A]（key: fsdp）——训练引擎锚点之二（机制归 4.3）
 - [Rajbhandari et al., 2020](../references.md)：ZeRO，arXiv:1910.02054，[A]（key: zero）——训练态 $16N$ 与 ZeRO-1 $4N + 12N/d$ 口径（推导归 4.2）

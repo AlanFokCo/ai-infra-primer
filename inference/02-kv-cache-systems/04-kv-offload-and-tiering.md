@@ -6,7 +6,7 @@
 
 从 host DRAM 取 KV 比读 HBM 慢多少？从 SSD 取又慢多少？先把三层账锁定——本章后面所有决策都是这张表的代入。所谓 KV offload，是指把 KV cache 从 GPU HBM 挪到更低层存储、需要时再取回的系统手段；所谓分层存储（tiered storage），是指按带宽 / 延迟 / 容量把存储介质排成层级、按访问热度放置数据的结构。
 
-**本章口径**：主口径 = Llama-3.1-8B GQA（ $L$ = 32、 $H_{kv}$ = 8、 $d_{\mathrm{head}}$ = 128、bf16，与 2.3 章脊一致），硬件 H100 SXM（80 GB HBM3、3.35 TB/s、PCIe Gen5，[NVIDIA, 官方 datasheet](../references.md)，[C] 官方规格披露）；生产披露口径 = DeepInfer V4.1-Flash（40 层 MLA）+ 专用 3FS 集群，换口径原因：生产数字只存在于该口径。KV 容量 recap models 2.4 式 (9)（models 的 $b$ = 每元素字节数，本维度译为 $\mathrm{bytes}$ ；本章 $b$ 专归 block size）：章脊 $\kappa L$ = 131072 B/token = 128 KiB， $T$ = 32768 时单序列 4 GiB；V4.1 口径 $\kappa L$ = 46080 B/token = 45 KiB（bf16），同 $T$ 单序列 1.41 GiB。
+**本章口径**：主口径 = Llama-3.1-8B GQA（ $L$ = 32、 $H_{kv}$ = 8、 $d_{\mathrm{head}}$ = 128、bf16，与 2.3 章脊一致），硬件 H100 SXM（80 GB HBM3、3.35 TB/s、PCIe Gen5，[NVIDIA, 官方 datasheet](../references.md)，[C] 官方规格披露）；生产披露口径 = DeepInfer V4.1-Flash（40 层 MLA）+ 专用 3FS 集群，换口径原因：生产数字只存在于该口径。KV 容量 recap models 2.4 式 (9)（models 的 $b$ = 每元素字节数，本维度译为 $\mathrm{bytes}$ ；本章 $b$ 专归 block size）：章脊 $\kappa L$ = 131072 B/token = 128 KiB， $T$ = 32768 时单序列 4 GiB；V4.1 口径 $\kappa L$ = 40960 B/token = 40 KiB（bf16，512 元素 = 448 latent + 64 rope，几何见 1.2 §3），同 $T$ 单序列 1.25 GiB。
 
 三层账如下。**延迟列是 GPU 侧访问口径**（含 PCIe / 网络 / 文件系统栈），不是介质本征延迟：
 
@@ -156,7 +156,7 @@ EC 账（按 10+2 标准语义推导）：存储开销 12/10 = 1.2×（20% 冗�
 
 **专用集群 vs 分层权衡**（关键推导，doc L175 官方披露）：DeepInfer 选专用 3FS 集群而非计算节点本地分层，三条理由——(1) 任何 prefill 机命中任何前缀（「Since any engine can hit any prefix, there is no prefix-affinity routing」），避免 prefix affinity 与负载均衡路由的冲突（2.2 recap）：KV 若留在计算节点，命中就把请求绑死在特定机器，负载均衡失效；(2) 存储与计算 autoscaling 解耦——缓存容量按命中率需求扩缩（TTL × 到达率 × 复用距离决定值得留多少 KV），计算按 QPS 扩缩，两条曲线形状不同：流量翻倍时计算要翻倍，缓存未必（复用距离不变则命中率不变），互不绑架；(3) 计算节点故障率比存储节点高一个量级以上（「more than an order of magnitude higher」）——KV 放计算节点，节点故障即缓存损失，专用存储集群隔离故障域。代价面：专用集群多一跳网络（§1 的 ms 量级延迟）与独立存储硬件。权衡 = 命中率收益 + 弹性收益 + 故障域收益 vs 网络延迟 + 硬件成本；DeepInfer 的生产选择是专用集群，前提是 §2 的带宽账成立（网络取回仍远快于重算）。
 
-StateBlock（SWA state cache，doc L217-223 官方披露）：每序列一个固定 slot，state_size_to_disk = 20 层 × 134 token × 528 B = 1,415,040 B/seq（MXFP8 SWA KV 格式，仅 stored region 落盘口径），约合 1.35 MiB。528 B 的构成（推导口径，research 侧算术观察）：512 维 latent × 1 字节 + 512/32 = 16 个 E8M0 scale 字节 = 528 B——与 MXFP8 per-32 格式一致（2.3 §4 式 (4)）。128 token 粒度存储、ring buffer 窗口外 +6 位置（copy 位置至多越界 5 token）。SWA KV 不进持久 cache、留生产机内存，Entrypoint 内存目录（逻辑统一、物理按 key 分区）记录持有机——这解释了 §1 放置表的 SWA 行：窗口态复用距离短、跨机命中走 400G VLAN 即够，不值得付持久化的写放大。
+StateBlock（SWA state cache，doc L217-223 官方披露）：每序列一个固定 slot，state_size_to_disk = 20 层 × 134 token × 528 B = 1,415,040 B/seq（MXFP8 SWA KV 格式，仅 stored region 落盘口径），约合 1.35 MiB。528 B 的构成（推导口径，research 侧算术观察）：512 维共享 KV 向量（448 latent + 64 rope）× 1 字节 + 512/32 = 16 个 E8M0 scale 字节 = 528 B——与 MXFP8 per-32 格式一致（2.3 §4 式 (4)）。128 token 粒度存储、ring buffer 窗口外 +6 位置（copy 位置至多越界 5 token）。SWA KV 不进持久 cache、留生产机内存，Entrypoint 内存目录（逻辑统一、物理按 key 分区）记录持有机——这解释了 §1 放置表的 SWA 行：窗口态复用距离短、跨机命中走 400G VLAN 即够，不值得付持久化的写放大。
 
 write-back 与版本（doc L195 / L199 官方披露）：写失败不上报引擎、读时严格校验（§4 已引）；版本元组 (deployment configuration, model weights, user group)——权重 / block 字节布局 / tokenizer / 改 KV 值的框架变更均使旧 cache 失效；生产未做过 cache 格式迁移。系统含义：**KV 量化格式变更（2.3）同样使旧 cache 失效**——版本元组是量化 / 驱逐策略变更的正确性边界，格式升级要么全量失效重建，要么做迁移（DeepInfer 从未做过后者）。
 
@@ -172,7 +172,7 @@ write-back 与版本（doc L195 / L199 官方披露）：写失败不上报引�
 
 **SGLang HiSparse**（hisparse_guide.mdx 口径）：DSA 系模型 decode 侧 GPU 只留小 hot buffer（如 4K token），全量 KV 在 CPU pinned memory；CUDA kernel 按 attention score **on-demand top-k swap-in**（短序列 fast path / 长序列 hit detection → LRU reordering → miss handling）；eager backup 异步回写上一 token KV。前提三条：DSA 系模型（DeepSeek-V3.2、GLM-5.1、Kimi-K3.1 DSA 层、DeepSeek V4、MiniMax M3）+ PD 分离模式 + 仅 decode 实例。PD 集成 direct-to-host：prefill GPU 经 RDMA 直写 decode host pool（绕过 decode GPU，消除 KV 传输的瞬时显存尖峰）；DeepSeek V4 direct-to-host 只写 C4 KV，c4_indexer 与 C128 KV 仍 D2D。路径：python/sglang/srt/mem_cache/hisparse_memory_pool.py、python/sglang/srt/managers/hisparse_coordinator.py、python/sglang/kernels/ops/kvcache/hisparse.py（注意最后一个在 kernels/ 下、不在 srt/ 下）。机制对照：HiCache 是容量驱动分层（全量 KV 都可能换入），HiSparse 是 attention 驱动分层（只换入 top-k 位置）——后者传输量由 index_topk 决定、与 $T$ 无关（DSA 链路 recap models 4.2 §6，推导不重复）。
 
-**DeepInfer 对照**（[DeepSeek-AI, DeepInfer doc](../references.md)，官方披露，doc L183）：decode 不开 KV offload、也不用 Hi-Sparse——「Decode is not bound by cache capacity」；但 decode 产生的 KV 仍写盘提命中率。账面原因：V4.1 MLA $\kappa$ 小（bf16 45 KiB/token，主 KV 低精度 12.7 KiB/token，2.3 §4 推导）+ Wide-EP decode 大显存池（1.2 recap）→ decode 不被容量约束；GQA 大 $\kappa$ 模型（章脊 128 KiB/token，2.8× 于 V4.1 bf16、10× 于其主 KV 低精度）则相反。结论：offload 与否取决于 $\kappa T B$ vs HBM 容量的账，不是引擎风尚——§2 的临界带宽回答「值不值」，本节的容量账回答「要不要」。决策链三步：先算容量账（ $\kappa T B$ 是否超 HBM，决定要不要挪），再算临界带宽（取回是否快于重算，决定挪了值不值），最后选介质与拷贝路径（PCIe / 网络 / GDR，决定怎么挪）——§1 至 §4 就是这条链的三步，引擎差异只在第三步的实现与第一步的阈值。
+**DeepInfer 对照**（[DeepSeek-AI, DeepInfer doc](../references.md)，官方披露，doc L183）：decode 不开 KV offload、也不用 Hi-Sparse——「Decode is not bound by cache capacity」；但 decode 产生的 KV 仍写盘提命中率。账面原因：V4.1 MLA $\kappa$ 小（bf16 40 KiB/token，主 KV 低精度 11.25 KiB/token，2.3 §4 推导）+ Wide-EP decode 大显存池（1.2 recap）→ decode 不被容量约束；GQA 大 $\kappa$ 模型（章脊 128 KiB/token，3.2× 于 V4.1 bf16、11.4× 于其主 KV 低精度）则相反。结论：offload 与否取决于 $\kappa T B$ vs HBM 容量的账，不是引擎风尚——§2 的临界带宽回答「值不值」，本节的容量账回答「要不要」。决策链三步：先算容量账（ $\kappa T B$ 是否超 HBM，决定要不要挪），再算临界带宽（取回是否快于重算，决定挪了值不值），最后选介质与拷贝路径（PCIe / 网络 / GDR，决定怎么挪）——§1 至 §4 就是这条链的三步，引擎差异只在第三步的实现与第一步的阈值。
 
 ## 10. CXL L2 展望：为什么 DeepInfer 当前不用
 
@@ -196,12 +196,12 @@ DeepInfer QA（官方披露，doc L203-207）：(1) V4.1 KV 小（MLA + 低精�
 | FUSE ~400K 4KiB reads/s ≈ 1.64 GB/s → USRBIO（Iov / Ior）绕过 | 距 40 GB/s 读能力差 24× | §7 |
 | EC 10+2 = DeepInfer 生产披露，开源 repo 只有 CRAQ；「11 节点 any 10」张力注 | 开销 1.2×、可用 83.3%、any-10 买尾延迟 | §8 |
 | 专用集群三理由：任何机命中任何前缀 / autoscaling 解耦 / 故障域隔离 | 计算节点故障率高一个量级以上 | §8 官方披露 |
-| decode offload 与否取决于容量约束：DeepInfer 不 offload，SGLang HiSparse 按 top-k 换入 | V4.1 主 KV 12.7 KiB/token vs 8B 128 KiB/token | §9 |
+| decode offload 与否取决于容量约束：DeepInfer 不 offload，SGLang HiSparse 按 top-k 换入 | V4.1 主 KV 11.25 KiB/token vs 8B 128 KiB/token | §9 |
 | CXL L2 收益有限：KV 小 + 读已重叠 + SSD 更便宜 | 收益 = 容量缓解 × 延迟边际收益 − 成本 | §10 官方披露 |
 
 ## 练习
 
-1.（计算 · [10]）StateBlock 账：验证 20 × 134 × 528 = 1,415,040 B 并换算 MiB；按 MXFP8 per-32 格式（512 维 latent、E8M0 scale）推导 528 B 的构成。校验：与 doc 披露 state_size_to_disk = 1,415,040 B 一致；528 = 512 + 512/32。
+1.（计算 · [10]）StateBlock 账：验证 20 × 134 × 528 = 1,415,040 B 并换算 MiB；按 MXFP8 per-32 格式（512 维共享 KV 向量 = 448 latent + 64 rope、E8M0 scale）推导 528 B 的构成。校验：与 doc 披露 state_size_to_disk = 1,415,040 B 一致；528 = 512 + 512/32。
 2.（计算 · [20]）临界带宽代入：8B 章脊、H100 bf16 峰值 989.5 TFLOPS、 $F_{\mathrm{eff}}$ = 50%。(a) $T$ = 32768 的重算时间（含 attention 二次项 $2 L T^{2} d_{\mathrm{model}}$ ，已含 causal 口径，1.2 式 (1)）；(b) $\mathrm{BW}^{\ast}$ = KV 字节 / $t_{\mathrm{recompute}}$ ；(c) 与式 (2) 权重项口径对照并解释差异方向。先写出 (b) 的数量级预测再计算。校验：(c) 权重项口径 ≈ 4.05 GB/s，(b) 应更低（attention 项使重算更贵）。
 3.（推导 · [30]）命题 1 证明闭环：(a) 推导式 (2) 并证明权重项 regime 下 $\mathrm{BW}^{\ast}$ 与 $T$ 无关；(b) 给出命题前提失效的边界（attention 项主导 / 小 KV 延迟项主导）及 $\mathrm{BW}^{\ast}$ 随 $T$ 的变化方向；(c) 代入 $h_1$ = 0.5、 $h_2$ = 0.2、 $h_3$ = 0.2、 $h_0$ = 0.1 与 §2 数值算 $E[t_{\mathrm{KV}}]$ ，对比全 miss。校验：(a) $T$ = 1024 与 $T$ = 32768 的权重项 $\mathrm{BW}^{\ast}$ 相同；(c) ≈ 198 ms。
 4.（计算 · [30]）压缩与跨 DC：4 GiB KV、CacheGen 压缩 3.5–4.3×、跨 DC 400 Gbps（= 50 GB/s）。(a) 压缩后传输时间区间；(b) 8 GPU 份额口径的每 GPU 带宽，是否高于 8B 临界带宽 4.05 GB/s；(c) TTFT 传输预算 0.2 s 时，单块 NVMe SSD（设 4 GB/s，教学口径）要达标所需的最小压缩比。先写出 (c) 的预测再计算。校验：(a) 20–25 ms；(b) 50/8 = 6.25 GB/s > 4.05 GB/s；(c) 需求带宽 21.5 GB/s 除以 4 GB/s。
@@ -218,4 +218,4 @@ DeepInfer QA（官方披露，doc L203-207）：(1) V4.1 KV 小（MLA + 低精�
 - [vLLM, vllm-project/vllm repo](../references.md)：key: vllm-repo，[A]——kv_offload/ 与 simple_kv_offload/ 模块树（main，2026-11-23 核实）
 - [SGLang, sgl-project/sglang repo](../references.md)：key: sglang-repo，[A]——HiCache L1/L2/L3 与 HiSparse 路径、UnifiedRadixCache 版本漂移（main，2026-11-23 核实）
 - [NVIDIA, 官方 datasheet](../references.md)：key: nvidia-datasheet，[C]（官方规格披露、非闭源）——H100 SXM 80 GB / 3.35 TB/s、B200 180 GB / 7.7 TB/s、PCIe Gen5 128 GB/s 双向
-- [DeepSeek-AI, V4.1-Flash config](../references.md)：config.json（key: v41-flash-config，[W]，hf-mirror 传输核实）——40 层 MLA 几何（512 + 64）
+- [DeepSeek-AI, V4.1-Flash config](../references.md)：config.json（key: v41-flash-config，[W]，hf-mirror 传输核实）——40 层 MLA 几何（head_dim 512 含 rope 64，kv_lora_rank 448）

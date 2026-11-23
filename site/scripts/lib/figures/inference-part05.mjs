@@ -320,7 +320,7 @@ function kvThreeLayer() {
 
   body.push(cap(36, 384, 'FreeKVCacheBlockQueue = 零分配双向链表：O(1) 中部摘除（块自带 prev/next 指针）、全程不新建 Python 对象 → 0% 命中吞吐损失 <1%', { size: 9.5 }));
   body.push(cap(36, 400, 'free_blocks：无 hash 块 prepend 队头（LIFO 立即复用）· 有 hash 块 append 队尾（FIFO / LRU 驱逐）；free 逆序释放保前缀链', { size: 9.5 }));
-  body.push(cap(36, 416, 'page = bκ：GQA 256 KiB/层/块 vs MLA 72 KiB（单 latent d_V=0）—— hybrid 单池统一 page size 靠调 block_size 或 pad 对齐（§7）', { size: 9.5 }));
+  body.push(cap(36, 416, 'page = bκ：GQA 256 KiB/层/块 vs MLA 64 KiB（V4.1，单 latent d_V=0）—— hybrid 单池统一 page size 靠调 block_size 或 pad 对齐（§7）', { size: 9.5 }));
 
   return scene(720, 428, body, { label: 'KV 三层架构：调度器经 KVCacheManager 接口到协调器，协调器分叉到全组共享的块池与逐类型管理器，自由队列零分配链表支撑常数时间驱逐' }).svg();
 }
@@ -389,7 +389,7 @@ function hybridFixedPoint() {
   body.push(cap(360, 286, '通用不动点算法两轮；is_simple_hybrid（恰 full+X 两组、full 在前）一轮 break + 收尾截断 —— 代码实际路径', { size: 9, anchor: 'middle' }));
 
   body.push(cap(36, 314, '命题 1：hit_length 单调减整数列 → 至多 ⌊ℓ₀/a⌋+2 轮终止（ℓ₀ = num_tokens−1 一般不对齐，首轮缩量可 < a）；退出时无组再缩 → 各组覆盖同一前缀', { size: 9.5 }));
-  body.push(cap(36, 332, 'MLA 组：page = 64 × 1152 = 72 KiB/层/块（d_V=0 单 latent）vs GQA 256 KiB —— 协调器视其为又一个组，无特殊分支（式 1）', { size: 9.5 }));
+  body.push(cap(36, 332, 'MLA 组：page = 64 × 1024 = 64 KiB/层/块（V4.1，d_V=0 单 latent）vs GQA 256 KiB —— 协调器视其为又一个组，无特殊分支（式 1）', { size: 9.5 }));
   body.push(cap(36, 350, 'SWA 驻留帽 = ⌈(w−1+r+f)/b⌉+1（r = extra retained · f = in-flight）；稳态 w=128 · b=64 → 3 块；remove_skipped_blocks 逐 chunk 释放窗外块', { size: 9.5 }));
 
   return scene(720, 364, body, { label: 'hybrid 不动点：full 组左到右命中三千零七十二，SWA 组右到左只接受二千九百四十四，full 向下封闭截断后各组覆盖同一前缀收敛' }).svg();

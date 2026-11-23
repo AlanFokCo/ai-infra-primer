@@ -237,7 +237,7 @@ V1 的实现形态（机制级，2026-11-23 main 核实）：parallel sampling �
 
 ## 6. 混合 KV 几何：协调器与逐类型管理器
 
-同一模型里同时有 full attention、SWA、MLA 层时，各层类型的 $\kappa$ 与驻留量不同——一个块池如何服务不同块几何？V4.1-Flash 的 serving 含义正在此：config 给出 `sliding_window` = 128 与 MLA 几何（ $d_{\mathrm{latent}}$ = 512、 $d_{\mathrm{rope}}$ = 64）（[V4.1-Flash config](../references.md)，[W]，hf-mirror 传输核实），模型侧形式化归 models 维度（V4.1 待补）；serving 侧的事实是不同层类型的 KV 生命周期不同——SWA 窗外 KV 可丢，full attention 全量保留。
+同一模型里同时有 full attention、SWA、MLA 层时，各层类型的 $\kappa$ 与驻留量不同——一个块池如何服务不同块几何？V4.1-Flash 的 serving 含义正在此：config 给出 `sliding_window` = 128 与 MLA 几何（共享 KV 向量 512 元素 = $d_{\mathrm{latent}}$ 448 + $d_{\mathrm{rope}}$ 64；head_dim 512 已含 rope，kv_lora_rank 448 由引擎导出，见 1.2 §3）（[V4.1-Flash config](../references.md)，[W]，hf-mirror 传输核实），模型侧形式化归 models 维度（V4.1 待补）；serving 侧的事实是不同层类型的 KV 生命周期不同——SWA 窗外 KV 可丢，full attention 全量保留。
 
 V1 的答案是分组协调（机制片段，2026-11-23 main 核实）：同几何的层划为一个 KVCacheGroup，每组一个 `SingleTypeKVCacheManager`（`single_type_kv_cache_manager.py`：`FullAttentionManager` / `SlidingWindowManager` / `MambaManager` 等类）；`KVCacheCoordinator`（`kv_cache_coordinator.py`）持 `single_type_managers` 元组，调度粒度 `scheduler_block_size` = 各组块大小的最小公倍数，分配需求逐组求和：
 
@@ -292,5 +292,5 @@ $$
 - [Kwon et al., 2023](../references.md)：Efficient Memory Management for Large Language Model Serving with PagedAttention，arXiv:2309.06180，[A]（key: vllm）——碎片上界 §4.3、块表 §4.2、COW §4.4、调度与抢占 §4.5、block size 实验 §7.2、recompute / swap §7.3
 - [vLLM repo](../references.md)：vllm-project/vllm，[A]（key: vllm-repo）——机制片段 `v1/core/{block_pool,kv_cache_manager,kv_cache_coordinator,single_type_kv_cache_manager}.py`、`config/cache.py` L185、`config/scheduler.py` L232、`v1/engine/parallel_sampling.py`、`platforms/interface.py` L711、`v1/attention/backends/mla/{sparse_swa,cpu_mla}.py`（均 2026-11-23 main 核实）
 - [NVIDIA datasheet](../references.md)：H100 SXM 官方 datasheet，[C]（key: nvidia-datasheet，官方规格披露、开放产品页）——80 GB HBM3、3.35 TB/s（拷贝成本例）
-- [DeepSeek-AI, V4.1-Flash config](../references.md)：config.json（key: v41-flash-config，[W]，hf-mirror 传输核实）——sliding_window 128、MLA 几何 512 + 64（§6 混合 KV 几何）
+- [DeepSeek-AI, V4.1-Flash config](../references.md)：config.json（key: v41-flash-config，[W]，hf-mirror 传输核实）——sliding_window 128、MLA 几何 head_dim 512 含 rope 64（kv_lora_rank 448，§6 混合 KV 几何）
 - 跨维度指引（纯文字）：models 2.4 式 (9)（KV 容量）与 §4 前缀不可变命题；models 4.1（MLA 低秩）；models 4.2（SWA 模型侧）；inference 1.2（ $\kappa$ 几何表）、1.3（datasheet 参数表）、2.2（块 hash 链）、3.1（paged kernel 算法）、4.2（recompute vs swap 成本账）、5.2（四文件模块全量走读）

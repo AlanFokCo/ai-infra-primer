@@ -50,7 +50,7 @@ $$
 
 **符号**： $H_{kv}$ ：KV head 数（MHA 取 $H_{kv} = H_q$ ，GQA 取 $H_{kv} < H_q$ ，MQA 取 $H_{kv} = 1$ ）； $d_{\mathrm{head}}$ ：head 维； $\mathrm{bytes}$ ：每元素字节数（bf16 = 2，fp8 = 1）； $d_{\mathrm{latent}}$ = kv_lora_rank（MLA 压缩 latent 维）； $d_{\mathrm{rope}}$ = qk_rope_head_dim（decoupled RoPE 维）。MHA/GQA 形的因子 2 是 K、V 两份；MLA 形**无因子 2、无 $H_{kv}$ 乘**——cache 只存一份共享压缩 latent 加一份旋转 key（低秩推导归 models 4.1 §4，此处只取字节账）。DSA 在 MLA 形之上另加 indexer K（每 token 每层一份小维 key，头间共享，models 4.2 §6 口径），字节数按 indexer 精度另计。
 
-> **坑**： $2 H_{kv} d_{\mathrm{head}}$ 形勿代入 MLA。触发条件：V4.1-Flash config 的 num_key_value_heads = 1、head_dim = 512 是 MLA latent 的占位表达（单 KV head 装 512 维 latent），不是逐头 KV 几何；现象：代入得 $2 \times 1 \times 512 = 1024$ 元素/层，较真值 $512 + 64 = 576$ 高估 1.78×，整条带宽账与容量账同步虚高；规避：MLA 一律走式 (3) 第二行，config 读 kv_lora_rank / qk_rope_head_dim 语义字段（V4.1 以 head_dim 512 + qk_rope 64 表达，[W]）。
+> **坑**： $2 H_{kv} d_{\mathrm{head}}$ 形勿代入 MLA。触发条件：V4.1-Flash config 的 num_key_value_heads = 1、head_dim = 512 是共享 KV 向量维（已含 rope 64），不是逐头 KV 几何；现象：代入得 $2 \times 1 \times 512 = 1024$ 元素/层，较真值 $448 + 64 = 512$ 高估 2.0×，整条带宽账与容量账同步虚高；规避：MLA 一律走式 (3) 第二行。V3 config 有 kv_lora_rank / qk_rope_head_dim 语义字段；V4.1 config **无 kv_lora_rank 字段**——head_dim 512 已含 rope 64，kv_lora_rank = 512 − 64 = 448 由引擎导出（DeepInfer config.py 读法，见 7.2 §9，[W]）。V4.1 的 512 元素与 V3 的 576 元素（512 latent + 64 rope）是两代几何，勿混。
 
 几何对照表（bf16 口径；V3 / V4.1 的 MLA 行 $\kappa$ 同形）：
 
@@ -60,10 +60,10 @@ $$
 | GQA（8B， $H_{kv}$ = 8） | 同上 | $2 \times 8 \times 128 \times 2$ | 4096 B | 128 KiB | 16 GiB @131072 |
 | MQA（ $H_{kv}$ = 1） | 同上 | $2 \times 1 \times 128 \times 2$ | 512 B | 16 KiB | 2 GiB @131072 |
 | MLA（V3，512 + 64） | $(d_{\mathrm{latent}} + d_{\mathrm{rope}}) \cdot \mathrm{bytes}$ | $576 \times 2$ | 1152 B | 68.6 KiB（61 层） | 10.7 GiB @163840 |
-| MLA（V4.1-Flash，512 + 64）[W] | 同上 | $576 \times 2$ | 1152 B | 45 KiB（40 层） | 随混合注意力几何，7.2 |
+| MLA（V4.1-Flash，448 + 64）[W] | 同上 | $512 \times 2$ | 1024 B | 40 KiB（40 层） | 随混合注意力几何，7.2 |
 | DSA（V3.2 / V4.1） | MLA 形 + indexer K | indexer 128 维另计 | +128 B（fp8 论文口径） | 主路读取按 top-k 削减 | 容量不变 |
 
-读这张表的方式：同一台 8B 机器，MHA 反事实的每 token 增量是 GQA 的 4 倍（head 分组 4:1 在 cache 上是精确 4 倍削减，recap models 2.4 §5）；MLA 的 576 元素介于 GQA-4 的 2048 与 MQA 的 256 之间（recap models 4.1 §4.2 表）——它不是把 KV 压到比单头还小，而是把 $H_q$ 份高相关副本换回一份共享 latent，检索结构一个没少（低秩论证归 models 4.1 §4）。表内 8B 三行与 V3 行 recap models 2.4 §5 / 4.1 §4.2 的实例账（config [A]）；V4.1 行代入 config 字段 [W]： $\kappa = (512 + 64) \cdot \mathrm{bytes} = 576 \cdot \mathrm{bytes}$ ，bf16 合 1152 B/token/层，40 层合 46080 B = 45 KiB/token。indexer K 的维度取 index_head_dim = 128 [W]，每 token 每层一份（头间共享）；V3.2 论文口径 FP8 合 128 B，DeepInfer 生产 indexer KV 用 per-32 ue8m0 MXFP4（官方披露，[DeepSeek-AI, inference_deployment_qa.md](../references.md)，教学参照，2026-11-23 核实），格式账归 2.3 / 3.2。DSA 的容量不变、变的是每步读哪几行：V3.2 主路 top-2048 使每步读取从全量 9.2 GB 降到 144 MB（ $T$ = 131072，recap models 4.2 §6 / 5.2 §4）；V4.1-Flash 的 index_topk = 512 [W]，读取账同形（top-k × $\kappa$ × $L$ ），混合注意力层（SWA / CED）的窗口与压缩修正归 7.2，本章不展开模型侧。KV 的分页管理（block size $b$ 、碎片）归 2.1（[Kwon et al., 2023](../references.md)，[A]）。
+读这张表的方式：同一台 8B 机器，MHA 反事实的每 token 增量是 GQA 的 4 倍（head 分组 4:1 在 cache 上是精确 4 倍削减，recap models 2.4 §5）；MLA（V3 口径）的 576 元素介于 GQA-4 的 2048 与 MQA 的 256 之间（recap models 4.1 §4.2 表）——它不是把 KV 压到比单头还小，而是把 $H_q$ 份高相关副本换回一份共享 latent，检索结构一个没少（低秩论证归 models 4.1 §4）。表内 8B 三行与 V3 行 recap models 2.4 §5 / 4.1 §4.2 的实例账（config [A]）；V4.1 行代入 config 字段 [W]：head_dim 512 是共享 KV 向量维、已含 rope 64（config 无 kv_lora_rank 字段，引擎导出 kv_lora_rank = 512 − 64 = 448，读法见 7.2 §9）， $\kappa = (448 + 64) \cdot \mathrm{bytes} = 512 \cdot \mathrm{bytes}$ ，bf16 合 1024 B/token/层，40 层合 40960 B = 40 KiB/token——与 V3 的 576 元素区分，两代几何勿混。indexer K 的维度取 index_head_dim = 128 [W]，每 token 每层一份（头间共享）；V3.2 论文口径 FP8 合 128 B，DeepInfer 生产 indexer KV 用 per-32 ue8m0 MXFP4（官方披露，[DeepSeek-AI, inference_deployment_qa.md](../references.md)，教学参照，2026-11-23 核实），格式账归 2.3 / 3.2。DSA 的容量不变、变的是每步读哪几行：V3.2 主路 top-2048 使每步读取从全量 9.2 GB 降到 144 MB（ $T$ = 131072，recap models 4.2 §6 / 5.2 §4）；V4.1-Flash 的 index_topk = 512 [W]，读取账同形（top-k × $\kappa$ × $L$ ），混合注意力层（SWA / CED）的窗口与压缩修正归 7.2，本章不展开模型侧。KV 的分页管理（block size $b$ 、碎片）归 2.1（[Kwon et al., 2023](../references.md)，[A]）。
 
 $B$ 条序列合批：FLOPs 变 $B f(T)$ ，KV 读变 $B \kappa L T$ （逐序列独立、不可共享），权重仍只读一遍 $W$ 。强度式即 models 2.4 式 (12) 的翻译 + MoE 推广：
 
@@ -232,8 +232,8 @@ $$
 | 账 | 8B dense @H100 | V3 MoE | V4.1-Flash |
 | --- | --- | --- | --- |
 | FLOPs 口径 | $N = 7.50 \times 10^{9}$（matmul） | $N_{\mathrm{act}} = 37 \times 10^{9}$ | 激活口径随 config，模型侧归 models |
-| $\kappa$（每 token 每层） | 4096 B（GQA-8） | 1152 B（MLA 576 元素） | 1152 B（MLA 576 元素）+ indexer K [W] |
-| 整模型每 token KV | 128 KiB | 68.6 KiB | 45 KiB（40 层） |
+| $\kappa$（每 token 每层） | 4096 B（GQA-8） | 1152 B（MLA 576 元素） | 1024 B（MLA 512 元素）+ indexer K [W] |
+| 整模型每 token KV | 128 KiB | 68.6 KiB | 40 KiB（40 层） |
 | 满窗单序列 KV | 16 GiB @131072 | 10.7 GiB @163840 | 混合几何，7.2 |
 | decode 强度上界 | $I_{\mathrm{sat}}$：4.9（满窗）→ 451（ $T$ = 256） | 每 expert 口径 $I_{\mathrm{exp}} = B/16$（fp8） | $I_{\mathrm{exp}} = B/32$（fp8， $k/E$ = 1/64） |
 | 临界 batch 读数 | $T \gtrsim 393$ 无 compute-bound 临界 | expert GEMM 进 ridge 需 $B \approx 9452$（fp8） | 同形，稀释更深 |
@@ -248,7 +248,7 @@ $$
 | prefill FLOPs = 参数项 + 二次项；8B 满窗二次项占 70%， $T^{\ast} \approx 5.3 \times 10^{4}$ | 式 (1)，6.58e13 FLOPs @4096 | §2、练习 2 |
 | decode 单步单序列 FLOPs = $2N_{\mathrm{act}} + 4LTd_{\mathrm{model}}$；KV 读 $\kappa LT$ 字节 | 式 (2)(3) | §3 |
 | $\kappa$：MHA/GQA 取 $2H_{kv}d_{\mathrm{head}}\cdot\mathrm{bytes}$，MLA 取 $(d_{\mathrm{latent}}+d_{\mathrm{rope}})\cdot\mathrm{bytes}$（无因子 2、无 $H_{kv}$）；DSA 另加 indexer K | 式 (3) 表 | §3、练习 1 |
-| MLA 误代 $2H_{kv}d_{\mathrm{head}}$ 形高估 1.78×（V4.1：1024 vs 576） | §3 坑注 | §3、练习 1 |
+| MLA 误代 $2H_{kv}d_{\mathrm{head}}$ 形高估 2.0×（V4.1：1024 vs 512） | §3 坑注 | §3、练习 1 |
 | decode 强度 $Bf/(W+B\kappa LT)$：小 $B$ 时 $\approx B$（recap models），大 $B$ 饱和于 $f/(\kappa LT)$ | 式 (4)(8) | §1、§3 |
 | 权重口径临界 $B_w^{\ast} = R\cdot\mathrm{bytes}/2$，同硬件跨精度大致不变（H100 ≈ 295） | 式 (5)(6) | §4 |
 | $B^{\ast}$ 存在当且仅当 $I_{\mathrm{sat}} > R$；8B bf16 @H100 的 $T_c \approx 393$，真实上下文区间无 compute-bound 临界 | 命题 1、式 (7)(9) | §4、练习 2、3 |
@@ -259,7 +259,7 @@ $$
 
 ## 练习
 
-1.（计算 · [10]）V4.1-Flash 口径 [W]：(a) 由 config 字段（head_dim 512、qk_rope_head_dim 64、40 层）算 bf16 的 $\kappa$ 与整模型每 token KV 增量（KiB）；(b) 若误代 $2 H_{kv} d_{\mathrm{head}}$ 形（num_key_value_heads = 1），每 token 每层元素数高估多少倍？校验：(a) 与 §3 几何对照表 V4.1 行一致；(b) 与坑注的 1.78× 一致。
+1.（计算 · [10]）V4.1-Flash 口径 [W]：(a) 由 config 字段（head_dim 512、qk_rope_head_dim 64、40 层；注意 head_dim 是共享 KV 向量维、已含 rope，见 §3 坑注）算 bf16 的 $\kappa$ 与整模型每 token KV 增量（KiB）；(b) 若误代 $2 H_{kv} d_{\mathrm{head}}$ 形（num_key_value_heads = 1），每 token 每层元素数高估多少倍？校验：(a) 与 §3 几何对照表 V4.1 行一致；(b) 与坑注的 2.0× 一致。
 2.（计算 · [20]）8B bf16 @H100（ $R \approx 295$ ， $W = 1.61 \times 10^{10}$ B）：(a) 先预测 $T$ = 4096 与 $T$ = 256 哪个存在 compute-bound 临界及理由，再用式 (8) 算 $I_{\mathrm{sat}}$ 判定；(b) 存在者算 $B^{\ast}$；(c) 用式 (1) 算 $T$ = 4096 的 prefill FLOPs 与峰值下界时间。校验：满窗 $I_{\mathrm{sat}} \approx 4.9$ 与 models 2.4 §6 算例一致；(b) 的 $B^{\ast}$ 代回式 (4) 应给 $I \approx R$（容差 1%）。
 3.（推导 · [30]）(a) 补全命题 1 证明的单调性步：由 $I = f/(W/B + \kappa LT)$ 严格论证 $I$ 对 $B$ 单调增（ $W, \kappa, L, T, f > 0$ ）；(b) 由存在条件边界 $f(T) = R\kappa LT$ 解出 $T_c$ 闭式（式 (9)），代入 8B bf16 H100 口径验证 ≈ 393；(c) 权重与 KV 同降 FP8（ $`\mathrm{bytes}_{\mathrm{param}}`$ 与 $\kappa$ 减半、 $R$ 翻倍）时 $T_c$ 怎么变？先预测方向再代入。校验：(b) 与正文一致；(c) 的 $T_c$ 变化应能由式 (9) 的 $R\kappa$ 乘积不变直接读出。
 4.（计算 · [30]）Wide-EP 账（V3 fp8， $B$ = 2048 全局 batch， $e \in \lbrace 8, 64, 128 \rbrace$ ，带宽 3.35 TB/s）：(a) 每 expert batch 与每卡收到的分配对数；(b) 每卡每步 expert 权重流量与读时间下界，验证 $\propto 1/e$ ；(c) 每卡 MoE GEMM 强度，验证与 $e$ 无关；(d) 若 #DP = #EP 耦合扩张、每 DP 组本地 batch 固定 32， $e$ 从 8 到 64 时全局 $B$ 与 $I_{\mathrm{exp}}$ 各变多少？校验：(b) 与 §6 表一致；(c) 与式 (12) 一致；(d) 强度应 $\propto e$ （reconciling 注的定量形式）。

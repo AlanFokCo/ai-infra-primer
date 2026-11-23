@@ -331,7 +331,7 @@ function kvThreeFactors() {
   body.push(`<line class="dia-edge dash" x1="112" y1="120" x2="112" y2="146"/>`);
   body.push(cap(112, 166, '量化：16 bit → q bit', { size: 9.5, anchor: 'middle', color: 'var(--seal-deep)' }));
   body.push(cap(112, 182, '（有界扰动 · token 全在）', { size: 8.5, anchor: 'middle' }));
-  body.push(cap(112, 202, '几何：MLA 576 元素', { size: 9.5, anchor: 'middle' }));
+  body.push(cap(112, 202, '几何：MLA 576 元素（V3）', { size: 9.5, anchor: 'middle' }));
   body.push(cap(112, 218, '（训练期低秩 · 不可 retrofit）', { size: 8.5, anchor: 'middle' }));
   body.push(`<line class="dia-edge dash" x1="376" y1="120" x2="376" y2="146"/>`);
   body.push(cap(376, 166, '驱逐：T → ηT', { size: 9.5, anchor: 'middle', color: 'var(--seal-deep)' }));
