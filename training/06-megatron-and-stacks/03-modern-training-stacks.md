@@ -84,11 +84,11 @@ allenai/OLMo-core 是 OLMo 2 的训练栈（[Team OLMo et al., 2025](../referenc
                        │ 批量采样生成；内部机制      │
                        │ （continuous batching /   │
                        │  PagedAttention）归       │
-                       │  inference 维度           │
+                       │  inference 4.1 / 2.1      │
                        └───────────────────────────┘
 ```
 
-边界判据一句话：训练栈产出与消费 checkpoint；rollout 引擎的内部机制归 inference 维度，只链接；训练侧要关心的只是每 iteration 的权重广播成本（8.5 展开）。RL 场景下两段引擎分开选型——训练段用本 Part 各栈、rollout 段用推理引擎——是后训练系统设计的常态组合。
+边界判据一句话：训练栈产出与消费 checkpoint；rollout 引擎的内部机制归 inference 9.3（RL rollout 引擎侧增量；引擎模块走读见 P5 / P6），只链接；训练侧要关心的只是每 iteration 的权重广播成本（8.5 展开）。RL 场景下两段引擎分开选型——训练段用本 Part 各栈、rollout 段用推理引擎——是后训练系统设计的常态组合。
 
 ## 6. 选型决策表
 

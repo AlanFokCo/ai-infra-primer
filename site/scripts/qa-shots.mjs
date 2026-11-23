@@ -45,6 +45,10 @@ const PAGES = [
   ['inf-ch-pd-disagg', '/inference/08-distributed-and-pd/02-pd-disaggregation/'], // 公式密（8.2【重】，goodput 调和分解 / xPyD 配比 / BW* 带宽阈值）
   ['inf-ch-kv-transfer', '/inference/08-distributed-and-pd/03-kv-transfer/'], // 表格/图密（8.3，NIXL descriptor 三型 / bounce buffer / egress-ingress 带宽账）
   ['inf-ch-elasticity', '/inference/08-distributed-and-pd/05-elasticity-and-fault-tolerance/'], // 推导重章（8.5，迁移 downtime 账 / 命题 4 故障吸收下界 / EP failover）
+  // inference W6 样章（P9 生产全流程落地代表章：公式密 / 推导重章 / 表格图密各一）
+  ['inf-ch-capacity-cost', '/inference/09-production/01-capacity-and-cost/'], // 公式密（9.1【重】，排队余量三上界 / 两闸 sizing / EC 四口径 / USD/M 成本账）
+  ['inf-ch-rl-rollout', '/inference/09-production/03-rl-rollout-serving/'], // 推导重章（9.3，sleep level 语义 / colocate-disagg GPU·时间判据 / partial rollout / 吞吐账）
+  ['inf-ch-multimodal', '/inference/09-production/04-multimodal-and-special-serving/'], // 表格/图密（9.4，patch 账 / VE 算力 / encoder cache / SO 专用机 / pooling）
 ];
 
 const VIEWPORTS = [

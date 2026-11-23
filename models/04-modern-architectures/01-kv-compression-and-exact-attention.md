@@ -210,7 +210,7 @@ $`\widehat{W}_h`$ 同样离线预计算， $W_h^{UV}$ 被吸进 $W^{O}$。两笔
 
 第三笔：吸收只覆盖 nope 部分； $k^{R}$ 仍逐位置旋转、原样缓存。若当初选择全维旋转，式 (11) 里 $R_n$ 会卡在 $`\tilde{W}_h`$ 与 $c_s^{KV}$ 之间（§4.1 式 (4)），吸收当场死亡。
 
-顺带一句 MLA 与 §5 的关系：kernel 层完全不感知 MLA——展开形下它就是普通 attention（head 维 192），FlashAttention 原样可用；吸收形的 kernel 化是推理框架的事，归 inference 3.1。DeepSeek 官方推理实现即按吸收形落地（[DeepSeek-AI, 2024](../references.md)，arXiv:2412.19437，[A]）；Kimi-Linear 的 full-attn 层给出同一结构的 NoPE 变体（无旋转则无需 decoupled），归 4.4。
+顺带一句 MLA 与 §5 的关系：kernel 层完全不感知 MLA——展开形下它就是普通 attention（head 维 192），FlashAttention 原样可用；吸收形的 kernel 化是推理框架的事，归 inference 3.1 / 7.3。DeepSeek 官方推理实现即按吸收形落地（[DeepSeek-AI, 2024](../references.md)，arXiv:2412.19437，[A]）；Kimi-Linear 的 full-attn 层给出同一结构的 NoPE 变体（无旋转则无需 decoupled），归 4.4。
 
 ## 5. FlashAttention：不物化 scores 的精确 attention
 
