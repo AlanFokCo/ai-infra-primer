@@ -87,6 +87,24 @@ const DIMENSIONS = [
     // 建设期断言滚动：W0=0/0 → W1=8/2 → W2=17/4 → W3=24/6 → W4=28/7 → W5=33/8 → W6=37/9 → W7 锁死
     asserts: { chapters: 37, parts: 9, refsMin: 50 },
   },
+  {
+    key: 'gpu',
+    parts: [
+      { num: 1, dir: '01-gpu-microarchitecture', titleEn: 'GPU Microarchitecture', titleZh: 'GPU 微架构拆解', tagline: '芯片组织与世代、SM 内部与 occupancy 物理上界、Tensor Core MMA、指令流水线与延迟隐藏', wave: 'W1' },
+      { num: 2, dir: '02-memory-hierarchy', titleEn: 'Memory Hierarchy & Bandwidth', titleZh: '内存层级与带宽账', tagline: 'HBM 带宽来源、缓存与片上存储层级、register spill 账、roofline 微架构来源与测量', wave: 'W1' },
+      { num: 3, dir: '03-cuda-programming-model', titleEn: 'CUDA Programming Model', titleZh: 'CUDA 编程模型', tagline: 'SIMT 与 divergence 账、内存模型与地址空间、stream/event/graph 异步、occupancy 计算', wave: 'W2' },
+      { num: 4, dir: '04-kernel-memory-optimization', titleEn: 'Kernel Memory Optimization', titleZh: 'Kernel 访存优化', tagline: 'coalescing 与向量化、bank conflict 消除、tiling 强度推导、cp.async/TMA 流水线', wave: 'W2' },
+      { num: 5, dir: '05-kernel-compute-primitives', titleEn: 'Kernel Compute & Primitives', titleZh: 'Kernel 计算优化与并行原语', tagline: 'reduction/scan 带宽最优性、CUTLASS GEMM 走读、softmax/norm kernel、算子融合账', wave: 'W3' },
+      { num: 6, dir: '06-low-precision-attention-kernels', titleEn: 'Low-Precision & Attention Kernels', titleZh: '低精度与注意力 kernel', tagline: '低精度格式与 MMA 吞吐、Marlin/DeepGEMM 量化 kernel、FlashAttention 指令级走读、MLA/GQA/paged 变体', wave: 'W3' },
+      { num: 7, dir: '07-nvlink-nvswitch', titleEn: 'NVLink & NVSwitch', titleZh: '节点内互连 NVLink/NVSwitch', tagline: 'NVLink/NVSwitch 架构与世代、节点内拓扑带宽账、GPUDirect P2P', wave: 'W4' },
+      { num: 8, dir: '08-nccl-collectives', titleEn: 'NCCL Collectives', titleZh: 'NCCL 集合通信', tagline: '集合原语消息量账、ring 带宽最优性证明、tree 延迟交叉、NCCL 实现走读', wave: 'W4' },
+      { num: 9, dir: '09-rdma-gpudirect', titleEn: 'RDMA & GPUDirect', titleZh: 'RDMA 与 GPUDirect', tagline: 'RDMA verbs 与 IB/RoCE、GPUDirect RDMA 带宽账、DCQCN/PFC 拥塞与可靠性', wave: 'W5' },
+      { num: 10, dir: '10-fabric-and-scale-communication', titleEn: 'Fabric & Scale Communication', titleZh: '机间 fabric 与大规模通信', tagline: 'fabric 拓扑与收敛比账、SHARP 网内聚合、DeepEP a2a 实现、Ring Attention 通信', wave: 'W5' },
+      { num: 11, dir: '11-system-integration', titleEn: 'System Integration & Production', titleZh: '系统集成与生产', tagline: '服务器形态与 MIG 分区、Nsight profiling 与调优、ECC/XID 故障诊断', wave: 'W6' },
+    ],
+    // 建设期断言滚动：W0={0,0} → W1={8,2} → W2={16,4} → W3={24,6} → W4={31,8} → W5={38,10} → W6={41,11} → W7 锁死
+    asserts: { chapters: 0, parts: 0, refsMin: 50 },
+  },
 ];
 
 function main() {

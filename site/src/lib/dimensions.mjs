@@ -146,12 +146,72 @@ export const DIMENSIONS = {
       ],
     },
   },
+
+  gpu: {
+    key: 'gpu',
+    zh: '硬件',
+    orderLabel: 'DIMENSION 04 / 05',
+    scope: 'GPU 微架构、内存层级与带宽账、CUDA 编程模型、kernel 访存/计算优化、低精度与注意力 kernel、NVLink/NCCL/RDMA、机间 fabric、系统集成与生产',
+    lede: 'GPU 硅片与通信全栈：芯片组织与 SM 微架构、Tensor Core MMA、内存层级带宽账与 roofline、CUDA 编程模型、kernel 访存/计算优化（tiling/reduction/GEMM/融合）、低精度与注意力 kernel（FlashAttention/MLA 指令级走读）、节点内 NVLink/NVSwitch、NCCL 集合通信、RDMA 与 GPUDirect、机间 fabric 与大规模通信、系统集成与生产。公式级推导 + CUTLASS/FlashAttention/NCCL/DeepEP 代码对照 + 带宽/延迟/occupancy/显存的账。',
+    ledgerNote: null, // 建设期由各章状态决定，占位为 null 时前台显示章数即可
+    depNoteShort: '十一个 Part，四十一章。机制线 P1→P2→P3→P4/P5→P6，通信线 P2→P7→P8/P9→P10，P11 合流生产。',
+    depNote:
+      '机制线 P1→P2→P3→P4/P5→P6：微架构与内存层级打底，CUDA 编程模型分出 kernel 访存优化与计算优化两条支线，合流于低精度与注意力 kernel。通信线 P2→P7→P8/P9→P10：带宽账分出节点内互连 NVLink/NVSwitch，再分 NCCL 集合通信与 RDMA/GPUDirect 两条支线，合流于机间 fabric 与大规模通信。P11 系统集成与生产合流 P6 的 kernel 深水区与 P10 的通信全栈。',
+    prereqs: [
+      '<strong>models 维度 Part 1-2 与 4.1</strong>——参数/计算/内存账、Transformer 组件推导（尤其 2.4 KV cache 与算术强度 / roofline 入口），以及 4.1 FlashAttention 前向数学与 online softmax、MLA 低秩，或同等知识',
+      '<strong>training 维度 Part 4-5</strong>——DDP ring all-reduce 消息量与 α-β 模型、TP/SP-CP/PP/EP 并行账，或同等知识',
+      '<strong>inference 维度 Part 1/3/8</strong>——serving 性能账与 datasheet 参数表、推理算子算法与策略级、分布式并行与 KV 传输语义，或同等知识',
+      '<strong>线性代数与概率论</strong>——同 models 维度',
+      '<strong>C/C++/Python</strong>——能读 kernel 与通信栈源码；代码走读锚点是 CUTLASS、FlashAttention、NCCL、DeepEP、Marlin、DeepGEMM 等 repo 的具体文件与函数',
+    ],
+    prereqNote: '章节自包含：每个公式附符号表；对 models / training / inference 的前置依赖一律纯文字交叉指引（如「models 2.4 §6」），不重复展开。',
+    firstChapter: { slug: '01-gpu-microarchitecture/01-chip-organization-and-generations', label: '从 1.1 开始读' },
+    graph: {
+      viewBox: '0 0 960 400',
+      aria: 'Part 依赖图：机制线 P1 到 P6，通信线 P7 到 P10，P11 合流生产',
+      // 六列左→右流，机制线上 / 通信线下：P1 | P2/P7 | P3 | P4/P5/P8/P9 | P6/P10 | P11
+      // （spec §5 mermaid 14 边逐边对应；列距按 Noto Serif SC 700 13px 实测标题宽度定，
+      //  P7 长标题尾段伸入第三列下方空档，不与任何节点框相交）
+      nodes: [
+        { x: 10, y: 64, n: 1 },
+        { x: 150, y: 64, n: 2 }, { x: 150, y: 280, n: 7 },
+        { x: 296, y: 64, n: 3 },
+        { x: 432, y: 20, n: 4 }, { x: 432, y: 110, n: 5 },
+        { x: 432, y: 230, n: 8 }, { x: 432, y: 320, n: 9 },
+        { x: 638, y: 64, n: 6 }, { x: 638, y: 280, n: 10 },
+        { x: 830, y: 180, n: 11 },
+      ],
+      edges: [
+        // 机制线 P1→P2→P3
+        { line: [102, 90, 144, 90] }, { line: [242, 90, 290, 90] },
+        // P3 扇出：P3→P4、P3→P5
+        { path: 'M388 76 C 410 76, 412 46, 426 46' },
+        { path: 'M388 110 C 410 110, 412 124, 426 124' },
+        // P1→P5（微架构原语跨列直供计算优化，从上方节点带下缘绕过）
+        { path: 'M56 116 C 56 176, 130 180, 220 180 C 330 180, 380 150, 426 150', label: { x: 240, y: 172, text: 'MMA 与延迟隐藏' } },
+        // P4/P5 → P6（kernel 深水区合流）
+        { path: 'M524 30 C 590 30, 610 44, 632 78' },
+        { path: 'M524 128 C 570 128, 590 102, 632 102' },
+        // 通信线 P2→P7（带宽账 → 节点内互连）
+        { line: [196, 116, 196, 274] },
+        // P7 扇出：P7→P8、P7→P9
+        { path: 'M242 292 C 320 292, 360 256, 426 256' },
+        { path: 'M242 326 C 320 326, 360 346, 426 346' },
+        // P8/P9 → P10（集合/RDMA 合流于机间 fabric）
+        { path: 'M524 240 C 590 240, 600 296, 632 296' },
+        { path: 'M524 346 C 570 346, 590 316, 632 316' },
+        // P11 合流生产（P6 kernel 深水区 + P10 通信全栈）
+        { path: 'M684 116 C 684 170, 760 196, 824 196' },
+        { path: 'M730 296 C 770 296, 790 216, 824 216' },
+      ],
+    },
+  },
 };
 
 export const DIMENSION_ORDER = ['models', 'training', 'inference', 'gpu', 'cluster'];
 
 // 未上线维度的落地页占位文案（live=false 行）
+// gpu 已建 DIMENSIONS.gpu（W0 接入，live 由章数自动翻转），占位移除；cluster 2026-11-24 重定义为平台编排层
 export const FORTHCOMING = {
-  gpu: { zh: '硬件', scope: '内存层级、roofline、FlashAttention 等算子的实现层' },
-  cluster: { zh: '集群', scope: 'EP、all-to-all、Ring Attention、网络拓扑' },
+  cluster: { zh: '集群', scope: 'K8S、容器、Agent Sandbox：平台编排层' },
 };
