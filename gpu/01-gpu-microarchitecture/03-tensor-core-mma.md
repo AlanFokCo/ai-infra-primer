@@ -10,7 +10,7 @@
 
 **两层纪律**（1.3 ↔ 6.1，spec §4.2）：本章只交付**指令几何层**——指令形状、操作数来源、累加器位置、吞吐推导、格式「支持与否」。格式的**位布局账**（sign/exponent/mantissa 表、动态范围、量化误差、逐格式吞吐倍数、MX 族与 NVFP4 的 scale 粒度）归 6.1，届时 recap 本章几何为起点。所以本章格式矩阵只标「哪代支持哪个格式」，不拆位布局；FP32 累加只标「指令语义如此」，不推「为什么必须 FP32」的精度账（归 6.1）。代码 scope = 机制片段级（PTX 指令例证），CUTLASS MMA atom 的模块全量走读归 5.2。
 
-Tensor Core 代际与指令族（代际映射沿 T1 一手核实；指令族 ↔ 架构按 PTX target ISA 注，V100/A100 列标反推）：
+Tensor Core 代际与指令族（代际映射经一手核实；指令族 ↔ 架构按 PTX target ISA 注，V100/A100 列标反推）：
 
 | 代际 | 代表 SKU / 架构 | 指令族（PTX） | 关键增量 | 出处 |
 | --- | --- | --- | --- | --- |
@@ -116,7 +116,7 @@ $$
 
 这条命题解释了 §3 的 16 倍比值为什么物理上可行：Tensor Core 的 16 倍 FLOPs 不仅不需要 16 倍寄存器端口，反而比满 FMA 流**更省** operand 带宽（448 对 512 B/cycle/block）。乘加阵列把 operand 读摊销到阵列内多次复用，寄存器堆端口预算（1.2 §3）因此撑得住。这是「Tensor Core 为什么快」的机制答案的一半；另一半是阵列本身的并行乘加单元数（闭源，不推定）。
 
-wgmma 把复用推到极致：B（乃至 A）直接从 shared 经描述符喂 Tensor Core，**跳过寄存器中转**。wgmma m64n128k16（BF16，A/B 均 shared）的 shared 流量：A $64 \times 16 \times 2 = 2048$ B + B $16 \times 128 \times 2 = 4096$ B = 6144 B/指令，稳态 64 周期折 $6144/64 = 96$ B/cycle/SM。对比 shared 峰值 128 B/cycle/SM（1.2 §4，32 banks × 4 B），占 75%——**wgmma 的 shared operand 流恰好落在 shared 带宽预算内，留 25% 余量**。寄存器侧则只剩累加器读写（A/B 不进寄存器），每 FLOP 寄存器字节进一步降到约 0.25 B/FLOP（C 读 + D 写 = $2 \times 64 \times 128 \times 4 = 65536$ B / 262144 FLOPs）。这解释了 Hopper 为什么把 B 操作数路径从寄存器改到 shared 描述符：省寄存器、省 ldmatrix 指令、把 operand 带宽压力从寄存器堆转给 shared。
+wgmma 把复用进一步推高：B（乃至 A）直接从 shared 经描述符喂 Tensor Core，**跳过寄存器中转**。wgmma m64n128k16（BF16，A/B 均 shared）的 shared 流量：A $64 \times 16 \times 2 = 2048$ B + B $16 \times 128 \times 2 = 4096$ B = 6144 B/指令，稳态 64 周期折 $6144/64 = 96$ B/cycle/SM。对比 shared 峰值 128 B/cycle/SM（1.2 §4，32 banks × 4 B），占 75%——**wgmma 的 shared operand 流恰好落在 shared 带宽预算内，留 25% 余量**。**口径注**：128 B/cycle 是 bank 几何峰值（32 banks × 4 B）；TC 描述符读与 LSU shared 访问的仲裁属闭源未披露，此处按两者共享同一预算的一阶上界检查。寄存器侧则只剩累加器读写（A/B 不进寄存器），每 FLOP 寄存器字节进一步降到约 0.25 B/FLOP（C 读 + D 写 = $2 \times 64 \times 128 \times 4 = 65536$ B / 262144 FLOPs）。这解释了 Hopper 为什么把 B 操作数路径从寄存器改到 shared 描述符：省寄存器、省 ldmatrix 指令、把 operand 带宽压力从寄存器堆转给 shared。
 
 ## 5. wgmma：warp-group 异步语义
 
@@ -173,7 +173,7 @@ tcgen05（Blackwell，sm_100a）操作数路径
   对比 wgmma：累加器从 register 搬到 TMEM，寄存器腾出给 occupancy/ILP
 ```
 
-**2-SM 协作**（PTX `.cta_group::1` / `::2`，[C]）：`cta_group::2` 让两个相邻 SM 上的 CTA 协同执行一条 MMA——两个 SM 的 Tensor Core 一起算、各持一半累加器在自己的 TMEM，有效 M 维翻倍。这建立在 Hopper thread block cluster / DSMEM 的物理相邻 SM 分组之上（1.1 §2 提点、3.1 cluster 语义）。精确形状清单与单线程发射语义等细节 ⟨verify W3 PTX/CUTLASS sm100 atom⟩（T1 已核实 cta_group::1/::2 存在与 TMEM 几何，更细的 operand 选项与形状表留 W3 走读销项）。
+**2-SM 协作**（PTX `.cta_group::1` / `::2`，[C]）：`cta_group::2` 让两个相邻 SM 上的 CTA 协同执行一条 MMA——两个 SM 的 Tensor Core 一起算、各持一半累加器在自己的 TMEM，有效 M 维翻倍。这建立在 Hopper thread block cluster / DSMEM 的物理相邻 SM 分组之上（1.1 §2 提点、3.1 cluster 语义）。精确形状清单与单线程发射语义等细节 ⟨verify W3 PTX/CUTLASS sm100 atom⟩（cta_group::1/::2 存在与 TMEM 几何已经 PTX 逐字核实，更细的 operand 选项与形状表留 W3 走读销项）。
 
 block scaling 一笔：`tcgen05.mma ... kind::mxf4nvf4` 支持 NVFP4 的块缩放（per-16 UE4M3 scale + global FP32），这是 Blackwell FP4 吞吐翻倍的指令基础。**NVFP4 非 OCP MX v1.0 格式**（MX 族 per-32 E8M0 scale）——位布局与 scale 粒度账归 6.1（recap inference 3.2），本章只标指令族支持。FP4/FP6 的代际吞吐倍数（FP8 2×、FP4 4× vs BF16）同样归 6.1 逐格式账。
 
@@ -225,6 +225,6 @@ block scaling 一笔：`tcgen05.mma ... kind::mxf4nvf4` 支持 NVFP4 的块缩�
 - [NVIDIA, PTX ISA](../references.md)：NVIDIA PTX ISA（key: ptx-isa），[C] 官方规格披露·一手权威，2026-11-25——mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 逐字 + fragment 布局、wgmma.mma_async m64nNk16（N∈8..256）/ m64nNk8 tf32 / m64nNk32 f8f6f4 + commit_group/wait_group/fence.proxy.async、tcgen05.mma/.sp/.ws + Tensor Memory 512 columns×128 rows×32-bit = 256 KB/CTA + cta_group::1/::2 + kind::mxf4nvf4
 - [NVIDIA, Hopper whitepaper](../references.md)：NVIDIA H100 Tensor Core GPU Architecture Whitepaper V1.04（key: hopper-whitepaper），[C] 官方规格披露·一手权威，2026-11-25 dam-cdn PDF 一手——Table 3 逐精度峰值（FP64 TC 66.9 / TF32 494.7 / BF16-FP16 989.4 / FP8 1978.9 / INT8 1979 TOPS）、TC-boost 1830 MHz、4 TC/SM、Fig 7 每 block 1 TC(4th)
 - [NVIDIA, Blackwell brief](../references.md)：NVIDIA Blackwell Architecture Technical Brief（key: blackwell-whitepaper），[C] 官方规格披露·一手权威，2026-11-25——第 5 代 Tensor Core FP4/FP6 + OCP MX、Table 1 数据类型（FP64/FP32/TF32/FP16/BF16/FP8/INT8/FP6/FP4）
-- [NVIDIA, datasheet](../references.md)：NVIDIA H100/Blackwell 官方 datasheet（key: nvidia-datasheet），[C] 官方规格披露·一手权威，2026-11-25——dense = sparse 之半脚注、HGX B200 BF16 2250 / FP8 4500 / FP4 9000 dense（SKU 口径沿 1.1 §4）
+- [NVIDIA, datasheet](../references.md)：NVIDIA H100/Blackwell 官方 datasheet（key: nvidia-datasheet），[C] 官方规格披露·一手权威，2026-11-25——dense = sparse 表值之半（逐字折半脚注仅 Blackwell datasheet；H100 脚注为「*With sparsity」，1.1 §6）、HGX B200 BF16 2250 / FP8 4500 / FP4 9000 dense（SKU 口径沿 1.1 §4）
 - [Luo et al., 2024](../references.md)：Benchmarking and Dissecting the Nvidia Hopper GPU Architecture（key: hopper-microbench），arXiv:2402.13499，[B] 有 paper 无官方代码，2026-11-25——H800 微基准 Table IV：wgmma m64n128k16 dense 128 cycles / sparse SS 144 cycles（实测口径，§3 延迟核对）
 - [NVIDIA, CUTLASS](../references.md)：NVIDIA/cutlass repo（key: cutlass），教学参照 + 官方实现，2026-11-24——MMA atom include/cute/arch/mma*.hpp（CuTe MMA_Atom 封装 PTX 指令；当前版本架构 ⟨verify W3⟩，模块全量走读归 5.2，本章只作机制片段级指针）

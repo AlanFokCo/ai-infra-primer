@@ -1,6 +1,6 @@
 # training 维度：目录、依赖图与进度表
 
-training 维度讲训练动力学与训练系统：autograd 与反向机制、optimizer 与 LR 动力学、loss 函数族、数据并行（DDP / ZeRO / FSDP）与模型并行（TP / SP / CP / PP / EP）、Megatron-LM 系统实现、预训练全流程、RL 数学、后训练全流程，共 9 个 Part / 39 章。写法与 models 维度同规：公式级推导不跳步、逐公式附符号表、与官方实现代码对照；数值事实（通信量 / 显存账 / 配方字段 / 报告数字）全部带出处并标注证据等级 [A]/[B]/[C]/[W]（定义见 [STYLE_GUIDE.md](../STYLE_GUIDE.md)；training 对方法/框架锚点的口径细化见 spec §4.1）。模型结构与训练目标的数学形式归 `models/`，serving 归 `inference/`，kernel 归 `gpu/`，网络与拓扑归 `cluster/`，交叉处只做纯文字指引、不重复展开（规则见 spec §2/§4.2）。
+training 维度讲训练动力学与训练系统：autograd 与反向机制、optimizer 与 LR 动力学、loss 函数族、数据并行（DDP / ZeRO / FSDP）与模型并行（TP / SP / CP / PP / EP）、Megatron-LM 系统实现、预训练全流程、RL 数学、后训练全流程，共 9 个 Part / 39 章。写法与 models 维度同规：公式级推导不跳步、逐公式附符号表、与官方实现代码对照；数值事实（通信量 / 显存账 / 配方字段 / 报告数字）全部带出处并标注证据等级 [A]/[B]/[C]/[W]（定义见 [STYLE_GUIDE.md](../STYLE_GUIDE.md)；training 对方法/框架锚点的口径细化见 spec §4.1）。模型结构与训练目标的数学形式归 `models/`，serving 归 `inference/`，kernel 与通信网络/拓扑归 `gpu/`，平台编排归 `cluster/`，交叉处只做纯文字指引、不重复展开（规则见 spec §2/§4.2）。
 
 本文件是全维度唯一进度事实源：逐章状态见下方进度表，各波 evaluator 审查结论追加在文末审查记录区。章节大纲与波次划分的唯一设计事实源是 [spec](../docs/superpowers/specs/2026-11-16-training-dimension-design.md)；文献索引与术语表见 [references.md](references.md)。
 

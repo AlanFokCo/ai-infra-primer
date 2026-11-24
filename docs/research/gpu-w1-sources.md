@@ -37,7 +37,7 @@ URL：`https://dam-cdn.nvd.orangelogic.com/AssetLink/705n6ur546g0uk43w0117r17n80
 
 - **Table 3（H100 SXM5 / PCIe）**：SMs 132 / 114；TPC 66 / 57；FP32 Cores/SM 128；FP64 Cores/SM 64；INT32/SM 64；Tensor Cores/SM 4（528/GPU）。
   - **逐精度 boost clock**：「GPU Boost Clock for FP8, FP16, BF16, TF32 Tensor Core Ops」= **1830 MHz**（SXM5）/1620（PCIe）；「for FP64 Tensor Core Ops, FP32 and FP64 non-Tensor Core Ops」= **1980 MHz** /1755。→ **频率依精度类而异**，1.1 芯片级 FLOPS 反推须用对应精度 clock（BF16 989.4 = 132×4096×1.83 GHz；FP32 66.9 = 132×128×2×1.98 GHz）。
-  - Peak BF16/FP16 TC = **989.4/1978.9**（dense/sparse）；FP8 = 1978.9/3957.8；TF32 = 494.7/989.4；FP64 TC 66.9；FP32 66.9；FP64 non-TC 33.5。**whitepaper 989.4 vs datasheet 989.5 为舍入漂移**（132×4096×1.83 = 989.46）。
+  - Peak BF16/FP16 TC = **989.4/1978.9**（dense/sparse）；FP8 = 1978.9/3957.8；TF32 = 494.7/989.4；FP64 TC 66.9；FP32 66.9；FP64 non-TC 33.5。**whitepaper 989.4 vs datasheet 989.5 为舍入漂移**（132×4096×1.83 = 989.43，真值 989.42976；T6 fix 轮勘误，原 989.46 笔误）。
   - Memory Interface **5120-bit HBM3**；Memory Size 80 GB；**Memory Data Rate 2619 MHz DDR**；**Memory Bandwidth 3352 GB/sec**；L2 50 MB；Shared/SM up to **228 KB**；Register File/SM **256 KB**（/GPU 33792 KB）；TDP 700 W；80 B 晶体管 / 814 mm² / TSMC 4N。
   - 栈数：「80 GB HBM3, **5 HBM3 stacks**, 10 512-bit Memory Controllers」（SXM5）；full GH100「6 HBM3 or HBM2e stacks, 12 512-bit Memory Controllers」。
 - **Table 4（CC 9.0）**：Max Warps/SM **64**；Max Threads/SM 2048；Max Thread Blocks/SM **32**；Max 32-bit Registers/SM **65536**；Max Registers/Thread **255**；Max Thread Block Size 1024；Shared/SM up to 228 KB。
@@ -146,7 +146,7 @@ spec 值 148 SM 与官方 FLOPS + CC 10.0 每 SM 吞吐自洽：FP32 75 TF = 148
 ## 6. 版本漂移注
 
 - **Hopper blog（2022-03）3 TB/s + 「Memory Data Rate Not finalized」** vs **whitepaper V1.04 Table 3 final 3352 GB/s** vs datasheet 3.35 TB/s：早期披露→final 漂移；whitepaper prose 仍留「over 3 TB/sec」未更新（内部不一致）。
-- **whitepaper BF16 989.4/1978.9** vs **datasheet 989.5/1979**：舍入漂移（989.46）。
+- **whitepaper BF16 989.4/1978.9** vs **datasheet 989.5/1979**：舍入漂移（dense 真值 989.43）。
 - **Programming Guide CUDA 13.x 拆子页**：compute capability 表移 `05-appendices/compute-capabilities.html`（Table 33/34/35）；旧单页锚失效，writer 须用子页 URL。
 - **BP Table 5 列集漂移**：旧 CC 5.x/6.x/7.0 列移除，现 7.5…12.x；编号维持 Table 5。
 - **Blackwell brief 为含 GB300 更新版**（非 2024-03 初版）；B200 raw 192 与 datasheet usable 180 并存。

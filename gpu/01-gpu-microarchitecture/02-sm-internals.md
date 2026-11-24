@@ -207,7 +207,7 @@ $$
 
 读这五案例的方式：C1/C2 同 block 大小、register 压力不同，occupancy 随 $R_{\mathrm{th}}$ 反比；C3 换绑定约束到 shared；C4 揭示 block slot 与 warp slot 是两个独立上限（小 block 撞前者）；C5 是 register 约束的极端——上界为 0。五个案例的 active warps 依次 32 / 16 / 32 / 32 / 0，覆盖四种绑定约束与不可 launch 边界。
 
-推导的三个关节再各钉一句。其一，**为什么取 min 不取 sum**：四种资源是同一个 block 同时消耗的，不是四批 block 各耗一种；装第 $n_b$ 个 block 时四种资源各被扣一份，任何一种先见底就停，故上限由最紧者定。其二，**为什么向下取整**：block 是驻留的不可分单位，半个 block 不能驻留， $\lfloor 4.75 \rfloor = 4$ 而非 5——C3 的 shared 项 4.75 取 4 正是此意；若向上取整会装下资源不够的第 5 个 block，违反必要条件。其三，**为什么单位必须一致**：min 是比较运算，只有同量纲的数才能比大小；warp 项若不除 $w_b$ 就是 warps 量纲，与 blocks 量纲的 slot 项取 min 无意义（§5 量纲对账表逐项核过）。这三条是式 (3) 区别于「把四个数随便凑一起」的地方，也是 evaluator 重推导的核对点。
+推导的三个关节再各钉一句。其一，**为什么取 min 不取 sum**：四种资源是同一个 block 同时消耗的，不是四批 block 各耗一种；装第 $n_b$ 个 block 时四种资源各被扣一份，任何一种先见底就停，故上限由最紧者定。其二，**为什么向下取整**：block 是驻留的不可分单位，半个 block 不能驻留， $\lfloor 4.75 \rfloor = 4$ 而非 5——C3 的 shared 项 4.75 取 4 正是此意；若向上取整会装下资源不够的第 5 个 block，违反必要条件。其三，**为什么单位必须一致**：min 是比较运算，只有同量纲的数才能比大小；warp 项若不除 $w_b$ 就是 warps 量纲，与 blocks 量纲的 slot 项取 min 无意义（§5 量纲对账表逐项核过）。这三条是式 (3) 区别于「把四个数随便凑一起」的地方，也是独立重推导的核对点。
 
 occupancy 与算力利用率是两个量，勿混。 $\mathcal{O} = 0.5$ 只说明 warp slot 填了一半，不说明算力只用了一半——若每个 active warp 都在满发射 FMA， $\mathcal{O} = 0.5$ 也可能跑出接近峰值的算力（4 个 scheduler 每周期只需 4 个 eligible warp 即可喂满，64 个 slot 里有一半活跃已远超 4）。反过来 $\mathcal{O} = 1.0$ 若 warp 全在等访存，算力可能远低于峰值。所以 occupancy 是「可调度 warp 的库存比例」，算力利用率是「实际 FLOPs / 峰值」（MFU / roofline 口径，归 2.4 / 11.2）；两者的桥梁是延迟隐藏（1.4 的 Little's law），不是恒等关系。本章只交付 occupancy 的硬件上界，不交付算力利用率。
 

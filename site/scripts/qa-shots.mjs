@@ -49,6 +49,10 @@ const PAGES = [
   ['inf-ch-capacity-cost', '/inference/09-production/01-capacity-and-cost/'], // 公式密（9.1【重】，排队余量三上界 / 两闸 sizing / EC 四口径 / USD/M 成本账）
   ['inf-ch-rl-rollout', '/inference/09-production/03-rl-rollout-serving/'], // 推导重章（9.3，sleep level 语义 / colocate-disagg GPU·时间判据 / partial rollout / 吞吐账）
   ['inf-ch-multimodal', '/inference/09-production/04-multimodal-and-special-serving/'], // 表格/图密（9.4，patch 账 / VE 算力 / encoder cache / SO 专用机 / pooling）
+  // gpu 维度 W1 样章（P1/P2 落地代表章：index + 公式密 + 推导重章，spec §8）
+  ['gpu', '/gpu/'],
+  ['gpu-ch-sm-internals', '/gpu/01-gpu-microarchitecture/02-sm-internals/'], // 公式密（1.2【重】，occupancy 四约束取 min + 五案例表）
+  ['gpu-ch-roofline', '/gpu/02-memory-hierarchy/04-bandwidth-accounting-roofline/'], // 推导重章（2.4【重】，层级全表 + roofline ASCII + 三区判定）
 ];
 
 const VIEWPORTS = [

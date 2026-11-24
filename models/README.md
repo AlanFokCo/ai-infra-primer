@@ -1,6 +1,6 @@
 # models 维度：目录、依赖图与进度表
 
-models 维度讲生成式模型的数学：文本 LLM 主干、视觉表征、扩散生图、多模态 LLM、视频生成、语音音频，共 10 个 Part / 51 章。写法为公式级：关键公式完整推导不跳步、逐公式附符号表、与官方实现代码对照；数值事实（参数量 / config 字段 / benchmark 数字）全部带出处并标注证据等级 [A]/[B]/[C]/[W]（定义见 [STYLE_GUIDE.md](../STYLE_GUIDE.md)）。训练算法、serving 系统、GPU kernel、集群通信分别归 `training/`、`inference/`、`gpu/`、`cluster/` 四个兄弟维度，交叉处只链接不展开。
+models 维度讲生成式模型的数学：文本 LLM 主干、视觉表征、扩散生图、多模态 LLM、视频生成、语音音频，共 10 个 Part / 51 章。写法为公式级：关键公式完整推导不跳步、逐公式附符号表、与官方实现代码对照；数值事实（参数量 / config 字段 / benchmark 数字）全部带出处并标注证据等级 [A]/[B]/[C]/[W]（定义见 [STYLE_GUIDE.md](../STYLE_GUIDE.md)）。训练算法、serving 系统、GPU kernel 与通信全栈、平台编排（K8S/容器/Sandbox）分别归 `training/`、`inference/`、`gpu/`、`cluster/` 四个兄弟维度，交叉处只链接不展开。
 
 本文件是全维度唯一进度事实源：逐章状态见下方进度表，各波 evaluator 审查结论追加在文末审查记录区。章节大纲与波次划分的唯一设计事实源是 [spec](../docs/superpowers/specs/2026-11-09-models-dimension-design.md)；文献索引与术语表见 [references.md](references.md)。
 

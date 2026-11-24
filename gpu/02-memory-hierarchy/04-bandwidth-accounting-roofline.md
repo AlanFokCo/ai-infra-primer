@@ -14,9 +14,9 @@ H100 SXM 的 BF16 dense 峰值 989.5 TFLOPS、HBM 带宽 3.35 TB/s，两者相�
 | 对比口径 | H200 SXM：989.5 TFLOPS / 4.8 TB/s / 141 GB；HGX B200：2250 TFLOPS / 7.7 TB/s / 180 GB | inference 1.3 §2 同表（[NVIDIA, datasheet](../references.md)，[C]） |
 | 对照注 | GB200 每 GPU：2500 TFLOPS / 8 TB/s / 186 GB——仅对照注，不入表混算 | [NVIDIA, datasheet](../references.md)，[C]；SKU 纪律沿 inference 1.3 |
 
-精度口径：roofline 主精度 **BF16 dense**（serving GEMM 不依赖结构化稀疏，dense 才是可达算力口径，沿 inference 1.3），FP8/FP4 作对比行；官方 sparse 表值之半为 dense（脚注逐字 recap inference 1.3）。单位口径：显存 GB = $10^{9}$ B、带宽 TB/s = $10^{12}$ B/s（datasheet 十进制）；片上存储 KB = 1024 B（Programming Guide 逐字注，recap 1.2）；L2 50 MB 沿 whitepaper 印法（2.2）。**实测口径声明**（沿 1.4/2.2）：精确延迟 cycles（shared 29.0 / L1 40.7 / L2 263.0 / HBM 478.8）来自 H800 微基准（[Luo et al., 2024](../references.md)，arXiv:2402.13499，[B]），非 H100 官方规格；周期 ↔ 时间换算取 TC-boost 1830 MHz，register/shared 带宽账沿用 1.2 的 FP32-boost 1980 MHz（逐精度类 clock，1.1 §3）。本章「实测点」数值凡未引官方披露/已发表基准者，一律标**教学假设口径**——本机无 NVIDIA GPU，测量项交付的是方法 + 官方披露口径（spec §6.2 裁定），不是新跑 benchmark。
+精度口径：roofline 主精度 **BF16 dense**（serving GEMM 不依赖结构化稀疏，dense 才是可达算力口径，沿 inference 1.3），FP8/FP4 作对比行；官方 sparse 表值之半为 dense（口径 recap inference 1.3；脚注措辞逐 datasheet 不同，归属见 1.1 §6）。单位口径：显存 GB = $10^{9}$ B、带宽 TB/s = $10^{12}$ B/s（datasheet 十进制）；片上存储 KB = 1024 B（Programming Guide 逐字注，recap 1.2）；L2 50 MB 沿 whitepaper 印法（2.2）。**实测口径声明**（沿 1.4/2.2）：精确延迟 cycles（shared 29.0 / L1 40.7 / L2 263.0 / HBM 478.8）来自 H800 微基准（[Luo et al., 2024](../references.md)，arXiv:2402.13499，[B]），非 H100 官方规格；周期 ↔ 时间换算取 TC-boost 1830 MHz，register/shared 带宽账沿用 1.2 的 FP32-boost 1980 MHz（逐精度类 clock，1.1 §3）。本章「实测点」数值凡未引官方披露/已发表基准者，一律标**教学假设口径**——本机无 NVIDIA GPU，测量项交付的是方法 + 官方披露口径（spec §6.2 裁定），不是新跑 benchmark。
 
-符号声明（spec §4.3）： $I$ = 算术强度（FLOP/byte）； $R$ = ridge point； $F_{\mathrm{peak}}$ = 峰值算力（FLOP/s）； $\mathrm{BW}$ = 带宽（byte/s）。**翻译注**（recap 硬规则）：inference 1.3 的 $\beta$（带宽）在本章译作 $\mathrm{BW}$—— $\beta$ 在 gpu 通信章（8.x）专归 α-β 模型的每字节传输时间，不挪用；models 2.4 的 $d$（hidden 宽）译 $d_{\mathrm{model}}$、 $b$（每元素字节）译 $\mathrm{bytes}$（不占字母）、 $t$（已缓存长度）译 $T$（沿 inference 1.3 翻译先例）。 $B$ = batch、 $T$ = 序列长、 $N$ = 参数量、 $L$ = 层数、 $H_{kv}$ = KV 头数、 $d_{\mathrm{head}}$ = head 维（recap models/inference 沿用）。 $n_{\mathrm{SM}}$ = SM 数； $C$ = 提供的在飞并发（sector 口径）； $L_{\mathrm{req}}$ = 所需并发（1.4 口径）； $u$ = 利用率（ $u_B$ 带宽、 $u_F$ 算力）； $F_{\mathrm{ach}}$、$`\mathrm{BW}_{\mathrm{ach}}`$、 $I_{\mathrm{ach}}$ = 实测算力/带宽/强度。混场声明： $R$ = ridge， $R_{\mathrm{th}}$ = registers/thread（3.4 recap 出现时同章区分）。
+符号声明（spec §4.3）： $I$ = 算术强度（FLOP/byte）； $R$ = ridge point； $F_{\mathrm{peak}}$ = 峰值算力（FLOP/s）； $\mathrm{BW}$ = 带宽（byte/s）。**翻译注**（recap 硬规则）：inference 1.3 的 $\beta$（带宽）在本章译作 $\mathrm{BW}$—— $\beta$ 在 gpu 通信章（8.x）专归 α-β 模型的每字节传输时间，不挪用；models 2.4 的 $d$（hidden 宽）译 $d_{\mathrm{model}}$、 $b$（每元素字节）译 $\mathrm{bytes}$（不占字母）、 $t$（已缓存长度）译 $T$（沿 inference 1.3 翻译先例）。 $B$ = batch、 $T$ = 序列长、 $T_p$ = prefill prompt 长度（models 2.4 §6 沿用）、 $N$ = 参数量、 $L$ = 层数、 $H_{kv}$ = KV 头数、 $d_{\mathrm{head}}$ = head 维（recap models/inference 沿用）。 $n_{\mathrm{SM}}$ = SM 数； $C$ = 提供的在飞并发（sector 口径）； $L_{\mathrm{req}}$ = 所需并发（1.4 口径）； $u$ = 利用率（ $u_B$ 带宽、 $u_F$ 算力）； $F_{\mathrm{ach}}$、$`\mathrm{BW}_{\mathrm{ach}}`$、 $I_{\mathrm{ach}}$ = 实测算力/带宽/强度。混场声明： $R$ = ridge， $R_{\mathrm{th}}$ = registers/thread（3.4 recap 出现时同章区分）；§5 recap 1.4 行的 $L$ = 在飞并发（1.4 局部符号），别于本章层数 $L$——本章并发一律 $C$ / $L_{\mathrm{req}}$。
 
 **边界声明**： $I$/吞吐上限/ridge 的推导归 models 2.4 §6（本章 recap + 翻译，**不重推**）；datasheet 参数表归 inference 1.3（本章引同表对账，增量 = 微架构来源与测量——inference W1 errata 裁定的分工）；batch 三方权衡/排队论/SLO 操作点归 inference 1.3；profiling 全流程（Nsight Systems timeline → kernel drill-down）归 11.2；NVLink 拓扑与 P2P transport 归 7.1/7.3；coalescing/tiling/fusion 的 kernel 手段归 4.1/4.3/5.4。代码 scope：机制片段级（§6 测量命令片段）。
 
@@ -135,7 +135,7 @@ $$
 
 models 2.4 给的是两区（ $I$ 对 $R$ 的左右），但实测 kernel 还有第三种处境：**既没到算力峰值、也没到带宽峰值**——强度在 ridge 左侧、带宽却跑不满。这一区从哪来？从并发不足来（1.4）：带宽是服务率上限，实际吞吐 = 在飞并发 ÷ 延迟，并发不够时服务率空闲。本节把两区精确化为三区。
 
-recap 1.4（不重推）：Little's law $L = \lambda \cdot t_{\mathrm{lat}}$，藏住延迟所需并发 $L_{\mathrm{req}} = \lambda_{\max} \cdot t_{\mathrm{lat}}$；HBM 口径每 SM 服务率 $\lambda_{\mathrm{SM}} = 25.4 \times 10^{9}/(32 \times 1.83 \times 10^{9}) = 0.434$ sectors/cycle，所需并发：
+recap 1.4（不重推）：Little's law $L = \lambda \cdot t_{\mathrm{lat}}$（ $L$ 此处为 1.4 在飞并发口径，别于本章层数 $L$），藏住延迟所需并发 $L_{\mathrm{req}} = \lambda_{\max} \cdot t_{\mathrm{lat}}$；HBM 口径每 SM 服务率 $\lambda_{\mathrm{SM}} = 25.4 \times 10^{9}/(32 \times 1.83 \times 10^{9}) = 0.434$ sectors/cycle，所需并发：
 
 $$
 L_{\mathrm{req}} = \lambda_{\mathrm{SM}} \cdot t_{\mathrm{HBM}} = 0.434 \times 478.8 \approx 208 \ \text{sectors} \qquad (6)
@@ -248,26 +248,27 @@ $$
 ```
  F_ach (TFLOPS, log)
  ▲
- │                 ┌────────────────────────── F_peak = 989.5（compute 平台）
- │                /│
- │               / │
- │              /  │  斜率 = BW = 3.35 TB/s（memory 斜线）
- │             /   │
- │            /    │             ● A (I=400, F=700)
- │           /     │               compute-bound，u_F = 70.7%
- │          /      │
- │         /       │
- │        /        │
- │       /         │
- │      /          │
- │     ● B (I=2.5, F=7.125) memory-bound，u_B = 85.1%
- │    / ○ C (I=2.5, F=4.19) latency-bound，u = 50%（斜线下方）
- │   /  │
- │  /   │
- │ /    │
- │/     │
- └──────┼─────────────────────────────────────► I_ach (FLOP/byte, log)
-        R ≈ 295
+ │                  ┌────────────────────────── F_peak = 989.5（compute 平台）
+ │                 /│
+ │                / │
+ │               /  │  斜线 = I × BW（log-log 斜率 1；BW = 3.35 TB/s 定线位置）
+ │              /   │
+ │             /    │             ● A (I=400, F=700)
+ │            /     │               compute-bound，u_F = 70.7%
+ │           /      │
+ │          /       │
+ │         /        │
+ │        /         │
+ │       /          │
+ │      /           │
+ │     / ● B (I=2.5, F=7.125) memory-bound，u_B = 85.1%
+ │    /             │
+ │   /   ○ C (I=2.5, F=4.19) latency-bound，u = 50%（斜线下方）
+ │  /               │
+ │ /                │
+ │/                 │
+ └──────────────────┼─────────────────────────► I_ach (FLOP/byte, log)
+                    R ≈ 295
 ```
 
 三点的读法（式 (11) 代入）：
@@ -278,7 +279,7 @@ $$
 
 $u_F$ 与 MFU 的关系须钉一句。MFU（Model FLOPs Utilization，模型 FLOPs 利用率）= 实际 FLOPs ÷ 峰值 FLOPs，是 $u_F$ 同定义的模型级口径（1.2 §5 把「算力利用率」指向本章即此）；kernel 级 $u_F$ 是它的分解项。端到端 MFU 不等于任何单个 kernel 的 $u_F$——它是各 kernel $u_F$ 的时间加权平均，再被非 kernel 时间（launch 间隙、同步、CPU 侧调度）打折：一个 decode step 由几十个小 kernel 串成，即便每个 kernel 的 $u_B$ 都接近 1，kernel 间隙仍会吃掉端到端利用率。所以实测 roofline 点回答「这个 kernel 跑得多满」，MFU 回答「这一步/这次训练跑得多满」——前者是后者的诊断分解，逐 kernel 分解与间隙归因的全流程归 11.2。
 
-**层级 roofline**（Nsight §2.9 逐字口径）：「Hierarchical roofline overlays can separate L1, L2, and DRAM bandwidth ceilings. If a kernel sits at the DRAM roof, cache efficiency is often limiting throughput. Improving reuse can move the achieved point toward the L2 or L1 ceiling without changing arithmetic intensity.」——同一 kernel 对 L1/L2/DRAM 各有一条斜线（各层带宽不同，§4 表）；点贴 DRAM roof 说明缓存效率是瓶颈，tiling（4.3）提高复用把点移向 L2/L1 的更高 ceiling，**算法强度不变、达成吞吐上移**。这是「tiling 为什么有效」的 roofline 几何解释：不是把点右移（提 $I$），是把点所在的斜线换高（换带宽层）。Tensor Core kernel 须用 tensor roofline section，并交叉核对 profiler 报的 SM frequency 与 SASS 操作计数（Nsight §2.9 逐字口径），否则 FLOP 计数与指令路径对不上。
+**层级 roofline**（Nsight §2.9 逐字口径）：「Hierarchical roofline overlays can separate L1, L2, and DRAM bandwidth ceilings. If a kernel sits at the DRAM roof, cache efficiency is often limiting throughput. Improving reuse can move the achieved point toward the L2 or L1 ceiling without changing arithmetic intensity.」——同一 kernel 对 L1/L2/DRAM 各有一条斜线（各层带宽不同，§4 表）；点贴 DRAM roof 说明缓存效率是瓶颈，tiling（4.3）提高复用把点移向 L2/L1 的更高 ceiling，**算法强度不变、达成吞吐上移**。这是「tiling 为什么有效」的 roofline 几何解释：不是把点右移（提 $I$），是把点所在的斜线换高（换带宽层）。Tensor Core kernel 须用 tensor roofline section，并交叉核对 profiler 报的 SM frequency 与 SASS 操作计数（Nsight §2.9 口径，忠实压缩），否则 FLOP 计数与指令路径对不上。
 
 serving 侧落点一笔（recap inference 1.3 式 (2) + 利用率修正，教学假设口径）：8B bf16 权重 $W = 16.06$ GB（inference 1.3 §1 口径）， $B = 1$ 忽略 KV 的理想步时 $16.06 \times 10^{9}/(3.35 \times 10^{12}) = 4.79$ ms；若 $u_B = 0.85$（85%），步时 $4.79/0.85 = 5.64$ ms——**带宽利用率直接乘在 serving 延迟上**。这不是新推导，是把式 (9) 的 $u_B$ 代回 inference 1.3 已交付的步时式；实测校准与操作点选择归 inference 9.1 / 本章 §6 方法。
 
@@ -312,7 +313,7 @@ serving 侧落点一笔（recap inference 1.3 式 (2) + 利用率修正，教学
 
 ## 参考
 
-- [NVIDIA, datasheet](../references.md)：NVIDIA H100 / H200 / HGX H100-H200 / Blackwell 官方 datasheet（key: nvidia-datasheet），[C] 官方规格披露·一手权威，2026-11-25——H100 SXM BF16 1979*→989.5 dense / 3.35 TB/s / 80 GB、H200 4.8 TB/s / 141 GB、HGX B200 2250 / 4500 / 9000 dense / 7.7 TB/s / 180 GB / PCIe Gen5 128 GB/s（双向印法）、GB200 2500 / 8 TB/s / 186 GB 对照；sparse 脚注「Dense is one-half of the sparse spec shown.」（§1/§3，与 inference 1.3 同表）
+- [NVIDIA, datasheet](../references.md)：NVIDIA H100 / H200 / HGX H100-H200 / Blackwell 官方 datasheet（key: nvidia-datasheet），[C] 官方规格披露·一手权威，2026-11-25——H100 SXM BF16 1979*→989.5 dense / 3.35 TB/s / 80 GB、H200 4.8 TB/s / 141 GB、HGX B200 2250 / 4500 / 9000 dense / 7.7 TB/s / 180 GB / PCIe Gen5 128 GB/s（双向印法）、GB200 2500 / 8 TB/s / 186 GB 对照；sparse 脚注（逐字折半句「Dense is one-half of the sparse spec shown.」仅 Blackwell datasheet；H100/H200/HGX 脚注为「*With sparsity」，1.1 §6；§1/§3，与 inference 1.3 同表）
 - [NVIDIA, Hopper whitepaper](../references.md)：NVIDIA H100 Tensor Core GPU Architecture Whitepaper V1.04（key: hopper-whitepaper），[C] 官方规格披露·一手权威，2026-11-25——Table 3（5 HBM3 stacks / 2619 MHz DDR / 3352 GB/sec / 132 SM / TC-boost 1830 MHz / BF16 dense 989.4 / L2 50 MB / RF 256 KB）、舍入路径漂移注（989.43 → wp 989.4 / datasheet 989.5，recap 1.1 §3）
 - [NVIDIA, nvbandwidth](../references.md)：NVIDIA/nvbandwidth repo（key: nvbandwidth），教学参照 + 官方实现，README 2026-11-25 经 GitHub API 一手核实——CE/SM 两类拷贝逐字、测试名（host_to_device_memcpy_ce / device_to_device_memcpy_read_sm / write_ce / bidirectional / latency_sm / latency_tma）、spin kernel + CUDA events 测量流程、3 采样中位数、SM 拷贝 512 threads/block 截断公式、pointer chasing 延迟口径、双向报值「per-direction … not an aggregated sum」逐字（§6）
 - [NVIDIA, Nsight Compute](../references.md)：Nsight Compute docs（key: nsight-compute），[C] 官方规格披露·一手权威，ProfilingGuide 2026-11-25 一手核实——§2.9 Roofline Charts（Work/Memory Traffic 定义、achieved value、点到 roof 距离 = 改进机会逐字、层级 L1/L2/DRAM ceiling 逐字、tensor roofline + SM frequency/SASS 交叉核对）、SpeedOfLight「achieved percentage … theoretical maximum」逐字、.pct_of_peak_sustained_elapsed 后缀定义、MemoryWorkloadAnalysis 三口径、gpu__time_duration（§6/§7）

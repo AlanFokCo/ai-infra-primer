@@ -123,19 +123,19 @@ graph LR
 
 | 章节 | 文件 | 状态 |
 | --- | --- | --- |
-| 1.1 芯片组织与世代 | 01-chip-organization-and-generations.md | 未开始 |
-| 1.2 SM 内部拆解 | 02-sm-internals.md | 未开始 |
-| 1.3 Tensor Core 与 MMA 微架构 | 03-tensor-core-mma.md | 未开始 |
-| 1.4 指令流水线与延迟隐藏 | 04-instruction-pipeline-latency-hiding.md | 未开始 |
+| 1.1 芯片组织与世代 | 01-chip-organization-and-generations.md | 已关闭 |
+| 1.2 SM 内部拆解 | 02-sm-internals.md | 已关闭 |
+| 1.3 Tensor Core 与 MMA 微架构 | 03-tensor-core-mma.md | 已关闭 |
+| 1.4 指令流水线与延迟隐藏 | 04-instruction-pipeline-latency-hiding.md | 已关闭 |
 
 ### Part 2 · 内存层级与带宽账（W1）
 
 | 章节 | 文件 | 状态 |
 | --- | --- | --- |
-| 2.1 HBM 与显存子系统 | 01-hbm-and-memory-subsystem.md | 未开始 |
-| 2.2 缓存层级 | 02-cache-hierarchy.md | 未开始 |
-| 2.3 片上存储与 register | 03-onchip-storage-registers.md | 未开始 |
-| 2.4 内存带宽账与 roofline | 04-bandwidth-accounting-roofline.md | 未开始 |
+| 2.1 HBM 与显存子系统 | 01-hbm-and-memory-subsystem.md | 已关闭 |
+| 2.2 缓存层级 | 02-cache-hierarchy.md | 已关闭 |
+| 2.3 片上存储与 register | 03-onchip-storage-registers.md | 已关闭 |
+| 2.4 内存带宽账与 roofline | 04-bandwidth-accounting-roofline.md | 已关闭 |
 
 ### Part 3 · CUDA 编程模型（W2）
 
@@ -222,11 +222,15 @@ graph LR
 | 波次 | 日期 | 覆盖章节 | 审查轮次 | S1 | S2 | S3 | 未关闭项 | 结论 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | W0 | 2026-11-24 | spec 本身（11 Part/41 章大纲）+ 脚手架 | 四路独立对抗审查 ×1（A P1-P4/B P5-P6/C P7-P11/D 设计）+ builder-check ×1 + 逐任务 fresh reviewer ×6（T1-T6） | 0（raw 1→0） | 17（raw 24 去重，全修） | 21（raw 24 去重，全修） | 无 | **放行（W1 开工放行）**。spec 四路档案 docs/reviews/gpu-spec-review-{a,b,c,d}.md；脚手架全绿：references 11 Part 59 条 + 术语表；README 41 章进度表 + 14 边依赖图 + 93 行指针盘点（86 章命中，sweep 内容过滤器纠正 raw 116→86）；lint gpu 分支 + 127 章回归全过；STYLE_GUIDE 四维度泛化条款零漂移；站点 DIMENSIONS gpu {0,0,50} + 12 字段 UI + 14 边图 + FORTHCOMING.gpu 移除 + cluster/根 README 新 scope；全量 QA 绿（164 页/5089 引用/qa-shots 桌面移动全过，dist 无 /gpu/ live W1）。 |
+| W1 | 2026-11-25 | P1+P2 8 章（1.1–1.4 / 2.1–2.4） | task reviewer×4 + fix rounds + T6 P1/P2 深度对抗审查 + T8 图 QUALITY（18/18） | 0 | 0 | 13（P1×6 + P2×7，全修；L 消歧跨 Part 同址两计；同类扩展修：2.3 T1 泄漏 / 2.4 脚注归属 / refs 条目归属） | 无（⟨verify W3/W6⟩ B200 SM 数等为 spec 允许延迟项，不计 finding） | **放行（W1 收官，/gpu/ live）**。重推导 1.2 PASS（active warps 32/16/32/32/0）/ 2.4 PASS（112/112 独立重算），recap 边界 PASS；档案 docs/reviews/gpu-w1-review-{p1,p2}.md + gpu-w1-fig-quality.md（7 条非阻塞 polish 延迟站点 fix 轮，图不动）；refs 被引回写 12 条（forward+reverse 交叉核）+ nvbandwidth README 核实日期 11-25；兄弟 README 3 处边界句 errata（见本节 errata 表）；站点断言 {8,2,50}；QA 全绿：build:content gpu 8 章/2 Part/64 refs + 回归 models 51/training 39/inference 37，build 176 页零 KaTeX，pagefind 135 页/105860 词，check-links 5418 引用零断，qa-shots 36 样页×桌面移动 88 shots 全过（含 gpu index/1.2/2.4），dist 有 /gpu/（live 翻转）。 |
 
 **跨维度指针 errata 记录**（spec §2 条款授权，仅限指针句的最小修订；errata 编辑不跑 rewrite-gate）：
 
 | 日期 | 位置 | 修订 |
 | --- | --- | --- |
+| 2026-11-25 | models/README.md L3 边界句 | 「训练算法、serving 系统、GPU kernel、集群通信分别归 training/、inference/、gpu/、cluster/」→「训练算法、serving 系统、GPU kernel 与通信全栈、平台编排（K8S/容器/Sandbox）分别归 training/、inference/、gpu/、cluster/」（spec §2 新 seam：通信全栈归 gpu、平台编排归 cluster；W0 盘点 README 级行，仅限指针句最小修订，其余文本不动） |
+| 2026-11-25 | training/README.md L3 边界句 | 「kernel 归 gpu/，网络与拓扑归 cluster/」→「kernel 与通信网络/拓扑归 gpu/，平台编排归 cluster/」（同上新 seam；仅限指针句最小修订） |
+| 2026-11-25 | inference/README.md L3 边界句 | 「GPU silicon 实现归 gpu/，跨机通信硬件归 cluster/」→「GPU silicon 与通信全栈（含跨机通信硬件）归 gpu/，平台编排归 cluster/」（同上新 seam；仅限指针句最小修订） |
 
 （W0 只盘点、无编辑；W1 起随章号生效的每次最小修订逐条记入上表。）
 
