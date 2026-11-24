@@ -8,7 +8,7 @@
 
 **本章口径**（章脊锁定）：主口径 **H100 SXM，Compute Capability 9.0**（沿 3.1）；running example 沿用 3.1 的 elementwise grid（65536 blocks × 256 threads、 $n_{\mathrm{vec}} = 16777216$ 个 fp32 元素），本章新增 last-block 归约与 histogram 两个机制片段；histogram 账换 grid-stride 1056 blocks 配置，原因见 §5（两阶段 atomic 的节省因子 = 每线程元素数，1 元素/线程配置无节省）。延迟口径 recap 2.2 实测 [B]（shared 29.0 / L1 40.7 / L2 263.0 / HBM 478.8 cycles，H800 微基准，非 H100 官方规格），cycle ↔ 时间换算取 1.83 GHz。
 
-符号声明： $n_{\mathrm{blk}}$ = grid block 数、 $n_{\mathrm{vec}}$ = 向量元素数（recap 3.1）； $n_{\mathrm{bins}}$ = histogram bin 数（本章局部）； $\rho$ = global atomic 节省因子（§5）； $P_{\mathrm{page}}$ = 迁移页大小、 $M$ = 迁移总字节（沿全书 $M$ = 传输字节语义）、 $\mathrm{BW}$ = 互连带宽（本章取 PCIe Gen5 x16 理论单向 64 GB/s，2.4 §4 表口径）； $t_{\mathrm{page}}$、 $t_{\mathrm{mig}}$ = 单页迁移带宽项与总迁移时间下界（§6）。bytes 不占字母，B/KB/MB/GB 是单位符号豁免。
+符号声明： $n_{\mathrm{blk}}$ = grid block 数、 $n_{\mathrm{vec}}$ = 向量元素数（recap 3.1）； $n_{\mathrm{th}}$ = 参与同址 atomic 的线程数（§5 命题 2 局部；裸字母 n 专归 rank 数，不占用）； $n_{\mathrm{bins}}$ = histogram bin 数（本章局部）； $\rho$ = global atomic 节省因子（§5）； $P_{\mathrm{page}}$ = 迁移页大小、 $M$ = 迁移总字节（沿全书 $M$ = 传输字节语义）、 $\mathrm{BW}$ = 互连带宽（本章取 PCIe Gen5 x16 理论单向 64 GB/s，2.4 §4 表口径）； $t_{\mathrm{page}}$、 $t_{\mathrm{mig}}$ = 单页迁移带宽项与总迁移时间下界（§6）。bytes 不占字母，B/KB/MB/GB 是单位符号豁免。
 
 所谓地址空间（address space），是指 CUDA 按作用域与生命周期划分的逻辑存储类别，共六个：register、local、shared、global、constant、texture/surface（[NVIDIA, CUDA Programming Guide](../references.md) Variable Memory Space Specifiers 与 Device Memory Accesses 节，[C]）。语义与硬件 backing 总表：
 
@@ -178,7 +178,7 @@ atom{.sem}{.scope}{.space}.op.type d, [a], b;
 
 warp 内同址的两条官方语义（PG SIMT 节逐字，[NVIDIA, CUDA Programming Guide](../references.md)，[C]）：非原子写——「If a non-atomic instruction executed by a warp writes to the same location... which thread performs the final write is undefined.」；原子写——「If an atomic instruction executed by a warp reads, modifies, and writes to the same location in global memory for more than one of the threads of the warp, each read/modify/write to that location occurs and they are all serialized, but the order in which they occur is undefined.」前者连「哪个写活下来」都不定，后者保每个 RMW 都发生、但顺序不定。
 
-**命题 2**（atomic 累加非确定性）。 $n$ 个线程对同一 fp32 地址 atomicAdd，结果的比特值依赖各 RMW 的完成顺序；该顺序官方未定义（上文逐字），故运行间比特级不可复现——只要浮点加法非结合使不同顺序产生不同舍入。**证明**（要点）：串行化保证每个 RMW 恰好发生一次（不丢更新），但 $n$ 个加数的求和顺序有 $n!$ 种可能；fp32 加法非结合，不同顺序的中间舍入不同，结果比特值随之不同。∎
+**命题 2**（atomic 累加非确定性）。 $n_{\mathrm{th}}$ 个线程对同一 fp32 地址 atomicAdd，结果的比特值依赖各 RMW 的完成顺序；该顺序官方未定义（上文逐字），故运行间比特级不可复现——只要浮点加法非结合使不同顺序产生不同舍入。**证明**（要点）：串行化保证每个 RMW 恰好发生一次（不丢更新），但 $n_{\mathrm{th}}$ 个加数的求和顺序有 $n_{\mathrm{th}}!$ 种可能；fp32 加法非结合，不同顺序的中间舍入不同，结果比特值随之不同。∎
 
 全数字反例（fp32，先预测再算）：取 $a = 10^{8}$、 $b = -10^{8}$、 $c = 1$，
 
