@@ -46,6 +46,7 @@ URL：`https://dam-cdn.nvd.orangelogic.com/AssetLink/705n6ur546g0uk43w0117r17n80
   - **单发射互证**：每 scheduler 恰 1 Dispatch Unit、32 thread/clk = 1 warp 指令/cycle → 4×32×1 = **128 FP32 results/cycle/SM** = Best Practices Table 5 CC 9.0 FP32 128。双发射（Kepler 术语）不成立。RF 16384×4 block = 65536 = 64K×32bit = 256 KB ✓。
 - L2 prose：「Using a **partitioned crossbar structure**, the L2 cache localizes and caches data for memory accesses from SMs in GPCs directly connected to the partition.」
 - HBM prose：「80 GB (five stacks) … over 3 TB/sec」（prose 未更新，与 Table 3 final 3352 内部不一致 → 漂移注）。
+- **ECC Memory Resiliency 节（p.38，TOC 在列；T4 review fix round 1 回补，T1 漏录）**：逐字「The H100 HBM3/2e memory subsystems support Single-Error Correcting Double-Error Detecting (SECDED) Error Correction Code (ECC) to protect data.」+「H100 supports “Sideband ECC” for its HBM3/2e memories, where a small memory region, separate from the main HBM memory, is used for ECC bits (which is in contrast to “Inline ECC”, where a portion of main memory is carved out to store ECC bits).」+「Other key memory structures in H100 are also protected by SECDED ECC including the L2 cache and the L1 caches and register files inside all the SMs.」→ **SECDED 码族 + Sideband 放置为逐字披露**（2.1 §4 据此断言数据带宽不受 ECC 折扣；仅码参数/数据字宽未披露，Hamming d=64 账留教学实例化）。同页 **Memory Row Remapping** 节：每 bank 预留 spare rows，坏行 boot 时以预留好行替换。缓存文本 /tmp/t4-review-ecc/hopper-wp.txt L1267-1283（reviewer 下载同一 dam-cdn V1.04 PDF 提取）。
 
 ### 2.2 Blackwell Technical Brief（[C] 一手）
 

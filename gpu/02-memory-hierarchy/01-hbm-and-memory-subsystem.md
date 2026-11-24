@@ -82,7 +82,7 @@ $$
 | $n_{\mathrm{ch}}$ | 每栈通道数 | channels/stack |
 | $f_{\mathrm{pin}}$ | pin rate | transfers/(s·pin) |
 | $w_{\mathrm{ch}}$ | 每通道位宽 | bit/channel（= pins/channel） |
-| 四因子积 ÷ 8 | 带宽 | bit/s ÷ 8 = B/s |
+| 四因子积 ÷ 8 | 带宽 | 约化后 transfers/s × 1 bit/transfer = bit/s；÷ 8 = B/s |
 
 H100 SXM5 逐项代入（全部披露值，[NVIDIA, Hopper whitepaper](../references.md) Table 3，[C]）： $n_{\mathrm{stack}} = 5$（逐字「5 HBM3 stacks」）； $n_{\mathrm{ch}} = 16$、 $w_{\mathrm{ch}} = 64$ bit（Micron 互证）； $f_{\mathrm{pin}}$ 由「Memory Data Rate 2619 MHz DDR」换算——DDR 双沿采样， $2619 \times 2 = 5238$ MT/s = 5.238 Gbps/pin。代入式 (1)：
 
@@ -123,20 +123,28 @@ vendor speed-bin 互证（式 (3) 取 $n_{\mathrm{stack}} = 1$）：Samsung HBM3
 
 ## 4. ECC：校验位从哪来，开销去哪
 
-ECC 要花多少校验位，吃不吃带宽？H100 对 HBM 与片上 SRAM 都提供 ECC 保护（[NVIDIA, Hopper whitepaper](../references.md)，[C]）。本节给机制层的账：先从计数论证推 SECDED 的最少校验位，再分 in-band / sideband 两口径算带宽开销。HBM3/SRAM 的具体 ECC 编码未逐字披露（JEDEC 原文 403 残留、NVIDIA 闭源），故本节是**教学推导**，给开销的量级，不是对 H100 实现的断言；官方 3352 GB/s 是出货标称口径，**不被本节账修正**。
+ECC 要花多少校验位，吃不吃带宽？Hopper whitepaper 的「ECC Memory Resiliency」节（p.38）对后一问有逐字答案：H100 采用 Sideband ECC，校验位不占数据总线——官方 3352 GB/s 不被 ECC 打折。本节先列三条逐字披露，再用 Hamming 界给校验位开销的教学实例化，最后对比 Sideband 与 Inline 两种放置口径的带宽账。
 
-所谓 SECDED（single-error correction, double-error detection），是指能纠正任意单 bit 错、检出任意双 bit 错的纠错码。推导路线：校验位必须给每个单 bit 错误位置一个不同的 syndrome（校验子）——对 syndrome 计数得 Hamming 界；代入 64-bit 数据字得最少校验位；SECDED 在其上加一位总偶校验。
+**披露事实**（[NVIDIA, Hopper whitepaper](../references.md) ECC Memory Resiliency 节，[C] 官方规格披露·一手权威，逐字）：
+
+- **SECDED 码族**：「The H100 HBM3/2e memory subsystems support Single-Error Correcting Double-Error Detecting (SECDED) Error Correction Code (ECC) to protect data.」
+- **Sideband 放置**：「H100 supports “Sideband ECC” for its HBM3/2e memories, where a small memory region, separate from the main HBM memory, is used for ECC bits (which is in contrast to “Inline ECC”, where a portion of main memory is carved out to store ECC bits).」——校验位存于独立于主 HBM 的一小块存储区域；对照口径 Inline ECC 则从主存中划出一部分存校验位。
+- **片上 SRAM 清单**：「Other key memory structures in H100 are also protected by SECDED ECC including the L2 cache and the L1 caches and register files inside all the SMs.」——L2、每 SM 的 L1 与 register file 都在 SECDED 保护之列。
+
+**口径注**：逐字披露的是 SECDED 码族与 Sideband 放置；具体码参数（数据字宽、校验位编码）未逐字披露。下面的 Hamming 界账取 $d = 64$ 作**教学实例化**，给开销的量级，不是对 H100 码参数的断言。
+
+所谓 SECDED（single-error correction, double-error detection），是指能纠正任意单 bit 错、检出任意双 bit 错的纠错码——正是 wp 逐字点名的码族。推导路线：校验位必须给每个单 bit 错误位置一个不同的 syndrome（校验子）——对 syndrome 计数得 Hamming 界；代入 64-bit 数据字得最少校验位；SECDED 在其上加一位总偶校验。
 
 **命题 2**（SECDED 校验位下界）。纠正 $d$ bit 数据字的任意单 bit 错（含校验位自身出错），校验位数 $r$ 须满足 $2^{r} \ge d + r + 1$；SECDED 构造在 SEC 码上加一位总偶校验位，共 $r+1$ 位。**证明**（要点）： $r$ 个校验位形成 $2^{r}$ 个 syndrome，须区分「无错」与 $d+r$ 个 bit 位置各自出错，共 $d+r+1$ 个状态，故得不等式；双 bit 错的总偶校验不变而 SEC syndrome 非零，两者合取可与单 bit 错区分。完整计数论证与 $d = 64$ 代入留作练习 3。
 
-代入 $d = 64$： $r = 6$ 时 $2^{6} = 64 \ge 71$ 不成立； $r = 7$ 时 $128 \ge 72$ 成立——最少 7 位校验，SECDED 加 1 位总偶校验共 8 位。存储开销 $8/64$ = 12.5%：每 64 个数据 bit 要多存 8 个校验 bit。
+代入 $d = 64$（教学实例化）： $r = 6$ 时 $2^{6} = 64 \ge 71$ 不成立； $r = 7$ 时 $128 \ge 72$ 成立——最少 7 位校验，SECDED 加 1 位总偶校验共 8 位。存储开销 $8/64$ = 12.5%：每 64 个数据 bit 要多存 8 个校验 bit。
 
-带宽开销去哪，分两口径（口径注：「开销」此处指校验位相对数据位的占比，不是对官方带宽的修正）：
+带宽开销去哪，对比两种放置口径（口径注：「开销」此处指校验位相对数据位的占比，不是对官方带宽的修正）：
 
-- **in-band**（校验位与数据共用总线）：总线每搬 72 bit 码字只有 64 bit 是数据，有效数据带宽 = 标称 × $64/72 \approx 0.889$（88.9%），即 11.1% 的总线搬运量花在检查位上。
-- **sideband**（校验位走独立连线）：数据总线宽度不受影响，标称带宽不变；代价是额外的 pin/走线与存储单元。
+- **Sideband ECC（H100 采用，wp 逐字）**：校验位存于独立存储区域，数据总线宽度不受影响——**数据带宽不变**，这正是官方 3352 GB/s 无需 ECC 折扣的原因；代价是额外的存储区域与走线。
+- **Inline ECC（wp 对照口径）**：从主存划出一部分存校验位，校验位与数据共用同一存储与总线——按教学实例化（64 数据 bit + 8 校验 bit = 72 bit 码字），总线每搬 72 bit 只有 64 bit 是数据，有效数据带宽 = 标称 × $64/72 \approx 0.889$（88.9%），即 11.1% 的总线搬运量花在检查位上。
 
-HBM3 取哪种口径未逐字披露，本书不断言；账给两口径的量级——存储开销 12.5% 是码本身固有的（无论哪种口径都省不掉），带宽开销只取决于校验位是否占用数据总线。SRAM ECC 同理保护片上 SRAM 阵列：单 bit 翻转（软错误）被纠正，避免静默数据损坏；生产侧的 ECC 计数监控与 XID 故障分类归 11.3。
+所以开场问题的答案：存储开销是码族固有的（教学实例化 12.5%）——Sideband 省的是总线开销，不是存储开销，独立区域仍要存校验位；带宽开销取决于放置口径，H100 的 Sideband 放置让数据总线不搬校验位，数据带宽开销为零。片上 SRAM 的单 bit 翻转（软错误）由 SECDED 纠正，避免静默数据损坏；wp 同页还披露 Memory Row Remapping（每 bank 预留 spare row，坏行在 boot 时以预留好行替换）。生产侧的 ECC 计数监控与 XID 故障分类归 11.3。
 
 ## 5. 内存控制器与地址映射：interleaving 与 partition camping
 
@@ -182,7 +190,8 @@ channel interleaving：地址映射把连续地址按细粒度打散到不同通
 | H100 $f_{\mathrm{pin}}$ = 2619 MHz DDR × 2 = 5.238 Gbps（披露）；H200 6.25 / HGX B200 7.52 / GB200 7.81 Gbps 均反推 | §3 SKU 表 | §3、练习 2 |
 | HBM3 每栈 16 ch × 64 bit + 32 pseudo-channel；HBM2e 为 8 ch × 128 bit；HBM3e 是 vendor speed-bin 非独立 JEDEC 编号 | §2 结构表 | §2 |
 | vendor 每栈带宽互证：6.4 Gbps → 819.2 / 9.2 → 1177.6 / 9.6 → 1228.8 GB/s，同式闭环 | §2 / §3 实例 | §2、练习 1 |
-| SECDED 校验位下界 $2^{r} \ge d+r+1$；d=64 → r=7+1=8 位，存储开销 12.5%；in-band 有效带宽 64/72 ≈ 88.9% | 命题 2 | §4、练习 3 |
+| H100 HBM3/2e 采用 SECDED + Sideband ECC（wp p.38 逐字）：校验位独立区域，数据带宽不受影响（3352 不打折）；L2/L1/register file 同受 SECDED | §4 披露事实 | §4 |
+| SECDED 校验位下界 $2^{r} \ge d+r+1$；教学实例化 d=64 → r=7+1=8 位，存储开销 12.5%；Inline 对照口径 64/72 ≈ 88.9% | 命题 2 | §4、练习 3 |
 | H100 SXM5 10 个 512-bit MC（每栈 2 个）；interleaving 让顺序流铺满 80 通道 | §5 库存 | §5 |
 | camping 最坏：全落单通道 → 41.9 GB/s = 峰值 1/80（简化线性模型，教学口径） | 命题 3 | §5、练习 4 |
 | 容量三口径：raw 栈几何（192 = 8 × 24）≠ usable（HGX 180 / GB200 186）≠ nvidia-smi 179 GiB ≈ 192.2 GB | §6 容量表 | §6、练习 4 |
@@ -192,15 +201,15 @@ channel interleaving：地址映射把连续地址按细粒度打散到不同通
 
 1.（计算 · [10]）H100 SXM5 主口径带宽重算：(a) 由「2619 MHz DDR」换算 $f_{\mathrm{pin}}$（Gbps）；(b) 代入式 (1) 求 $\mathrm{BW}$（GB/s）；(c) 用等价每栈口径式 (3) 重算，核对两式同值。校验：(b)(c) 与 whitepaper Table 3 的 3352 GB/sec、datasheet 3.35 TB/s 一致（容差 0.1%）；总线宽 5 × 16 × 64 与 Table 3「5120-bit」逐字一致。
 2.（计算 · [20]）误代守卫与 SKU 反推：(a) 把 1024 代入式 (1) 的 $w_{\mathrm{ch}}$，算出多少 GB/s、是真值的几倍？(b) 由 H200 的 4.8 TB/s 与 6 栈反推 $f_{\mathrm{pin}}$；(c) 同法反推 HGX B200（7.7 TB/s）与 GB200（8 TB/s）的 $f_{\mathrm{pin}}$，并与 vendor 最大 speed-bin 9.2 / 9.6 Gbps 比较。先预测 (a) 的倍数再算。校验：(a) 16×、≈53.6 TB/s，与 §3 坑注一致；(b) 6.25 Gbps；(c) ≈7.52 / 7.81 Gbps，均低于 vendor 最大 bin，与 §3 SKU 表一致。
-3.（推导 · [30]）补全命题 2 的证明（SECDED 校验位下界）：(a) 计数论证—— $r$ 个校验位的 $2^{r}$ 个 syndrome 须区分「无错」+ $d+r$ 个单 bit 错位置，得 $2^{r} \ge d+r+1$；(b) 代入 $d = 64$，逐试 $r = 6, 7$ 求最小 $r$；(c) 说明 SECDED 加一位总偶校验后共 8 位，存储开销 12.5%；(d) 算 in-band 口径的有效数据带宽占比。校验：(b) $r=6$ 时 $64 \ge 71$ 不成立、 $r=7$ 时 $128 \ge 72$ 成立；(d) $64/72 \approx 0.889$（88.9%），与 §4 账一致。
+3.（推导 · [30]）补全命题 2 的证明（SECDED 校验位下界）：(a) 计数论证—— $r$ 个校验位的 $2^{r}$ 个 syndrome 须区分「无错」+ $d+r$ 个单 bit 错位置，得 $2^{r} \ge d+r+1$；(b) 代入 $d = 64$，逐试 $r = 6, 7$ 求最小 $r$；(c) 说明 SECDED 加一位总偶校验后共 8 位，存储开销 12.5%；(d) 算 Inline ECC 对照口径的有效数据带宽占比（教学实例化 d=64），并说明 H100 实际的 Sideband 口径为什么没有这项折扣。校验：(b) $r=6$ 时 $64 \ge 71$ 不成立、 $r=7$ 时 $128 \ge 72$ 成立；(d) $64/72 \approx 0.889$（88.9%），Sideband 口径数据带宽不变，与 §4 账一致。
 4.（计算 · [30]）camping 与容量综合账：(a) 简化模型（ $g = 256$ B）下 stride 20 KB 的访问全落单通道，求有效带宽与占峰值比例；(b) 把 nvidia-smi 的 179 GiB 换算成 GB（十进制），判断它接近 raw 192 还是 usable 180；(c) 算 H200 与 HGX B200 的 raw-usable 差额。校验：(a) 41.9 GB/s = 1/80，与 §5 命题 3 实例一致；(b) ≈192.2 GB ≈ raw（arXiv:2610.41919 实测口径）；(c) 3 GB 与 12 GB，与 §6 容量表一致。
 
 ## 参考
 
-- [NVIDIA, Hopper whitepaper](../references.md)：NVIDIA H100 Tensor Core GPU Architecture Whitepaper V1.04（key: hopper-whitepaper），[C] 官方规格披露·一手权威，2026-11-25 dam-cdn PDF 一手核实——Table 3（5 HBM3 stacks / 5120-bit HBM3 / Memory Data Rate 2619 MHz DDR / Memory Bandwidth 3352 GB/sec / 80 GB / 10 个 512-bit MC）、Fig 6（full GH100 6 栈 / 12 控制器）、「6 HBM3 or HBM2e stacks」逐字、HBM ECC + SRAM ECC
+- [NVIDIA, Hopper whitepaper](../references.md)：NVIDIA H100 Tensor Core GPU Architecture Whitepaper V1.04（key: hopper-whitepaper），[C] 官方规格披露·一手权威，2026-11-25 dam-cdn PDF 一手核实——Table 3（5 HBM3 stacks / 5120-bit HBM3 / Memory Data Rate 2619 MHz DDR / Memory Bandwidth 3352 GB/sec / 80 GB / 10 个 512-bit MC）、Fig 6（full GH100 6 栈 / 12 控制器）、「6 HBM3 or HBM2e stacks」逐字、ECC Memory Resiliency 节（p.38）：SECDED 码族逐字 + Sideband ECC vs Inline ECC 逐字 + L2/L1/register file SECDED 清单 + Memory Row Remapping
 - [NVIDIA, datasheet](../references.md)：NVIDIA H100 / H200 / HGX H100-H200 / Blackwell 官方 datasheet（key: nvidia-datasheet），[C] 官方规格披露·一手权威，2026-11-25——H100 SXM 80 GB / 3.35 TB/s、H200 SXM 141 GB / 4.8 TB/s、HGX B200 180 GB / 7.7 TB/s、GB200 186 GB / 8 TB/s、H100 NVL 94 GB / 3.9 TB/s 勿混
 - [JEDEC, HBM3](../references.md)：JEDEC HBM3 规范 JESD238A + 成员官方互证（key: jedec-hbm3），[C] 官方规格披露·一手权威，2026-11-25——Micron「16 independent channels and 32 pseudo channels」+「1024 IO pins」+「24GB 8-high HBM3E is shipping with NVIDIA H200」、Samsung HBM3 6.4 Gbps → 819 GB/s / HBM3E 9.2 Gbps → 1180 GB/s / 12H 8H、SK hynix HBM3E 9.6 Gbps → 1.23 TB/s；HBM3e = vendor speed-bin 非独立 JEDEC 编号；JEDEC 原文 403 bot 拦截，精确 URL 留 W4
 - [NVIDIA, Blackwell brief](../references.md)：NVIDIA Blackwell Architecture Technical Brief（key: blackwell-whitepaper），[C] 官方规格披露·一手权威，2026-11-25——B200「Up to 192 GB HBM3e」= raw 栈容量（8 × 24 GB），非出货 usable
 - [NVIDIA, Blackwell tuning guide](../references.md)：NVIDIA Blackwell Tuning Guide（key: blackwell-tuning-guide），[C] 官方规格披露·一手权威，2026-11-25——B200 HBM3/HBM3e up to 180 GB（usable 口径互证）
-- [Zand et al., 2026](../references.md)：Matching Workloads to Blackwell: Power-Resolved Benchmarking of NVIDIA B200 and B300（key: b200-power-bench），arXiv:2610.41919，[B] 有 paper 无官方代码，2026-11-25——nvidia-smi HBM3e 179 GiB / 269 GiB ≈ raw 192 / 288 GB（十进制）vs datasheet usable 180 / 270 GB（§6 三口径实测注）
+- [Zand et al., 2026](../references.md)：Matching Workloads to Blackwell: Power-Resolved Benchmarking of NVIDIA B200 and B300 across HPC and AI Workloads（key: b200-power-bench），arXiv:2610.41919，[B] 有 paper 无官方代码，2026-11-25——nvidia-smi HBM3e 179 GiB / 269 GiB ≈ raw 192 / 288 GB（十进制）vs datasheet usable 180 / 270 GB（§6 三口径实测注）
 - [NVIDIA, CUDA Programming Guide](../references.md)：CUDA C++ Programming Guide（key: cuda-programming-guide），[C] 官方规格披露·一手权威，2026-11-25——KB = 1024 逐字注（§1 单位纪律）
