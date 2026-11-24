@@ -1,8 +1,8 @@
-# STYLE_GUIDE — 写作与审查唯一标准（models / training / inference 三维度适用）
+# STYLE_GUIDE — 写作与审查唯一标准（models / training / inference / gpu 四维度适用）
 
-本文件是写作 agent 与 evaluator agent 的共同唯一标准。条款定义源自 `docs/superpowers/specs/2026-11-09-models-dimension-design.md` §4（写作规范，4.1-4.9），并经 `docs/superpowers/specs/2026-11-16-training-dimension-design.md` §4 声明对 training 维度全部适用（training 的维度级细化——证据分级对方法/框架锚点的口径、跨维度引用规则、符号约定表——以该 spec §4 为准）、经 `docs/superpowers/specs/2026-11-22-inference-dimension-design.md` §4 声明对 inference 维度全部适用（inference 的维度级细化——证据分级对方法/框架锚点的口径（该 spec §4.1：引擎锚点 [A] = 正式 paper + official code，不要求 open weights；若锚点是模型则另需 open weights）、跨维度引用规则、符号约定表——以该 spec §4 为准）；evaluator 协议摘要对应各维度 spec §6.3-6.4。写作与审查出现分歧时以本文件为准；本文件未覆盖的情形回查对应维度 spec。
+本文件是写作 agent 与 evaluator agent 的共同唯一标准。条款定义源自 `docs/superpowers/specs/2026-11-09-models-dimension-design.md` §4（写作规范，4.1-4.9），并经 `docs/superpowers/specs/2026-11-16-training-dimension-design.md` §4 声明对 training 维度全部适用（training 的维度级细化——证据分级对方法/框架锚点的口径、跨维度引用规则、符号约定表——以该 spec §4 为准）、经 `docs/superpowers/specs/2026-11-22-inference-dimension-design.md` §4 声明对 inference 维度全部适用（inference 的维度级细化——证据分级对方法/框架锚点的口径（该 spec §4.1：引擎锚点 [A] = 正式 paper + official code，不要求 open weights；若锚点是模型则另需 open weights）、跨维度引用规则、符号约定表——以该 spec §4 为准）、经 `docs/superpowers/specs/2026-11-24-gpu-dimension-design.md` §4 声明对 gpu 维度全部适用（gpu 的维度级细化——证据分级对硬件官方规格/无 paper repo 锚点的口径、跨维度引用规则、符号约定表——以该 spec §4 为准）；evaluator 协议摘要对应各维度 spec §6.3-6.4。写作与审查出现分歧时以本文件为准；本文件未覆盖的情形回查对应维度 spec。
 
-适用范围：models 维度全部章节（10 Part / 51 章）、training 维度全部章节（9 Part / 39 章）与 inference 维度全部章节（9 Part / 37 章）。每章提交前必须在仓库根目录通过 `bash scripts/lint-chapter.sh <chapter-file>`（检查项见本文 §11）；lint 通过只是下限，不替代 §9 自查与 evaluator 审查。
+适用范围：models 维度全部章节（10 Part / 51 章）、training 维度全部章节（9 Part / 39 章）、inference 维度全部章节（9 Part / 37 章）与 gpu 维度全部章节（11 Part / 41 章）。每章提交前必须在仓库根目录通过 `bash scripts/lint-chapter.sh <chapter-file>`（检查项见本文 §11）；lint 通过只是下限，不替代 §9 自查与 evaluator 审查。
 
 ## 条款
 
@@ -149,7 +149,7 @@
 
 ### 10. Evaluator 协议摘要（各维度 spec §6.3-6.4 各自实例化）
 
-完整条款见对应维度 spec §6.3-6.4（models：`docs/superpowers/specs/2026-11-09-models-dimension-design.md`；training：`docs/superpowers/specs/2026-11-16-training-dimension-design.md`；inference：`docs/superpowers/specs/2026-11-22-inference-dimension-design.md`），此处为执行摘要：
+完整条款见对应维度 spec §6.3-6.4（models：`docs/superpowers/specs/2026-11-09-models-dimension-design.md`；training：`docs/superpowers/specs/2026-11-16-training-dimension-design.md`；inference：`docs/superpowers/specs/2026-11-22-inference-dimension-design.md`；gpu：`docs/superpowers/specs/2026-11-24-gpu-dimension-design.md`），此处为执行摘要：
 
 - 每波写作完成后，起**独立 fresh-context evaluator agent**（不继承写作上下文）。输入：该波章节文件 + 本文件 + 本维度 `references.md` 对应 source list + 对应维度 spec 对应章节要求。
 - 三项任务：
@@ -165,7 +165,7 @@
 `scripts/lint-chapter.sh` 强制执行本规范的可机械检查部分，每章提交前在仓库根目录运行：
 
 ```bash
-bash scripts/lint-chapter.sh <models|training|inference>/<part-dir>/<chapter-file>.md
+bash scripts/lint-chapter.sh <models|training|inference|gpu>/<part-dir>/<chapter-file>.md
 ```
 
 检查项：
