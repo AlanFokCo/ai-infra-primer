@@ -221,8 +221,7 @@ graph LR
 
 | 波次 | 日期 | 覆盖章节 | 审查轮次 | S1 | S2 | S3 | 未关闭项 | 结论 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-
-（W0 行待 T6 脚手架审查闭环后填入：spec 四路对抗审查已于 W0 内闭环——S1×1→0 / S2 去重 17 全修 / S3 21 全修，档案见 `docs/reviews/gpu-spec-review-{a,b,c,d}.md`，汇总见 spec 附录。）
+| W0 | 2026-11-24 | spec 本身（11 Part/41 章大纲）+ 脚手架 | 四路独立对抗审查 ×1（A P1-P4/B P5-P6/C P7-P11/D 设计）+ builder-check ×1 + 逐任务 fresh reviewer ×6（T1-T6） | 0（raw 1→0） | 17（raw 24 去重，全修） | 21（raw 24 去重，全修） | 无 | **放行（W1 开工放行）**。spec 四路档案 docs/reviews/gpu-spec-review-{a,b,c,d}.md；脚手架全绿：references 11 Part 59 条 + 术语表；README 41 章进度表 + 14 边依赖图 + 93 行指针盘点（86 章命中，sweep 内容过滤器纠正 raw 116→86）；lint gpu 分支 + 127 章回归全过；STYLE_GUIDE 四维度泛化条款零漂移；站点 DIMENSIONS gpu {0,0,50} + 12 字段 UI + 14 边图 + FORTHCOMING.gpu 移除 + cluster/根 README 新 scope；全量 QA 绿（164 页/5089 引用/qa-shots 桌面移动全过，dist 无 /gpu/ live W1）。 |
 
 **跨维度指针 errata 记录**（spec §2 条款授权，仅限指针句的最小修订；errata 编辑不跑 rewrite-gate）：
 
@@ -233,11 +232,11 @@ graph LR
 
 ## 跨维度指针盘点
 
-W0 对 models / training / inference 已发布文本的全部 gpu/cluster 归属指针盘点（spec §2 errata 通道）。扫描模式：`/usr/bin/grep -rn '归 gpu\|属 gpu\|归 cluster\|属 cluster\|gpu 维度\|cluster 维度' models/ training/ inference/ --include='*.md'`，排除 references.md 与 README.md **文件**。**计数口径纠正（W0 盘点发现）**：brief 原命令第二段 `grep -v 'references.md\|README.md'` 按整行内容过滤，会把行正文含 `(../references.md)` 引用链接的章节命中一并误排（training 5.4 L79、models 4.6 L227 等 13 行）；按文件名前缀排除后章节级实命中 **86**（原口径 73 + 误排 13），raw 总命中 116（含 references/README 文件内 30 行）。本模式命中中代码路径与公式标签假阳 0 处（逐条核对，全部为归属句）。另人工补扫两类：① 三处兄弟维度 README L3 活边界句——用反引号路径与不同词序（「集群通信……归 \`cluster/\`」「网络与拓扑归 \`cluster/\`」「跨机通信硬件归 \`cluster/\`」），grep 模式匹配不到（spec §2 D-S2-6），被新 seam 推翻，入表 README 级行；② inference/references.md 4 条 gpu/cluster 归属条目（fa2/fa3/marlin「指令级归 gpu」+ deepep「硬件归 cluster」，spec §2 重点重判句 list 含 deepep 条），入表 references 级行。models/training references.md 无归属句命中；training/inference README 的其余 grep 命中均为 errata 表/盘点表历史记录，非活指针，不入表。**W0 只盘点记录，不改 models / training / inference 文本**；W1 起随章号生效经 errata 通道收窄到章号或重判归属（仅限指针句最小修订，不动公式与数值），逐条记入上方审查记录区 errata 表。「收窄波次」= 目标章生效波次（W1=P1+P2 / W2=P3+P4 / W3=P5+P6 / W4=P7+P8 / W5=P9+P10 / W6=P11），多目标跨波行按目标次序列出各波、可分批收窄；「—」= 保留、不收窄。行号为 2026-11-25 核实口径（HEAD 22f904b），文本若有修订按指针句重定位。
+W0 对 models / training / inference 已发布文本的全部 gpu/cluster 归属指针盘点（spec §2 errata 通道）。扫描模式：`/usr/bin/grep -rn '归 gpu\|属 gpu\|归 cluster\|属 cluster\|gpu 维度\|cluster 维度' models/ training/ inference/ --include='*.md'`，排除 references.md 与 README.md **文件**。**计数口径纠正（W0 盘点发现）**：brief 原命令第二段 `grep -v 'references.md\|README.md'` 按整行内容过滤，会把行正文含 `(../references.md)` 或 `(../../cluster/README.md)` 引用链接的章节命中一并误排（training 5.4 L79、models 4.6 L227 等 13 行）；按文件名前缀排除后章节级实命中 **86**（原口径 73 + 误排 13），raw 总命中 116（含 references/README 文件内 30 行）。本模式命中中代码路径与公式标签假阳 0 处（逐条核对，全部为归属句）。另人工补扫两类：① 三处兄弟维度 README L3 活边界句——用反引号路径与不同词序（「集群通信……归 \`cluster/\`」「网络与拓扑归 \`cluster/\`」「跨机通信硬件归 \`cluster/\`」），grep 模式匹配不到（spec §2 D-S2-6），被新 seam 推翻，入表 README 级行；② inference/references.md 4 条 gpu/cluster 归属条目（fa2/fa3/marlin「指令级归 gpu」+ deepep「硬件归 cluster」，spec §2 重点重判句 list 含 deepep 条），入表 references 级行。models/training references.md 无归属句命中；training/inference README 的其余 grep 命中均为 errata 表/盘点表历史记录，非活指针，不入表。**W0 只盘点记录，不改 models / training / inference 文本**；W1 起随章号生效经 errata 通道收窄到章号或重判归属（仅限指针句最小修订，不动公式与数值），逐条记入上方审查记录区 errata 表。「收窄波次」= 目标章生效波次（W1=P1+P2 / W2=P3+P4 / W3=P5+P6 / W4=P7+P8 / W5=P9+P10 / W6=P11），多目标跨波行按目标次序列出各波、可分批收窄；「—」= 保留、不收窄。行号为 2026-11-25 核实口径（HEAD 22f904b），文本若有修订按指针句重定位。
 
 | 位置 | 现指针 | 目标章号 | 收窄波次 |
 | --- | --- | --- | --- |
-| models 1.2 §5（L90） | 「elementwise、通信、IO 不计；后两者归 cluster 维度」 | 重判：通信 → 8.1 / 10.1；IO 项归属待裁定（访存 IO → gpu 2.4，数据加载 IO → training 7.1，均非 cluster 新 scope） | W4 |
+| models 1.2 §5（L90） | 「elementwise、通信、IO 不计；后两者归 cluster 维度」 | 重判：通信 → 8.1 / 10.1；IO 项归属待裁定（访存 IO → gpu 2.4，数据加载 IO → training 7.1，均非 cluster 新 scope） | W4/W5 |
 | models 1.2 §9（L228） | H800 峰值口径与 MFU 反推「属 gpu 与 training 维度」（练习 3） | 保留：MFU 反推为训练侧账；峰值口径可收窄 1.1 / 6.1（非必须，与 inference 盘点表同口径） | — |
 | models 1.2 §10（L245） | 「微架构来源与测量方法归 gpu 维度」（inference W1 已重判 datasheet 参数表 → inference 1.3） | 收窄：2.1 / 2.4 / 11.2 | W1/W6 |
 | models 1.3 §6（L192） | 「expert 并行通信（……集群侧属 cluster 维度）」 | 重判：通信硬件 / transport → 8.1 / 10.3；作业编排 → cluster（新 scope，本句不涉及） | W4/W5 |
