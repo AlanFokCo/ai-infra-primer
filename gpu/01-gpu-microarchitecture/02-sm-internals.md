@@ -22,7 +22,7 @@
 | 每 block 线程上限 | — | 1024 threads（= 32 warps） | PG Table 33 |
 | shared bank 数 | — | 32 banks × 4 B | PG Table 34 |
 
-符号声明（spec §4.3）： $R_{\mathrm{th}}$ = registers/thread； $S_{\mathrm{sh}}$ = shared bytes/block； $w_b$ = warps/block； $B_{\max}$ = 每 SM 可驻留 block 数上界（本章推导量）； $\mathcal{O}$ = occupancy = active warps / $W_{\mathrm{slots}}$； $W_{\mathrm{active}}$ = active warps（本章局部符号）；warp size = 32 为常量，故每 block 线程数 $= 32 w_b$。 $B_{\max,\mathrm{slot}}$ 是硬件 block slot 上限（32）， $B_{\max}$ 是四约束取 min 后的实际上界——两者勿混（§5）。
+符号声明（spec §4.3）： $R_{\mathrm{th}}$ = registers/thread； $S_{\mathrm{sh}}$ = shared bytes/block； $w_b$ = warps/block； $n_b$ = 每 SM resident blocks（§5 推导变量； $B$ 专归 batch，故 block 数变量用 $n_b$，其上界为 $B_{\max}$）； $B_{\max}$ = 每 SM 可驻留 block 数上界（本章推导量）； $\mathcal{O}$ = occupancy = active warps / $W_{\mathrm{slots}}$； $W_{\mathrm{active}}$ = active warps（本章局部符号）；warp size = 32 为常量，故每 block 线程数 $= 32 w_b$。 $B_{\max,\mathrm{slot}}$ 是硬件 block slot 上限（32）， $B_{\max}$ 是四约束取 min 后的实际上界——两者勿混（§5）。
 
 **边界声明**（本章交付什么、不交付什么）：本章只交付**硬件资源库存 + occupancy 物理上界**。编程模型侧的 occupancy 精确计算——register 按 warp 分配粒度取整、shared 按 128 B 粒度 + 每 block 1 KB 预留、carveout 选择、`cudaOccupancyMaxActiveBlocksPerMultiprocessor` API、launch bounds——归 3.4，届时 recap 本章上界为起点。Tensor Core 内部数据流与 MMA 指令几何归 1.3；指令延迟与 latency hiding 归 1.4；shared bank conflict 判定归 4.2；片上存储层级总表与 roofline 归 2.3 / 2.4。inference 3.1 §1 把「warp 级占用率的精确定义与硬件来源」指向 gpu 维度——本章 §5 即该定义的硬件来源交付。
 
@@ -93,7 +93,7 @@ Hopper SM（CC 9.0，whitepaper Fig 7 重绘）
 
 正例： $R_{\mathrm{th}} = 64$、每 block 256 线程 → 每 block 占 $64 \times 256 = 16384$ 个 register = 64 KB，恰好等于一个 processing block 的 register 分区容量，4 个 block 占满 65536 → 4 blocks/SM（§5 案例 C1）。反例： $R_{\mathrm{th}} = 255$、每 block 1024 线程 → $255 \times 1024 = 261120$ 个 register = 1020 KB，是 $R_{\mathrm{file}}$（256 KB）的 3.98 倍，一个 block 都装不下 → 0 blocks，kernel 不可 launch（§5 案例 C5）。这两个例子界定了 register 约束的两端：刚好占满分区 vs 远超整 SM 容量。
 
-端口与 bank 结构官方未披露（闭源细节），本书不推定端口数，改按**指令语义反推 operand 带宽需求**。推导路线分三步：先算一条 warp 指令的 operand 字节，再乘每周期发射宽度得每 SM 每周期的 operand 字节，最后乘频率得带宽并与 HBM、shared 对比。关键一步是第一步的 operand 计数——一条 FMA 是 3 读 1 写。
+端口与 bank 结构官方未披露（闭源细节），本书不推定端口数，改按**指令语义反推 operand 带宽需求**；register bank 冲突与 operand collector 机制见 2.3。推导路线分三步：先算一条 warp 指令的 operand 字节，再乘每周期发射宽度得每 SM 每周期的 operand 字节，最后乘频率得带宽并与 HBM、shared 对比。关键一步是第一步的 operand 计数——一条 FMA 是 3 读 1 写。
 
 一条 warp FMA 指令（`d = a*b + c`）覆盖 32 个 lane，每 lane 读 3 个源操作数（a、b、c）、写 1 个目的（d），每个操作数 32-bit = 4 B：
 
@@ -145,14 +145,14 @@ carveout 的权衡一笔：shared 切得大，单 block 能装的 tile 大（til
 
 一个 resident block 消耗四种资源，各给一个必要条件（设每 block 线程数 $= 32 w_b$）：
 
-| 约束 | 每 block 消耗 | 必要条件（ $B$ = resident blocks） | 解成 blocks |
+| 约束 | 每 block 消耗 | 必要条件（ $n_b$ = resident blocks） | 解成 blocks |
 | --- | --- | --- | --- |
-| block slot | 1 slot | $B \le B_{\max,\mathrm{slot}}$ | $B_{\max,\mathrm{slot}}$ |
-| warp slot | $w_b$ warps | $B \cdot w_b \le W_{\mathrm{slots}}$ | $\lfloor W_{\mathrm{slots}}/w_b \rfloor$ |
-| register | $R_{\mathrm{th}} \cdot 32 w_b$ 个 | $B \cdot R_{\mathrm{th}} \cdot 32 w_b \le R_{\mathrm{file}}$ | $\lfloor R_{\mathrm{file}}/(R_{\mathrm{th}} \cdot 32 w_b) \rfloor$ |
-| shared | $S_{\mathrm{sh}}$ B | $B \cdot S_{\mathrm{sh}} \le S_{\mathrm{total}}$ | $\lfloor S_{\mathrm{total}}/S_{\mathrm{sh}} \rfloor$ |
+| block slot | 1 slot | $n_b \le B_{\max,\mathrm{slot}}$ | $B_{\max,\mathrm{slot}}$ |
+| warp slot | $w_b$ warps | $n_b \cdot w_b \le W_{\mathrm{slots}}$ | $\lfloor W_{\mathrm{slots}}/w_b \rfloor$ |
+| register | $R_{\mathrm{th}} \cdot 32 w_b$ 个 | $n_b \cdot R_{\mathrm{th}} \cdot 32 w_b \le R_{\mathrm{file}}$ | $\lfloor R_{\mathrm{file}}/(R_{\mathrm{th}} \cdot 32 w_b) \rfloor$ |
+| shared | $S_{\mathrm{sh}}$ B | $n_b \cdot S_{\mathrm{sh}} \le S_{\mathrm{total}}$ | $\lfloor S_{\mathrm{total}}/S_{\mathrm{sh}} \rfloor$ |
 
-四个必要条件同时成立， $B$ 不超过四项的最小值；block 不可分割，故向下取整。得物理上界式（每 block 线程数写作 $`\mathrm{threads}_{\mathrm{block}} = 32 w_b`$）：
+四个必要条件同时成立， $n_b$ 不超过四项的最小值；block 不可分割，故向下取整。得物理上界式（每 block 线程数写作 $`\mathrm{threads}_{\mathrm{block}} = 32 w_b`$）：
 
 $$
 B_{\max} = \min\left( B_{\max,\mathrm{slot}},\ \left\lfloor \frac{W_{\mathrm{slots}}}{w_b} \right\rfloor,\ \left\lfloor \frac{R_{\mathrm{file}}}{R_{\mathrm{th}} \cdot \mathrm{threads}_{\mathrm{block}}} \right\rfloor,\ \left\lfloor \frac{S_{\mathrm{total}}}{S_{\mathrm{sh}}} \right\rfloor \right) \qquad (3)
@@ -181,7 +181,7 @@ $$
 
 先落一个最小实例（即下文案例 C1）：每 block 256 线程（ $w_b = 8$）、 $R_{\mathrm{th}} = 64$、 $S_{\mathrm{sh}} = 0$，四项 = min(32, $\lfloor 64/8 \rfloor$, $\lfloor 65536/(64 \times 256) \rfloor$, ∞) = min(32, 8, 4, ∞) = 4 blocks； $W_{\mathrm{active}} = 4 \times 8 = 32$ warps； $\mathcal{O} = 32/64 = 0.5$。register 项 4 最紧，故 register 绑定——这就是式 (3)-(5) 的一次完整代入。
 
-**命题 2**（occupancy 物理上界）。在 CC 9.0 资源库存（ $B_{\max,\mathrm{slot}} = 32$、 $W_{\mathrm{slots}} = 64$、 $R_{\mathrm{file}} = 65536$、 $S_{\mathrm{total}} = 233472$ B）下，给定 kernel 的 $`(\mathrm{threads}_{\mathrm{block}}, R_{\mathrm{th}}, S_{\mathrm{sh}})`$，每 SM 可同时驻留的 block 数上界为式 (3)，active warps 上界为式 (4)，occupancy 上界为式 (5)。**证明**（必要性 + 取整 + 充分性）：必要性——上表四个必要条件各由一种资源的库存独立给出，任一违反即装不下，故 $B$ 不超过四项各自的上界，从而不超过其 min。取整——block 是驻留的不可分单位， $B$ 为整数，故每项向下取整。充分性——在理想分配口径下（register 按线程精确计、shared 按字节精确计、无预留），取 $B = B_{\max}$ 时四种资源消耗均不超库存，故该 block 数可达。理想口径与实际分配粒度的差由命题 3 界定。∎
+**命题 2**（occupancy 物理上界）。在 CC 9.0 资源库存（ $B_{\max,\mathrm{slot}} = 32$、 $W_{\mathrm{slots}} = 64$、 $R_{\mathrm{file}} = 65536$、 $S_{\mathrm{total}} = 233472$ B）下，给定 kernel 的 $`(\mathrm{threads}_{\mathrm{block}}, R_{\mathrm{th}}, S_{\mathrm{sh}})`$，每 SM 可同时驻留的 block 数上界为式 (3)，active warps 上界为式 (4)，occupancy 上界为式 (5)。**证明**（必要性 + 取整 + 充分性）：必要性——上表四个必要条件各由一种资源的库存独立给出，任一违反即装不下，故 $n_b$ 不超过四项各自的上界，从而不超过其 min。取整——block 是驻留的不可分单位， $n_b$ 为整数，故每项向下取整。充分性——在理想分配口径下（register 按线程精确计、shared 按字节精确计、无预留），取 $n_b = B_{\max}$ 时四种资源消耗均不超库存，故该 block 数可达。理想口径与实际分配粒度的差由命题 3 界定。∎
 
 **命题 3**（粒度上界性）。实际 resident blocks 不超过式 (3) 的 $B_{\max}$。**证明**（要点）：实际分配中 register 以 warp 为粒度向上取整、shared 以 128 B 粒度向上取整且每 block 另预留 1 KB，故每 block 实际占用的 register 与 shared 均不少于式 (3) 假设的理想值；资源占用只增不减，能装下的 block 数只减不增，故实际值 $\le B_{\max}$。完整证明（含两个取整方向的单调性论证）留作练习 3。这条命题确立了本章上界的地位：式 (3) 是**物理上界**，3.4 的编程模型侧计算只会等于或低于它，不会高于它。
 
@@ -207,7 +207,7 @@ $$
 
 读这五案例的方式：C1/C2 同 block 大小、register 压力不同，occupancy 随 $R_{\mathrm{th}}$ 反比；C3 换绑定约束到 shared；C4 揭示 block slot 与 warp slot 是两个独立上限（小 block 撞前者）；C5 是 register 约束的极端——上界为 0。五个案例的 active warps 依次 32 / 16 / 32 / 32 / 0，覆盖四种绑定约束与不可 launch 边界。
 
-推导的三个关节再各钉一句。其一，**为什么取 min 不取 sum**：四种资源是同一个 block 同时消耗的，不是四批 block 各耗一种；装第 $B$ 个 block 时四种资源各被扣一份，任何一种先见底就停，故上限由最紧者定。其二，**为什么向下取整**：block 是驻留的不可分单位，半个 block 不能驻留， $\lfloor 4.75 \rfloor = 4$ 而非 5——C3 的 shared 项 4.75 取 4 正是此意；若向上取整会装下资源不够的第 5 个 block，违反必要条件。其三，**为什么单位必须一致**：min 是比较运算，只有同量纲的数才能比大小；warp 项若不除 $w_b$ 就是 warps 量纲，与 blocks 量纲的 slot 项取 min 无意义（§5 量纲对账表逐项核过）。这三条是式 (3) 区别于「把四个数随便凑一起」的地方，也是 evaluator 重推导的核对点。
+推导的三个关节再各钉一句。其一，**为什么取 min 不取 sum**：四种资源是同一个 block 同时消耗的，不是四批 block 各耗一种；装第 $n_b$ 个 block 时四种资源各被扣一份，任何一种先见底就停，故上限由最紧者定。其二，**为什么向下取整**：block 是驻留的不可分单位，半个 block 不能驻留， $\lfloor 4.75 \rfloor = 4$ 而非 5——C3 的 shared 项 4.75 取 4 正是此意；若向上取整会装下资源不够的第 5 个 block，违反必要条件。其三，**为什么单位必须一致**：min 是比较运算，只有同量纲的数才能比大小；warp 项若不除 $w_b$ 就是 warps 量纲，与 blocks 量纲的 slot 项取 min 无意义（§5 量纲对账表逐项核过）。这三条是式 (3) 区别于「把四个数随便凑一起」的地方，也是 evaluator 重推导的核对点。
 
 occupancy 与算力利用率是两个量，勿混。 $\mathcal{O} = 0.5$ 只说明 warp slot 填了一半，不说明算力只用了一半——若每个 active warp 都在满发射 FMA， $\mathcal{O} = 0.5$ 也可能跑出接近峰值的算力（4 个 scheduler 每周期只需 4 个 eligible warp 即可喂满，64 个 slot 里有一半活跃已远超 4）。反过来 $\mathcal{O} = 1.0$ 若 warp 全在等访存，算力可能远低于峰值。所以 occupancy 是「可调度 warp 的库存比例」，算力利用率是「实际 FLOPs / 峰值」（MFU / roofline 口径，归 2.4 / 11.2）；两者的桥梁是延迟隐藏（1.4 的 Little's law），不是恒等关系。本章只交付 occupancy 的硬件上界，不交付算力利用率。
 
@@ -248,7 +248,7 @@ occupancy 与算力利用率是两个量，勿混。 $\mathcal{O} = 0.5$ 只说�
 1.（计算 · [10]）CC 9.0 主口径：(a) 由命题 1 的单发射宽度算每 SM FP32 吞吐（results/cycle），再乘 2 FLOPs/FMA、1.98 GHz、132 SM 得芯片级 FP32 峰值，对照 1.1 §3 的 66.9 TFLOPS；(b) 用式 (2) 算每 SM register operand 带宽需求上界（TB/s），再算 HBM 每 SM 份额（3352 GB/s ÷ 132），求两者比值。校验：(a) 与 1.1 §3 FP32 行一致（容差 0.2%）；(b) 比值 ≈160，与 §3 的 160 : 10 : 1 一致。
 2.（推导 · [20]）register-binding 与 shared 口径：(a) 由式 (3) 的 register 项证明「 $`R_{\mathrm{th}} \cdot \mathrm{threads}_{\mathrm{block}} > R_{\mathrm{file}}`$ 当且仅当 register 项为 0」，代入 255×1024 验证不可 launch；(b) 求 1024 / 512 / 256 线程的 block 各自能 launch 的 $R_{\mathrm{th}}$ 上限（注意每线程 255 封顶）；(c) 若把 $S_{\mathrm{total}}$ 误代 256 KB（combined）而非 228 KB， $S_{\mathrm{sh}} = 48$ KB 时 shared 项高估几个 block、百分之几？先预测 (c) 的方向再算。校验：(a) 与 §5 推论一致；(b) 64 / 128 / 255；(c) 与 §4 反例的 5 对 4、高估 25% 一致。
 3.（推导 · [30]）补全命题 3 的证明：(a) 论证 register 以 warp 粒度向上取整使每 block 实际 register 占用 ≥ 理想值 $`R_{\mathrm{th}} \cdot \mathrm{threads}_{\mathrm{block}}`$；(b) 论证 shared 以 128 B 粒度取整 + 每 block 1 KB 预留使实际占用 ≥ $S_{\mathrm{sh}}$；(c) 由 (a)(b) 的单调性推出实际 resident blocks ≤ 式 (3) 的 $B_{\max}$（资源占用只增不减 → 可装 block 数只减不增）；(d) 构造一个数值例使理想式与含预留的精确式差 1 个 block（提示：取 $S_{\mathrm{sh}}$ 使 $\lfloor S_{\mathrm{total}}/S_{\mathrm{sh}} \rfloor$ 与 $\lfloor S_{\mathrm{total}}/(S_{\mathrm{sh}}+1024) \rfloor$ 不等）。校验：(c) 与命题 3 论断一致；(d) 的差值应恰为 1 block，且精确式 ≤ 理想式（方向不可反）。
-4.（计算 · [30]）五案例之外的综合账（CC 9.0 库存，carveout 取 228 KB）：(a) 每 block 512 线程、 $R_{\mathrm{th}} = 48$、 $S_{\mathrm{sh}} = 64$ KB，逐项算式 (3) 四项并求 $B_{\max}$、 $W_{\mathrm{active}}$、 $\mathcal{O}$，指出绑定约束；(b) 把 carveout 从 228 KB 换到 100 KB 档（ $S_{\mathrm{total}} = 102400$ B），(a) 的 $B_{\max}$ 与 $\mathcal{O}$ 怎么变？先预测方向再算；(c) 把每 block 线程数从 512 降到 128（ $w_b$ 从 16 到 4）、其余不变， $B_{\max}$ 与 $W_{\mathrm{active}}$ 怎么变，是否撞 block slot 上限？校验：(a) 与式 (3) 逐项代入一致；(b) shared 项应随 $S_{\mathrm{total}}$ 减小而不增（命题 3 方向）；(c) 对照案例 C4 的 block-slot 绑定机制。
+4.（计算 · [30]）五案例之外的综合账（CC 9.0 库存，carveout 取 228 KB）：(a) 每 block 512 线程、 $R_{\mathrm{th}} = 48$、 $S_{\mathrm{sh}} = 64$ KB，逐项算式 (3) 四项并求 $B_{\max}$、 $W_{\mathrm{active}}$、 $\mathcal{O}$，指出绑定约束；(b) 把 carveout 从 228 KB 换到 100 KB 档（ $S_{\mathrm{total}} = 102400$ B），(a) 的 $B_{\max}$ 与 $\mathcal{O}$ 怎么变？先预测方向再算；(c) 把每 block 线程数从 512 降到 128（ $w_b$ 从 16 到 4）、其余不变， $B_{\max}$ 与 $W_{\mathrm{active}}$ 怎么变，是否撞 block slot 上限？校验：(a) $B_{\max} = 2$、 $\mathcal{O} = 0.50$，register 绑定；(b) $B_{\max} = 1$、 $\mathcal{O} = 0.25$，shared 绑定（ $S_{\mathrm{total}}$ 减小→block 数不增，命题 3 方向）；(c) $B_{\max} = 3$、 $W_{\mathrm{active}} = 12$ warps，shared 绑定（不撞 block-slot 上限，与 C4 的 block-slot 绑定对照）。
 
 ## 参考
 
