@@ -6,7 +6,7 @@
 
 1.1 §3 留了一个待核对的口径：一条 mma.sync m16n8k16 含 $16 \times 8 \times 16 \times 2 = 4096$ 个 FLOP，按每 Tensor Core 每周期 1024 个 BF16 FLOP 折 4 个周期——这个「4 周期」是稳态吞吐还是单条延迟？Tensor Core 每周期 1024 个 FLOP 又是怎么来的，为什么 CUDA Core 一个 lane 每周期只有 2 个？本章回答三个问题：MMA 指令的几何与操作数路径长什么样？从指令几何怎么推出稳态吞吐与芯片级峰值闭环？Tensor Core 相对 CUDA Core 的吞吐优势，机制上靠什么撑住？
 
-**本章口径**（章脊锁定）：主口径 **H100 SXM，BF16 dense，TC-boost 1830 MHz**（沿 1.1， $n_{\mathrm{SM}} = 132$、 $c_{\mathrm{BF16}} = 4096$ FLOPs/cycle/SM = 4 Tensor Core × 1024）；B200 第 5 代作对照（HGX B200 SKU，BF16 dense 2250 TFLOPS，沿 1.1 §4）。指令几何一律用字面数 $m \times n \times k$（spec §4.3）；`m64nNk16` 里的 N 是 PTX 指令字面占位（ $N \in \lbrace 8, 16, \ldots, 256 \rbrace$，8 的倍数），**不是参数量 $N$**——本章凡 N 均指指令字面维。累加器精度口径：FP32 accumulate（指令语义层）。
+**本章口径**（章脊锁定）：主口径 **H100 SXM，BF16 dense，TC-boost 1830 MHz**（沿 1.1， $n_{\mathrm{SM}} = 132$、 $c_{\mathrm{BF16}} = 4096$ FLOPs/cycle/SM = 4 Tensor Core × 1024）；B200 第 5 代作对照（HGX B200 SKU，BF16 dense 2250 TFLOPS，沿 1.1 §4）。指令几何一律用字面数 $m \times n \times k$（spec §4.3）；`m64nNk16` 里的 N 是 PTX 指令字面占位（ $N \in \lbrace 8, 16, \ldots, 256 \rbrace$，8 的倍数），**不是参数量 $N$**——本章凡 N 均指指令字面维。累加器精度口径：FP32 accumulate（指令语义层）。单位口径：片上存储 KB = 1024 B（TMEM 256 KB = 262144 B，式 (5)；RF 256 KB 同口径，沿 1.2），带宽 GB/s 按 $10^{9}$ B/s（spec §4.3 混用注换算）。
 
 **两层纪律**（1.3 ↔ 6.1，spec §4.2）：本章只交付**指令几何层**——指令形状、操作数来源、累加器位置、吞吐推导、格式「支持与否」。格式的**位布局账**（sign/exponent/mantissa 表、动态范围、量化误差、逐格式吞吐倍数、MX 族与 NVFP4 的 scale 粒度）归 6.1，届时 recap 本章几何为起点。所以本章格式矩阵只标「哪代支持哪个格式」，不拆位布局；FP32 累加只标「指令语义如此」，不推「为什么必须 FP32」的精度账（归 6.1）。代码 scope = 机制片段级（PTX 指令例证），CUTLASS MMA atom 的模块全量走读归 5.2。
 
@@ -206,7 +206,7 @@ block scaling 一笔：`tcgen05.mma ... kind::mxf4nvf4` 支持 NVFP4 的块缩�
 | 延迟 ≠ 吞吐：wgmma 实测延迟 128 cycles [B] vs 反推稳态 64 cycles；混用低估峰值一半（494.7 对 989.4） | §3 实测核对 + 坑注 | §3、练习 4 |
 | 2:4 sparse 净加速 1.78×（144 对 128 cycles，+12.5% metadata 开销），非理论 2× | §3 sparse 段 | §3、练习 4 |
 | MMA 每 FLOP 寄存器字节 0.4375 vs 标量 FMA 8（1/18.3）；操作数复用是 16× 吞吐的机制来源 | 式 (3)，命题 2 | §4、练习 2 |
-| MMA 流寄存器 operand 需求 448 B/cycle/block < 满 FMA 512；SM 1792 < 2048 上界（1.2） | 命题 2 | §4、练习 2 |
+| MMA 流寄存器 operand 需求 448 B/cycle/block 低于满 FMA 512；SM 1792 低于 2048 上界（1.2） | 命题 2 | §4、练习 2 |
 | wgmma shared operand 流 96 B/cycle = shared 峰值 128 的 75%；B 走 shared 描述符省寄存器 | §4 wgmma 段 | §4、练习 4 |
 | wgmma 异步 warp-group（4 warp/128 线程）+ commit/wait；A register-or-shared、B shared-only、D register FP32 | §5 | §5、练习 3 |
 | wgmma 累加器 N/2 regs/thread；N=256 → 128 regs → occupancy 上界 0.25（N=128 → 0.5） | 式 (4)，命题 3 | §5、练习 3 |
@@ -216,7 +216,7 @@ block scaling 一笔：`tcgen05.mma ... kind::mxf4nvf4` 支持 NVFP4 的块缩�
 ## 练习
 
 1.（计算 · [10]）H100 SXM BF16 主口径：(a) 用式 (1) 算 mma.sync m16n8k16 与 wgmma m64n256k16 的指令 FLOPs；(b) 用式 (2) 算 mma.sync 的稳态发射间隔（ $c_{\mathrm{TC}} = 1024$）与 wgmma m64n128k16 的稳态发射间隔（ $c_{\mathrm{SM}} = 4096$）；(c) 由 mma.sync 间隔反推 SM 级每周期 FLOPs（4 block × 4096/间隔），核对 1.1 的 $c_{\mathrm{BF16}} = 4096$。校验：(a) 4096 / 524288 FLOPs，与 1.1 §3 指令口径段一致；(b) 4 / 64 cycles；(c) 4096 FLOPs/cycle/SM，与 1.1 式 (2) 反推值一致（容差 0.1%）。
-2.（推导 · [20]）操作数复用账：(a) 由 §2 fragment 布局（A 4 / B 2 / C 4 / D 4 regs，每 reg 4 B × 32 线程）推一条 mma.sync m16n8k16 的寄存器读写总字节，再除式 (1) 的 FLOPs 得式 (3)；(b) 与标量 warp FMA（1.2 式 (1)：512 B / 64 FLOPs）对比，求每 FLOP 字节比；(c) 由命题 2 算 MMA 流与满 FMA 流的每 block 每周期 operand 需求，说明为什么 16× FLOPs 不需要 16× 寄存器端口。校验：(a) 1792 B、0.4375 B/FLOP；(b) 8 B/FLOP、比值 ≈18.3；(c) 448 \lt 512 B/cycle，SM 1792 < 2048（1.2 式 (2) 上界）。
+2.（推导 · [20]）操作数复用账：(a) 由 §2 fragment 布局（A 4 / B 2 / C 4 / D 4 regs，每 reg 4 B × 32 线程）推一条 mma.sync m16n8k16 的寄存器读写总字节，再除式 (1) 的 FLOPs 得式 (3)；(b) 与标量 warp FMA（1.2 式 (1)：512 B / 64 FLOPs）对比，求每 FLOP 字节比；(c) 由命题 2 算 MMA 流与满 FMA 流的每 block 每周期 operand 需求，说明为什么 16× FLOPs 不需要 16× 寄存器端口。校验：(a) 1792 B、0.4375 B/FLOP；(b) 8 B/FLOP、比值 ≈18.3；(c) 448 低于 512 B/cycle，SM 1792 低于 2048（1.2 式 (2) 上界）。
 3.（推导 · [20]）补全命题 3 的证明（wgmma 累加器 → occupancy）：(a) 计数 wgmma m64nNk16 的 FP32 累加器 D 共 $64 N$ 元素、摊到 warp-group 128 线程，得式 (4) $R_{\mathrm{acc}} = N/2$；(b) 代入 $N = 128 / 256$ 得 64 / 128 regs/thread；(c) 设每 block 一个 warp-group（128 线程、 $w_b = 4$、 $S_{\mathrm{sh}} = 0$、 $R_{\mathrm{th}} = R_{\mathrm{acc}}$），逐项代入 1.2 式 (3) 求 $B_{\max}$、 $W_{\mathrm{active}}$、 $\mathcal{O}$，验证 N 翻倍 occupancy 上界减半。校验：(b) 64 / 128；(c) $N = 128$ → $B_{\max} = 8$、 $\mathcal{O} = 0.5$， $N = 256$ → $B_{\max} = 4$、 $\mathcal{O} = 0.25$，与 1.2 案例 C1/C2 register-binding 模式同构。
 4.（计算 · [30]）实测核对与带宽综合账：(a) wgmma m64n128k16（A/B 均 shared，BF16）的 shared 流量 6144 B / 64 cycles = 96 B/cycle，占 shared 峰值 128 B/cycle（1.2 §4）百分之几？(b) sparse SS 实测 144 cycles 对 dense 128 cycles，有效 FLOPs 2×，求净加速；(c) 若误把延迟 128 cycles 当稳态间隔，反推 $c_{\mathrm{SM}}$ 与芯片级 BF16 峰值各是多少、较官方低估百分之几？先预测 (c) 的方向再算。校验：(a) 75%；(b) $2 \times 128/144 \approx 1.78$；(c) $c_{\mathrm{SM}} = 2048$、494.7 TFLOPS、低估 50%（与 §3 坑注一致）。
 
