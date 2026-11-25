@@ -16,7 +16,7 @@
 
 数值算例中未披露分量（flit 错误概率、throttle 时间占比）逐处标**教学假设口径**；结构结论（分类、阈值、上界）才是交付物。
 
-符号声明（spec §4.3）： $n$ = rank/GPU 数（**本章 $n$ 专归 rank 数**）； $M$ = 被传输消息总字节（§6 recap 算例）； $\mathrm{BW}$ = 带宽（GB/s， $10^{9}$ B/s）； $n_{\mathrm{link}}$ = link 数； $I$ = 算术强度、 $F_{\mathrm{peak}}$ = 峰值 FLOPS、 $n_{\mathrm{SM}}$ = SM 数、 $c_{\mathrm{prec}}$ / $f_{\mathrm{prec}}$ = 每 SM 每周期 FLOPs / 精度类 boost 频率（recap 1.1 式 (2)，不重推）。局部符号： $p$ = 每 flit 出错概率（§6 教学模型）； $\phi$ = throttle 时间占比（§5）； $k$ = 失效 link 数（§6）； $X$ = 无 throttle 吞吐（§5）。 $N$ 专归参数量、 $B$ 专归 batch、 $T$ 专归序列长，本章不占用； $\alpha/\beta$ 通信模型见 9.3，本章不用。
+符号声明（spec §4.3）： $n$ = rank/GPU 数（**本章 $n$ 专归 rank 数**）； $M$ = 被传输消息总字节（§6 recap 算例）； $\mathrm{BW}$ = 带宽（GB/s， $10^{9}$ B/s）； $n_{\mathrm{link}}$ = link 数； $I$ = 算术强度、 $F_{\mathrm{peak}}$ = 峰值 FLOPS、 $n_{\mathrm{SM}}$ = SM 数、 $c_{\mathrm{prec}}$ / $f_{\mathrm{prec}}$ = 每 SM 每周期 FLOPs / 精度类 boost 频率（recap 1.1 式 (1)，不重推）。局部符号： $p$ = 每 flit 出错概率（§6 教学模型）； $\phi$ = throttle 时间占比（§5）； $k$ = 失效 link 数（§6）； $X$ = 无 throttle 吞吐（§5）。 $N$ 专归参数量、 $B$ 专归 batch、 $T$ 专归序列长，本章不占用； $\alpha/\beta$ 通信模型见 9.3，本章不用。
 
 **边界声明**：本章交付 **GPU 硬件故障诊断增量**——ECC 生产计数与 remap/RMA 阈值、XID 分类与处置、链路错误计数器、健康检查与预防性维护。ECC 码族账（SECDED Hamming 界、Sideband 带宽不变）recap 2.1 §4 不重推；弹性容错系统设计 recap inference 8.5（serving 侧冗余 quota 与 rerouting）/ training 7.4（checkpoint 与续训）/ training 7.3（故障四分类与 SDC），不重推；IB CRC/retry/链路降级带宽后果 recap 9.3 §6 不重推。**集群级故障编排（节点 drain、备机池管理、作业重调度、K8S device plugin 健康上报）归 cluster 维度**——本章只交付单卡/子系统级的诊断与处置动作，编排层不展开（新 seam）。代码 scope = 机制片段级（nvidia-smi/dcgmi 命令例，非模块走读）。测量口径沿全书：本机无 NVIDIA GPU，数值账为 Python 独立重算 + 官方披露口径，非新跑 benchmark。
 
@@ -150,7 +150,7 @@ XID 79 的机制逐字：「the GPU driver attempts to access the GPU over its P
 
 降频的吞吐代价是多少？先给结论：**compute-bound kernel 的吞吐上界随核心频率线性缩放，HW slowdown 减半频率即减半上界；memory-bound kernel 不受影响**。这是 roofline 结构的直接推论，不是经验值。
 
-**命题 2**（thermal slowdown 的吞吐上界）。设 kernel 处于 compute-bound 区（roofline 水平分支，recap 2.4），吞吐上界为 $F_{\mathrm{peak}}$；HW Thermal Slowdown 使核心频率降至一半或更低，则吞吐上界降至一半或更低。memory-bound kernel（roofline 斜分支）的吞吐上界由 HBM 带宽决定，核心频率降半不改变该上界。**证明**（路线：两步——先把峰值写成频率的乘积式，再分 roofline 两支讨论）：1.1 式 (2)（recap，不重推）重排为乘积形 $F_{\mathrm{peak}} = n_{\mathrm{SM}} \cdot c_{\mathrm{prec}} \cdot f_{\mathrm{prec}}$ ， $n_{\mathrm{SM}}$ 与 $c_{\mathrm{prec}}$ 是硬件常量，故 $F_{\mathrm{peak}} \propto f_{\mathrm{prec}}$ ，频率减半则峰值减半。compute-bound 时吞吐上界取 $\min(F_{\mathrm{peak}}, I \cdot \mathrm{BW})$ 的前者（recap 2.4），随频率线性降；memory-bound 时上界取后者 $I \cdot \mathrm{BW}$ ，HBM 带宽由栈几何决定（2.1 式 (1) recap），与核心频率无关，故不变。∎ 口径注：结论假设降频后 kernel 仍处原 roofline 区——若降频深到把工作点推过 ridge，须用 min 式重判；实际降频档位闭源，「减半」取官方「factor of 2 or more」的边界值。
+**命题 2**（thermal slowdown 的吞吐上界）。设 kernel 处于 compute-bound 区（roofline 水平分支，recap 2.4），吞吐上界为 $F_{\mathrm{peak}}$；HW Thermal Slowdown 使核心频率降至一半或更低，则吞吐上界降至一半或更低。memory-bound kernel（roofline 斜分支）的吞吐上界由 HBM 带宽决定，核心频率降半不改变该上界。**证明**（路线：两步——先把峰值写成频率的乘积式，再分 roofline 两支讨论）：由 1.1 式 (1)（峰值乘积式，recap，不重推） $F_{\mathrm{peak}} = n_{\mathrm{SM}} \cdot c_{\mathrm{prec}} \cdot f_{\mathrm{prec}}$ ， $n_{\mathrm{SM}}$ 与 $c_{\mathrm{prec}}$ 是硬件常量，故 $F_{\mathrm{peak}} \propto f_{\mathrm{prec}}$ ，频率减半则峰值减半。compute-bound 时吞吐上界取 $\min(F_{\mathrm{peak}}, I \cdot \mathrm{BW})$ 的前者（recap 2.4），随频率线性降；memory-bound 时上界取后者 $I \cdot \mathrm{BW}$ ，HBM 带宽由栈几何决定（2.1 式 (1) recap），与核心频率无关，故不变。∎ 口径注：结论假设降频后 kernel 仍处原 roofline 区——若降频深到把工作点推过 ridge，须用 min 式重判；实际降频档位闭源，「减半」取官方「factor of 2 or more」的边界值。
 
 全数字实例（主口径 H100 SXM，recap 1.1 §3 表）：FP32 峰值 66.9 TFLOPS @ 1980 MHz；HW slowdown 边界值（恰减半）下频率 990 MHz，FP32 峰值上界 33.45 TFLOPS——一个原本跑到 80% 峰值（53.5 TFLOPS）的 compute-bound kernel，吞吐上界掉到 26.8 TFLOPS。而一个 memory-bound kernel 的吞吐上界仍是 $I \cdot \mathrm{BW}$ （HBM 3352 GB/s 口径，recap 2.1），不随核心频率变——这就是「降频伤算力不伤带宽」的定量形式。口径注：实例取 FP32 精度类（1980 MHz 域）；各精度类 boost 频率不同（1.1 §3），Tensor Core 类峰值按同域频率比例缩放估算。
 
@@ -182,7 +182,7 @@ NVLink 错误计数器按严重度分三族（DCGM field IDs，[NVIDIA, DCGM](..
 | replay error | 420 系列，total 429 | 链路层重传事件 | 中：误码率趋势信号 |
 | recovery error | 430 系列，total 439 | 链路恢复/重训练事件 | 重：链路短暂不可用 |
 
-所谓 flit（flow control unit），是指链路层传输与检错的最小单位——CRC 按 flit 计（字段名 CRC_FLIT_ERROR 逐字）。所谓 replay，是指链路层对出错 flit 的重传（与 IB link-level retry 同构：检错 → 链路层重发，传输层不感知，recap 9.3 §6）；所谓 recovery，是指链路进入恢复流程（重训练/重新建链），期间链路不可用——比 replay 严重一个层级（口径：replay 消化单 flit 误码，recovery 是链路级事件）。nvidia-smi nvlink -e 可查错误计数器（v550+ 含 NVLink5 计数器，[NVIDIA, nvidia-smi docs](../references.md)，[C]）；IB 侧同构：端口错误计数器（CRC error / link down 事件）驱动降级检测，诊断流程 recap 9.3 §6。
+所谓 flit（flow control unit），是指链路层传输与检错的最小单位——CRC 按 flit 计（字段名 CRC_FLIT_ERROR 逐字）。所谓 replay，是指链路层对出错 flit 的重传（与 IB link-level retry 同构：检错 → 链路层重发，传输层不感知，recap 9.3 §6）；所谓 recovery，是指链路进入恢复流程（重训练/重新建链），期间链路不可用——比 replay 严重一个层级（口径：replay 消化单 flit 误码，recovery 是链路级事件）。nvidia-smi nvlink -e 可查错误计数器（v560+ 含 NVLink5 计数器，[NVIDIA, nvidia-smi docs](../references.md)，[C]）；IB 侧同构：端口错误计数器（CRC error / link down 事件）驱动降级检测，诊断流程 recap 9.3 §6。
 
 ### 6.2 Replay 开销账：低误码率的带宽代价可忽略
 
@@ -237,7 +237,7 @@ DCGM（Data Center GPU Manager）diag 按深度分四级，高级含低级（[NV
 | --- | --- | --- |
 | ECC 计数 | -q（volatile/aggregate/SRAM histogram/threshold flag） | SBE/DBE vol/agg total（310-313）；SRAM DBE agg（345）；SRAM_EXCEEDED（346） |
 | Row remap | --query-remapped-rows（csv） | PAGE_RETIRED_PENDING（392）；ROW_REMAP_UNCORRECTABLE_TOTAL（393）/ CORRECTABLE_TOTAL（394）；FAILED（395）；PENDING（396） |
-| NVLink 错误 | nvlink -e（v550+ 含 NVLink5） | CRC flit 400 系列 / replay 420 系列 / recovery 430 系列（§6.1） |
+| NVLink 错误 | nvlink -e（v560+ 含 NVLink5） | CRC flit 400 系列 / replay 420 系列 / recovery 430 系列（§6.1） |
 | 温度/功率 | -q 温度功率段 | MEMORY_TEMP（140）/ GPU_TEMP（150）/ TOTAL_ENERGY_CONSUMPTION（156，mJ） |
 | Throttle | --query-gpu=clocks_event_reasons_counters.*（μs） | 对应 clock event 字段 |
 | PCIe | -q | PCIE_REPLAY_TOTAL（202） |
@@ -328,7 +328,7 @@ straggler 是另一类「没坏但变慢」的故障：thermal throttle 持续�
 
 - [NVIDIA, XID docs](../references.md)：NVIDIA XID Errors（key: xid-docs），[C] 官方规格披露·一手权威，Release 620（2026-11-11）+ Xid-Catalog.xlsx + archive 经典归因表，2026-11-26 一手核实——31/43/48/63/64/74/79/94/95/45/13/149/154 逐码语义与适用列；74 Blackwell 不适用 → 149 NETIR（144-150 decode）；SXid 仅 Hopper 及更早；Guidance Classes 与 WORKFLOW_XID_31/DBE/NVLINK_ERR/NVLINK5_ERR；154 recovery action 五档逐字
 - [NVIDIA, GPU Memory Error Management](../references.md)：NVIDIA GPU Memory Error Management（key: ecc-memory-mgmt），[C] 官方规格披露·一手权威，2026-11-11 更新，2026-11-26 一手核实——error containment / dynamic page offlining / row remapping（Table 2：512 对 64、GPU reset 生效、终身持久、CE 可被 UE 替换）/ RAS Repair（同 bank 2 次 remap 后第 3 次 UE 触发、XID 160、reboot 生效）/ RMA Policy（8 UE rows/bank、已 remap row 再 attempt、512 total；SRAM parity 超过 4 / SECDED 超过 2）；overview「UCE to CE coverage improved by 10%」
-- [NVIDIA, nvidia-smi docs](../references.md)：NVIDIA nvidia-smi docs（key: nvidia-smi-docs），[C] 官方规格披露·一手权威，2026-11-26 一手核实——ECC volatile/aggregate + SRAM parity/SEC-DED + histogram + threshold flag；Clocks Event Reasons（SW/HW Thermal Slowdown「factor of 2 or more」逐字、SW Power Cap、HW Power Brake、Sync Boost）与 Counters（μs）；温度三档（Max Operating / Slowdown / Shutdown Temp）；--query-remapped-rows / nvlink -e（v550+ NVLink5）/ -r / -r bus；repair flags 与 GPU Recovery Action（Drain and Reset「Asserted only for UCE row remaps」逐字）
+- [NVIDIA, nvidia-smi docs](../references.md)：NVIDIA nvidia-smi docs（key: nvidia-smi-docs），[C] 官方规格披露·一手权威，2026-11-26 一手核实——ECC volatile/aggregate + SRAM parity/SEC-DED + histogram + threshold flag；Clocks Event Reasons（SW/HW Thermal Slowdown「factor of 2 or more」逐字、SW Power Cap、HW Power Brake、Sync Boost）与 Counters（μs）；温度三档（Max Operating / Slowdown / Shutdown Temp）；--query-remapped-rows / nvlink -e（v560+ NVLink5）/ -r / -r bus；repair flags 与 GPU Recovery Action（Drain and Reset「Asserted only for UCE row remaps」逐字）
 - [NVIDIA, DCGM](../references.md)：NVIDIA/DCGM repo + docs（key: dcgm），教学参照 + 官方实现，2026-11-26 一手核实——diag r1-r4 时长与测试成员逐字表；dcgmi diag -r / -p 命令；field IDs（ECC 310-313 / SRAM 345-346 / row remap 392-396 / NVLink CRC 400 系列 · replay 420 系列 · recovery 430 系列 / 温度 140 · 150 / 能量 156 / PCIe replay 202）经 dcgm-api-field-ids 页逐项核实；Field Value Watches / Active Health Checks / Policy Notification；diag 边界（不替代 Field Diagnostic / 不服务 RMA）
 - [NVIDIA, Hopper whitepaper](../references.md)：NVIDIA H100 Tensor Core GPU Architecture Whitepaper V1.04（key: hopper-whitepaper），[C] 官方规格披露·一手权威——p.38 ECC Memory Resiliency（SECDED + Sideband + L2/L1/RF 清单 + boot-time row remap，recap 锚 2.1 §4）；Table 3 FP32 66.9 TFLOPS / 1980 MHz（§5.2 实例，recap 1.1 §3）；p.47 NVLink 18 link × 25 GB/s 单向（§6.3，recap 7.1）
 - [NVIDIA, Inside Blackwell Ultra blog](../references.md)：NVIDIA Inside Blackwell Ultra blog（key: inside-blackwell-blog），[C] 开放技术博客、非闭源，2026-11-26 一手核实——Advanced RAS engine 逐字（AI-powered reliability system monitoring thousands of parameters to predict failures...）；TEE-I/O + inline NVLink protection（§8.2 预防性维护产品化口径）
