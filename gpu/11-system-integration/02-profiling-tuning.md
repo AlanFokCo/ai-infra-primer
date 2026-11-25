@@ -1,6 +1,6 @@
 # 11.2 Profiling 与调优方法论（Profiling and Tuning Methodology）
 
-> 每个 kernel 的带宽利用率都有 85%，端到端步时却比 kernel 时间总和多出 33%——损失在 kernel 内、kernel 间隙，还是 CPU 侧？本章交付 profiling 全流程与调优方法论：Nsight Systems 系统级 timeline（kernel launch / copy / API trace、CPU-GPU 重叠、NVTX 标注）先把端到端时间拆成三段并归因，Nsight Compute 四面板（SpeedOfLight / roofline / stall reason / memory chart / occupancy）再读 kernel 内部，bottleneck 三区判定（recap 2.4）接 stall 签名逐层 drill-down，调优决策树（coalescing 4.1 → bank conflict 4.2 → tiling 4.3 → occupancy 3.4 → fusion 5.4 → 精度 6.1）选手段，调优前后带宽/吞吐对账（命题 1 四因子分解 + 命题 2 带宽饱和加速上界）确认收益，achieved roofline 逐 kernel 绘制与端到端 MFU 对账，profiling 开销与采样偏差的口径纪律，nvbandwidth / nccl-tests 通信基准（recap 2.4/10.2）与 DCGM 机群监控 | 前置：models 2.4 §6（roofline 入口，经 2.4 recap，不重推）、2.4（三区判定式 (6)(7) / 测量口径式 (8)(9) / 实测点上界式 (10)(11)）、1.4（Little's law 与 stall reason 四分类）、3.4（occupancy 精确计算与 NCU 读法）、3.3（stream / graph 与 launch 摊销）、4.1–4.3 / 5.4 / 6.1（调优手段机制章）、7.2 / 10.2（通信带宽账与 nccl-tests 方法）；下游 11.3（DCGM diag 健康检查与故障归因）、inference 9.1（serving 操作点校准） | 锚点：Nsight Systems UserGuide v2026.6（[NVIDIA, Nsight Systems](../references.md)，[C] 官方规格披露·一手权威）、Nsight Compute ProfilingGuide（[NVIDIA, Nsight Compute](../references.md)，[C]）、nvbandwidth（[NVIDIA, nvbandwidth](../references.md)，教学参照 + 官方实现）、nccl-tests（[NVIDIA, nccl-tests](../references.md)，教学参照 + 官方实现）、DCGM（[NVIDIA, DCGM](../references.md)，教学参照 + 官方实现）、datasheet（[NVIDIA, datasheet](../references.md)，[C]）、Best Practices（[NVIDIA, Best Practices](../references.md)，[C]）、NCCL repo 与 2.4 blog（[NVIDIA, NCCL](../references.md) / [NVIDIA, NCCL 2.4 blog](../references.md)，教学参照 / [C]）——官方文档 2026-11-26 一手核实
+> 每个 kernel 的带宽利用率都有 85%，端到端墙钟里却有 33% 的时间不属于任何 kernel——损失在 kernel 内、kernel 间隙，还是 CPU 侧？本章交付 profiling 全流程与调优方法论：Nsight Systems 系统级 timeline（kernel launch / copy / API trace、CPU-GPU 重叠、NVTX 标注）先把端到端时间拆成三段并归因，Nsight Compute 四面板（SpeedOfLight / roofline / stall reason / memory chart / occupancy）再读 kernel 内部，bottleneck 三区判定（recap 2.4）接 stall 签名逐层 drill-down，调优决策树（coalescing 4.1 → bank conflict 4.2 → tiling 4.3 → occupancy 3.4 → fusion 5.4 → 精度 6.1）选手段，调优前后带宽/吞吐对账（命题 1 四因子分解 + 命题 2 带宽饱和加速上界）确认收益，achieved roofline 逐 kernel 绘制与端到端 MFU 对账，profiling 开销与采样偏差的口径纪律，nvbandwidth / nccl-tests 通信基准（recap 2.4/10.2）与 DCGM 机群监控 | 前置：models 2.4 §6（roofline 入口，经 2.4 recap，不重推）、2.4（三区判定式 (6)(7) / 测量口径式 (8)(9) / 实测点上界式 (10)(11)）、1.4（Little's law 与 stall reason 四分类）、3.4（occupancy 精确计算与 NCU 读法）、3.3（stream / graph 与 launch 摊销）、4.1–4.3 / 5.4 / 6.1（调优手段机制章）、7.2 / 10.2（通信带宽账与 nccl-tests 方法）；下游 11.3（DCGM diag 健康检查与故障归因）、inference 9.1（serving 操作点校准） | 锚点：Nsight Systems UserGuide v2026.6（[NVIDIA, Nsight Systems](../references.md)，[C] 官方规格披露·一手权威）、Nsight Compute ProfilingGuide（[NVIDIA, Nsight Compute](../references.md)，[C]）、nvbandwidth（[NVIDIA, nvbandwidth](../references.md)，教学参照 + 官方实现）、nccl-tests（[NVIDIA, nccl-tests](../references.md)，教学参照 + 官方实现）、DCGM（[NVIDIA, DCGM](../references.md)，教学参照 + 官方实现）、datasheet（[NVIDIA, datasheet](../references.md)，[C]）、Best Practices（[NVIDIA, Best Practices](../references.md)，[C]）、NCCL repo 与 2.4 blog（[NVIDIA, NCCL](../references.md) / [NVIDIA, NCCL 2.4 blog](../references.md)，教学参照 / [C]）——官方文档 2026-11-26 一手核实
 
 ## 1. 33% 的时间不属于任何 kernel：三个问题与本章口径
 
@@ -219,8 +219,8 @@ $$
  │        /        │
  │       / ● B (2.5, 7.125) memory-bound，u_B 85.1%
  │      /  ▲
- │     /   │ ILP 1→4：C 64→256 sectors，点 C→B（§4）
- │    /  ○ C (2.5, 2.58) latency-bound，loss 69.2%
+ │     /   │ ILP 1→4：C 64→256 sectors，点 D→B（§4）
+ │    /  ○ D (2.5, 2.58) latency-bound，loss 69.2%
  │   / ● E (0.083, 0.238) elementwise
  │  /
  │ /
@@ -228,7 +228,7 @@ $$
                    R ≈ 295
 ```
 
-三条轨迹的读法：C → B 是**垂直上移**（强度不变、并发补齐，latency-bound 修复）；B 沿斜线向 roof 贴近是 $u_B$ 收窄（coalescing / 流量优化， $\eta$ 因子）；若 tiling 提复用，点所在的斜线换到更高的 L2/L1 ceiling、强度不变点上移（2.4 §7 层级 roofline recap，4.3 的几何解释）。A 点（ $u_F$ 70.7%）的损失在算力侧，与 B/C 不同侧——三区判定（§4）决定看哪条 roof。
+三条轨迹的读法：D → B 是**垂直上移**（强度不变、并发补齐，latency-bound 修复）；B 沿斜线向 roof 贴近是 $u_B$ 收窄（coalescing / 流量优化， $\eta$ 因子）；若 tiling 提复用，点所在的斜线换到更高的 L2/L1 ceiling、强度不变点上移（2.4 §7 层级 roofline recap，4.3 的几何解释）。A 点（ $u_F$ 70.7%）的损失在算力侧，与 B/D 不同侧——三区判定（§4）决定看哪条 roof。点标口径注：latency-bound 点在 2.4 §7 标 C，本章改标 D，避与并发符号 C（§1 声明）冲突；坐标与损失读数不变。
 
 ## 7. Profiling 开销与采样偏差：测量本身改变被测量
 
