@@ -408,7 +408,7 @@ function doubleBinaryTree() {
   const T1 = {
     0: mk('t0', 70, 84, 'attn'), 8: mk('t8', 250, 84, 'attn'), 4: mk('t4', 110, 136, 'attn'),
     2: mk('t2', 70, 188, 'attn'), 6: mk('t6', 150, 188, 'attn'), 10: mk('t10', 250, 188, 'attn'),
-    1: mk('t1', 48, 240, 'plain'), 3: mk('t3', 92, 240, 'plain'), 5: mk('t5', 128, 240, 'plain'),
+    1: mk('t1', 54, 240, 'plain'), 3: mk('t3', 92, 240, 'plain'), 5: mk('t5', 128, 240, 'plain'),
     7: mk('t7', 172, 240, 'plain'), 9: mk('t9', 228, 240, 'plain'), 11: mk('t11', 272, 240, 'plain'),
   };
   hz(T1[0], T1[8], 0.2);
@@ -424,7 +424,11 @@ function doubleBinaryTree() {
     0: mk('t0b', 400, 240, 'plain', '0'), 2: mk('t2b', 440, 240, 'plain', '2'), 4: mk('t4b', 496, 240, 'plain', '4'),
     6: mk('t6b', 540, 240, 'plain', '6'), 8: mk('t8b', 576, 240, 'plain', '8'), 10: mk('t10b', 620, 240, 'plain', '10'),
   };
-  hz(T2[11], T2[3], 0.3);
+  // mirror root 边：11.left → 3.right，走 434..582 卡间间隙（不穿卡），箭头指向 3（11→3 方向）
+  const mroot = 'M 582 84 H 434';
+  body.push(`<path class="dia-edge" d="${mroot}"/>`);
+  body.push(pathPulse(mroot, { dur: 1.4, delay: 0.3 }));
+  body.push(arrowHead(434, 84, -1, 0));
   ln(T2[11], T2[7], 0.6); ln(T2[3], T2[1], null); ln(T2[7], T2[5], null); ln(T2[7], T2[9], 0.9);
   ln(T2[1], T2[0], null); ln(T2[1], T2[2], null); ln(T2[5], T2[4], null); ln(T2[5], T2[6], null);
   ln(T2[9], T2[8], null); ln(T2[9], T2[10], 1.2);
