@@ -18,7 +18,7 @@
 
 **recap 边界**（spec §4.2，不重推）：MLA 低秩构造、RoPE×低秩冲突、W_UK/W_UV absorption 等价（models 4.1 §4 式 (11)-(14)）只 recap 关键步；split-KV/cascade 归约正确性（inference 3.1 命题 1/2）、DSA 选择链与期望界（inference 3.1 §7）、FlashMLA 吸收形几何与 regime 翻转（inference 3.1 §5）只 recap 结论与指针；块表地址翻译（inference 2.1 式 (3)）recap。**代码 scope：片段级走读**（spec §4.2）——FlashMLA 取 V4.1 mainloop 片段锚 + ba89a34 Hopper absorbed 机制片段（config/traits/splitkv/deep-dive），FlashInfer 取 MergeState/scheduler/plan-run 片段；FA 模块全量走读归 6.3，本章不重复。**与 6.3 的 split-KV 分工**：6.3 = 流量账修正（ $\eta$），本章 = reduction kernel 指令走读。
 
-**版本锚**：FlashMLA **双锚**——main commit 395cb3afbb33（2026-10-27，仅 SM100/SM103，V4.1）+ commit ba89a3466e9470ad08ab39738d4e7bb66989e1e7（V3 Hopper，README L3 自链全 SHA）；main 于 2026.09.30 移除 Hopper 与 V3/V3.2/V4.0 支持并改 FP8/FP4 KV 格式（README L3 breaking change 逐字）。FlashInfer **0.7.6**（commit 5228ea6be8ec，contents API 核实——repo 372 MB，tarball 截断规避）。
+**版本锚**：FlashMLA **双锚**——main commit 395cb3afbb33（2026-10-27，仅 SM100/SM103，V4.1）+ commit ba89a3466e9470ad08ab39738d4e7bb66989e1e7（V3 Hopper，main README L3 链接全 SHA）；main 于 2026.09.30 移除 Hopper 与 V3/V3.2/V4.0 支持并改 FP8/FP4 KV 格式（README L3 breaking change 逐字）。FlashInfer **0.7.6**（commit 5228ea6be8ec，contents API 核实——repo 372 MB，tarball 截断规避）。
 
 > **坑**：把 FlashMLA 当前 main 当 Hopper MLA decode 读。触发条件：2026.09.30 之后 clone main 找 V3 的 bf16 kernel；现象：`csrc/cuda_kernels/` 下只有 sm100/smxx，sm90 目录整个不存在，按旧文档对代码全部落空；规避：Hopper absorbed 机制锚 ba89a34（本章 §2 口径），V4.1 内容锚 main，两版勿混。
 
@@ -45,17 +45,30 @@ V3 的 576 = 512 latent + 64 rope（config 字段 kv_lora_rank=512、qk_rope_hea
 
 **V3 Hopper absorbed kernel 走读**（ba89a34，`csrc/kernels/sm90/decode/dense/`）。几何：BLOCK_SIZE_M=64、PAGE_BLOCK_SIZE=64（config.h L7-8）——Q tile 64 行（decode $s_q$ = 1 时 M 维铺 head， $H_q$ = 128 分两块），KV 按 64-token 页读。寄存器预算（6.3 命题 1 的 MLA 实例）：输出 64×512 fp32 = 32768 寄存器，deep-dive L21 逐字「Each 64×512 output matrix occupies 32,768 32-bit registers. With only 65,536 32-bit registers per SM, we can store only one output matrix per SM」——**单输出矩阵/SM，双输出 pingpong 不可行**。解法分两步：
 
-其一，**输出竖切**。`traits.h` 的 GMMA op selector 用 `Shape<BLOCK_M, HEAD_DIM_V/2, PAGE>`（L39/44）——O 切成 O_L/O_R 各 64×256 = 16384 寄存器，两个 warpgroup（NUM_THREADS=256，L24）各持一半；V 同步切成 V0L/V0R/V1L/V1R。其二，**seesaw 调度**：每轮取两个 KV block（K0/K1），两个 WG 交错更新各自的半区，共享一个 running max；deep-dive L42 逐字「This schedule can be viewed as a 'ping-pong' variant using one output matrix—we call it 'seesaw' scheduling. It's mathematically equivalent to FlashAttention's online softmax algorithm」。半区更新的 rescale 因子是「自上次更新以来全部 max 位移的累积因子」（O_R 的因子是两个 scale 之积）——正确性就是 online softmax 不变量按半区维护（models 4.1 式 (16)，recap 不重证）：两个半区的贡献最终都落在同一全局 max 基准上。与 6.3 §7 的三代对照接上：FA3 双输出 pingpong（寄存器够）、FlashMLA 单输出 seesaw（寄存器减半）、FA4 TMEM（约束移除）。
+其一，**输出竖切**。`traits.h` 的 GMMA op selector 用 `Shape<BLOCK_M, HEAD_DIM_V/2, PAGE>`（L39/44）——O 切成 O_L/O_R 各 64×256 = 16384 寄存器，两个 warpgroup（NUM_THREADS=256，L24）各持一半；V 同步切成 V0L/V0R/V1L/V1R。其二，**seesaw 调度**：每轮取两个 KV block（K0/K1），两个 WG 各算一份 QK（p0/p1），共享一个 running max，交错更新本半区并交叉更新对方半区（deep-dive 步骤 0-11，L27-38）；deep-dive L42 逐字「This schedule can be viewed as a 'ping-pong' variant using one output matrix—we call it 'seesaw' scheduling. It's mathematically equivalent to FlashAttention's online softmax algorithm」。半区更新的 rescale 因子是「自上次更新以来全部 max 位移的累积因子」（O_R 的因子是两个 scale 之积）——正确性就是 online softmax 不变量按半区维护（models 4.1 式 (16)，recap 不重证）：两个半区的贡献最终都落在同一全局 max 基准上。与 6.3 §7 的三代对照接上：FA3 双输出 pingpong（寄存器够）、FlashMLA 单输出 seesaw（寄存器减半）、FA4 TMEM（约束移除）。
 
 ```
-seesaw 数据流（示意，ba89a34 deep-dive 口径；单份 64×512 输出竖切）
-──────────────────────────────────────────────────────────────
-KV 侧：K0/V0 block（9 份 TMA 逐份落地）  K1/V1 block（同）
-WG0：  S = Q·K0ᵀ → softmax → O_L += P·V0L    ← 持左半 64×256
-WG1：  S = Q·K0ᵀ → softmax → O_R += P·V0R    ← 持右半 64×256
-       两 WG 交错：WG0 做 softmax（CUDA/SFU）时 WG1 占 TC，反之亦然
-       共享一个 running max；半区 rescale = 累积 max 位移因子
-输出： O = [O_L | O_R]（64×512 单份，32768 regs = R_file/2）
+seesaw 调度（ba89a34 deep-dive 步骤 0-11，L27-38；[0]/[1] = warpgroup 编号）
+──────────────────────────────────────────────────────────────────────
+共享：running max m；输出 O_L（64×256，WG0 regs）| O_R（64×256，WG1 regs）
+装载：K0、K1 各 9 份 TMA（64×576，576/64=9）逐份落地即启动 GEMM；
+      V0/V1 = 同一份数据的 latent 512 列视图（K/V 同源，不另装载），
+      V0L/V0R/V1L/V1R 是视图竖切（各 64×256）
+
+[0] p0 = q·K0ᵀ/qk_scale        [1] p1 = q·K1ᵀ/qk_scale   ← 两 WG 各算一份 QK
+[0] mp0 = max(p0)；m_new0 = max(m, mp0)；scale0；m ← m_new0
+[0] p0 ← exp(p0 − m_new0)                               ← softmax
+[0] O_L ← O_L·rescale(scale0) + p0·V0L                  ← 本半区更新
+[1] mp1 = max(p1)；m_new1 = max(m, mp1)；scale1；m ← m_new1
+[1] p1 ← exp(p1 − m_new1)
+[1] O_R ← O_R·rescale(scale0·scale1) + p1·V1R           ← 本半区，累积因子
+[0] p0 ← p0·rescale(scale1)                             ← 跨 WG 准备：p0 换基准
+[1] O_R ← O_R + p0·V0R                                  ← 跨 WG 更新：WG1 用 WG0 的 p0
+[0] O_L ← O_L·rescale(scale1) + p1·V1L                  ← 跨 WG 更新：WG0 用 WG1 的 p1
+
+rescale = 换基准因子（≤1，exp(m_old − m_new) 方向）；deep-dive 原文 scale
+记号为其倒数（inference 3.1 §5 译注口径）。重叠：WG0 做 softmax/rescale
+（CUDA/SFU）时 WG1 占 TC，反之亦然；TMA 在数据不再需要后立即发射。
 ```
 
 **fine-grained TMA-GEMM 流水**：576 = 9×64，一个 64×576 K block 拆 9 次 64×64 TMA copy——`traits.h` L82-83 的 `TMABarrier barriers_K0[HEAD_DIM_K/64]`（= 9 个 barrier，K1 同），每份落地即启动对应 GEMM 段；deep-dive L54 逐字「For a 64×576 K block, we launch 9 TMA copies (each moving a 64×64 block). GEMM operations begin as soon as each TMA copy completes」。对照 FA3 的整 tile TMA（6.3 §5：一个 K tile 一条 op、32768 B）：MLA 的 K block 72 KB（64×576×2 B），整块等完再算的首字节延迟太大，切 9 份把「等整块」变「等首份」——4.4 延迟隐藏条件在 head 维上的细化。cache hint 取 **EVICT_FIRST**（`splitkv_mla.cuh` L47）：decode splitkv 下每个 KV block 只被一个 CTA 消费、无跨 CTA 复用，流式数据标「先逐出」保护 L2 里的其他数据——与 FA3 的 EVICT_LAST（KV 有跨 CTA 重读，6.3 §5）方向相反，**hint 跟着复用结构走，不是固定配方**。
@@ -120,7 +133,7 @@ float a_scale = (d_sum > 0.f) ? s_a_val / d_sum : 0.f;       // 空态守卫
 // vec 化 store；tx==0 写 s_merged = ptx_log2(d_sum) + s_max
 ```
 
-三个指令级要点。其一，**底数是 2**：注释逐字（L41）「Both s_a and s_b are logsumexp values with base 2」——LSE 存 $\log_2$ 形，归约用 `ptx_exp2`/`ptx_log2`（MUFU.EX2/LG2 原生指令），与 FA2 的 exp2 trick 同构（6.3 §4）：换底数对齐 SFU，全链路无自然 exp。合并数学（inference 3.1 式 (3)）翻译成 base-2 形，即本章式 (4)：
+三个指令级要点。其一，**底数是 2**：注释逐字（L42）「Both s_a and s_b are logsumexp values with base 2」——LSE 存 $\log_2$ 形，归约用 `ptx_exp2`/`ptx_log2`（MUFU.EX2/LG2 原生指令），与 FA2 的 exp2 trick 同构（6.3 §4）：换底数对齐 SFU，全链路无自然 exp。合并数学（inference 3.1 式 (3)）翻译成 base-2 形，即本章式 (4)：
 
 $$
 w_i = 2^{\mathrm{LSE}_i - m}, \quad O = \frac{w_i O_i + w_j O_j}{w_i + w_j}, \quad \mathrm{LSE} = \log_2(w_i + w_j) + m \qquad (4)
@@ -133,10 +146,10 @@ $$
 **scheduler：切多少段是算出来的**（`scheduler.cuh` L74-98，`PartitionPagedKVCacheBinarySearchMinNumPagePerBatch`）：二分搜索最小 pages/batch（段长下界），目标函数
 
 $$
-n_{\mathrm{new}} = \sum_{i} \lceil T_i / c \rceil, \qquad n_{\mathrm{new}} \cdot H_{kv} \le G_{\max} \qquad (5)
+n_{\mathrm{new}} = \sum_{i} \lceil T_i / (b \cdot c) \rceil, \qquad n_{\mathrm{new}} \cdot H_{kv} \le G_{\max} \qquad (5)
 $$
 
-**符号**： $n_{\mathrm{new}}$ = 切分后的等效 batch（L86/96 逐字 `new_batch_size += ceil_div(elem, mid)`）， $T_i$ = 请求 $i$ 的 KV 长度， $c$ = 段长（页为单位）， $G_{\max}$ = `max_grid_size` = occupancy API 实测每 SM block 数 × SM 数（inference 3.1 §2 recap：并行度上限是 occupancy 事实非名义 SM 数）；代码的 grid y 维 gdy = $H_{kv}$。代入 6.3 章脊口径（ $B$ = 1、 $H_{kv}$ = 8、 $T$ = 4096 即 64 页；教学口径设 $G_{\max}$ = 112）：二分得最小段长 $c$ = 5 页—— $\lceil 64/5 \rceil = 13$ 段、 $13 \times 8 = 104 \le 112$，而 $c$ = 4 页给 $16 \times 8 = 128$ 超限—— $S$ = 13、grid 104 个 CTA。prefill 侧同构函数 `PrefillBinarySearchKVChunkSize`（L101-123）把 qo_chunk_size 也计入。plan/run 两阶段（`decode.py` BatchDecodeWithPagedKVCacheWrapper L1338、plan L2179、run L3237）：plan 在 CPU 侧吃序列长度、产出切分决策与工作队列写 workspace，run 启动 kernel 消费——plan 跨同 step 全部层复用（接口级 recap inference 3.1 §4）。cascade 两级（`cascade.py` MultiLevelCascadeAttentionWrapper L226、plan L401、run L537）：共享前缀状态 + 独立后缀状态各算一遍，MergeState 合并——前缀 KV 读取从 $B$ 次降到每 query tile 一次（inference 3.1 命题 2 recap），GPU 侧实体就是大行块 BSR（block-sparse row，inference 3.1 §4）+ 本节 merge kernel。JIT 按架构实例化（`jit/core.py` L186-202：sm90a/sm100a/sm103a 等 nvcc arch flags）——同一模板跨代编译，与 FA4 的 CuTeDSL 跨代是两条路线（6.3 §7）。
+**符号**： $n_{\mathrm{new}}$ = 切分后的等效 batch（L86/96 逐字 `new_batch_size += ceil_div(elem, mid)`）， $T_i$ = 请求 $i$ 的 KV 长度（token）， $c$ = 段长（页为单位）， $b$ = page size（§1；代码按页计数，elem = num_pages， $T_i$ 为 $b$ 整倍时与 token 式等价）， $G_{\max}$ = `max_grid_size` = occupancy API 实测每 SM block 数 × SM 数（inference 3.1 §2 recap：并行度上限是 occupancy 事实非名义 SM 数）；代码的 grid y 维 gdy = $H_{kv}$。代入 6.3 章脊口径（ $B$ = 1、 $H_{kv}$ = 8、 $T$ = 4096、 $b$ = 64 即 64 页；教学口径设 $G_{\max}$ = 112）：二分得最小段长 $c$ = 5 页—— $\lceil 4096/(64 \times 5) \rceil = 13$ 段、 $13 \times 8 = 104 \le 112$，而 $c$ = 4 页给 $\lceil 4096/256 \rceil = 16$ 段、 $16 \times 8 = 128$ 超限—— $S$ = 13、grid 104 个 CTA。prefill 侧同构函数 `PrefillBinarySearchKVChunkSize`（L101-123）把 qo_chunk_size 也计入。plan/run 两阶段（`decode.py` BatchDecodeWithPagedKVCacheWrapper L1338、plan L2179、run L3237）：plan 在 CPU 侧吃序列长度、产出切分决策与工作队列写 workspace，run 启动 kernel 消费——plan 跨同 step 全部层复用（接口级 recap inference 3.1 §4）。cascade 两级（`cascade.py` MultiLevelCascadeAttentionWrapper L226、plan L401、run L537）：共享前缀状态 + 独立后缀状态各算一遍，MergeState 合并——前缀 KV 读取从 $B$ 次降到每 query tile 一次（inference 3.1 命题 2 recap），GPU 侧实体就是大行块 BSR（block-sparse row，inference 3.1 §4）+ 本节 merge kernel。JIT 按架构实例化（`jit/core.py` L186-202：sm90a/sm100a/sm103a 等 nvcc arch flags）——同一模板跨代编译，与 FA4 的 CuTeDSL 跨代是两条路线（6.3 §7）。
 
 ## 7. 变体选择决策表：几何 × batch × 硬件
 
@@ -179,12 +192,12 @@ $$
 1.（计算 · [10]）两代几何与格式账：(a) V3 与 V4.1 的 $d_{\mathrm{qk}}$ 各是多少、各由哪两截拼成；(b) V4.1 FP8 形 528 B 与 FP4 形 288 B 各拆成数据 + scale 两项（式 (2)）；(c) 528 B 对 V3 bf16 1152 B 的倍数；(d) V3 一个 64×576 K block 的 TMA 份数（每份 64×64）与 V4.1 512 维的对应份数。校验：(a) 576 = 512+64 / 512 = 448+64（§2 表，勿混）；(b) 512+16 / 256+32；(c) 2.18×；(d) 9 对 8（576/64 与 512/64）。
 2.（计算 · [20]）seesaw 预算账：(a) 64×512 fp32 输出的寄存器数与 $R_{\mathrm{file}}$ 的比值，先预测「双输出 pingpong 是否可行」再算；(b) O_L/O_R 各占多少寄存器，两个 WG 各持一半后 block 内输出总量；(c) 9 份 TMA 每份字节（bf16）与整块字节；(d) 对照 6.3 命题 1： $d_{\mathrm{head}}$ = 128 的 FA3 双输出为何可行（每 WG 64 regs acc_o）。校验：(a) 32768 = 65536/2，不可行（deep-dive L21 逐字）；(b) 16384、32768；(c) 8192 B、73728 B = 72 KB；(d) 6.3 §3/§7。
 3.（推导 · [30]）补全命题 1 并对照 MLA：(a) 写出无共享/完美共享的 KV 流量计数式，推出 ÷g；(b) 证明 decode PackGQA 精确达界（构造：g 行 Q tile、KV 装载次数 $H_q \to H_{kv}$）；(c) causal prefill 打包计数： $g$ = 4、 $T_M$ = 128、 $T_N$ = 64、 $T$ = 4096 时打包每 KV head 装载 $\sum_{i=0}^{127} \lceil (i+1)/2 \rceil = 4160$ 对不打包 $4 \times 1056 = 4224$，解释近似守恒与 decode 侧 ÷g 的差异（提示：causal 下每 CTA 的 KV 范围随 token 位置变，打包细化 token 粒度）；(d) 用式 (3) 与 $I_{\mathrm{MLA}}$ 式说明 GQA-4 与 MLA-128 的杠杆差异。校验：(a)(b) 命题 1 路线；(c) 4160/4224 = 0.985（6.3 练习 3(d) 同数）；(d) 4 对 241.8（§3）。
-4.（代码 · [30]）FlashInfer 走读（版本锚 5228ea6be8ec）：先写预测再对照——(a) MergeStateKernel 的 LSE 是什么底数？用哪两条 SFU 指令？(b) 两个空态合并会出什么 NaN，代码哪两处守卫？(c) scheduler 二分的目标函数与约束是什么，max_grid_size 怎么来的？(d) plan 与 run 各在哪一侧执行、plan 为什么能跨层复用？校验：(a) base 2（cascade.cuh L41 注释逐字）、ptx_exp2/ptx_log2；(b) (-inf)-(-inf) 与 0/0，clamp + d_sum 守卫（L56-57 注释）；(c) 式 (5)，occupancy API 实测（scheduler.cuh L86/96）；(d) CPU/GPU，同 step 序列长度相同（decode.py L2179/L3237，inference 3.1 §4 recap）。
+4.（代码 · [30]）FlashInfer 走读（版本锚 5228ea6be8ec）：先写预测再对照——(a) MergeStateKernel 的 LSE 是什么底数？用哪两条 SFU 指令？(b) 两个空态合并会出什么 NaN，代码哪两处守卫？(c) scheduler 二分的目标函数与约束是什么，max_grid_size 怎么来的？(d) plan 与 run 各在哪一侧执行、plan 为什么能跨层复用？校验：(a) base 2（cascade.cuh L42 注释逐字）、ptx_exp2/ptx_log2；(b) (-inf)-(-inf) 与 0/0，clamp + d_sum 守卫（L56-57 注释）；(c) 式 (5)，occupancy API 实测（scheduler.cuh L86/96）；(d) CPU/GPU，同 step 序列长度相同（decode.py L2179/L3237，inference 3.1 §4 recap）。
 
 ## 参考
 
-- [DeepSeek-AI, FlashMLA](../references.md)：deepseek-ai/FlashMLA repo（key: flashmla），教学参照 + 官方实现，双版本锚（2026-11-25 fresh tarball 核实）——**main 395cb3afbb33**：README L3（2026.09.30 移除 Hopper/V3 系 breaking change 逐字）、L7（V4.1 sparse/fused）、L25（2026.09.10 release）、L41（1460/950 TFlops B200 CUDA 13.3 逐字）、L79（SM100/SM103）、L138（decode 仅 FP8/FP4）、L140-143（528/288 B 格式逐字）；csrc/cuda_kernels/sm100/prefill/dense/collective/sm100_fmha_mla_fwd_mainloop_tma_warpspecialized.hpp。**ba89a3466e9470ad08ab39738d4e7bb66989e1e7**：README L81（head_dim_k 576/512、head_dim_v 512）；csrc/kernels/params.h L6-9（ModelType 枚举）；sm90/decode/dense/config.h L7-11（BLOCK_SIZE_M/PAGE_BLOCK_SIZE/HEAD_DIM_K=576/HEAD_DIM_V=512）；traits.h L24（NUM_THREADS=256）/L39/44（GMMA HEAD_DIM_V/2）/L82-83（barriers_K0[9]）；splitkv_mla.cuh L20-23（get_AorC_row_idx）/L36-49（launch_kv_tiles_copy_tma、EVICT_FIRST L47）；docs/20250422-new-kernel-deep-dive.md L21（32768/65536 逐字）/L25（O_L/O_R）/L42（seesaw 逐字）/L54（9 TMA 逐字）
-- [Ye et al., 2025](../references.md)：FlashInfer: Efficient and Customizable Attention Engine for LLM Inference Serving，arXiv:2501.01005，[A]（key: flashinfer），0.7.6 commit 5228ea6be8ec（2026-11-25 contents API 核实）——include/flashinfer/attention/cascade.cuh（MergeStateKernel L45、base-2 注释 L41、空态守卫注释 L56-57、MergeStateInPlaceKernel L90、threadblock_sync_state L125、warp_sync_state L147、MergeStatesKernel L224、PersistentVariableLengthMergeStatesKernel L378、host MergeState L583）；scheduler.cuh（PartitionPagedKVCacheBinarySearchMinNumPagePerBatch L74-98、new_batch_size L86/96、PrefillBinarySearchKVChunkSize L101-123）；flashinfer/decode.py（BatchDecodeWithPagedKVCacheWrapper L1338、plan L2179、run L3237）；cascade.py（merge_state L42、MultiLevelCascadeAttentionWrapper L226、plan L401、run L537）；jit/core.py（common_nvcc_flags L186、arch flags L194-202）
+- [DeepSeek-AI, FlashMLA](../references.md)：deepseek-ai/FlashMLA repo（key: flashmla），教学参照 + 官方实现，双版本锚（2026-11-25 fresh tarball 核实）——**main 395cb3afbb33**：README L3（2026.09.30 移除 Hopper/V3 系 breaking change 逐字）、L7（V4.1 sparse/fused）、L25（2026.09.10 release）、L41（1460/950 TFlops B200 CUDA 13.3 逐字）、L79（SM100/SM103）、L138（decode 仅 FP8/FP4）、L140-143（528/288 B 格式逐字）；csrc/cuda_kernels/sm100/prefill/dense/collective/sm100_fmha_mla_fwd_mainloop_tma_warpspecialized.hpp。**ba89a3466e9470ad08ab39738d4e7bb66989e1e7**：README L81（head_dim_k 576/512、head_dim_v 512）；csrc/kernels/params.h L6-9（ModelType 枚举）；sm90/decode/dense/config.h L7-11（BLOCK_SIZE_M/PAGE_BLOCK_SIZE/HEAD_DIM_K=576/HEAD_DIM_V=512）；traits.h L24（NUM_THREADS=256）/L39/44（GMMA HEAD_DIM_V/2）/L82-83（barriers_K0[9]）；splitkv_mla.cuh L20-23（get_AorC_row_idx）/L36-49（launch_kv_tiles_copy_tma、EVICT_FIRST L47）；docs/20250422-new-kernel-deep-dive.md L21（32768/65536 逐字）/L25（O_L/O_R）/L27-38（步骤 0-11，seesaw 图依据）/L42（seesaw 逐字）/L54（9 TMA 逐字）
+- [Ye et al., 2025](../references.md)：FlashInfer: Efficient and Customizable Attention Engine for LLM Inference Serving，arXiv:2501.01005，[A]（key: flashinfer），0.7.6 commit 5228ea6be8ec（2026-11-25 contents API 核实）——include/flashinfer/attention/cascade.cuh（MergeStateKernel L45、base-2 注释 L42、空态守卫注释 L56-57、MergeStateInPlaceKernel L90、threadblock_sync_state L125、warp_sync_state L147、MergeStatesKernel L224、PersistentVariableLengthMergeStatesKernel L378、host MergeState L583）；scheduler.cuh（PartitionPagedKVCacheBinarySearchMinNumPagePerBatch L74-98、new_batch_size L86/96、PrefillBinarySearchKVChunkSize L101-123）；flashinfer/decode.py（BatchDecodeWithPagedKVCacheWrapper L1338、plan L2179、run L3237）；cascade.py（merge_state L42、MultiLevelCascadeAttentionWrapper L226、plan L401、run L537）；jit/core.py（common_nvcc_flags L186、arch flags L194-202）
 - [Kwon et al., 2023](../references.md)：Efficient Memory Management for Large Language Model Serving with PagedAttention，arXiv:2309.06180，[A]（key: vllm）——paged KV 与块表语义源头（inference 2.1 recap）；vLLM v1 backend 族接口 recap inference 3.1 §6（本章不重走读）
 - [DeepSeek-AI, 2024](../references.md)：DeepSeek-V3 Technical Report，arXiv:2412.19437，[A]（key: deepseekv3）——V3 MLA 几何（kv_lora_rank 512 + qk_rope 64 = 576、H_q 128）
 - [DeepSeek-AI, V4.1-Flash config.json](../references.md)：[W]（key: v41-flash-config）——head_dim 512 = 448 latent + 64 rope（config 无 kv_lora_rank 字段、引擎导出 448）、40 层；模型侧形式化归 models
