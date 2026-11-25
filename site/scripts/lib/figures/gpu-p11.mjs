@@ -465,8 +465,8 @@ function achievedRoofline() {
   body.push(`<path class="dia-edge strong" d="${db}"/>`);
   body.push(pathPulse(db, { dur: 1.2, delay: 0.3 }));
   body.push(arrowHead(X(2.5), Y(7.125) + 5, 0, -1));
-  body.push(cap(305, 248, 'ILP 1→4', { size: 8, anchor: 'end', color: 'var(--seal-deep)' }));
-  body.push(cap(305, 262, 'C 64→256 sectors', { mono: true, size: 7.5, anchor: 'end' }));
+  body.push(cap(305, 276, 'ILP 1→4', { size: 8, anchor: 'end', color: 'var(--seal-deep)' }));
+  body.push(cap(305, 290, 'C 64→256 sectors', { mono: true, size: 7.5, anchor: 'end' }));
   // 点标注
   body.push(cap(600, 112, 'A (400, 700)', { mono: true, size: 8 }));
   body.push(cap(600, 126, 'compute-bound', { size: 8 }));
@@ -513,11 +513,11 @@ function faultChain() {
   });
 
   body.push(zone({ x: 36, y: 312, w: 648, h: 72, label: '系统层恢复（recap，不重推）' }));
-  const serv = node({ id: 'serv', x: 52, y: 342, w: 300, h: 34, role: 'norm', title: 'serving：rerouting 到健康实例', sub: 'ms 级缺口（inference 8.5 §6）', titleSize: 9.5, subSize: 7.5 });
-  const train = node({ id: 'train', x: 368, y: 342, w: 300, h: 34, role: 'norm', title: 'training：隔离坏卡 → 换卡 → checkpoint 续训', sub: 'training 7.4 §5-6', titleSize: 8.5, subSize: 7.5 });
+  const serv = node({ id: 'serv', x: 52, y: 342, w: 300, h: 40, role: 'norm', title: 'serving：rerouting 到健康实例', sub: 'ms 级缺口（inference 8.5 §6）', titleSize: 9.5, subSize: 7.5 });
+  const train = node({ id: 'train', x: 368, y: 342, w: 300, h: 40, role: 'norm', title: 'training：隔离坏卡 → 换卡 → checkpoint 续训', sub: 'training 7.4 §5-6', titleSize: 8.5, subSize: 7.5 });
   nodes.push(serv, train); body.push(serv.svg, train.svg);
 
-  const clu = node({ id: 'clu', x: 230, y: 400, w: 260, h: 32, role: 'plain', title: '集群级编排 → cluster 维度', sub: '节点 drain / 备机池 / 作业重调度', titleSize: 10, subSize: 7.5 });
+  const clu = node({ id: 'clu', x: 230, y: 400, w: 260, h: 40, role: 'plain', title: '集群级编排 → cluster 维度', sub: '节点 drain / 备机池 / 作业重调度', titleSize: 10, subSize: 7.5 });
   nodes.push(clu); body.push(clu.svg);
 
   // 纵向流
