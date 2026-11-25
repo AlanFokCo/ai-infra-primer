@@ -24,14 +24,14 @@ group 语义三件套（PTX 逐字）：`cp.async.commit_group`「creates a new 
 
 ```cpp
 // 教学片段，非优化实现：cp.async 双缓冲装载骨架（每线程 16 B，256 线程 × 4 条 = 16 KB tile）
-load_tile_async(smem[0], A, B, k0);          // 序章：装 tile 0（内部 4 条 __pipeline_memcpy_async）
+load_tile_async(smem[0], A, B, 0);           // 序章：装 tile 0（内部 4 条 __pipeline_memcpy_async）
 __pipeline_commit();                       // 打包成 group
 for (int k0 = 0; k0 < K; k0 += TK) {
     if (k0 + TK < K) {
         load_tile_async(smem[buf ^ 1], A, B, k0 + TK);   // 预取下一 tile
         __pipeline_commit();
     }
-    __pipeline_wait_prior(1);              // 等当前 tile 组完成，留最新 1 组在飞
+    __pipeline_wait_prior(k0 + TK < K ? 1 : 0);   // 非末 tile 留 1 组在飞；末 tile 无预取，等全部
     __syncthreads();                       // 跨线程可见：wait 只管本线程的拷贝
     compute_tile(smem[buf]);               // 外积 / wgmma（4.3 §7）
     __syncthreads();                       // 读毕，下一轮可覆写
@@ -39,13 +39,13 @@ for (int k0 = 0; k0 < K; k0 += TK) {
 }
 ```
 
-`__pipeline_wait_prior(1)` 是双缓冲的关键一手：留最新 1 组（预取组）在飞、等其余组（当前 tile）完成——若写 `wait_prior(0)` 则预取也被等完，双缓冲退化成同步。cuda-samples `cpp/3_CUDA_Features/globalToShmemAsyncCopy`（[NVIDIA, cuda-samples](../references.md)，教学参照 + 官方实现）是官方完整教学例，README 逐字「implements matrix multiplication which uses asynchronous copy of data from global to shared memory when on compute capability 8.0 or higher. Also demonstrates arrive-wait barrier for synchronization.」——它用 arrive-wait barrier（mbarrier 路径）做完成同步，与 §3 衔接。
+`__pipeline_wait_prior(1)` 是双缓冲的关键一手：留最新 1 组（预取组）在飞、等其余组（当前 tile）完成——若非末 tile 写 `wait_prior(0)` 则预取也被等完，双缓冲退化成同步。**末 tile 例外必须反向**：最后一轮无预取、只有 1 组在飞，`wait_prior(1)` 按「至多 N 个最新组未完成」语义因 1 不大于 1 立即返回、根本不等完成——须切 `wait_prior(0)`（骨架的条件表达式），否则计算读未落地的 shared，正是下条坑注的未定义行为。cuda-samples `cpp/3_CUDA_Features/globalToShmemAsyncCopy`（[NVIDIA, cuda-samples](../references.md)，教学参照 + 官方实现）是官方完整教学例，README 逐字「implements matrix multiplication which uses asynchronous copy of data from global to shared memory when on compute capability 8.0 or higher. Also demonstrates arrive-wait barrier for synchronization.」——它用 arrive-wait barrier（mbarrier 路径）做完成同步，与 §3 衔接。
 
 > **坑**：用 `__syncthreads()` 当 cp.async 的完成同步。触发条件：发射 cp.async 后只调 `__syncthreads()` 就读 shared；现象：PTX 逐字「No other synchronization mechanism guarantees the completion」——barrier 只同步线程到达，不保证异步拷贝落地，读到旧数据是未定义行为且可能静默；规避：先 `wait_group`/`wait_prior`（或 mbarrier wait）再 `__syncthreads()`——前者保本线程拷贝完成，后者保跨线程可见（wait 是 per-thread 语义，block 内其他线程的拷贝它不管），两步缺一不可。
 
 ## 3. TMA：descriptor 驱动的硬件搬运
 
-cp.async 的地址生成还在软件手里，能不能也交给硬件？Hopper 的 TMA（Tensor Memory Accelerator，张量内存加速器）就是这一步。whitepaper 逐字（[NVIDIA, Hopper whitepaper](../references.md) TMA 节，[C]）：「TMA operations are launched using a copy descriptor which specifies data transfers using tensor dimensions and block coordinates instead of per-element addressing」——用张量维数与块坐标描述搬运，不再逐元素算地址；支持「1D-5D tensors」与大块数据（「up to the shared memory capacity」）。编程模型逐字：「the TMA programming model is single-threaded, where a single thread in a warp is elected to issue an asynchronous TMA operation (cuda::memcpy_async) to copy a tensor, and subsequently multiple threads can wait on a cuda::barrier for completion of the data transfer」——**warp 内选一个线程发射，其余线程等 barrier**。对 A100 的增量逐字：「On A100 ... asynchronous memory copies were executed using a special LoadGlobalStoreShared instruction, so the threads were responsible for generating all addresses and looping across the whole copy region. On Hopper, TMA takes care of everything.」——stride、offset、边界计算全部硬件接管（LDGSTS 即 cp.async 的指令形态，PG async-copies 子页同口径）。
+cp.async 的地址生成还在软件手里，能不能也交给硬件？Hopper 的 TMA（Tensor Memory Accelerator，张量内存加速器）就是这一步。whitepaper 逐字（[NVIDIA, Hopper whitepaper](../references.md) TMA 节，[C]）：「TMA operations are launched using a copy descriptor which specifies data transfers using tensor dimensions and block coordinates instead of per-element addressing」——用张量维数与块坐标描述搬运，不再逐元素算地址；支持「1D-5D tensors」与大块数据（「up to the shared memory capacity」）。编程模型逐字：「the TMA programming model is single-threaded, where a single thread in a warp is elected to issue an asynchronous TMA operation (cuda::memcpy_async) to copy a tensor, and subsequently multiple threads can wait on a cuda::barrier for completion of the data transfer」——**warp 内选一个线程发射，其余线程等 barrier**。对 A100 的增量逐字：「On A100 ... asynchronous memory copies were executed using a special LoadGlobalStoreShared instruction, so the threads were responsible for generating all addresses and looping across the whole copy region. ... On Hopper, TMA takes care of everything.」——stride、offset、边界计算全部硬件接管（LDGSTS 即 cp.async 的指令形态，PG async-copies 子页同口径）。
 
 PTX 侧（[NVIDIA, PTX ISA](../references.md) §9.7.10.28.5，[C]）：`cp.async.bulk.tensor.dim.dst.src...`，dim 取 1d–5d，PTX 8.0、**sm_90+**；global→shared 方向完成机制 `.mbarrier::complete_tx::bytes`，shared→global 方向 `.bulk_group`；load 模式含 `.tile`（本章 GEMM 用）与 `.im2col`（卷积）等。descriptor 的官方形态逐字（§5.5.8）：「The tensor-map is a 128-byte opaque object either in .const space or .param (kernel function parameter) space or .global space which describes the tensor properties and the access properties of the tensor data ...」——**tensor-map 是 128 B 不透明对象**，host 侧用 `cuTensorMapEncodeTiled` driver API 创建（PG async-copies 子页），kernel 侧以 `__grid_constant__` const 参数传入；搬运时硬件按 descriptor 生成地址，软件只给块坐标。
 
@@ -90,7 +90,7 @@ $$
 | 32 | 906.8 ns | 645.2 ns | 645.2 ns | 3 | 48 KB | 1.622 |
 | 64 | 1552.0 ns | 1290.4 ns | 1290.4 ns | 3 | 96 KB | 1.420 |
 
-$T_K = 32$ 逐数核对： $S = 2$ 时第三项 $906.8/1 = 906.8$ 主导（双缓冲，退化为 4.3 命题 4）； $S = 3$ 时 $906.8/2 = 453.4$ 低于 $t_{\mathrm{load}} = 645.2$，带宽项主导——**再加 stage 无收益**（ $S = 4$ 同值），地板由强度决定（4.3 式 (2)），流水只能逼近、不能突破。对同步版（1046.7 ns）加速 $1046.7/645.2 = 1.622$。延迟主导推论：当 $t_{\mathrm{load}}$ 远小于 $t_{\mathrm{lat}}$（小 tile 或高有效带宽）且计算主导稳态（ $\tau_S = t_{\mathrm{comp}}$）时，不等待条件约化为 $(S-1) t_{\mathrm{comp}} \ge t_{\mathrm{lat}}$——**预取 stage 数 × tile 计算时间 ≥ HBM 延迟**（口径：stage 数指预取份数 $S-1$，不含计算份；若把计算份也计入覆盖延迟的份数，得 $S \cdot t_{\mathrm{comp}} \ge t_{\mathrm{lat}}$ 的宽松形）。代入： $T_K = 32$ 需 $S - 1 \ge 261.6/139.9 = 1.87$ 即 $S \ge 3$； $T_K = 64$ 需 $S - 1 \ge 261.6/279.8 = 0.93$ 即 $S \ge 2$——与 4.3 §6「 $T_K = 64$ 单 tile 计算盖住首字节延迟」的结论一致。
+$T_K = 32$ 逐数核对： $S = 2$ 时第三项 $906.8/1 = 906.8$ 主导（双缓冲，退化为 4.3 命题 4）； $S = 3$ 时 $906.8/2 = 453.4$ 低于 $t_{\mathrm{load}} = 645.2$，带宽项主导——**再加 stage 无收益**（ $S = 4$ 同值），地板由强度决定（4.3 式 (2)），流水只能逼近、不能突破。对同步版（1046.7 ns）加速 $1046.7/645.2 = 1.622$。延迟主导推论：当 $t_{\mathrm{load}}$ 远小于 $t_{\mathrm{lat}}$（小 tile 或高有效带宽）且计算主导稳态（ $\tau_S = t_{\mathrm{comp}}$）时，不等待条件约化为 $(S-1) t_{\mathrm{comp}} \ge t_{\mathrm{lat}}$——**预取 stage 数 × tile 计算时间 ≥ HBM 延迟**（口径：stage 数指预取份数 $S-1$，不含计算份；若把计算份也计入覆盖延迟的份数，得 $S \cdot t_{\mathrm{comp}} \ge t_{\mathrm{lat}}$ 的宽松形）。代入： $T_K = 32$ 需 $S - 1 \ge 261.6/139.9 = 1.87$ 即 $S \ge 3$； $T_K = 64$ 需 $S - 1 \ge 261.6/279.8 = 0.93$ 即 $S \ge 2$——与 4.3 §6「 $T_K = 64$ 单 tile 计算盖住首字节延迟」的结论一致。注意本 tile 带宽主导（ $t_{\mathrm{load}}$ 远大于 $t_{\mathrm{lat}}$），全量下界以式 (2) 为准，此代入仅复现延迟侧检查。
 
 ```
 3-stage 流水（S = 3：2 份预取 + 1 份计算，T_K = 32）：
