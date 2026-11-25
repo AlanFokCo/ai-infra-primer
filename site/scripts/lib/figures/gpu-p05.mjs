@@ -88,7 +88,7 @@ function reductionTree() {
   body.push(cap(36, 310, '主口径 n_el = 2^24 = 16777216 fp32：读 67.11 MB ÷ 3352 GB/s = 20.02 μs（命题 1 下界；partial 4 KB 占 0.0061%）', { size: 10 }));
   body.push(cap(36, 330, 'work/depth（命题 2）：W = n_el−1 = 16777215、D = log2 n_el = 24；串行 depth 16777215 —— work 同、depth 差 70 万倍', { size: 10 }));
   body.push(cap(36, 350, '实际 depth = 层级拼接 63+5+3+10 ≈ 81 步；Brent 调度 W/p + D ≈ 64+24 = 88（p = 262144 线程，reduce6 注释点名）', { size: 10 }));
-  body.push(cap(36, 370, '优化目标是省搬运不是省加法：强度 I ≈ 1/bytes = 0.25 FLOP/byte，离 ridge 295 差约 1180 倍 → memory-bound', { size: 10, color: 'var(--seal-deep)' }));
+  body.push(cap(36, 370, '优化目标是省搬运不是省加法：强度 I ≈ 1/bytes = 0.25 FLOP/byte，离 fp32 ridge ≈20 差约 80 倍（295 是 BF16 TC ridge）→ memory-bound', { size: 10, color: 'var(--seal-deep)' }));
 
   return scene(720, 386, body, { label: 'reduction tree：8 元素二叉树 W 等于 7 D 等于 3，右侧 register 到 warp 到 block 到 grid 层级映射，主口径 2 的 24 次方元素读 67.11 MB 得 20.02 微秒下界' }).svg();
 }
@@ -125,7 +125,7 @@ function warpShuffle() {
       body.push(cap(cx[ci], y, t, { mono: true, size: 8.5, anchor: 'middle', color: faint[ci] === 1 ? 'var(--ink-faint)' : hot ? 'var(--seal-deep)' : 'var(--ink)' }));
     });
   });
-  body.push(cap(36, 196, '源 lane 越界不环绕、保留自身（PG 逐字「will not wrap around」）—— down 形结束只 lane0 持全和，其余持子树部分和', { size: 9.5 }));
+  body.push(cap(36, 196, '表列 shuffle 源值语义：越界不环绕（PG「will not wrap around」）；v += shfl 下高位 lane 实持翻倍旧值，仅 lane0 累加轨迹干净、结果只取 lane0', { size: 9.5 }));
 
   // butterfly 对照
   body.push(zone({ x: 36, y: 208, w: 648, h: 74, label: '__shfl_xor_sync：butterfly（broadcast 式全归约）' }));

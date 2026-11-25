@@ -10,7 +10,7 @@
 
 符号声明： $S$ = pipeline stage 数（**含正在计算的 1 份**，预取缓冲 $S - 1$ 份；4.3 的 $n_{\mathrm{stage}}$ 即本章 $S$）； $\tau_S$ = $S$ stage 稳态每 tile 时间； $m_{\mathrm{tile}}$ = 每 tile 装载字节（本章 16384 B；小写 $m$，别于 GEMM 问题维 $M$）； $t_{\mathrm{comp}}, t_{\mathrm{load}}, t_{\mathrm{lat}}$ 沿 4.3 §6； $S_{\mathrm{sh}}$ = shared bytes/block； $\mathrm{bytes}$ = 每元素字节（bf16 取 2，bytes 不占字母）；tx-count 为 mbarrier 的字节计数（§3，文字术语不占符号）。B/KB 单位豁免。
 
-**边界声明**：本章交付 kernel 内 tile 级的异步搬运与流水。stream 级（kernel 之间、copy engine、H2D/D2H）overlap 归 3.3（§4 末两级对照）；wgmma 指令语义与累加器几何归 1.3；CUTLASS mainloop 模块全量走读（CuTe layout、mma atom、epilogue、利用率账）归 5.2——**本章代码 scope 为机制片段级**（§2/§3 装载骨架、§5 pipeline 同步骨架），5.2 重访本章片段一律 recap + 指引；cluster 与 DSMEM 的编程模型细节归 3.1/5.2（本章只到 multicast 机制一句）；FA3 的 warp specialization 指令级走读归 6.3。
+**边界声明**：本章交付 kernel 内 tile 级的异步搬运与流水。stream 级（kernel 之间、copy engine、H2D/D2H）overlap 归 3.3（§4 末两级对照）；wgmma 指令语义与累加器几何归 1.3；CUTLASS mainloop 模块全量走读（CuTe layout、mma atom、epilogue、利用率账）归 5.2——**本章代码 scope 为机制片段级**（§2/§3 装载骨架、§5 pipeline 同步骨架），5.2 重访本章片段一律 recap + 指引；cluster 与 DSMEM 的 kernel 用法（TMA multicast 流量账）归 5.2（本章只到 multicast 机制一句）；FA3 的 warp specialization 指令级走读归 6.3。
 
 ## 2. cp.async：global→shared 免中间 register
 
@@ -51,7 +51,7 @@ PTX 侧（[NVIDIA, PTX ISA](../references.md) §9.7.10.28.5，[C]）：`cp.async
 
 完成判定走 mbarrier（异步事务屏障）。whitepaper Async Transaction Barrier 节逐字：「instead of counting just thread arrivals, it also counts transactions ... The transaction count is essentially a byte count. The asynchronous transaction barrier will block threads at the Wait command until all the producer threads have performed an Arrive, and the sum of all the transaction counts reaches an expected value.」——**tx-count 本质是字节计数**：发射侧 expect_tx 记入应收字节，TMA 每完成一笔硬件自动 complete_tx 扣减，归零且到达数齐才放行。PTX 侧 mbarrier 是 shared 内 8 B 对齐的 `.b64` 对象，追踪 phase、pending arrivals 与 tx-count 三件套（§9.7.15.16），数量只受 shared 容量限（不像 bar.sync 固定 barrier 数）。Hopper 还把等待从 spin 改成 sleep（逐字：「New for Hopper is the ability for 'Waiting' threads to sleep until all other threads arrive. On previous chips, Waiting threads would spin on the barrier object in shared memory.」）——等待线程不再烧发射槽。
 
-全数字账（本章口径）：每 stage 的 expect_tx = A tile $128 \times 32 \times 2 = 8192$ B + B tile $32 \times 128 \times 2 = 8192$ B = 16384 B，与 $m_{\mathrm{tile}}$ 一致——**tx-count 记的就是流量账的字节**，4.3 的强度账与这里的完成判定同一本账。descriptor 开销：A/B 两个 tensor-map 共 $2 \times 128 = 256$ B，host 创建一次、全 kernel 复用，对 2.147 GB 的 tile 流量占比 $1.2 \times 10^{-7}$——descriptor 本身可略，真正的节省在发射侧（§6）。**发射条数按张量数计**：一条 `cp.async.bulk.tensor` 只搬一个张量的一块（tensorMap 操作数描述单个张量、块坐标给该张量的 tile，PTX §9.7.10.28.5），A/B 是两个独立张量，故每 tile 需 **2 条**（A/B 各一），expect_tx 记两条的总字节（16384 = 2 × 8192）——若只发一条却记 expect_tx 16384，单条 2D op 只完成 8192 B，tx-count 余 8192 B 不归零、barrier 永不放行。硬件 swizzle：tensor-map 带 32/64/96/128 B swizzle 模式（4.2 §4 recap），TMA 写 shared 时直接按 swizzle 布局落位，软件免手工置换。multicast 一句：`.multicast::cluster` 让一次 global 读同时落多个 CTA 的 shared（cluster 内 DSMEM），HBM 流量按 cluster 大小摊薄——机制细节归 3.1/5.2。教学骨架（语义级，非可编译实现）：
+全数字账（本章口径）：每 stage 的 expect_tx = A tile $128 \times 32 \times 2 = 8192$ B + B tile $32 \times 128 \times 2 = 8192$ B = 16384 B，与 $m_{\mathrm{tile}}$ 一致——**tx-count 记的就是流量账的字节**，4.3 的强度账与这里的完成判定同一本账。descriptor 开销：A/B 两个 tensor-map 共 $2 \times 128 = 256$ B，host 创建一次、全 kernel 复用，对 2.147 GB 的 tile 流量占比 $1.2 \times 10^{-7}$——descriptor 本身可略，真正的节省在发射侧（§6）。**发射条数按张量数计**：一条 `cp.async.bulk.tensor` 只搬一个张量的一块（tensorMap 操作数描述单个张量、块坐标给该张量的 tile，PTX §9.7.10.28.5），A/B 是两个独立张量，故每 tile 需 **2 条**（A/B 各一），expect_tx 记两条的总字节（16384 = 2 × 8192）——若只发一条却记 expect_tx 16384，单条 2D op 只完成 8192 B，tx-count 余 8192 B 不归零、barrier 永不放行。硬件 swizzle：tensor-map 带 32/64/96/128 B swizzle 模式（4.2 §4 recap），TMA 写 shared 时直接按 swizzle 布局落位，软件免手工置换。multicast 一句：`.multicast::cluster` 让一次 global 读同时落多个 CTA 的 shared（cluster 内 DSMEM），HBM 流量按 cluster 大小摊薄——机制细节归 5.2。教学骨架（语义级，非可编译实现）：
 
 ```cpp
 // 机制片段（语义骨架）：TMA + mbarrier（sm_90+）
@@ -99,7 +99,7 @@ $T_K = 32$ 逐数核对： $S = 2$ 时第三项 $906.8/1 = 906.8$ 主导（双�
 序章: 装 tile 0、tile 1（填满预取份）
 计算: │ tile 0 │ tile 1 │ tile 2 │ tile 3 │ ...
 装载:    │ tile 2 │ tile 3 │ tile 4 │ ...      ← 算 tile k 之初发射 tile k+2
-在飞: 恒有 2 份装载重叠；2 × 645.2 = 1290.4 ≥ 906.8，完成被计算盖住
+在飞: 恒有 2 份装载重叠；2 × 645.2 = 1290.4 ≥ 906.8，完成被 (S−1)τ_S 盖住（带宽主导，非计算）
 稳态 τ = max(139.9, 645.2, 453.4) = 645.2 ns（带宽地板）
 ```
 
@@ -131,8 +131,10 @@ PipelineTmaAsync<Stages> pipe(...);        // full/empty barrier 各 Stages 份
 for (int k = 0; k < K_tiles; ++k) {
     pipe.producer_acquire(state);          // 等 empty：缓冲已被 consumer 释放
     pipe.producer_expect_transaction(state, m_tile);   // expect_tx 记字节（A+B 共 16384）
-    tma_load(smem[state.index], tensorMapA, coordsA_k);  // A tile 一条
-    tma_load(smem[state.index], tensorMapB, coordsB_k);  // B tile 一条（§3：共 2 条），完成自动 complete_tx
+    // smem[state.index] = 第 state.index 个 stage 缓冲，内含 A/B 两个区（SmemLayoutA/B，5.2 §5）；
+    // 两条 TMA 各落其一、同 stage 不互相覆写（骨架以 smem[state.index] 示意整 stage）
+    tma_load(smem[state.index], tensorMapA, coordsA_k);  // A tile 一条，落 stage 的 A 区
+    tma_load(smem[state.index], tensorMapB, coordsB_k);  // B tile 一条（§3：共 2 条），落 B 区，完成自动 complete_tx
     pipe.producer_commit(state, m_tile);   // TMA 场景可 No-Op（硬件已更新 barrier）；实际签名带 bytes
     ++state;                               // index 循环、phase 翻转
 }
@@ -168,7 +170,7 @@ for (int k = 0; k < K_tiles; ++k) {
 
 ## 7. 边界：本章不做什么
 
-流水账算完，剩下的归谁？本章交付 cp.async 免 register 与 group 语义（§2）、TMA descriptor/tensor-map 128 B/mbarrier tx-count（§3）、multi-stage 稳态与 stage 下界（命题 1 + 式 (1)(2)）、warp specialization 与两级 overlap 对照（§4）、CUTLASS pipeline 同步骨架（§5）、cp.async/TMA 适用账（§6）；以下各有专章。CUTLASS mainloop 全量走读与 GEMM 利用率账归 5.2（本章命题 1 与 §5 片段是它的 recap 源）；FA3 warp specialization + pingpong 指令级走读归 6.3；wgmma/tcgen05 指令几何归 1.3；stream 级 overlap 与 CUDA Graph 归 3.3；cluster/DSMEM 编程模型归 3.1/5.2；occupancy 精确计算归 3.4；实测 drill-down 归 11.2。代码 scope：机制片段级（§2/§3/§5），不做模块走读。
+流水账算完，剩下的归谁？本章交付 cp.async 免 register 与 group 语义（§2）、TMA descriptor/tensor-map 128 B/mbarrier tx-count（§3）、multi-stage 稳态与 stage 下界（命题 1 + 式 (1)(2)）、warp specialization 与两级 overlap 对照（§4）、CUTLASS pipeline 同步骨架（§5）、cp.async/TMA 适用账（§6）；以下各有专章。CUTLASS mainloop 全量走读与 GEMM 利用率账归 5.2（本章命题 1 与 §5 片段是它的 recap 源）；FA3 warp specialization + pingpong 指令级走读归 6.3；wgmma/tcgen05 指令几何归 1.3；stream 级 overlap 与 CUDA Graph 归 3.3；cluster/DSMEM 的 kernel 用法（TMA multicast）归 5.2；occupancy 精确计算归 3.4；实测 drill-down 归 11.2。代码 scope：机制片段级（§2/§3/§5），不做模块走读。
 
 本章交付清单（下游 recap 接口）：cp.async group 语义与免 register（§2）、TMA descriptor + tx-count（§3）、命题 1 + 式 (1)(2)（§4）、pipeline 同步骨架（§5）、适用对照表（§6）。5.2 recap 命题 1 作 mainloop pipeline 效率账的理论侧、recap §5 骨架作 collective mainloop 走读的同步侧；6.3 recap §4 warp specialization 作 FA3 的机制原型。
 

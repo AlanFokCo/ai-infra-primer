@@ -112,7 +112,7 @@ $$
 
 8 元素核对（练习 3 同例）： $A = [1,2,3,4]$（ $c_a=4$、 $\mu_a=2.5$、 $M_{2,a}=5$）， $B = [5,6,7,8]$（ $c_b=4$、 $\mu_b=6.5$、 $M_{2,b}=5$）。合并 $\mu = 4.5$， $M_2 = 5 + 5 + (2.5-6.5)^{2} \times 4 \times 4/8 = 10 + 16 \times 2 = 42$——与 $[1..8]$ 直接算的 $\sum(x-4.5)^{2} = 42$ 逐位相同。
 
-TransformerEngine 的归约层级正是 Chan 公式的实例（utils.cuh，[NVIDIA, TransformerEngine](../references.md)）：`warp_chan_upd_dynamic`（L672-701）用 warp shuffle 蝶形逐步合并——L687 `n_ab = n_a + n_b`、L690 `delta = m_a - m_b`、L691 `m2_ab = m2_a + m2_b + delta*delta*n_a*n_b*rn_ab`、L692 `m_ab = (n_a*m_a + n_b*m_b)*rn_ab`，逐行对应式 (5)。层级是：每 warp 内部先算局部统计量（`Stats<T,1,WARPS_M,1>::compute`，L844-864，先 allreduce 求 mean 再求中心化平方和），warp 间用 Chan 合并（L819），跨 CTA 再经 workspace + barrier 合并（L758）。**注意一个细节**：TE 的 per-warp 基例其实是 two-pass（先 mean 后 $M_2$，L848-861），Chan 合并用在 warp 间与 CTA 间——「Welford」在 TE 里特指并行合并层，不是每个线程都跑式 (4) 的逐元素增量。这给「在线算法」一个工程读法：基例可以用任何稳定方法，合并层用 Chan 公式保证结合律与数值稳定。
+TransformerEngine 的归约层级正是 Chan 公式的实例（utils.cuh，[NVIDIA, TransformerEngine](../references.md)）：`warp_chan_upd_dynamic`（L672-701）用 warp shuffle 蝶形逐步合并——L687 `n_ab = n_a + n_b`、L690 `delta = m_a - m_b`、L691 `m2_ab = m2_a + m2_b + delta*delta*n_a*n_b*rn_ab`、L692 `m_ab = (n_a*m_a + n_b*m_b)*rn_ab`，逐行对应式 (5)。层级是：每 warp 内部先算局部统计量（`Stats<T,1,WARPS_M,1>::compute`，L844-864，先 allreduce 求 mean 再求中心化平方和），warp 间用 Chan 合并（L819），跨 CTA 再经 workspace + barrier 合并（L758）。**注意一个细节**：TE 的 per-warp 基例是 two-pass（先 mean 后 $M_2$，L848-861），Chan 合并用在 warp 间与 CTA 间——「Welford」在 TE 里特指并行合并层，不是每个线程都跑式 (4) 的逐元素增量。这给「在线算法」一个工程读法：基例可以用任何稳定方法，合并层用 Chan 公式保证结合律与数值稳定。
 
 > **坑**：拿 $E[x^{2}] - E[x]^{2}$ 当「优化」（少一趟归约）。触发条件：为省一次 reduction 用朴素公式，数据带大偏移（如 LayerNorm 前的激活均值远离 0）；现象：fp32 算出负方差或 0，rsqrt 得 NaN/Inf，loss 突然跳变；规避：用 Welford/Chan 维护 $M_2$（式 (4)(5)），或至少 two-pass 先求 mean 再求中心化平方和（TE general kernel 即此，§4）。省一趟归约的收益远小于数值崩溃的代价。
 
@@ -143,15 +143,15 @@ ln_fwd_tuned_kernel（每 CTA 多行，grid-stride over rows，L85）：
  ① 向量化 load + 转 fp32：Ivec x[LDGS] → compute_t xf[]（L86-98，bf16→fp32）
  ② Welford 统计：stats.compute(xf, rn) → (mu, m2)（L100，Chan 合并 §3）
  ③ rs = rsqrtf(rn*m2 + eps)（L109）；mu/rs 写回供反向（L105-113）
- ④ 逐元素 normalize：y = rs*(xf - mu)（L121）→ gamma*y + beta（L127）
-    → zero_centered_gamma +1（L123）→ fp8 scale（L140）→ amax 追踪（L129）
+ ④ 逐元素 normalize：y = rs*(xf - mu)（L121）→ zero_centered_gamma +1（L123）
+    → gamma*y + beta（L127）→ amax 追踪（L129）→ fp8 scale（L140）
  ⑤ 向量化 store：Ovec z → params.z（L144-146）
  gamma/beta 在行循环外 load 一次、register 驻留复用（L66-74）
 ```
 
 三个读法要点。其一，**输入 bf16、累加 fp32**：load 时 `compute_t(x[it].data.elt[jt])` 把 bf16 转 fp32（L94），整个归约与 normalize 在 fp32 跑——§3 坑注的工程兑现。其二，**Welford 路径**：tuned kernel 走 `stats.compute` 得 $(\mu, M_2)$（Chan 合并），rs 由 $M_2/n$ 开方（L109）；对照 general kernel（`ln_fwd_general_kernel` L169）是显式 two-pass——先 allreduce 求 mean（L246-255）再求中心化平方和（L258-270），两条路径数值都稳定，tuned 用 Chan 合并省归约趟数。其三，**$\gamma/\beta$ register 驻留**：行循环外 load 一次（L66-74），多行复用——norm 权重只有 $d_{\mathrm{model}}$ 个元素，驻留 register 后每行不再重读，这是「小权重 + 大激活」结构的复用账（4.3 复用因子同法）。
 
-RMSNorm 侧一个有趣的细节（`rmsnorm/rmsnorm_fwd_kernels.cuh`）：tuned kernel（L25）同样走 Welford 得 $(\mu, M_2)$，但 RMS 不用均值，于是 rs 写成 `rsqrtf(rn*m2 + mu*mu + eps)`（L102）——用 $E[x^{2}] = M_2/n + \mu^{2}$ 从 Welford 状态**重建均方**（注释 L100-101 逐字「we could optimize here to count mean square directly」）。核对： $[1..8]$ 的 $\mu=4.5$、 $M_2=42$、 $n=8$， $42/8 + 4.5^{2} = 5.25 + 20.25 = 25.5 = E[x^{2}]$（练习 2）。general kernel（L161）则直接 $\sum x^{2}$（L236-248）、`rsqrtf(sqsigma*rn + eps)`（L249），一趟归约——RMSNorm 本不需要 mean，general 路径更直接。tuned 路径复用 LN 的 Welford 基础设施（一套 Stats 代码服务两种 norm），多算一个 mean 换代码复用，是工程取舍不是数学必需。
+RMSNorm 侧一个有趣的细节（`rmsnorm/rmsnorm_fwd_kernels.cuh`）：tuned kernel（L25）同样走 Welford 得 $(\mu, M_2)$，但 RMS 不用均值，于是 rs 写成 `rsqrtf(rn*m2 + mu*mu + eps)`（L102）——用 $E[x^{2}] = M_2/n + \mu^{2}$ 从 Welford 状态**重建均方**（注释 L100-101 逐字「we could optimize here to count mean square directly」）。核对： $[1..8]$ 的 $\mu=4.5$、 $M_2=42$、 $n=8$， $42/8 + 4.5^{2} = 5.25 + 20.25 = 25.5 = E[x^{2}]$（练习 2）。general kernel（L161）则直接 $\sum x^{2}$（L236-248）、`rsqrtf(sqsigma + eps)`（L249，rn 已于 L248 折入 sqsigma），一趟归约——RMSNorm 本不需要 mean，general 路径更直接。tuned 路径复用 LN 的 Welford 基础设施（一套 Stats 代码服务两种 norm），多算一个 mean 换代码复用，是工程取舍不是数学必需。
 
 norm kernel 还顺手做了 FP8 量化的准备：amax 追踪（L129-139，逐元素取 $|y|$ 的 max）+ block 归约（L152-157 `reduce_max` + `atomicMaxFloat`）+ scale 乘（L140-142）。这把「norm 输出 → 量化成 FP8 喂 GEMM」的 cast 融进 norm kernel——正是 §5 与 5.4 的 norm+quant 融合，TE 另有 `rmsnorm/rmsnorm_fwd_mxfp8.cu` 专做 RMSNorm + MXFP8 cast（5.4 回链）。
 

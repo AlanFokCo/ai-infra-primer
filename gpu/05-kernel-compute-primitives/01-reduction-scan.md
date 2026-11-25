@@ -16,7 +16,7 @@
 
 ## 2. reduction 下界：Ω(n_el) reads 与 tree 达界
 
-先回答一个更基本的问题：求和为什么是 memory-bound 而不是 compute-bound？ $n_{\mathrm{el}}$ 个元素只做 $n_{\mathrm{el}}-1$ 次加法（加法计 1 FLOP，约 1 FLOP/元素——别于 GEMM 乘加计 2 的口径，4.3），却要从 HBM 搬 $\mathrm{bytes}$ 字节/元素——强度 $I \approx 1/\mathrm{bytes} = 0.25$ FLOP/byte，离 ridge 295 差约 1180 倍（2.4 recap）。所以优化目标不是省加法，是**省搬运**：每个元素从 HBM 读几次、中间结果落在哪一层。
+先回答一个更基本的问题：求和为什么是 memory-bound 而不是 compute-bound？ $n_{\mathrm{el}}$ 个元素只做 $n_{\mathrm{el}}-1$ 次加法（加法计 1 FLOP，约 1 FLOP/元素——别于 GEMM 乘加计 2 的口径，4.3），却要从 HBM 搬 $\mathrm{bytes}$ 字节/元素——强度 $I \approx 1/\mathrm{bytes} = 0.25$ FLOP/byte。归约是 fp32 CUDA-core 加法，适用的 ridge 是 FP32 峰值对带宽之比 $66.9/3.352 \approx 20$（1.2 §2 / 5.3 §1 口径），离 fp32 ridge ≈ 20 差约 80 倍——2.4 recap 的 295 是 BF16 Tensor Core ridge，不适用于 fp32 执行单元（对 BF16 TC ridge 的上界比较是 1180 倍，非本工作负载口径）。所以优化目标不是省加法，是**省搬运**：每个元素从 HBM 读几次、中间结果落在哪一层。
 
 **命题 1**（读下界与 tree 达界）。任何正确求和算法的 HBM 读流量至少 $n_{\mathrm{el}} \cdot \mathrm{bytes}$（ $\Omega(n_{\mathrm{el}})$）；grid-stride 装载 + 层级 tree 归约的 kernel 每元素恰读一次、部分和驻留片上，HBM 总流量 $(n_{\mathrm{el}} + n_{\mathrm{blk}}) \cdot \mathrm{bytes} + O(1)$，渐近达到下界。**证明**（路线：反证下界 + 构造达界，两步）。下界：若某元素 $x_j$ 未被读取，则把 $x_j$ 改成 $x_j + \delta$（ $\delta \neq 0$）后算法输出不变，而真实和改变 $\delta$——矛盾；故每个元素至少读一次，读流量 $\ge n_{\mathrm{el}} \cdot \mathrm{bytes}$。达界：每线程 grid-stride 读 64 个元素在 register 内串行累加（每元素恰一次 HBM 读），warp/block 部分和经 shuffle 与 shared 归约（§3/§4，片上），每 block 只写 1 个 partial 到 HBM（ $n_{\mathrm{blk}}$ 个），末趟归约写 1 个结果——总流量 $(n_{\mathrm{el}} + n_{\mathrm{blk}}) \cdot \mathrm{bytes} + O(1)$，对 $n_{\mathrm{el}}$ 的比值趋于 1。∎
 
@@ -57,13 +57,16 @@ warp 内 32 个 lane 各持一个部分和，怎么不碰 shared 就归约成一
 两个原语的语义逐字（同节）：`__shfl_down_sync(mask, var, delta, width)`「calculates a source lane ID by adding delta to the caller's lane ID」，且「the ID number of the source lane will not wrap around the value of width and so the upper delta lanes will effectively remain unchanged」——源 lane 越界时**不环绕**，高 delta 个 lane 拿回自己的值；`__shfl_xor_sync(mask, var, laneMask, width)` 按 lane 编号异或取源，「This mode implements a butterfly addressing pattern, which is used in tree reduction and broadcast」。down 形适合「结果聚到 lane 0」的归约，xor 形（butterfly）适合「每个 lane 都要结果」的全归约——两者步数同为 $\log_2 32 = 5$。
 
 ```
-__shfl_down_sync 5 步归约（8 lane 最小例，offset = 4,2,1 三步）：
+__shfl_down_sync 5 步归约（8 lane 最小例，offset = 4,2,1 三步；下表为 shuffle 源值语义）：
   lane:    0    1    2    3    4    5    6    7
   初始:   x0   x1   x2   x3   x4   x5   x6   x7
-  off=4:  x0+x4 x1+x5 x2+x6 x3+x7  x4   x5   x6   x7   ← lane 4-7 源越界，保留自身
+  off=4:  x0+x4 x1+x5 x2+x6 x3+x7  x4   x5   x6   x7   ← lane 4-7 源越界，返回自身
   off=2:  x0+x4+x2+x6  ...  x2+x6  x3+x7  ...                ← 只有 lane 0-3 有效
   off=1:  Σx0..x7  ...                                            ← lane 0 持全和
   32 lane 全形：offset = 16,8,4,2,1，共 5 步，lane 0 持 warp 和
+  注：表列每步 shuffle 返回的源值。代码 v += shfl 下高位 lane 实持翻倍旧值
+  （off=4 后 lane4-7 = 2·x_i），仅 lane 0 的累加轨迹干净（x=[1..8] 时 6→16→36），
+  结果只取 lane 0（坑注见下）。
 ```
 
 **命题 3**（shuffle 的 shared 流量与 bank conflict）。warp shuffle 归约的 shared 流量为 0，bank conflict 数为 0；block 级「warp shuffle → shared partial → warp0 shuffle」方案（ $w_b = 8$）的 shared 流量为 $2 w_b \cdot \mathrm{bytes} = 64$ B，对比 256 线程朴素 shared tree 的 4084 B，省 63.8 倍。**证明**（计数）。warp 级：shuffle 走寄存器交换网络，不产生 shared 访问；bank conflict 是 shared 访问的串行化现象（4.2 判定 recap），shared 流量为 0 则冲突数为 0。block 级 shuffle 方案：8 个 warp 的 lane 0 各写 1 个 partial（ $8 \times 4 = 32$ B），warp0 读回这 8 个字（32 B）再 shuffle 3 步——合计 64 B。朴素 shared tree：初始 256 线程各写 1 字（1024 B），随后 $s = 128, 64, \ldots, 1$ 每层 $s$ 个活跃线程各读 2 字写 1 字（ $3s \times 4$ B），tree 部分 $3 \times (128+64+\cdots+1) \times 4 = 3060$ B，总计 4084 B。比值 $4084/64 = 63.8$。∎
@@ -105,7 +108,7 @@ block 的和怎么汇成 grid 的和？block 之间没有 shared、没有 block 
 
 **atomic 单趟**：每 block 把 partial `atomicAdd` 到同一 global 地址。 $n_{\mathrm{blk}} = 1024$ 次同址 RMW 在 L2 串行化（3.2 同址 atomic 口径 recap），且完成顺序官方未定义——**结果比特级不可复现**（3.2 命题 2 recap，不重证）。流量侧 partial 不经 HBM 数组（L2 内 RMW），但串行化把 1024 次更新排成一条队。适用：只要数值容差、不要比特复现的场景（梯度累加类）；要确定性则排除。
 
-**two-pass 双 kernel**：pass 1 每 block 写 partial 到 HBM 数组（1024 字，4 KB），pass 2 单 block 归约该数组（256 线程各读 4 个，串行 + shuffle，depth 约 12 步）。pass 2 按固定索引顺序归约，**结果确定**；代价是额外一次 kernel launch（~μs 量级，3.3 recap）与 partial 的写+读 8 KB（占读流量 0.012%）。pass 2 复用 §3 的 warp/block kernel 原样即可——1024 元素恰是 4 元素/线程的 grid-stride 加三层树。两 kernel 不能重叠（pass 2 依赖 pass 1 全部 partial），launch 与同步开销是固定支付：小 $n_{\mathrm{el}}$ 时占比显著，大规模下被 20 μs 级的读账摊薄。cuda-samples reduction 例的主结构即此（block partial → 末趟归约）。
+**two-pass 双 kernel**：pass 1 每 block 写 partial 到 HBM 数组（1024 字，4 KB），pass 2 单 block 归约该数组（256 线程各读 4 个，串行 + shuffle，depth 约 11 步）。pass 2 按固定索引顺序归约，**结果确定**；代价是额外一次 kernel launch（~μs 量级，3.3 recap）与 partial 的写+读 8 KB（占读流量 0.012%）。pass 2 复用 §3 的 warp/block kernel 原样即可——1024 元素恰是 4 元素/线程的 grid-stride 加三层树。两 kernel 不能重叠（pass 2 依赖 pass 1 全部 partial），launch 与同步开销是固定支付：小 $n_{\mathrm{el}}$ 时占比显著，大规模下被 20 μs 级的读账摊薄。cuda-samples reduction 例的主结构即此（block partial → 末趟归约）。
 
 **cooperative groups 单 kernel**：`this_grid().sync()` 把两阶段并进一个 kernel（3.1 §6 recap），前提是 grid 共驻留——本章配置核验：1024 blocks 对 $132 \times 32 = 4224$ block slots、8192 warps 对 $132 \times 64 = 8448$ warp slots，每 SM 约 8 blocks × 8 warps = 64 warps 恰满 warp slots，register/shared 宽松，`cudaLaunchCooperativeKernel` 可发射。grid sync 后由 block 0 归约 partial（或各 block 冗余归约换取广播）。确定、单 kernel，代价是共驻留约束限制 grid 规模。
 
@@ -244,7 +247,7 @@ scan 的前缀地址语义撑起了三类结构。
 1.（计算 · [10]）下界与复杂度代入（本章口径 $n_{\mathrm{el}} = 2^{24}$、fp32、 $\mathrm{BW} = 3352$ GB/s）：(a) reduction 的 HBM 读下界字节与带宽口径时间；(b) 平衡 tree 的 work 与 depth，串行链的 depth；(c) warp shuffle 归约步数与 256 线程 block 的 shared partial 字数。校验：(a) 67.11 MB、20.02 μs（§2）；(b) 16777215、24、16777215（命题 2）；(c) 5、8（§3）。
 2.（计算 · [20]）流量与方案账：(a) 朴素 shared tree 与 shuffle 方案的 block 级 shared 流量各多少字节、比值多少；(b) two-pass 的额外 HBM 流量与占读流量百分比；(c) scan 的 HBM 流量与带宽口径时间，对 reduction 的比值；(d) 先预测 atomic 单趟对 two-pass 的 HBM 流量方向（多/少/同）再按 §4 口径核对，并指出 atomic 方案用流量换掉了什么。校验：(a) 4084 B 对 64 B、63.8（命题 3）；(b) 8 KB、0.012%（§4）；(c) 134.22 MB、40.04 μs、2（§5）；(d) 少（L2 RMW 无 partial 数组）但非确定（§4 表）。
 3.（推导 · [30]）补全命题 5 的证明（Blelloch 正确性）：(a) 写出 up-sweep 不变式并对 $d$ 归纳（基例 $d=0$、归纳步：两个 $2^{d}$ 块和相加）；(b) 写出 down-sweep 不变式并对 $d$ 递减归纳，逐句说明 swap 的两个赋值各把什么前缀送到哪个子节点；(c) 终止条件给出 $x[i] = y_i$，用 §5 的 8 元素走读逐层核对；(d) 推导 exclusive→inclusive 转换的 work 与 depth。校验：(c) 与 §5 数组状态逐位一致（末项 28、总和 36）；(d) $n_{\mathrm{el}}$ 次加法、depth 1（§5）。
-4.（代码 · [30]）cuda-samples reduction 走读（公开 repo `cpp/2_Concepts_and_Techniques/reduction/reduction_kernel.cu`，教学参照）：(a) 对照 reduce0/reduce1/reduce2 的注释逐字，说明三步各消除什么问题（modulo 与 warp 不完整活跃 → bank conflict → sequential addressing）；(b) reduce6 的「multiple elements per thread」对应本章哪条调度原理，为什么 work 仍 $O(n_{\mathrm{el}})$；(c) 找出 reduce7 的 `tile32.shfl_down` 循环，说明它对应 §3 的几步树、结果在哪个 lane；(d) 先预测 reduce1 对 reduce2 的性能方向再对照注释验证。校验：(a) reduce2 注释「no divergence or bank conflicts」逐字（§3/§4 口径）；(b) Brent 定理（§2 逐字引文）；(c) 5 步、lane 0（命题 3）；(d) reduce2 更快（conflict 消除，4.2 判定）。
+4.（代码 · [30]）cuda-samples reduction 走读（公开 repo `cpp/2_Concepts_and_Techniques/reduction/reduction_kernel.cu`，教学参照）：(a) 对照 reduce0/reduce1/reduce2 的注释逐字，说明三步各消除什么问题（modulo 与 warp 不完整活跃 → bank conflict → sequential addressing）；(b) reduce6 的「multiple elements per thread」对应本章哪条调度原理，为什么 work 仍 $O(n_{\mathrm{el}})$；(c) 找出 reduce7 的 `warpReduceSum`（`__shfl_down_sync`）循环，说明它对应 §3 的几步树、结果在哪个 lane（字面 `tile32.shfl_down` 循环在 reduce6，勿混）；(d) 先预测 reduce1 对 reduce2 的性能方向再对照注释验证。校验：(a) reduce2 注释「no divergence or bank conflicts」逐字（§3/§4 口径）；(b) Brent 定理（§2 逐字引文）；(c) 5 步、lane 0（命题 3）；(d) reduce2 更快（conflict 消除，4.2 判定）。
 
 ## 参考
 

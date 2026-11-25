@@ -14,7 +14,7 @@ inference 3.2 把权重从 bf16 压到 4 bit，字节账给出近 4 倍的带宽
 
 ## 2. 位布局账：三种特殊值约定与范围闭式
 
-一个 E4M3 数为什么最大只能表到 448，而不是按 IEEE 公式算出的 480？答案藏在特殊值约定里。先 recap 值公式（training 1.3 式 (1)，不重推）：正规数 $x = (-1)^{s} \cdot 2^{e-b} \cdot (1+m)$，尾数 $m \in [0,1)$ 占 $M$ 位；指数字段全零时为次正规数，值 $(-1)^{s} \cdot 2^{1-b} \cdot m$，最小正值 $2^{1-b-M}$。指数位买**动态范围**（binade 跨度），尾数位买**相对精度**（1 附近间隔 $2^{-M}$）——这句定性结论 training 1.3 已交付，本章把它落成可逐格式代入的闭式。
+一个 E4M3 数为什么最大只能表到 448，而不是把 NaN 码位当有限数算出的 480？答案藏在特殊值约定里。先 recap 值公式（training 1.3 式 (1)，不重推）：正规数 $x = (-1)^{s} \cdot 2^{e-b} \cdot (1+m)$，尾数 $m \in [0,1)$ 占 $M$ 位；指数字段全零时为次正规数，值 $(-1)^{s} \cdot 2^{1-b} \cdot m$，最小正值 $2^{1-b-M}$。指数位买**动态范围**（binade 跨度），尾数位买**相对精度**（1 附近间隔 $2^{-M}$）——这句定性结论 training 1.3 已交付，本章把它落成可逐格式代入的闭式。
 
 推导路线：先按特殊值约定定出指数字段的最大可用值，再乘上该指数下的最大尾数，得最大有限数；最小正规/次正规与 ULP 由值公式直接读出。关键一步是**特殊值约定决定指数字段顶端让出多少码位**——三种约定给三个不同的最大值闭式。
 
@@ -26,7 +26,7 @@ $$
 
 **证明**（计数，三步）。其一，IEEE 约定指数字段全 1（ $2^{E}-1$）保留给 inf/NaN，最大正规指数 $2^{E}-2$，尾数全 1 可用，得 $(2-2^{-M}) \cdot 2^{2^{E}-2-b}$。其二，canonical-NaN 约定（E4M3/UE4M3）不表 inf，指数字段可取到全 1，但「全 1 指数 + 全 1 尾数」这一个码位保留为 NaN，故顶端指数下尾数最大为 $1.1\ldots10$（ $M-1$ 个 1），即 $2 - 2^{-(M-1)}$。其三，NONE 约定（E2M1）无任何特殊值，全 1 指数 + 全 1 尾数也是有限数，尾数全 1 可用。最小正规数取指数 1、尾数 0；次正规最小取指数 0、尾数最低位 1；ULP 与相对误差由尾数 LSB 权重 $2^{-M}$ 直接得。∎
 
-正例（E4M3，canonical-NaN）： $E=4$、 $M=3$、 $b=7$， $x_{\max} = (2 - 2^{-2}) \cdot 2^{15-7} = 1.75 \times 256 = 448$——与 training 1.3 §1 表逐字一致。边界反例：若误用 IEEE 闭式（尾数全 1）算 E4M3，得 $1.875 \times 256 = 480$，把一个 NaN 码位当成了有限数。全格式代入（Python 独立重算，E4M3 另用 256 码位穷举核对最大值 448）：
+正例（E4M3，canonical-NaN）： $E=4$、 $M=3$、 $b=7$， $x_{\max} = (2 - 2^{-2}) \cdot 2^{15-7} = 1.75 \times 256 = 448$——与 training 1.3 §1 表逐字一致。边界反例：若误用 NONE 闭式（无特殊值、全 1 指数 + 全 1 尾数当有限数）算 E4M3，得 $1.875 \times 256 = 480$，把一个 NaN 码位当成了有限数；若误用 IEEE 闭式（顶端指数让出给 inf/NaN）则得 $1.875 \times 128 = 240$，少算一个 binade——E4M3 实际走 canonical-NaN 式（448），两个误用方向都错。全格式代入（Python 独立重算，E4M3 另用 256 码位穷举核对最大值 448）：
 
 | 格式 | 总位宽（s/e/m） | bias | 最大有限数 | 最小正规 | 最小次正规 | ULP@1 | 特殊值约定 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -50,7 +50,7 @@ E2M1  [s:1][ee:2][m:1]                bias 1    无特殊值，16 码全有限
 
 两个读数。**其一，BF16 与 FP16 同为 16 bit，分配相反**：BF16 拿 3 个尾数位换指数位，范围从约 40 binade 扩到约 261 binade（与 FP32 同量级），代价是 ULP 从 $2^{-10}$ 粗到 $2^{-7}$——这就是 bf16 训练免 loss scaling 的格式根据（training 1.3 §4 论证 recap，不重推）。**其二，E2M1 只有 16 个码位**，正数集 $\lbrace 0, 0.5, 1, 1.5, 2, 3, 4, 6 \rbrace$（穷举 16 码核对），ULP@1 = 0.5、最大相对舍入误差 $2^{-2}$（25%）——比 E4M3 的 6.25% 粗 4 倍。FP4 敢用于 GEMM，靠的不是格式本身精度，而是细粒度 scale 把每个元素的相对误差压住（§4）+ 权重对扰动的容忍度（量化算法侧归 inference 3.2）。
 
-> **坑**：拿 IEEE 闭式套 E4M3/UE4M3。触发条件：用 $(2-2^{-M}) \cdot 2^{2^{E}-1-b}$ 算 E4M3 最大值；现象：得 480 而非 448，把 canonical-NaN 码位（全 1 指数 + 全 1 尾数）当成有限数；规避：E4M3/UE4M3 走 canonical-NaN 式（顶端尾数让出一个码位），E2M1 走 NONE 式，逐格式核对特殊值约定（CUTLASS `exmy_base.h` 的 `NanInfEncoding` 枚举逐字区分 IEEE_754 / CANONICAL_ONLY / NONE，[NVIDIA, CUTLASS](../references.md)，教学参照）。
+> **坑**：拿 NONE 闭式套 E4M3/UE4M3。触发条件：用 NONE 式 $(2-2^{-M}) \cdot 2^{2^{E}-1-b}$（全 1 指数 + 全 1 尾数当有限数）算 E4M3 最大值；现象：得 480 而非 448，把 canonical-NaN 码位当成了有限数（另一误用方向：套 IEEE 式 $(2-2^{-M}) \cdot 2^{2^{E}-2-b}$ 得 240，少一个 binade）；规避：E4M3/UE4M3 走 canonical-NaN 式（顶端尾数让出一个码位），E2M1 走 NONE 式，逐格式核对特殊值约定（CUTLASS `exmy_base.h` 的 `NanInfEncoding` 枚举逐字区分 IEEE_754 / CANONICAL_ONLY / NONE，[NVIDIA, CUTLASS](../references.md)，教学参照）。
 
 INT8/INT4 不走浮点账，走**均匀格点**账。对称量化格点 $[-2^{q-1}, 2^{q-1}-1]$（INT8 $[-128,127]$、INT4 $[-8,7]$，负侧多一格），步长 $\Delta = \mathrm{absmax}/2^{q-1}$（AWQ 约定，inference 3.2 式 (1) recap）。关键差异：**浮点误差是相对的**（同一 binade 内相对误差恒为 $2^{-M-1}$，尺度不变），**整数误差是绝对的**（格点间距 $\Delta$ 固定，小元素相对误差大）。所以 INT 量化必须靠细粒度 scale 把 outlier 限制在小组内、保住组内小元素的有效级数——outlier 把 per-tensor max 抬到 100 倍时正常通道只剩约 2.56 个有效级（inference 3.2 §5 SmoothQuant 账 recap，不重推）。浮点格式（E4M3）天然按 binade 分配精度，对 outlier 的容忍度高于同位宽 INT，这是 FP8 逐步取代 INT8 成为训练/推理主路的格式侧根据之一。
 
@@ -106,14 +106,15 @@ NVFP4 块（16 元素）：[UE4M3 scale 1B][E2M1 ×16 = 8B]  → 9B/16 = 0.5625 
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | FP64（TC） | — | ✓ | ✓ | ✓ | 66.9 | 37 | 1/14.8 |
 | TF32 | — | ✓ | ✓ | ✓ | 494.7 | 1100 | ≈1/2 |
-| FP16/BF16 | ✓ | ✓ | ✓ | ✓ | 989.4 | 2250 | 1（基准） |
+| FP16 | ✓ | ✓ | ✓ | ✓ | 989.4 | 2250 | 1（基准） |
+| BF16 | — | ✓ | ✓ | ✓ | 989.4 | 2250 | 1（基准） |
 | FP8 E4M3/E5M2 | — | — | ✓ | ✓ | 1978.9 | 4500 | 2 |
-| INT8 | — | ✓ | ✓ | ✓ | 1979 TOPS | 支持，峰值未列 | 2 |
+| INT8 | — | ✓ | ✓ | ✓ | 1979 TOPS | 4500 TOPS | 2 |
 | FP6 | — | — | △ | ✓ | 未列 | 未列 | （同 FP8 路径） |
 | FP4 E2M1 | — | — | △ | ✓ | 未列 | 9000 | 4 |
 | INT4 | — | ✓ | 未列 | 未列 | — | — | （W4A16 存储格式） |
 
-**口径注**（三层）：其一，H100 列取 whitepaper Table 3 逐精度峰值（[NVIDIA, Hopper whitepaper](../references.md)，[C]），B200 列取 datasheet dense（sparse 表值之半，[NVIDIA, datasheet](../references.md)，[C]）；H100 wp 989.4 与 datasheet 989.5 是舍入路径差（datasheet = sparse 1979 ÷ 2），1.1 §6 已注。其二，B200 TF32 1100/2250 = 0.489 ≈ 1/2（sparse 2.2 PF ÷ 2 的舍入），FP64 37 对 BF16 2250 约 1/61。其三，FP6/FP4 的 H100 △：wgmma `kind::f8f6f4` 名字含 FP8/FP6/FP4 三族（PTX 逐字），但 Hopper 官方表只列 FP8 独立峰值；Blackwell 才把 FP4/FP6 列为独立格式。INT4 在 Hopper/Blackwell「未列」是披露口径陈述，非硬件绝对断言。
+**口径注**（四层）：其一，H100 列取 whitepaper Table 3 逐精度峰值（[NVIDIA, Hopper whitepaper](../references.md)，[C]），B200 列取 datasheet dense（sparse 表值之半，[NVIDIA, datasheet](../references.md)，[C]）；H100 wp 989.4 与 datasheet 989.5 是舍入路径差（datasheet = sparse 1979 ÷ 2），1.1 §6 已注。其二，B200 TF32 1100/2250 = 0.489 ≈ 1/2（sparse 2.2 PF ÷ 2 的舍入），FP64 37 对 BF16 2250 约 1/61。其三，FP6/FP4 的 H100 △：wgmma `kind::f8f6f4` 名字含 FP8/FP6/FP4 三族（PTX 逐字），但 Hopper 官方表只列 FP8 独立峰值；Blackwell 才把 FP4/FP6 列为独立格式。INT4 在 Hopper/Blackwell「未列」是披露口径陈述，非硬件绝对断言。其四，**FP16/BF16 拆两行**：V100（sm_70）有 FP16 Tensor Core（mma.m8n8k4）但**无 BF16**（BF16 mma 需 sm_80），合并行会掩盖这一差异；**B200 INT8 峰值已披露**——datasheet「Individual Blackwell GPU Specifications」HGX B200 列 INT8 Tensor Core 9 POPS（sparse）÷ 2 = 4500 TOPS dense，对 BF16 比 2，「峰值未列」口径仅适用 INT4。
 
 **命题 3**（吞吐比 = 指令 k 几何比，对账口径）。同 $m$、 $n$ 几何、稳态发射间隔不变时，两格式的 MMA 吞吐比等于其指令 $k$ 维之比。**证明**（recap 1.3 式 (1)(2) 代入，两步）：其一，指令 FLOPs $F_{\mathrm{instr}} = 2mnk$（1.3 式 (1)），稳态发射间隔 $t_{\mathrm{issue}} = F_{\mathrm{instr}}/c$（1.3 式 (2)， $c$ 为执行单元每周期吞吐）；其二， $t_{\mathrm{issue}}$ 相同则吞吐比 $= c$ 比 $= F_{\mathrm{instr}}$ 比 $= k$ 比。∎（口径：这是**一致性对账**——datasheet [C] 是吞吐的权威来源，指令几何解释其机制，非独立推导硅片吞吐。）
 
@@ -151,7 +152,7 @@ scale 算出来之后由谁乘回去？三条硬件消费路径，对应三种 k
 
 | 论断 | 公式 / 数值 | 回指 |
 | --- | --- | --- |
-| 范围/ULP 闭式按特殊值约定分三式；E4M3 canonical-NaN 最大 448（非 IEEE 式 480）、E2M1 NONE 最大 6 | 命题 1、式 (1) | §2、练习 1 |
+| 范围/ULP 闭式按特殊值约定分三式；E4M3 canonical-NaN 最大 448（非 NONE 式 480、IEEE 式 240）、E2M1 NONE 最大 6 | 命题 1、式 (1) | §2、练习 1 |
 | BF16 与 FP16 同 16 bit 分配相反：范围 ≈261 对 ≈40 binade，ULP $2^{-7}$ 对 $2^{-10}$；bf16 免 scaling 根据 | §2 表 + 读数 | §2、training 1.3 §4 |
 | FP32 累加误差 $(K-1)u$：K=4096 时 2.44e-4，为 BF16 输入误差 1/16、E4M3 的 1/256；FP16 累加界 ≈2.0 不可用 | 命题 2 | §3、练习 2 |
 | E2M1 正数集 {0,0.5,1,1.5,2,3,4,6}，最大相对舍入误差 25%；FP4 靠细粒度 scale + 权重容忍度 | §2 穷举 | §2、§4 |
@@ -174,7 +175,7 @@ scale 算出来之后由谁乘回去？三条硬件消费路径，对应三种 k
 
 - [NVIDIA, PTX ISA](../references.md)：NVIDIA PTX ISA 9.5（key: ptx-isa），[C] 官方规格披露·一手权威，2026-11-25——wgmma m64nNk16（bf16/f16）/ m64nNk32（kind::f8f6f4）/ m64nNk8（tf32）；tcgen05.mma kind::mxf4nvf4（.e2m1 元素 .ue4m3 scale、scale_vec::4X、block16）；低精度格式节（E4M3/E5M2/E2M1/E8M0/UE4M3）
 - [OCP, 2023](../references.md)：OCP Microscaling Formats (MX) Specification v1.0（key: ocp-mx），[C] 官方规格披露·一手权威，2026-11-24——MXFP8/MXFP6/MXFP4/MXINT8 块 32 + E8M0 scale、MXFP4 元素 E2M1；NVFP4 非 OCP MX v1.0 格式
-- [NVIDIA, datasheet](../references.md)：NVIDIA H100/Blackwell 官方 datasheet（key: nvidia-datasheet），[C] 官方规格披露·一手权威，2026-11-25——H100 SXM BF16 989.5 / FP8 1979 / TF32 494.5 dense（sparse 之半）；HGX B200 BF16 2250 / FP8 4500 / FP4 9000 / TF32 1100 / FP64 37 dense；SKU 口径沿 1.1 §4
+- [NVIDIA, datasheet](../references.md)：NVIDIA H100/Blackwell 官方 datasheet（key: nvidia-datasheet），[C] 官方规格披露·一手权威，2026-11-25——H100 SXM BF16 989.5 / FP8 1979 / TF32 494.5 dense（sparse 之半）；HGX B200 BF16 2250 / FP8 4500 / FP4 9000 / TF32 1100 / FP64 37 / INT8 4500 TOPS（9 POPS sparse ÷ 2）dense；SKU 口径沿 1.1 §4
 - [NVIDIA, Hopper whitepaper](../references.md)：NVIDIA H100 Tensor Core GPU Architecture Whitepaper V1.04（key: hopper-whitepaper），[C] 官方规格披露·一手权威，2026-11-25——Table 3 逐精度峰值（FP64 TC 66.9 / TF32 494.7 / BF16-FP16 989.4 / FP8 1978.9 / INT8 1979 TOPS）
 - [NVIDIA, Blackwell brief](../references.md)：NVIDIA Blackwell Architecture Technical Brief（key: blackwell-whitepaper），[C] 官方规格披露·一手权威，2026-11-25——第 5 代 Tensor Core FP4/FP6 + OCP MX、Table 1 数据类型
 - [NVIDIA, CUTLASS](../references.md)：NVIDIA/cutlass repo（key: cutlass），教学参照 + 官方实现，2026-11-25——浮点编码 include/cutlass/exmy_base.h（NanInfEncoding 枚举 IEEE_754/CANONICAL_ONLY/NONE；UE4M3 = FpBitRepresentation<uint8_t,8,4,3,CANONICAL_ONLY,false> 无符号、E2M1 NONE、UE8M0 纯指数；exponent_bias = 2^(E-1)-1）

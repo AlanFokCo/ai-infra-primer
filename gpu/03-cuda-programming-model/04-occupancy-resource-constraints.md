@@ -49,7 +49,7 @@ int maxWarps = prop.maxThreadsPerMultiProcessor / prop.warpSize;  // 64
 double occupancy = (double)activeWarps / maxWarps;                // 式 (3)
 ```
 
-配套 API 三件：`cudaOccupancyMaxPotentialBlockSize` / `cudaOccupancyMaxPotentialBlockSizeVariableSMem` 启发式反解最大 occupancy 的 launch 配置（block 尺寸扫描，§6 曲线的手算替代）；`cudaOccupancyMaxActiveClusters` 给 cluster 尺寸的 occupancy 预测（cluster 机制归 4.4）。kernel 侧资源用量从编译报告读：nvcc `--resource-usage`（PG 13.5 §2.3.7）或 `--ptxas-options=-v`（PG archive/13.0.0）报每 kernel 的 register 与 shared 用量——这是式 (1) 的输入 $R_{\mathrm{th}}$ 与 $S_{\mathrm{sh}}$ 的来源。硬件库存侧七个设备属性（`maxBlocksPerMultiProcessor` / `sharedMemPerMultiprocessor` / `regsPerMultiprocessor` / `maxThreadsPerMultiProcessor` / `sharedMemPerBlock` / `regsPerBlock` / `maxThreadsPerBlock`，PG §2.3.7）运行时可查，编译期同值由 `cuda::arch_traits` 提供。
+配套 API 三件：`cudaOccupancyMaxPotentialBlockSize` / `cudaOccupancyMaxPotentialBlockSizeVariableSMem` 启发式反解最大 occupancy 的 launch 配置（block 尺寸扫描，§6 曲线的手算替代）；`cudaOccupancyMaxActiveClusters` 给 cluster 尺寸的 occupancy 预测（cluster 语义见 3.1 §6，TMA multicast 用法归 5.2）。kernel 侧资源用量从编译报告读：nvcc `--resource-usage`（PG 13.5 §2.3.7）或 `--ptxas-options=-v`（PG archive/13.0.0）报每 kernel 的 register 与 shared 用量——这是式 (1) 的输入 $R_{\mathrm{th}}$ 与 $S_{\mathrm{sh}}$ 的来源。硬件库存侧七个设备属性（`maxBlocksPerMultiProcessor` / `sharedMemPerMultiprocessor` / `regsPerMultiprocessor` / `maxThreadsPerMultiProcessor` / `sharedMemPerBlock` / `regsPerBlock` / `maxThreadsPerBlock`，PG §2.3.7）运行时可查，编译期同值由 `cuda::arch_traits` 提供。
 
 ```
 kernel 资源用量                     硬件库存（1.2 §1）
@@ -160,7 +160,7 @@ Graphs 视图的曲线是锯齿状——每个台阶跳变对应一个粒度悬�
 
 ## 7. 边界：本章不做什么
 
-精确计算与权衡账交付完，剩下的归谁？本章交付粒度修正式 (1)-(3)、occupancy API 语义、register 悬崖与 launch_bounds 命题 1、隐藏账反解式 (5) 与 compute-bound 命题 2、carveout API 与 shared 悬崖、NCU 读法；以下各有专章。tile 几何 ↔ shared/register 预算的推导归 4.3（tiling）与 6.3（FA tile 约束），本章式 (1) 是它们的 occupancy 层回代点；GEMM register 分摊与 mainloop 走读归 5.2。roofline / MFU 与 bound 类型判定归 2.4（本章只 recap 入口）；spill 的精确带宽-延迟代价归 2.3；stall reason 实测与 occupancy drill-down 归 11.2；bank conflict 归 4.2；cluster occupancy（`cudaOccupancyMaxActiveClusters`）与 DSMEM 归 4.4。代码 scope：机制片段级（§2 API 换算、§3 launch_bounds），不做模块走读。
+精确计算与权衡账交付完，剩下的归谁？本章交付粒度修正式 (1)-(3)、occupancy API 语义、register 悬崖与 launch_bounds 命题 1、隐藏账反解式 (5) 与 compute-bound 命题 2、carveout API 与 shared 悬崖、NCU 读法；以下各有专章。tile 几何 ↔ shared/register 预算的推导归 4.3（tiling）与 6.3（FA tile 约束），本章式 (1) 是它们的 occupancy 层回代点；GEMM register 分摊与 mainloop 走读归 5.2。roofline / MFU 与 bound 类型判定归 2.4（本章只 recap 入口）；spill 的精确带宽-延迟代价归 2.3；stall reason 实测与 occupancy drill-down 归 11.2；bank conflict 归 4.2；cluster occupancy（`cudaOccupancyMaxActiveClusters`）语义见 3.1 §6，DSMEM/TMA multicast 用法归 5.2。代码 scope：机制片段级（§2 API 换算、§3 launch_bounds），不做模块走读。
 
 本章交付清单（下游 recap 接口）：粒度修正式 (1)-(3) + API 语义（§2）、命题 1 + 式 (4)（§3）、式 (5) 反解 + 命题 2（§4）、carveout API + shared 悬崖表（§5）、NCU 三态读法（§6）。4.3 recap 式 (1) 作 tile 预算的 occupancy 约束；6.3 recap §4 隐藏账作 FA warp 分工的并发目标；11.2 recap §6 理论/实测两口径作 drill-down 起点；5.2 recap §3 register 权衡作 GEMM 分摊动机。
 

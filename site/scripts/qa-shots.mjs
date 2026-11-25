@@ -56,6 +56,9 @@ const PAGES = [
   // gpu 维度 W2 样章（P3/P4 落地代表章：occupancy 推导重章 + tiling 推导重章，spec §8）
   ['gpu-ch-occupancy', '/gpu/03-cuda-programming-model/04-occupancy-resource-constraints/'], // 推导重章（3.4，粒度修正四约束取 min + register 悬崖 + 隐藏反解 + NCU 三态）
   ['gpu-ch-tiling', '/gpu/04-kernel-memory-optimization/03-tiling-data-reuse/'], // 推导重章（4.3【重】，tiling 强度 O(1)→O(T) + 三级层级账 + double buffering + 教学 GEMM）
+  // gpu 维度 W3 样章（P5/P6 代码走读密代表章：GEMM 走读重章 + FA 走读重章，spec §8）
+  ['gpu-ch-gemm-kernel', '/gpu/05-kernel-compute-primitives/02-gemm-kernel-design/'], // 代码走读密（5.2【重】，CUTLASS 五层实体 + L2 波前修正 + MMA 利用率分解场景图）
+  ['gpu-ch-flashattention', '/gpu/06-low-precision-attention-kernels/03-flashattention-kernel/'], // 代码走读密（6.3【重】，FA2/FA3 指令级走读 + tile 预算 + 精确 HBM 流量场景图）
 ];
 
 const VIEWPORTS = [

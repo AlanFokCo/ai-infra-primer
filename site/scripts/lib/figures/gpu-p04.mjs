@@ -349,7 +349,7 @@ function multiStagePipeline() {
   const UID = 'g4g';
   const body = [];
 
-  body.push(cap(36, 24, '3-stage 流水（S=3：2 份预取 + 1 份计算）：算 tile k 之初发射 tile k+2 —— 2 份装载在飞，完成被计算盖住', { size: 12, color: 'var(--ink-soft)' }));
+  body.push(cap(36, 24, '3-stage 流水（S=3：2 份预取 + 1 份计算）：算 tile k 之初发射 tile k+2 —— 2 份装载在飞，完成被 (S−1)τ_S 盖住（带宽主导）', { size: 12, color: 'var(--ink-soft)' }));
   body.push(cap(52, 52, '序章：装 tile 0、tile 1（填满预取份）；首 tile 装载无计算可藏，填充段占 K/T_K = 128 步的约 1/128，可略', { size: 9.5 }));
 
   // 时序（130 px/tile 稳态槽；t_comp 28.2 px、t_lat+t_load 182.7 px）

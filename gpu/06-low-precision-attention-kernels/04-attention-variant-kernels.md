@@ -11,10 +11,10 @@
 | 口径 | 几何 | 硬件与用途 | 来源 |
 | --- | --- | --- | --- |
 | V3 MLA（§2 走读） | $H_q$ = 128、 $d_{\mathrm{latent}}$ = 512、 $d_{\mathrm{rope}}$ = 64、bf16 | H800 SXM5（deep-dive 原始 benchmark 口径：3.35 TB/s、throttled 峰值约 865 TFlops） | [DeepSeek-AI, 2024](../references.md)，[A]；FlashMLA ba89a34 |
-| V4.1 MLA（§2 对照） | 共享 KV 向量 512 元素 = 448 latent + 64 rope、FP8/FP4 KV | B200（CUDA 13.3，README 报告 1460/950 TFlops） | [DeepSeek-AI, V4.1-Flash config.json](../references.md)，[W]；FlashMLA main |
+| V4.1 MLA（§2 对照） | 共享 KV 向量 512 元素 = 448 latent + 64 rope、 $H_q$ = 64、FP8/FP4 KV | B200（CUDA 13.3，README 报告 1460/950 TFlops） | [DeepSeek-AI, V4.1-Flash config.json](../references.md)，[W]；FlashMLA main |
 | 8B GQA（§3/§6 数值） | $T$ = 4096、 $d_{\mathrm{head}}$ = 128、 $H_q$ = 32、 $H_{kv}$ = 8、 $g$ = 4、bf16 | H100 SXM（沿 6.3 章脊，3352 GB/s、ridge 295） | 6.3 章脊表 |
 
-符号声明（spec §4.3）： $T$ = KV 序列长， $B$ = batch， $s_q$ = 每请求 query token 数（decode 无投机时 = 1，沿 inference 3.1）； $d_{\mathrm{latent}}/d_{\mathrm{rope}}$ = MLA latent/rope 维（models $d_c/d_R$ 翻译）， $d_{\mathrm{qk}} = d_{\mathrm{latent}} + d_{\mathrm{rope}}$ = score 内维， $d_v$ = value 侧维度（V3 kernel 口径 512，§2）； $b$ = page size（token 数，沿 inference 2.1）； $K_{\mathrm{top}}$ = DSA 选择行数（inference 3.1 的 $K$ 翻译，避与 GEMM 维冲突）； $S$ = split 数， $g = H_q/H_{kv}$； $\kappa$ = 每 token 每层 KV 字节（inference 1.2 式 (3)）； $R_{\mathrm{file}}$ = 65536； $\mathrm{bytes}$ 不占字母； $I$ = 算术强度。B/KB/MB 单位豁免。
+符号声明（spec §4.3）： $T$ = KV 序列长， $B$ = batch， $s_q$ = 每请求 query token 数（decode 无投机时 = 1，沿 inference 3.1）； $d_{\mathrm{latent}}/d_{\mathrm{rope}}$ = MLA latent/rope 维（models $d_c/d_R$ 翻译）， $d_{\mathrm{qk}} = d_{\mathrm{latent}} + d_{\mathrm{rope}}$ = score 内维， $d_h$ = qk_nope head 维（V3 = 128，models 4.1 记号；式 (1) 分母 $\sqrt{d_h + d_{\mathrm{rope}}}$ 是吸收前的原缩放， $\sqrt{192}$）， $d_v$ = value 侧维度（V3 kernel 口径 512，§2）； $b$ = page size（token 数，沿 inference 2.1）； $K_{\mathrm{top}}$ = DSA 选择行数（inference 3.1 的 $K$ 翻译，避与 GEMM 维冲突）； $S$ = split 数， $g = H_q/H_{kv}$； $\kappa$ = 每 token 每层 KV 字节（inference 1.2 式 (3)）； $R_{\mathrm{file}}$ = 65536； $\mathrm{bytes}$ 不占字母； $I$ = 算术强度。B/KB/MB 单位豁免。
 
 **recap 边界**（spec §4.2，不重推）：MLA 低秩构造、RoPE×低秩冲突、W_UK/W_UV absorption 等价（models 4.1 §4 式 (11)-(14)）只 recap 关键步；split-KV/cascade 归约正确性（inference 3.1 命题 1/2）、DSA 选择链与期望界（inference 3.1 §7）、FlashMLA 吸收形几何与 regime 翻转（inference 3.1 §5）只 recap 结论与指针；块表地址翻译（inference 2.1 式 (3)）recap。**代码 scope：片段级走读**（spec §4.2）——FlashMLA 取 V4.1 mainloop 片段锚 + ba89a34 Hopper absorbed 机制片段（config/traits/splitkv/deep-dive），FlashInfer 取 MergeState/scheduler/plan-run 片段；FA 模块全量走读归 6.3，本章不重复。**与 6.3 的 split-KV 分工**：6.3 = 流量账修正（ $\eta$），本章 = reduction kernel 指令走读。
 
@@ -83,6 +83,8 @@ $$
 
 **符号**：FP8 形每 token 512 个 float8_e4m3 值（512 B）+ 每 32 值一个 float8_e8m0 scale（16 B）；FP4 形 512 个 e2m1 值两值一字节（256 B）+ 每 16 值一个 float8_e4m3 scale（32 B）。代入读法：528 B 对 V3 bf16 1152 B 省 2.18 倍，288 B 省 4 倍——**MLA 的 57× 读取削减（对展开形，models 4.1 recap）之上再叠量化倍数**。scale 粒度 per-32 E8M0 是 MX 族口径、per-16 是 NVFP4 粒度口径（位布局与 scale 编码账归 6.1；FlashMLA 的 per-16 scale 用 e4m3，README 口径，与 NVFP4 规范的 UE4M3 编码细节以 6.1 为准）。decode 只支持 FP8/FP4 KV、不支持 bf16（README L138 逐字）——量化从可选变必选，这是 V4.1 kernel 与 V3 的又一结构差。
 
+**V4.1 decode 强度与 bound（口径依赖，先算强度再选 kernel）**： $I_{\mathrm{MLA}}$ 的一般形是「每 KV token 的 FLOPs ÷ 每 token KV 字节」= $`2 H_q s_q (d_{\mathrm{qk}} + d_v)/\mathrm{bytes}_{\mathrm{KV}}`$（bf16 时 $`\mathrm{bytes}_{\mathrm{KV}} = 2 d_{\mathrm{qk}}`$，退化为上式）。代入 V4.1-Flash config 的 $H_q$ = 64（num_attention_heads=64，[DeepSeek-AI, V4.1-Flash config.json](../references.md)，[W]）、 $s_q$ = 1、kernel 口径 $d_{\mathrm{qk}} = d_v$ = 512：每 token FLOPs $2 \times 64 \times 1024 = 131072$。**FP8 KV（528 B）： $I = 131072/528 \approx 248$ FLOP/byte，低于 B200 BF16 ridge $2250/7.7 \approx 292$（datasheet 口径，沿 6.1 §5 / 6.3 §7 同表）→ memory-bound**；即便按 FP8 MMA ridge $4500/7.7 \approx 584$ 计结论相同（248 仍低于 584）。口径敏感：FP4 KV（288 B）给 $I \approx 455 > 292$ → 翻 compute-bound； $H_q$ = 128 配 FP8 KV 给 $I \approx 496$ → compute-bound。**所以 V4.1 decode 的 bound 不能无条件断 compute**：FP8 KV + $H_q$ = 64 的生产口径是 memory-bound、杠杆在带宽侧（KV 量化、split-KV 铺满 SM），FP4 KV 或更大 $H_q$ 才轮到 TC 利用率杠杆（§7 决策表按此钉口径）。
+
 ## 3. GQA/MQA kernel：head 共享省的是哪一笔读
 
 GQA 的省账 models 4.1 §3 已交付（cache 按 $H_{kv}$ 份存、广播在视图层不产生新字节）——kernel 侧的问题更细：不打包时，同一份 KV 的 HBM 流量要付几遍？答案是 $g$ 遍—— $g$ 个 query head 的 CTA 各读一遍。FA2 的 head 映射逐字可查：`gK = local_tile(mK(_, bidh / params.h_h_k_ratio, _), ...)`（flash_fwd_kernel.h L157）——query head bidh 整除 $g$ 得 KV head， $g$ 个相邻 bidh 的 CTA 读同一段 K/V。省回这笔读有两条路（6.3 §6 的 $\sigma$ 机制，此处走读代码实体）：
@@ -113,7 +115,7 @@ vLLM v1 的 backend 族（inference 3.1 §6 recap，接口级不重走读）：`
 
 稀疏化后主路只读 0.39% 的行，带宽瓶颈搬去了哪？先 recap 选择链（inference 3.1 §7，不重推）：indexer 对全历史打分（ReLU 加权内积、小维 $d_I$ = 128、头间共享）→ candidate block max 池化预选（选 $K_b$ 块，精确性条件 recap inference 3.1 命题 4）→ DeepSelect token top-k（ $K_{\mathrm{top}}$ = 512）→ 主路只 gather 选中行。GPU 侧增量三件：
 
-其一，**打分 kernel 是 MQA logits GEMV（general matrix-vector multiply，矩阵-向量乘）**：indexer query 对全量 $T$ 行 indexer K 做加权内积，形态是 query 多头共享一份 indexer K 的窄 GEMM——DeepGEMM 的 mqa_logits kernel（lightning indexer 组件，[DeepSeek-AI, DeepGEMM](../references.md)，教学参照；GEMM mainloop 走读归 5.2/6.2）。其二，**top-k gather 的访存**：选中 indices（[B, s_q, K_top] int32，页地址已 bake，inference 3.1 §7 接口口径）驱动主路按行 gather——每行 512 元素（V4.1）连续、行间任意跳转，与 §4 paged gather 同模式但粒度更细（token 级对页级）； $K_{\mathrm{top}}$ = 512 行 × 528 B = 264 KiB/请求/层，对全量 $T$ = 131072 行的 0.39%。其三，**瓶颈搬家账**（recap inference 3.1 式 (10)，代入 V4.1 生产格式）：主路读 $K_{\mathrm{top}} \kappa L$，bf16 教学反事实 20 MiB/步，**FP8 528 B 生产口径 10.3 MiB/步**（512×528×40 层）；indexer 读全量 $`T d_I \cdot \mathrm{bytes}_I \cdot L`$，bf16 口径 1.25 GiB/步 = 主路的 64 倍（MXFP4 indexer 省 3.76 倍后仍 17 倍）——稀疏化把带宽瓶颈从主 KV 搬到 indexer K，indexer 精度成为新杠杆（格式账归 6.1，量化 kernel 归 6.2）。DeepSelect 的 scan/filter/compact 与期望界（inference 3.1 式 (9)）recap 不重推；其 PTX 级优化（比较/位操作、浮点加法代整数加法）属 5.1 reduction 原语的变体，本章只立接口。
+其一，**打分 kernel 是 MQA logits GEMV（general matrix-vector multiply，矩阵-向量乘）**：indexer query 对全量 $T$ 行 indexer K 做加权内积，形态是 query 多头共享一份 indexer K 的窄 GEMM——DeepGEMM 的 mqa_logits kernel（lightning indexer 组件，[DeepSeek-AI, DeepGEMM](../references.md)，教学参照；GEMM mainloop 走读归 5.2/6.2）。其二，**top-k gather 的访存**：选中 indices（[B, s_q, K_top] int32，页地址已 bake，inference 3.1 §7 接口口径）驱动主路按行 gather——每行 512 元素（V4.1）连续、行间任意跳转，与 §4 paged gather 同模式但粒度更细（token 级对页级）； $K_{\mathrm{top}}$ = 512 行 × 528 B = 264 KiB/请求/层，对全量 $T$ = 131072 行的 0.39%。其三，**瓶颈搬家账**（recap inference 3.1 式 (10)，代入 V4.1 生产格式）：主路读 $K_{\mathrm{top}} \kappa L$，bf16 教学反事实 20 MiB/步，**FP8 528 B 生产口径 10.3 MiB/步**（512×528×40 层）；indexer 读全量 $`T d_I \cdot \mathrm{bytes}_I \cdot L`$，bf16 口径 1.25 GiB/步——**比值须钉口径**：对 bf16 教学反事实主路（20 MiB）为 64 倍、MXFP4 indexer 省 3.76 倍后仍 17 倍（inference 3.1 原账口径）；对 FP8 生产主路（10.3 MiB）则 bf16 indexer 为 124 倍、生产 MXFP4 indexer（约 340 MiB）约 33 倍——稀疏化把带宽瓶颈从主 KV 搬到 indexer K，indexer 精度成为新杠杆（格式账归 6.1，量化 kernel 归 6.2）。DeepSelect 的 scan/filter/compact 与期望界（inference 3.1 式 (9)）recap 不重推；其 PTX 级优化（比较/位操作、浮点加法代整数加法）属 5.1 reduction 原语的变体，本章只立接口。
 
 ## 6. decode split-KV：reduction kernel 指令走读（FlashInfer）
 
@@ -161,11 +163,11 @@ $$
 | GQA decode，小 batch | $s_q$ = 1，grid = $B H_{kv}$ 铺不满 | memory（ $I$ = 2g/bytes = 4） | split-KV + PackGQA | $S$ 由式 (5) 反解、 $\eta$ 代价 | 通用 |
 | GQA decode，大 batch | grid 已铺满 | memory | 不切（ $\eta$ 纯开销） | disable_split_kv | 通用 |
 | MLA V3 decode | $d_{\mathrm{qk}}$ = 576， $H_q$ = 128 宽头 | compute 边缘（ $I$ = 241.8） | FlashMLA ba89a34 seesaw | 单输出竖切、9 TMA、EVICT_FIRST | Hopper |
-| MLA V4.1 decode | 512 = 448+64，FP8/FP4 KV | compute（TC 利用率杠杆） | FlashMLA main sparse/fused | 528/288 B 格式、fused norm-RoPE | SM100/103 |
-| DSA 稀疏 decode | $K_{\mathrm{top}}$ = 512 行 gather | indexer 带宽主导（64×主路） | indexer GEMV + DeepSelect + sparse MLA | indexer 精度（MXFP4）、 $K_b$ 预选 | 通用 |
+| MLA V4.1 decode | 512 = 448+64， $H_q$ = 64，FP8/FP4 KV | memory（FP8 KV： $I$ = 248 低于 ridge 292；FP4 KV 或 $H_q$ = 128 翻 compute，§2） | FlashMLA main sparse/fused | 528/288 B 格式、fused norm-RoPE | SM100/103 |
+| DSA 稀疏 decode | $K_{\mathrm{top}}$ = 512 行 gather | indexer 带宽主导（生产口径约 33×主路；bf16 反事实口径 64×/17×，§5） | indexer GEMV + DeepSelect + sparse MLA | indexer 精度（MXFP4）、 $K_b$ 预选 | 通用 |
 | 共享前缀批 | 前缀（长 $T_p$）跨请求相同 | memory（前缀重复读） | cascade 两级 | 行块 $r_q$（query tile 行数）、merge ⊕ | 通用 |
 
-两条读法。其一，**bound 由几何定，不由 kernel 名定**：同为 decode，GQA-4 的 $I$ = 4 与 MLA 的 $I$ = 242 差 60 倍，优化杠杆一个在带宽一个在 TC——先算强度再选 kernel（2.4 roofline 口径）。其二，**预算由几何 × 硬件定**： $d_{\mathrm{head}}$ = 128 在 Hopper 上 pingpong 可行、512 在 Hopper 上只能 seesaw、Blackwell TMEM 解除约束（6.3 §7 三解）——同一几何换硬件，调度换代。
+两条读法。其一，**bound 由几何定，不由 kernel 名定**：同为 decode，GQA-4 的 $I$ = 4 与 MLA V3 的 $I$ = 242 差 60 倍，优化杠杆一个在带宽一个在 TC——先算强度再选 kernel（2.4 roofline 口径）；V4.1 的 bound 还随 KV 格式与 $H_q$ 口径变（§2），更须先算。其二，**预算由几何 × 硬件定**： $d_{\mathrm{head}}$ = 128 在 Hopper 上 pingpong 可行、512 在 Hopper 上只能 seesaw、Blackwell TMEM 解除约束（6.3 §7 三解）——同一几何换硬件，调度换代。
 
 ## 8. 边界：本章不做什么
 
@@ -182,10 +184,10 @@ $$
 | 命题 1：GQA 完美共享 KV 流量为无共享的 $1/g$；decode PackGQA 精确达界（67.1 → 16.8 MB）；causal prefill 打包计数近似守恒 | 命题 1 计数式 | §3、练习 3 |
 | $I_{\mathrm{GQA}}$ = 2g/bytes = 4（memory）对 $I_{\mathrm{MLA}}$ = 241.8（compute 边缘）——几何定杠杆 | 式 (3) | §3、§7 |
 | paged gather：页内连续满 sector、页间跳转；TMA per-page 对 cp.async gather 两路；PagedKV 禁 IntraWGOverlap（寄存器） | §4 | §4 |
-| DSA：主路 FP8 生产口径 10.3 MiB/步，indexer bf16 1.25 GiB = 64× 主路——瓶颈搬家，indexer 精度是新杠杆 | §5 | §5 |
+| DSA：主路 FP8 生产口径 10.3 MiB/步；indexer bf16 1.25 GiB = 64× bf16 反事实主路（对 FP8 生产主路 124×、MXFP4 indexer 约 33×）——瓶颈搬家，indexer 精度是新杠杆 | §5 | §5 |
 | MergeState：base-2 LSE + ptx_exp2/log2、空态 clamp + d_sum 守卫、vec 化 FMA；多状态走 warp/block 归约树（⊕ 结合交换 recap） | 式 (4)、§6 摘录 | §6、练习 4 |
 | scheduler 二分： $n_{\mathrm{new}} \cdot H_{kv} \le G_{\max}$（occupancy 实测）；plan/run 分离、cascade = 大行块 + merge | 式 (5) | §6、练习 4 |
-| 决策表：bound 由几何定、预算由几何×硬件定；FA3 pingpong / FlashMLA seesaw / FA4 TMEM 三解 | §7 表 | §7 |
+| 决策表：bound 由几何定、预算由几何×硬件定；V4.1 decode bound 口径依赖（FP8 KV + $H_q$ = 64 给 memory， $I$ = 248 低于 ridge 292；FP4 KV 或 $H_q$ = 128 给 compute）；FA3 pingpong / FlashMLA seesaw / FA4 TMEM 三解 | §7 表 + §2 强度 | §7、§2 |
 
 ## 练习
 
@@ -200,7 +202,7 @@ $$
 - [Ye et al., 2025](../references.md)：FlashInfer: Efficient and Customizable Attention Engine for LLM Inference Serving，arXiv:2501.01005，[A]（key: flashinfer），0.7.6 commit 5228ea6be8ec（2026-11-25 contents API 核实）——include/flashinfer/attention/cascade.cuh（MergeStateKernel L45、base-2 注释 L42、空态守卫注释 L56-57、MergeStateInPlaceKernel L90、threadblock_sync_state L125、warp_sync_state L147、MergeStatesKernel L224、PersistentVariableLengthMergeStatesKernel L378、host MergeState L583）；scheduler.cuh（PartitionPagedKVCacheBinarySearchMinNumPagePerBatch L74-98、new_batch_size L86/96、PrefillBinarySearchKVChunkSize L101-123）；flashinfer/decode.py（BatchDecodeWithPagedKVCacheWrapper L1338、plan L2179、run L3237）；cascade.py（merge_state L42、MultiLevelCascadeAttentionWrapper L226、plan L401、run L537）；jit/core.py（common_nvcc_flags L186、arch flags L194-202）
 - [Kwon et al., 2023](../references.md)：Efficient Memory Management for Large Language Model Serving with PagedAttention，arXiv:2309.06180，[A]（key: vllm）——paged KV 与块表语义源头（inference 2.1 recap）；vLLM v1 backend 族接口 recap inference 3.1 §6（本章不重走读）
 - [DeepSeek-AI, 2024](../references.md)：DeepSeek-V3 Technical Report，arXiv:2412.19437，[A]（key: deepseekv3）——V3 MLA 几何（kv_lora_rank 512 + qk_rope 64 = 576、H_q 128）
-- [DeepSeek-AI, V4.1-Flash config.json](../references.md)：[W]（key: v41-flash-config）——head_dim 512 = 448 latent + 64 rope（config 无 kv_lora_rank 字段、引擎导出 448）、40 层；模型侧形式化归 models
+- [DeepSeek-AI, V4.1-Flash config.json](../references.md)：[W]（key: v41-flash-config）——head_dim 512 = 448 latent + 64 rope（config 无 kv_lora_rank 字段、引擎导出 448）、num_attention_heads = 64（即 $H_q$ = 64，§2 强度代入）、40 层；模型侧形式化归 models
 - [DeepSeek-AI, DeepGEMM](../references.md)：deepseek-ai/DeepGEMM repo（key: deepgemm），教学参照 + 官方实现，commit 5081f8513af5——mqa_logits（lightning indexer）kernel，DSA 打分 GEMV（§5）；mainloop 走读归 5.2/6.2
 - [Dao et al., 2022](../references.md)：FlashAttention，arXiv:2205.14135，[A]（key: flashattention）——repo b038b4974f26：flash_fwd_kernel.h L157（bidh/h_h_k_ratio head 映射）、L597-598（paged block_table 翻译）；hopper/ PackGQA 与 PagedKVNonTMA 锚见 6.3 参考（tile_scheduler.hpp L108/L605、mainloop L56/L284-286/L752-757、tile_size.h L51）
 - 跨维度指引（纯文字）：models 4.1 §4（MLA 构造与 absorption 式 (11)-(14)）、§3（GQA 广播视图）；inference 3.1 §2（split-KV 命题 1 与式 (4)）、§4（BSR/plan-run/cascade 命题 2）、§5（FlashMLA 几何与 $I_{\mathrm{MLA}}$ 式 (8)）、§6（vLLM backend 接口）、§7（DSA 选择链与式 (9)(10)）；inference 2.1（块表式 (3)）、1.2（ $\kappa$ 式 (3)）；gpu 6.3（命题 1/2、§5 EVICT_LAST、§7 三代 overlap）、6.1（MX/NVFP4 格式账）、5.1（归约原语）、4.1（coalescing）、2.4（roofline）

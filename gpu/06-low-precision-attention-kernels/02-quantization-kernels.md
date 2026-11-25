@@ -12,7 +12,7 @@ inference 3.3 把 W4A16 的带宽账算到了近 4 倍理想加速，也列了 M
 
 **本章口径**（章脊锁定）：带宽账脊柱沿 inference 3.3——**H100 SXM**（ $\mathrm{BW} = 3352$ GB/s、BF16 dense 989.4 TFLOPS、ridge $R \approx 295$），单个线性层权重 $[4096, 4096]$、 $B = 16$。**换口径声明**：Marlin 代码面向 **Ampere/Ada**（compute capability ≥ 8.0，README L65 逐字「Marlin is not yet optimized for Hopper」），故指令走读用 mma.sync m16n8k16（Ampere 路径）而非 wgmma；带宽账与架构无关，换卡代入其 datasheet 参数同形。DeepGEMM 走读分 SM90（Hopper）与 SM100（Blackwell）两路。
 
-**符号声明**（spec §4.3）：**本章 $M, N, K$ = GEMM 问题维（行/列/归约维），非消息字节/参数量/序列长**； $M$ = batch 行数（decode 时 = batch 内序列数）； $T_M, T_N, T_K$ = threadblock tile 三维（tile 维，非序列长 $T$，禁裸 $T$）； $B$ = batch； $g$ = 量化组大小、 $q$ = 权重位宽（沿 inference 3.2）；bytes 不占字母，一律文字「字节」或 $\mathrm{bytes}$。指令几何一律字面数（mma.sync m16n8k16）。
+**符号声明**（spec §4.3）：**本章 $M, N, K$ = GEMM 问题维（行/列/归约维），非消息字节/参数量/序列长**； $M$ = batch 行数（decode 时 = batch 内序列数）； $T_M, T_N, T_K$ = threadblock tile 三维（tile 维，非序列长 $T$，禁裸 $T$）； $B$ = batch； $B_{\mathrm{crit}}$ = W4A16 临界 batch（inference 3.3 命题 1 $B_{\max}$ 的翻译，别于 occupancy 符号 $B_{\max}$ = max blocks/SM，spec §4.3）； $g$ = 量化组大小、 $q$ = 权重位宽（沿 inference 3.2）；bytes 不占字母，一律文字「字节」或 $\mathrm{bytes}$。指令几何一律字面数（mma.sync m16n8k16）。
 
 **版本锚**：Marlin **commit 1f25790bdd49**（master，2024-09-04），单文件 kernel `marlin/marlin_cuda_kernel.cu`（822 行）；DeepGEMM **commit 5081f8513af5**（main，2026-10-20），device kernel 在 `deep_gemm/include/deep_gemm/impls/`（非 submodule）。本章全部 file:line 按该两版本 fresh tarball 核实（2026-11-25）；跨版本阅读先对 README/CHANGELOG。
 
@@ -37,11 +37,11 @@ inference 3.3 把 W4A16 的带宽账算到了近 4 倍理想加速，也列了 M
                               （FP16 中间值不落 HBM）
 ```
 
-理想加速成立有条件：inference 3.3 命题 1 给出临界 batch $`B_{\max} = R \cdot \mathrm{bytes}_{\mathrm{weight}}/2 \approx 76`$（recap，不重推），超过则 INT4 侧翻转为 compute-bound、字节节省兑现不出来。Marlin README 实测近理想 4× 只保持到 batch 16–32（L7-8 逐字「close to ideal (4x) speedups up to batchsizes of 16-32 tokens」），远低于理论上界 76——差距在工程：dequant 指令与 Tensor Core 指令竞争发射槽，任一流水线不饱和加速就塌（§5）。README 另给「optimal 3.87x」并自注 group scale 的 0.125 bit 存储开销（L41-43），与 $16/4.125 = 3.88$ 同一笔账（3.87 为截断口径）。
+理想加速成立有条件：inference 3.3 命题 1 给出临界 batch $`B_{\mathrm{crit}} = R \cdot \mathrm{bytes}_{\mathrm{weight}}/2 \approx 76`$（recap，不重推；inference 原记号 $B_{\max}$ 译 $B_{\mathrm{crit}}$，避与 occupancy 符号 $B_{\max}$ = max blocks/SM 撞，spec §4.3），超过则 INT4 侧翻转为 compute-bound、字节节省兑现不出来。Marlin README 实测近理想 4× 只保持到 batch 16–32（L7-8 逐字「close to ideal (4x) speedups up to batchsizes of 16-32 tokens」），远低于理论上界 76——差距在工程：dequant 指令与 Tensor Core 指令竞争发射槽，任一流水线不饱和加速就塌（§5）。README 另给「optimal 3.87x」并自注 group scale 的 0.125 bit 存储开销（L41-43），与 $16/4.125 = 3.88$ 同一笔账（3.87 为截断口径）。
 
 ## 3. Marlin mixed-input tiling 走读
 
-Marlin 的 tile 怎么切，为什么小 batch 用一种切法、大 batch 用另一种？走读 host 侧配置（`marlin_cuda_kernel.cu`）：`THREADS = 256`（8 warp，L705）、`STAGES = 4`（4 级 async 流水，L706）、`SHARED_MEM = 96 * 1024`（CC 8.6 最大 shared，L707）。tile 选择按 batch 分档（L755-761）： $M \le 16$ 时 `thread_k = 128`、`thread_n = 128`（即 $T_K = 128$、 $T_N = 128$、 $T_M = 16$）； $M > 16$ 时 `thread_k = 64`、`thread_n = 256`。注释逐字（L756）：「For small batchizes, better partioning is slightly more important than better compute utilization」——小 batch 优先切分均匀（喂满 SM），大 batch 优先算力利用。kernel 配置经 `CALL_IF` 宏编译期枚举（L801 起 `CALL_IF(1, 8, 8, -1)` 等），只实例化测试中有用的组合（L799 注释「For compilation speed, we only define the kernel configurations that have seemed useful」）——这是编译期特化，与 DeepGEMM 的运行时 JIT 对照（§6）。
+Marlin 的 tile 怎么切，为什么小 batch 用一种切法、大 batch 用另一种？走读 host 侧配置（`marlin_cuda_kernel.cu`）：`THREADS = 256`（8 warp，L705）、`STAGES = 4`（4 级 async 流水，L706）、`SHARED_MEM = 96 * 1024`（CC 8.6 最大 shared，L707）。tile 选择按 batch 分档（L755-761）： $M \le 16$ 时 `thread_k = 128`、`thread_n = 128`（即 $T_K = 128$、 $T_N = 128$、 $T_M = 16$）； $M > 16$ 时 `thread_k = 64`、`thread_n = 256`。注释逐字（L756）：「For small batchizes, better partioning is slightly more important than better compute utilization」——小 batch 优先切分均匀（喂满 SM），大 batch 优先算力利用。kernel 配置经 `CALL_IF` 宏编译期枚举（L801 起 `CALL_IF(1, 8, 8, -1)` 等），只实例化测试中有用的组合（L798-799 注释「For compilation speed, we only define the kernel configurations that have seemed useful」）——这是编译期特化，与 DeepGEMM 的运行时 JIT 对照（§6）。
 
 **mixed-input tiling 强度**（本章增量）。mixed-input GEMM 两个输入精度不同（A FP16、B INT4），tile 强度账与同精度 GEMM 不同。推导路线：数一个 tile 的 FLOPs 与 HBM 字节 → 分「A 走 HBM」与「A 常驻 L2」两口径 → 与 bf16 同 tile 比。关键一步是**小 $T_M$ 下激活 A 的流量占比不可忽略**，A 是否常驻 L2 直接决定强度比。
 
@@ -61,13 +61,13 @@ scale  ─cp.async(新组时,L405)─► sh_s ─► frag_s ─hmul2(L157)─┘
 
 权重 B 用 `cp.async.cg.shared.global.L2::cache_hint` 配 `createpolicy.fractional.L2::evict_first`（L75-76），注释逐字（L66-68）：权重「only accessed precisely once and should thus not pollute the L2 cache which we need for inputs A and outputs C」——**B 立即驱逐、A/C 常驻 L2**，这是命题 2「A 常驻 L2」成立的工程手段（cache policy 分化，4.4 cache hint 机制 recap）。A 用 `ldmatrix.sync.aligned.m8n8.x4.shared.b16`（L111）按 Tensor Core fragment 布局搬进寄存器（4.2/1.3 recap）；计算用 `mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32`（L98，FP16 输入 FP32 累加，1.3 几何 recap）。
 
-切分与归约（5.1 recap，增量是 split-K 的 shared 归约）：Marlin 用 striped partitioning（L207-214 注释）让每 SM 的 tile 段跨列切片，兼顾 SM 利用率与归约步数。为增 warp 数而不增大输出 tile，多个 warp 算同一输出位置的 partial sums（split-K），注释逐字（L463-465）：「we slice across the k dimension ... multiple warps accumulate partial sums of the same output location; which we have to reduce over ... in shared memory」——`thread_block_reduce`（L466）做 shared 内对数归约（5.1 归约结构 recap）；跨 block 的 `global_reduce`（L514）直接在 L2 常驻的输出缓冲里做（L511-513 注释「reduce directly in the output buffer to maximize L2 cache utilization」）。
+切分与归约（5.1 recap，增量是 split-K 的 shared 归约）：Marlin 用 striped partitioning（L207-214 注释）让每 SM 的 tile 段跨列切片，兼顾 SM 利用率与归约步数。为增 warp 数而不增大输出 tile，多个 warp 算同一输出位置的 partial sums（split-K），注释逐字（L463-465）：「we slice across the k dimension ... multiple warps accumulate partial sums of the same output location; which we have to reduce over ... in shared memory」——`thread_block_reduce`（L466）做 shared 内对数归约（5.1 归约结构 recap）；跨 block 的 `global_reduce`（L514）直接在 L2 常驻的输出缓冲里做（L515 注释「reduce directly in the output buffer to maximize L2 cache utilization」）。
 
 ## 4. 指令级 dequant：lop3 + magic-number
 
 几条位操作凭什么能把 INT4 还原成 FP16，还不需要整数转浮点指令？先给指令族（PTX ISA [C]）：`lop3.b32` 是三输入查找表位运算（一条指令完成任意三输入布尔组合），`prmt.b32` 是字节置换，`bfe` 是位域提取。**Marlin 用 lop3 而非 bfe**——第二 nibble 用 `>>8` 移位（L447）；unpack 指令族（lop3/prmt/bfe）里 Marlin 具体选 lop3（精度注）。
 
-lop3 走读（L116-126）：注释逐字（L116-117）「Lookup-table based 3-input logical operation; explicitly used for dequantization as the compiler does not seem to automatically recognize it」——显式写 lop3 是因为编译器不总能自动识别。`template<int lut>`（L118）把 8-bit 真值表作模板参数，`lop3.b32 %0, %1, %2, %3, %4`（L122）。dequant 用的 LUT 是 `(0xf0 & 0xcc) | 0xaa`（L136-137），算得 `0xea`——正是 `(a & b) | c` 的真值表（逐位核对：输入 $(a,b,c)$ 的 8 个组合，`0xea` 的第 `(a<<2)|(b<<1)|c` 位等于 `(a&b)|c`）。所以 `lop3<0xea>(q, LO, EX)` 等于 `(q & LO) | EX`，一条指令完成「掩码取 nibble + OR 上 magic number」。
+lop3 走读（L116-126）：注释逐字（L116-117）「Lookup-table based 3-input logical operation; explicitly used for dequantization as the compiler does not seem to automatically recognize it in all cases」——显式写 lop3 是因为编译器不总能自动识别。`template<int lut>`（L118）把 8-bit 真值表作模板参数，`lop3.b32 %0, %1, %2, %3, %4`（L122）。dequant 用的 LUT 是 `(0xf0 & 0xcc) | 0xaa`（L136-137），算得 `0xea`——正是 `(a & b) | c` 的真值表（逐位核对：输入 $(a,b,c)$ 的 8 个组合，`0xea` 的第 `(a<<2)|(b<<1)|c` 位等于 `(a&b)|c`）。所以 `lop3<0xea>(q, LO, EX)` 等于 `(q & LO) | EX`，一条指令完成「掩码取 nibble + OR 上 magic number」。
 
 **magic-number 的核心**（命题 3）。FP16 在 $[1024, 2048)$ 区间 ULP = 1（ $1024 = 2^{10}$，尾数 10 位， $2^{10-10} = 1$），故整数 $0..15$ 落进 1024 的尾数低位是**精确**的——把 nibble OR 进 `0x6400`（= FP16 1024.0）的尾数，直接得到 FP16 的 $1024 + n$，无需 I2F 转换指令。再用 FP16 减法去掉偏置。dequant 走读（L131-152）：
 
@@ -182,7 +182,7 @@ masked layout（decode + CUDA Graph，CPU 不知 $M_j$）：预分配静态容�
 
 1.（计算 · [10]）magic-number 核对（命题 3）：(a) 用 FP16 位模式解码 `0x6400`/`0x6408`/`0x2c00`/`0xd480`；(b) 取 $n = 5$ 算 LO 路径 $(1024+n)-1032$ 与 HI 路径 $(1024+16n)/16-72$；(c) 核对 lop3 LUT `(0xf0&0xcc)|0xaa` 的值与真值表。校验：(a) 1024 / 1032 / 0.0625 / −72（§4）；(b) 两路径均 −3；(c) `0xea = (a&b)|c`（8 组合逐位）。
 2.（推导 · [20]）补全命题 1 与命题 2：(a) 证命题 1（物化三遍对融合一遍流量），代入 $g=128$ 算比值与对 bf16 倍数；(b) 证命题 2（mixed-input tile 强度两口径），代入 $T_M=16/T_N=128$ 算 A-L2 与 A-HBM 强度及对 bf16 比；(c) 说明为什么小 $T_M$ 下 A 常驻 L2 是带宽账成立的条件。校验：(a) 4.515625/0.515625 = 8.76、2.26×（§2）；(b) 62.06/41.8、3.88/2.94（§3）；(c) A 字节占 tile 流量 33%（§3）。
-3.（计算 · [30]）dequant 指令账与 MAC 预算：(a) 逐指令计数每 8 权重的 CUDA-core 与 mma 条数（§4 走读），摊每权重；(b) 算 $B=16$ 时每权重 MAC 数，对照 README 25–50 预算判断 dequant 能否藏住；(c) 代入 inference 3.3 命题 1 算 $B_{\max}$，再算 $B=128$ 时 INT4 侧 compute-bound 翻转后的加速（bf16 带宽时间 10.0 μs 对 INT4 计算时间）。校验：(a) 13 + 2、1.625 + 0.25（§5）；(b) 16 MAC 落预算内（§5）；(c) $B_{\max}\approx76$、 $B=128$ 加速 ≈2.31（inference 3.3 §2 实例）。
+3.（计算 · [30]）dequant 指令账与 MAC 预算：(a) 逐指令计数每 8 权重的 CUDA-core 与 mma 条数（§4 走读），摊每权重；(b) 算 $B=16$ 时每权重 MAC 数，对照 README 25–50 预算判断 dequant 能否藏住；(c) 代入 inference 3.3 命题 1 算 $B_{\mathrm{crit}}$，再算 $B=128$ 时 INT4 侧 compute-bound 翻转后的加速（bf16 带宽时间 10.0 μs 对 INT4 计算时间）。校验：(a) 13 + 2、1.625 + 0.25（§5）；(b) 16 MAC 落预算内（§5）；(c) $B_{\mathrm{crit}}\approx76$、 $B=128$ 加速 ≈2.31（inference 3.3 §2 实例）。
 4.（代码 · [30]）教学用 Python dequant 参照实现（非优化实现）：(a) 先预测 magic-number 路径与整数直解路径（nibble − 8 再乘 scale）是否逐位精确相等，再写代码验证；(b) 实现 §4 的 `dequant_i4`（lop3 掩码 + OR magic number + FP16 减/乘加），对全部 16 nibble × 若干 int32 打包与整数路径对照；(c) 加 $g=128$ per-group scale，说明为什么无需 I2F 指令。校验：fp16 小整数运算两路径精确相等（容差 0，命题 3 保证 $1024+n$ 与 $1024+16n$ 落 FP16 精确整数区）；与 §4 命题 3 的 $n-8$ 一致。
 
 ## 参考

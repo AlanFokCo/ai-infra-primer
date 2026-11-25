@@ -63,7 +63,7 @@ function formatBitLayout() {
   });
 
   body.push(cap(36, 322, 'BF16 拿 3 个尾数位换指数位：范围 ≈40 → ≈261 binade（与 FP32 同量级），ULP 2^-10 → 2^-7 —— bf16 训练免 loss scaling 的格式根据', { size: 10 }));
-  body.push(cap(36, 342, 'E4M3 canonical-NaN 最大 448（误用 IEEE 闭式得 480，把 NaN 码位当有限数）；E2M1 NONE 无特殊值、16 码全有限', { size: 10, color: 'var(--seal-deep)' }));
+  body.push(cap(36, 342, 'E4M3 canonical-NaN 最大 448（误用 NONE 闭式得 480，把 NaN 码位当有限数；IEEE 式给 240）；E2M1 NONE 无特殊值、16 码全有限', { size: 10, color: 'var(--seal-deep)' }));
   body.push(cap(36, 362, 'E2M1 正数集 {0,0.5,1,1.5,2,3,4,6}，最大相对舍入误差 25%（E4M3 6.25% 的 4 倍）—— FP4 靠细粒度 scale 压误差（§4）', { size: 10 }));
 
   return scene(720, 378, body, { label: '低精度格式位布局：FP16 BF16 TF32 E4M3 E5M2 E2M1 的符号指数尾数按位宽比例条，配 bias 最大有限数与 ULP，BF16 与 FP16 分配相反' }).svg();

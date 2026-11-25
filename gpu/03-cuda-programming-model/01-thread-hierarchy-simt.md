@@ -182,13 +182,13 @@ cooperative launch 的共驻留要求是 PG 逐字「it is necessary to use, ins
 
 **命题 3**（共驻留必要性）。若 grid 的 block 数超过可同时驻留数，`grid.sync()` 死锁。**证明**（反证）：设某 block 未驻留。由 §5 调度语义，它只能在某个驻留 block 终止后补位 launch；而所有驻留 block 都停在 `grid.sync()` 等**全部** block 到达，谁也不能终止。未驻留者等驻留者终止，驻留者等未驻留者到达——循环等待，死锁。∎ 正例：本章口径 1056 blocks 恰等于驻留容量，可 cooperative launch；反例：65536 blocks 超容量 62 倍，launch 即失败（API 在 launch 时检查，不会跑起来再死锁）。
 
-两个边界须钉住。其一，`coalesced_threads()` 是机会主义组：PG 逐字「returns the set of active threads at that point in time, and makes no guarantee...」（[NVIDIA, CUDA Programming Guide](../references.md)，[C]）——它返回当下活跃线程集合、不保证成员稳定，只能作优化提示，不能作正确性依赖的同步单位。其二，Hopper 的 thread block cluster 是另一条跨 block 协作路：cluster 内 block 可互访 shared（DSMEM），不要求全 grid 共驻留，机制与 kernel 用法归 4.4，本章不展开。
+两个边界须钉住。其一，`coalesced_threads()` 是机会主义组：PG 逐字「returns the set of active threads at that point in time, and makes no guarantee...」（[NVIDIA, CUDA Programming Guide](../references.md)，[C]）——它返回当下活跃线程集合、不保证成员稳定，只能作优化提示，不能作正确性依赖的同步单位。其二，Hopper 的 thread block cluster 是另一条跨 block 协作路：cluster 内 block 可互访 shared（DSMEM），不要求全 grid 共驻留，kernel 用法（TMA multicast 流量账）归 5.2，本章不展开。
 
 warp 原语预告：warp 内寄存器级交换（`__shfl_down_sync` 等 shuffle 族）与投票（`__ballot_sync` 等 vote 族）让 32 线程不经过 shared 直接交换数据——32 线程的 warp 内归约用 shuffle 走 $\log_2 32 = 5$ 步蝶形，免 shared 读写与 bank conflict 风险；树形归约/扫描的完整实现与带宽最优性证明归 5.1，`_sync` 后缀的 mask 与内存排序语义归 3.2 §4。
 
 ## 7. 边界：本章不做什么
 
-代价账算完，剩下的问题归谁？本章交付层级语义、索引、SIMT/divergence 语义与代价账、调度机制、cooperative groups 语义；以下各有专章，此处只留指针。occupancy 的编程模型侧精确计算（分配粒度、occupancy API、launch bounds）归 3.4，本章 §5 的驻留容量是 1.2 式 (3) 的理想口径实例化；内存语义（地址空间、fence、atomic、同步原语）归 3.2；stream/event/graph 与 launch 开销归 3.3；访存合并归 4.1（divergence 折计算槽、coalescing 折带宽，两笔账独立）；bank conflict 归 4.2；shuffle/vote 的归约/扫描实现归 5.1；cluster/DSMEM 与异步拷贝归 4.4。代码 scope：机制片段级（§2 elementwise、§6 cooperative groups），不做模块走读。
+代价账算完，剩下的问题归谁？本章交付层级语义、索引、SIMT/divergence 语义与代价账、调度机制、cooperative groups 语义；以下各有专章，此处只留指针。occupancy 的编程模型侧精确计算（分配粒度、occupancy API、launch bounds）归 3.4，本章 §5 的驻留容量是 1.2 式 (3) 的理想口径实例化；内存语义（地址空间、fence、atomic、同步原语）归 3.2；stream/event/graph 与 launch 开销归 3.3；访存合并归 4.1（divergence 折计算槽、coalescing 折带宽，两笔账独立）；bank conflict 归 4.2；shuffle/vote 的归约/扫描实现归 5.1；异步拷贝归 4.4，cluster/DSMEM 的 kernel 用法（TMA multicast）归 5.2。代码 scope：机制片段级（§2 elementwise、§6 cooperative groups），不做模块走读。
 
 本章交付清单（下游 recap 接口）：四级层级表与 warp/block 定义（§1）、索引式 (1)(2) + 命题 1（§2）、SIMT vs SIMD 与 Volta 独立 PC（§3）、divergence 代价账式 (3) + 命题 2 + D1-D5 案例（§4）、block 调度语义与波次量化（§5）、命题 3 共驻留（§6）。3.2 recap §1 block/warp 语义作同步 scope 的物理载体；3.4 recap §5 驻留容量作 occupancy 计算起点；5.1 recap §4 代价账作 warp 级归约的动机。
 
