@@ -51,16 +51,18 @@ PTX 侧（[NVIDIA, PTX ISA](../references.md) §9.7.10.28.5，[C]）：`cp.async
 
 完成判定走 mbarrier（异步事务屏障）。whitepaper Async Transaction Barrier 节逐字：「instead of counting just thread arrivals, it also counts transactions ... The transaction count is essentially a byte count. The asynchronous transaction barrier will block threads at the Wait command until all the producer threads have performed an Arrive, and the sum of all the transaction counts reaches an expected value.」——**tx-count 本质是字节计数**：发射侧 expect_tx 记入应收字节，TMA 每完成一笔硬件自动 complete_tx 扣减，归零且到达数齐才放行。PTX 侧 mbarrier 是 shared 内 8 B 对齐的 `.b64` 对象，追踪 phase、pending arrivals 与 tx-count 三件套（§9.7.15.16），数量只受 shared 容量限（不像 bar.sync 固定 barrier 数）。Hopper 还把等待从 spin 改成 sleep（逐字：「New for Hopper is the ability for 'Waiting' threads to sleep until all other threads arrive. On previous chips, Waiting threads would spin on the barrier object in shared memory.」）——等待线程不再烧发射槽。
 
-全数字账（本章口径）：每 stage 的 expect_tx = A tile $128 \times 32 \times 2 = 8192$ B + B tile $32 \times 128 \times 2 = 8192$ B = 16384 B，与 $m_{\mathrm{tile}}$ 一致——**tx-count 记的就是流量账的字节**，4.3 的强度账与这里的完成判定同一本账。descriptor 开销：A/B 两个 tensor-map 共 $2 \times 128 = 256$ B，host 创建一次、全 kernel 复用，对 2.147 GB 的 tile 流量占比 $1.2 \times 10^{-7}$——descriptor 本身可略，真正的节省在发射侧（§6）。硬件 swizzle：tensor-map 带 32/64/128 B swizzle 模式（4.2 §4 recap），TMA 写 shared 时直接按 swizzle 布局落位，软件免手工置换。multicast 一句：`.multicast::cluster` 让一次 global 读同时落多个 CTA 的 shared（cluster 内 DSMEM），HBM 流量按 cluster 大小摊薄——机制细节归 3.1/5.2。教学骨架（语义级，非可编译实现）：
+全数字账（本章口径）：每 stage 的 expect_tx = A tile $128 \times 32 \times 2 = 8192$ B + B tile $32 \times 128 \times 2 = 8192$ B = 16384 B，与 $m_{\mathrm{tile}}$ 一致——**tx-count 记的就是流量账的字节**，4.3 的强度账与这里的完成判定同一本账。descriptor 开销：A/B 两个 tensor-map 共 $2 \times 128 = 256$ B，host 创建一次、全 kernel 复用，对 2.147 GB 的 tile 流量占比 $1.2 \times 10^{-7}$——descriptor 本身可略，真正的节省在发射侧（§6）。**发射条数按张量数计**：一条 `cp.async.bulk.tensor` 只搬一个张量的一块（tensorMap 操作数描述单个张量、块坐标给该张量的 tile，PTX §9.7.10.28.5），A/B 是两个独立张量，故每 tile 需 **2 条**（A/B 各一），expect_tx 记两条的总字节（16384 = 2 × 8192）——若只发一条却记 expect_tx 16384，单条 2D op 只完成 8192 B，tx-count 余 8192 B 不归零、barrier 永不放行。硬件 swizzle：tensor-map 带 32/64/96/128 B swizzle 模式（4.2 §4 recap），TMA 写 shared 时直接按 swizzle 布局落位，软件免手工置换。multicast 一句：`.multicast::cluster` 让一次 global 读同时落多个 CTA 的 shared（cluster 内 DSMEM），HBM 流量按 cluster 大小摊薄——机制细节归 3.1/5.2。教学骨架（语义级，非可编译实现）：
 
 ```cpp
 // 机制片段（语义骨架）：TMA + mbarrier（sm_90+）
-// host: cuTensorMapEncodeTiled(...) → 128 B tensor-map
-// kernel 参数: __grid_constant__ const CUtensorMap tensorMap
+// host: cuTensorMapEncodeTiled(...) → A/B 各一个 128 B tensor-map（两个独立张量）
+// kernel 参数: __grid_constant__ const CUtensorMap tensorMapA, tensorMapB
 if (threadIdx.x == 0) {                    // elected 单线程发射（wp 逐字）
-    // mbarrier.expect_tx(mbar, 16384);    // 记入本 stage 应收字节
+    // mbarrier.expect_tx(mbar, 16384);    // 记入本 stage 应收字节 = A 8192 + B 8192
     // cp.async.bulk.tensor.2d.shared::cta.global.mbarrier::complete_tx::bytes
-    //     [smem], [tensorMap, {coord_x, coord_y}], [mbar];
+    //     [smemA], [tensorMapA, {coordA_x, coordA_y}], [mbar];   // A tile 一条（8192 B）
+    // cp.async.bulk.tensor.2d.shared::cta.global.mbarrier::complete_tx::bytes
+    //     [smemB], [tensorMapB, {coordB_x, coordB_y}], [mbar];   // B tile 一条（8192 B）
 }
 // 消费线程: mbarrier.try_wait(phase) —— 到达数与 tx-count 均达期望才放行
 ```
@@ -120,7 +122,7 @@ stage 的容量代价（4.3 式 (5) recap）： $S_{\mathrm{sh}} = S \cdot m_{\m
 
 ## 5. CUTLASS mainloop pipeline 片段（机制片段级）
 
-工业实现怎么组织这套同步？CUTLASS 把 producer/consumer 流水封装成 pipeline 类（[NVIDIA, CUTLASS](../references.md) `include/cutlass/pipeline/sm90_pipeline.hpp`，教学参照 + 官方实现，版本锚 4.9.0）：`PipelineState`（index/phase 两个字段，stage 索引循环、phase 翻转）、`PipelineTmaAsync<Stages, ClusterTransactionBarrier>`（TMA producer 专用），内部持 `full_barrier_[Stages]` 与 `empty_barrier_[Stages]` 两组 mbarrier——正是 §4 的两类 barrier。方法名与语义逐一对应：`producer_acquire`（等 empty barrier，阻塞到 consumer 释放该 stage）、`producer_expect_transaction`（mbarrier expect_tx 记账）、`producer_commit`、`consumer_wait`（等 full barrier）、`consumer_release`（empty barrier arrive）。结构骨架（机制片段级，非完整 mainloop）：
+工业实现怎么组织这套同步？CUTLASS 把 producer/consumer 流水封装成 pipeline 类（[NVIDIA, CUTLASS](../references.md) `include/cutlass/pipeline/sm90_pipeline.hpp`，教学参照 + 官方实现，版本锚 4.9.0）：`PipelineState`（index/phase/count 三个字段，count 辅助计数；stage 索引循环、phase 翻转）、`PipelineTmaAsync<Stages, ClusterTransactionBarrier>`（TMA producer 专用），内部持 `full_barrier_[Stages]` 与 `empty_barrier_[Stages]` 两组 mbarrier——正是 §4 的两类 barrier。方法名与语义逐一对应：`producer_acquire`（等 empty barrier，阻塞到 consumer 释放该 stage）、`producer_expect_transaction`（mbarrier expect_tx 记账）、`producer_commit`、`consumer_wait`（等 full barrier）、`consumer_release`（empty barrier arrive）。结构骨架（机制片段级，非完整 mainloop）：
 
 ```cpp
 // 机制片段：PipelineTmaAsync producer/consumer 同步骨架（对应 sm90_pipeline.hpp）
@@ -128,9 +130,10 @@ PipelineTmaAsync<Stages> pipe(...);        // full/empty barrier 各 Stages 份
 // producer warp（elected 单线程发 TMA）：
 for (int k = 0; k < K_tiles; ++k) {
     pipe.producer_acquire(state);          // 等 empty：缓冲已被 consumer 释放
-    pipe.producer_expect_transaction(state, m_tile);   // expect_tx 记字节
-    tma_load(smem[state.index], tensorMap, coords_k);  // 硬件搬运，完成自动 complete_tx
-    pipe.producer_commit(state);           // TMA 场景可 No-Op（硬件已更新 barrier）
+    pipe.producer_expect_transaction(state, m_tile);   // expect_tx 记字节（A+B 共 16384）
+    tma_load(smem[state.index], tensorMapA, coordsA_k);  // A tile 一条
+    tma_load(smem[state.index], tensorMapB, coordsB_k);  // B tile 一条（§3：共 2 条），完成自动 complete_tx
+    pipe.producer_commit(state, m_tile);   // TMA 场景可 No-Op（硬件已更新 barrier）；实际签名带 bytes
     ++state;                               // index 循环、phase 翻转
 }
 // consumer warp-group（wgmma 计算）：
@@ -142,23 +145,23 @@ for (int k = 0; k < K_tiles; ++k) {
 }
 ```
 
-`producer_commit` 在 TMA 场景可能是 No-Op，官方文档逐字（pipeline.md）：「This API may result in a No-Op in some cases, if the producer instructions also update the barrier stage associated automatically (e.g., TMA_based producer threads using the PipelineTmaAsync class).」——TMA 硬件完成时自动 complete_tx，软件无需再补一刀；cp.async 路径则须软件 commit（§2）。**scope 声明**：本片段只展示 pipeline 同步骨架，mainloop 全量（CuTe layout/tile、collective mainloop、mma atom、epilogue、利用率账）归 5.2 模块走读，5.2 recap 本片段作同步侧机制。
+`producer_commit` 在 TMA 场景可能是 No-Op，官方文档逐字（pipeline.md）：「This API may result in a No-Op in some cases, if the producer instructions also update the barrier stage associated automatically (e.g., TMA_based producer threads using the PipelineTmaAsync class).」——TMA 硬件完成时自动 complete_tx，软件无需再补一刀；cp.async 路径则须软件 commit（§2）。**签名注**：`PipelineTmaAsync` 的 `producer_commit` 实际带第二参（`bytes` 或 user-defined arrive-op 两个重载，sm90_pipeline.hpp）；单参 `producer_commit(state)` 属 `PipelineTmaStore`，勿混读——骨架取 bytes 形 `(state, m_tile)`。**scope 声明**：本片段只展示 pipeline 同步骨架，mainloop 全量（CuTe layout/tile、collective mainloop、mma atom、epilogue、利用率账）归 5.2 模块走读，5.2 recap 本片段作同步侧机制。
 
 > **坑**：按旧版类名读当前 CUTLASS。触发条件：拿 FA3 时代（CUTLASS 3.x）文章里的 `PipelineTmaUmmaAsync` 去当前 main 找；现象：该类不在当前 sm90_pipeline.hpp（4.9.0 核实），warp-specialized UMMA 流水的类组织已变；规避：引 pipeline 类名以当前版本清单为准（PipelineTmaAsync / PipelineTmaStore / PipelineTransactionAsync / PipelineAsync），跨版本阅读先对 CHANGELOG。
 
 ## 6. cp.async 对 TMA：适用场景与开销账
 
-两者怎么选？先把开销差算清。发射侧（本章 16 KB tile）：cp.async 需 1024 条指令、256 线程各 4 条、每条附地址算术；TMA 需 1 条指令（elected 线程）、地址由 descriptor 硬件生成——**发射槽与地址 register 两笔都省**，tile 越大差距越大（指令数随字节线性涨，TMA 恒 1）。边界处理：cp.async 越界须软件 predicate 或 src-size 零填充（PTX 语义），TMA 的边界计算硬件接管（wp 逐字「computing stride, offset, and boundary calculations」）。descriptor 成本：128 B/tensor、host 一次性创建（§3 账：占流量 $1.2 \times 10^{-7}$），对不规则小张量反而不划算。对照表：
+两者怎么选？先把开销差算清。发射侧（本章 16 KB tile）：cp.async 需 1024 条指令、256 线程各 4 条、每条附地址算术；TMA 需 2 条指令（A/B 是两个独立张量、各一条 cp.async.bulk.tensor，elected 线程发射）、地址由 descriptor 硬件生成——**发射槽与地址 register 两笔都省**，tile 越大差距越大（cp.async 指令数随字节线性涨，TMA 恒 2、与 tile 字节无关；本章 1024/2 = 512 倍）。边界处理：cp.async 越界须软件 predicate 或 src-size 零填充（PTX 语义），TMA 的边界计算硬件接管（wp 逐字「computing stride, offset, and boundary calculations」）。descriptor 成本：128 B/tensor、host 一次性创建（§3 账：占流量 $1.2 \times 10^{-7}$），对不规则小张量反而不划算。对照表：
 
 | 维度 | cp.async（sm_80+） | TMA（sm_90+） |
 | --- | --- | --- |
 | 粒度 | 每线程 4/8/16 B | bulk tile（至 shared 容量） |
 | 地址生成 | 软件逐线程 | descriptor 硬件 |
-| 发射 | 全体线程各发 | elected 单线程 1 条 |
+| 发射 | 全体线程各发 | elected 单线程 2 条（A/B 各一） |
 | 完成机制 | async-group（commit/wait） | mbarrier tx-count（字节记账） |
 | 维数 | 1D 地址 | 1D–5D 张量 |
 | 边界处理 | 软件 predicate/零填充 | 硬件 |
-| swizzle | 软件布局 | 硬件模式（32/64/128 B） |
+| swizzle | 软件布局 | 硬件模式（32/64/96/128 B） |
 | multicast | 无 | cluster 内一次读多 CTA |
 
 适用判断（教学口径，非官方规则）：tile 字节 KB 级以上、布局规则、边界多的场景（GEMM/FA/卷积 im2col）用 TMA——发射与边界开销摊得薄；细粒度、小 tile、散乱或非张量布局的场景（gather/scatter、reduction 的稀疏装载）用 cp.async——descriptor 建不起来或建了不值；要兼容 sm_80 的代码只有 cp.async 一条路。Hopper Tuning Guide 把 TMA 列为 CC 9.0 的调优要点（1D-5D global↔shared + cluster DSMEM，[NVIDIA, Hopper tuning guide](../references.md)，[C]），与本章判断同向。
@@ -175,7 +178,7 @@ for (int k = 0; k < K_tiles; ++k) {
 | --- | --- | --- |
 | cp.async（sm_80+）global→shared 免中间 register，降 register 压力；16 B 粒度可 bypass L1；非阻塞发射 | §2 BP/PTX 逐字 | §2、练习 1 |
 | 完成只认 async-group 与 mbarrier：commit_group 打包、wait_group N 留最新 N 组；`__syncthreads()` 不保证完成；组间无序 | §2 PTX 逐字 + 坑注 | §2、练习 4 |
-| 16 KB tile：cp.async 1024 条（4 条/线程）对 TMA 1 条；地址生成软件对硬件 | §2/§6 账 | §6、练习 1 |
+| 16 KB tile：cp.async 1024 条（4 条/线程）对 TMA 2 条（A/B 各一）；地址生成软件对硬件 | §2/§6 账 | §6、练习 1 |
 | TMA（sm_90+）copy descriptor 按张量维数 + 块坐标搬运，1D–5D；elected 单线程发射；tensor-map 128 B opaque，host cuTensorMapEncodeTiled 创建 | §3 wp/PTX/PG 逐字 | §3、练习 1 |
 | mbarrier tx-count 本质字节计数：expect_tx 记账、硬件 complete_tx 扣减；每 stage 16384 B（A/B 各 8192）；Hopper wait sleep 对 Ampere spin | §3 wp 逐字 | §3、练习 1 |
 | multi-stage $\tau_S = \max(t_{\mathrm{comp}}, t_{\mathrm{load}}, (t_{\mathrm{lat}}+t_{\mathrm{load}})/(S-1))$；不等待条件 $(S-1)\tau_S \ge t_{\mathrm{lat}}+t_{\mathrm{load}}$ | 式 (1)，命题 1 | §4、练习 2/3 |
@@ -188,7 +191,7 @@ for (int k = 0; k < K_tiles; ++k) {
 
 ## 练习
 
-1.（计算 · [10]）发射与记账代入（本章口径）：(a) 16 KB tile 按 16 B 粒度的 cp.async 条数与 256 线程的人均条数；(b) TMA 发射条数；(c) 每 stage mbarrier expect_tx 的字节值（A/B tile 分列）；(d) 两个 tensor-map 的 descriptor 总字节。校验：(a) 1024/4（§2）；(b) 1（§3）；(c) 8192 + 8192 = 16384 B（§3）；(d) 256 B（§3）。
+1.（计算 · [10]）发射与记账代入（本章口径）：(a) 16 KB tile 按 16 B 粒度的 cp.async 条数与 256 线程的人均条数；(b) TMA 发射条数；(c) 每 stage mbarrier expect_tx 的字节值（A/B tile 分列）；(d) 两个 tensor-map 的 descriptor 总字节。校验：(a) 1024/4（§2）；(b) 2（A/B 两个张量各一条，§3）；(c) 8192 + 8192 = 16384 B（§3）；(d) 256 B（§3）。
 2.（计算 · [20]）stage 数账（4.3 时间账： $t_{\mathrm{comp}} = 139.9$、 $t_{\mathrm{load}} = 645.2$、 $t_{\mathrm{lat}} = 261.6$ ns）：(a) $S = 2, 3, 4$ 的 $\tau_S$（式 (1) 三项逐一代入）；(b) $S_{\min}$ 与 shared 字节、shared 项 blocks（ $S_{\mathrm{alloc}}$ 含 1 KB 预留）；(c) 对同步版 1046.7 ns 的加速比；(d) 延迟主导推论下 $T_K = 64$（ $t_{\mathrm{comp}} = 279.8$ ns）的最小 $S$。先预测 (a) 中 $S = 4$ 对 $S = 3$ 的方向再算。校验：(a) 906.8/645.2/645.2 ns（§4 表）；(b) 3、48 KB、4 blocks；(c) 1.622；(d) $S \ge 2$（ $279.8 \ge 261.6$，与 4.3 §6 一致）。
 3.（推导 · [30]）补全命题 1 的证明：(a) 证发射时序：consumer 开始 tile $k$ 时缓冲 $(k-1) \bmod S$ 释放、producer 发射 tile $k+S-1$，该装载被消费前经历 $(S-1)\tau_S$；(b) 证式 (1) 三项各为下界（计算串行、带宽服务率、 $S-1$ 份在飞摊完成时间），并说明贪心调度可达；(c) 验证 $S = 2$ 退化为 4.3 命题 4 的 $\max(t_{\mathrm{comp}}, t_{\mathrm{lat}}+t_{\mathrm{load}})$；(d) 求 $S \to \infty$ 极限并解释为什么流水不能突破带宽地板。校验：(c) 与 4.3 式 (7) 逐项一致；(d) $\max(t_{\mathrm{comp}}, t_{\mathrm{load}}) = 645.2$ ns（§4）。
 4.（代码 · [30]）cuda-samples `cpp/3_CUDA_Features/globalToShmemAsyncCopy` 走读：(a) 找出拷贝完成同步用的原语（arrive-wait barrier），说明它对应本章哪套完成机制；(b) 解释为什么不能用 `__syncthreads()` 替代该原语（引 PTX 逐字）；(c) 若把该 sample 的 cp.async 装载换成 TMA，列出须替换的三个部件（descriptor 创建、发射方式、完成记账）；(d) 先预测该 sample 对同步版的方向（快/慢/不变）再对照 README 描述验证。校验：(a) mbarrier 路径（§3，README「arrive-wait barrier」逐字，公开文档锚）；(b)「No other synchronization mechanism guarantees the completion of the asynchronous copy operations」（§2 PTX 逐字）；(c) cuTensorMapEncodeTiled / elected 单线程 / expect_tx（§3）；(d) README 逐字「uses asynchronous copy ... when on compute capability 8.0 or higher」（方向与 §4 加速账一致）。
@@ -199,7 +202,7 @@ for (int k = 0; k < K_tiles; ++k) {
 - [NVIDIA, Hopper whitepaper](../references.md)：NVIDIA H100 Tensor Core GPU Architecture Whitepaper V1.04（key: hopper-whitepaper），[C] 官方规格披露·一手权威，2026-11-25——TMA 节（p.32-34）：「TMA operations are launched using a copy descriptor which specifies data transfers using tensor dimensions and block coordinates instead of per-element addressing」逐字 + 1D-5D tensors + single-threaded programming model（elected single thread issue cuda::memcpy_async、多线程 cuda::barrier wait）逐字 + A100 LoadGlobalStoreShared 线程负责全部地址生成 vs Hopper TMA 硬件接管 stride/offset/boundary 逐字；Async Transaction Barrier 节：「instead of counting just thread arrivals, it also counts transactions ... The transaction count is essentially a byte count.」逐字 + sum transaction counts reaches expected value + Hopper waiting threads sleep vs 前代 spin 逐字
 - [NVIDIA, CUDA Programming Guide](../references.md)：CUDA C++ Programming Guide（key: cuda-programming-guide），[C] 官方规格披露·一手权威，2026-11-25——async-copies 子页（LDGSTS CC 8.0+ / TMA CC 9.0+：tensor map 用 cuTensorMapEncodeTiled driver API host 创建、__grid_constant__ const 参数传入、global→shared mbarrier 完成 / shared→global bulk async-group 完成机制矩阵）；pipelines 子页（memcpy_async + barrier 组合）
 - [NVIDIA, Best Practices](../references.md)：CUDA C++ Best Practices Guide（key: cuda-best-practices），[C] 官方规格披露·一手权威，2026-11-25——§10.2.3.4 Asynchronous Copy from Global Memory to Shared Memory（同步版 intermediate register 逐字 + 「Using asynchronous copies does not use any intermediate register. Not using intermediate registers can help reduce register pressure and can increase kernel occupancy.」逐字 + 「If individual CUDA threads are copying elements of 16 bytes, the L1 cache can be bypassed.」逐字 + __pipeline_memcpy_async/__pipeline_commit/__pipeline_wait_prior 官方微基准例）
-- [NVIDIA, CUTLASS](../references.md)：NVIDIA/cutlass repo（key: cutlass），教学参照 + 官方实现，2026-11-25——include/cutlass/pipeline/sm90_pipeline.hpp（版本锚 4.9.0；PipelineState index/phase + `PipelineTmaAsync<Stages, ClusterTransactionBarrier>` + full_barrier_/empty_barrier_[Stages] + producer_acquire/producer_commit/producer_expect_transaction/consumer_wait/consumer_release 路径级核实；PipelineTmaStore/PipelineTransactionAsync/PipelineAsync 同文件；漂移：PipelineTmaUmmaAsync 旧 3.x 类不在当前 main）；mainloop 全量走读归 5.2
+- [NVIDIA, CUTLASS](../references.md)：NVIDIA/cutlass repo（key: cutlass），教学参照 + 官方实现，2026-11-25——include/cutlass/pipeline/sm90_pipeline.hpp（版本锚 4.9.0；PipelineState index/phase/count 三字段 + `PipelineTmaAsync<Stages, ClusterTransactionBarrier>` + full_barrier_/empty_barrier_[Stages] + producer_acquire/producer_expect_transaction/consumer_wait/consumer_release 路径级核实；producer_commit 两重载 (state, bytes)/(state, UserDefinedArriveOp&&)，单参 (state) 属 PipelineTmaStore；PipelineTmaStore/PipelineTransactionAsync/PipelineAsync 同文件；漂移：PipelineTmaUmmaAsync 旧 3.x 类不在当前 main）；mainloop 全量走读归 5.2
 - [NVIDIA, CUTLASS docs](../references.md)：CUTLASS media/docs/cpp 文档（key: cutlass-docs），教学参照 + 官方实现，2026-11-25——pipeline.md（「In order to write a performant GEMM Kernel, software pipelining is critical to hide the latency of global memory loads.」逐字 + producer/consumer 角色定义逐字 + producer_acquire 阻塞语义 + producer_commit TMA 场景 No-Op 逐字）
 - [NVIDIA, cuda-samples](../references.md)：NVIDIA/cuda-samples repo（key: cuda-samples），教学参照 + 官方实现，2026-11-25——cpp/3_CUDA_Features/globalToShmemAsyncCopy（README 逐字「implements matrix multiplication which uses asynchronous copy of data from global to shared memory when on compute capability 8.0 or higher. Also demonstrates arrive-wait barrier for synchronization.」；§2/练习 4 教学例）
 - [NVIDIA, Hopper tuning guide](../references.md)：NVIDIA Hopper Tuning Guide（key: hopper-tuning-guide），[C] 官方规格披露·一手权威，2026-11-25——CC 9.0 TMA 1D-5D global↔shared + cluster DSMEM 调优要点（§6 适用判断官方同向）

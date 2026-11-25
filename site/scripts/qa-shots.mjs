@@ -53,6 +53,9 @@ const PAGES = [
   ['gpu', '/gpu/'],
   ['gpu-ch-sm-internals', '/gpu/01-gpu-microarchitecture/02-sm-internals/'], // 公式密（1.2【重】，occupancy 四约束取 min + 五案例表）
   ['gpu-ch-roofline', '/gpu/02-memory-hierarchy/04-bandwidth-accounting-roofline/'], // 推导重章（2.4【重】，层级全表 + roofline ASCII + 三区判定）
+  // gpu 维度 W2 样章（P3/P4 落地代表章：occupancy 推导重章 + tiling 推导重章，spec §8）
+  ['gpu-ch-occupancy', '/gpu/03-cuda-programming-model/04-occupancy-resource-constraints/'], // 推导重章（3.4，粒度修正四约束取 min + register 悬崖 + 隐藏反解 + NCU 三态）
+  ['gpu-ch-tiling', '/gpu/04-kernel-memory-optimization/03-tiling-data-reuse/'], // 推导重章（4.3【重】，tiling 强度 O(1)→O(T) + 三级层级账 + double buffering + 教学 GEMM）
 ];
 
 const VIEWPORTS = [

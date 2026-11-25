@@ -400,7 +400,7 @@ function tmaMbarrier() {
   const body = [];
   const nodes = [];
 
-  body.push(cap(36, 24, 'TMA：descriptor 驱动的硬件搬运 —— elected 单线程发 1 条指令，mbarrier tx-count 按字节记账（cp.async 要 1024 条）', { size: 12, color: 'var(--ink-soft)' }));
+  body.push(cap(36, 24, 'TMA：descriptor 驱动的硬件搬运 —— elected 单线程发 2 条指令（A/B 各一），mbarrier tx-count 按字节记账（cp.async 要 1024 条）', { size: 12, color: 'var(--ink-soft)' }));
 
   body.push(zone({ x: 36, y: 48, w: 300, h: 150, label: 'cp.async（sm_80+）：软件逐线程' }));
   body.push(cap(52, 84, '256 线程 × 4 条 = 1024 条 cp.async', { mono: true, size: 9.5, weight: '650', color: 'var(--ink)' }));
@@ -412,12 +412,12 @@ function tmaMbarrier() {
 
   body.push(zone({ x: 368, y: 48, w: 316, h: 150, label: 'TMA（sm_90+）：descriptor 硬件' }));
   const tm = node({ id: 'tm', x: 384, y: 74, w: 130, h: 44, role: 'cache', title: 'tensor-map 128 B', sub: 'host 侧一次性创建', titleSize: 10.5, subSize: 8 });
-  const el = node({ id: 'el', x: 534, y: 74, w: 134, h: 44, role: 'attn', title: 'elected 单线程', sub: '1 条 bulk.tensor · 块坐标', titleSize: 10.5, subSize: 7.5 });
+  const el = node({ id: 'el', x: 534, y: 74, w: 134, h: 44, role: 'attn', title: 'elected 单线程', sub: '2 条 bulk.tensor · A/B 各一', titleSize: 10.5, subSize: 7.5 });
   nodes.push(tm, el); body.push(tm.svg, el.svg);
   body.push(edge(tm, el, { nodes, pulse: true, dur: 1.3, delay: 0, uid: UID, eid: 't' }));
   body.push(arrowHead(el.left[0], el.left[1], 1, 0));
   body.push(cap(384, 140, '1D–5D 张量 · stride/offset/边界全硬件接管', { size: 9 }));
-  body.push(cap(384, 158, '硬件 swizzle 32/64/128 B · cluster 内 multicast', { size: 9 }));
+  body.push(cap(384, 158, '硬件 swizzle 32/64/96/128 B · cluster 内 multicast', { size: 9 }));
   body.push(cap(384, 176, 'cuTensorMapEncodeTiled → __grid_constant__ 参数', { mono: true, size: 8 }));
 
   // mbarrier 记账链
@@ -432,12 +432,12 @@ function tmaMbarrier() {
   });
   body.push(cap(52, 296, 'tx-count 本质是字节计数（wp 逐字）—— 与 4.3 强度账的流量同一本账；Hopper 等待 sleep 对前代 spin（不烧发射槽）', { size: 9.5 }));
 
-  body.push(cap(52, 320, '发射账：cp.async 1024 条（地址软件）对 TMA 1 条（地址硬件）—— tile 越大差距越大；descriptor 2×128 B 占流量 1.2×10⁻⁷', { mono: true, size: 9.5 }));
+  body.push(cap(52, 320, '发射账：cp.async 1024 条（地址软件）对 TMA 2 条（A/B 各一，地址硬件）—— tile 越大差距越大；descriptor 2×128 B 占流量 1.2×10⁻⁷', { mono: true, size: 9.5 }));
   body.push(cap(52, 344, '完成只认 async-group 与 mbarrier（PTX 逐字）：__syncthreads() 不保证 cp.async 完成 —— 先 wait 再 barrier，两步缺一不可（wait 是 per-thread）', { size: 9, color: 'var(--seal-deep)' }));
   body.push(cap(52, 362, '适用：大 tile/多维/边界多用 TMA（GEMM/FA/im2col）；细粒度/散乱/sm_80 兼容用 cp.async；不规则小张量 descriptor 建了不值', { size: 10 }));
   body.push(cap(52, 380, 'CUTLASS PipelineTmaAsync：full/empty barrier Stages 份各，producer_acquire/expect/commit 对 consumer_wait/release；commit 可 No-Op（5.2）', { size: 9.5 }));
 
-  return scene(720, 398, body, { label: 'TMA 与 mbarrier：cp.async 需 1024 条软件逐线程指令，TMA 由 128 B tensor-map 描述符加 elected 单线程一条指令硬件搬运；expect_tx 记入 16384 B，硬件完成自动扣减，tx-count 归零且到达数齐才放行消费者' }).svg();
+  return scene(720, 398, body, { label: 'TMA 与 mbarrier：cp.async 需 1024 条软件逐线程指令，TMA 由 128 B tensor-map 描述符加 elected 单线程两条指令（A/B 各一）硬件搬运；expect_tx 记入 16384 B（A 8192 + B 8192），硬件完成自动扣减，tx-count 归零且到达数齐才放行消费者' }).svg();
 }
 
 /* ============ 注册表 ============ */
@@ -495,7 +495,7 @@ export const FIGURES = [
     dim: 'gpu',
     slug: '04-kernel-memory-optimization/04-async-copy-pipelining',
     afterHeading: /^## 3\. /,
-    title: 'TMA descriptor + mbarrier：1024 条对 1 条，tx-count 按字节记账',
+    title: 'TMA descriptor + mbarrier：1024 条对 2 条，tx-count 按字节记账',
     svg: tmaMbarrier,
   },
 ];

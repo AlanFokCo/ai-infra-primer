@@ -141,19 +141,19 @@ graph LR
 
 | 章节 | 文件 | 状态 |
 | --- | --- | --- |
-| 3.1 线程层级与 SIMT | 01-thread-hierarchy-simt.md | 未开始 |
-| 3.2 内存模型与地址空间 | 02-memory-model-address-spaces.md | 未开始 |
-| 3.3 Stream / Event / Graph 异步 | 03-stream-event-graph.md | 未开始 |
-| 3.4 Occupancy 与资源约束 | 04-occupancy-resource-constraints.md | 未开始 |
+| 3.1 线程层级与 SIMT | 01-thread-hierarchy-simt.md | 已关闭 |
+| 3.2 内存模型与地址空间 | 02-memory-model-address-spaces.md | 已关闭 |
+| 3.3 Stream / Event / Graph 异步 | 03-stream-event-graph.md | 已关闭 |
+| 3.4 Occupancy 与资源约束 | 04-occupancy-resource-constraints.md | 已关闭 |
 
 ### Part 4 · Kernel 访存优化（W2）
 
 | 章节 | 文件 | 状态 |
 | --- | --- | --- |
-| 4.1 访存合并与向量化 | 01-coalescing-vectorization.md | 未开始 |
-| 4.2 Shared memory 与 bank conflict | 02-shared-memory-bank-conflicts.md | 未开始 |
-| 4.3 Tiling 与数据复用 | 03-tiling-data-reuse.md | 未开始 |
-| 4.4 异步拷贝与流水线 | 04-async-copy-pipelining.md | 未开始 |
+| 4.1 访存合并与向量化 | 01-coalescing-vectorization.md | 已关闭 |
+| 4.2 Shared memory 与 bank conflict | 02-shared-memory-bank-conflicts.md | 已关闭 |
+| 4.3 Tiling 与数据复用 | 03-tiling-data-reuse.md | 已关闭 |
+| 4.4 异步拷贝与流水线 | 04-async-copy-pipelining.md | 已关闭 |
 
 ### Part 5 · Kernel 计算优化与并行原语（W3）
 
@@ -223,6 +223,7 @@ graph LR
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | W0 | 2026-11-24 | spec 本身（11 Part/41 章大纲）+ 脚手架 | 四路独立对抗审查 ×1（A P1-P4/B P5-P6/C P7-P11/D 设计）+ builder-check ×1 + 逐任务 fresh reviewer ×6（T1-T6） | 0（raw 1→0） | 17（raw 24 去重，全修） | 21（raw 24 去重，全修） | 无 | **放行（W1 开工放行）**。spec 四路档案 docs/reviews/gpu-spec-review-{a,b,c,d}.md；脚手架全绿：references 11 Part 59 条 + 术语表；README 41 章进度表 + 14 边依赖图 + 93 行指针盘点（86 章命中，sweep 内容过滤器纠正 raw 116→86）；lint gpu 分支 + 127 章回归全过；STYLE_GUIDE 四维度泛化条款零漂移；站点 DIMENSIONS gpu {0,0,50} + 12 字段 UI + 14 边图 + FORTHCOMING.gpu 移除 + cluster/根 README 新 scope；全量 QA 绿（164 页/5089 引用/qa-shots 桌面移动全过，dist 无 /gpu/ live W1）。 |
 | W1 | 2026-11-25 | P1+P2 8 章（1.1–1.4 / 2.1–2.4） | task reviewer×4 + fix rounds + T6 P1/P2 深度对抗审查 + T8 图 QUALITY（18/18） | 0 | 0 | 13（P1×6 + P2×7，全修；L 消歧跨 Part 同址两计；同类扩展修：2.3 T1 泄漏 / 2.4 脚注归属 / refs 条目归属） | 无（⟨verify W3/W6⟩ B200 SM 数等为 spec 允许延迟项，不计 finding） | **放行（W1 收官，/gpu/ live）**。重推导 1.2 PASS（active warps 32/16/32/32/0）/ 2.4 PASS（112/112 独立重算），recap 边界 PASS；档案 docs/reviews/gpu-w1-review-{p1,p2}.md + gpu-w1-fig-quality.md（7 条非阻塞 polish 延迟站点 fix 轮，图不动）；refs 被引回写 12 条（forward+reverse 交叉核）+ nvbandwidth README 核实日期 11-25；兄弟 README 3 处边界句 errata（见本节 errata 表）；站点断言 {8,2,50}；QA 全绿：build:content gpu 8 章/2 Part/64 refs + 回归 models 51/training 39/inference 37，build 176 页零 KaTeX，pagefind 135 页/105860 词，check-links 5418 引用零断，qa-shots 36 样页×桌面移动 88 shots 全过（含 gpu index/1.2/2.4），dist 有 /gpu/（live 翻转）。 |
+| W2 | 2026-11-25 | P3+P4 8 章（3.1–3.4 / 4.1–4.4） | task reviewer×4 + fix rounds + T6 P3/P4 对抗审查 + T8 图 QUALITY（18/18） | 0 | 3（P3 refs 回写 + P4 bf16 sector / TMA opcount，全修） | 8（P3×2 + P4×6）+ T2-T5 deferred minors，全修 | 无（⟨verify W3/W6⟩ B200 SM 数等为 spec 允许延迟项，不计 finding） | **放行（W2 收官）**。重推导 3.4 occupancy + 4.3 tiling PASS、recap 边界 PASS、coalescing 方向 PASS（distinct 32 / ceil 63）；档案 docs/reviews/gpu-w2-review-{p3,p4}.md + gpu-w2-fig-quality.md；refs 被引回写 11 条（forward+reverse 交叉核 0 缺口）+ glossary 首现 sweep（W1 残留 5 + W2 新词 22）+ 1.4 练习 4b 需求侧注；站点断言 {16,4}；QA 全绿：build:content gpu 16 章/4 Part/68 refs + 回归 models 51/training 39/inference 37，build 186 页零 KaTeX，pagefind 143 页/109232 词，check-links 186 页/5704 引用零断，qa-shots 38 样页×桌面移动 92 shots 全过（含 gpu index/1.2/2.4/3.4/4.3）。 |
 
 **跨维度指针 errata 记录**（spec §2 条款授权，仅限指针句的最小修订；errata 编辑不跑 rewrite-gate）：
 

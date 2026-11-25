@@ -54,7 +54,7 @@ $$
 
 末行是「broadcast 免冲突」的边界反例：两组 lane 各自同址，但两组地址不同（字 0 与字 32 同落 bank 0）， $u_0 = 2$，照样 2 拍——**免冲突的条件是同址，不是同 bank 内有人同址**。stride-32 行 recap 2.3 §3 最坏例：4 B/cycle @1.83 GHz = 7.3 GB/s，低于 HBM 份额 25.4 GB/s。
 
-64-bit 访问的口径：每 lane 8 B 拆成两个 32-bit 字按同规则判，带宽账用实际有用字节。double 连续访问：lane $i$ 读字 $2i, 2i+1$，每 bank 2 个 distinct 字， $k = 2$——但 256 B 有用字节本来就需要至少 2 拍（128 B/cycle 峰值），2 拍搬 256 B 仍是 128 B/cycle，**这不是冲突损失**；double stride-2（字节 stride 16）：lane $i$ 读字 $4i, 4i+1$，16 个 bank 各 4 字， $k = 4$，256 B 搬 4 拍 = 64 B/cycle，相对 2 拍下界折半。**口径注**： $k$ 是服务周期（吞吐口径），冲突损失要看 $k$ 相对「有用字节 ÷ 128 B」的下界多出几倍，不是见 $k$ 大于 1 就判冲突； $k$ 与 29-cycle load-to-use 延迟是两笔账（2.2 口径注 recap），服务周期算吞吐、延迟算隐藏并发（1.4），勿混。
+64-bit 访问的口径：每 lane 8 B 拆成两个 32-bit 字按同规则判，带宽账用实际有用字节。double 连续访问：lane $i$ 读字 $2i, 2i+1$，每 bank 2 个 distinct 字， $k = 2$——但 256 B 有用字节本来就需要至少 2 拍（128 B/cycle 峰值），2 拍搬 256 B 仍是 128 B/cycle，**这不是冲突损失**；double stride-2（字节 stride 16）：lane $i$ 读字 $4i, 4i+1$，16 个 bank 各 4 字， $k = 4$，256 B 搬 4 拍 = 64 B/cycle，相对 2 拍下界折半。**口径注**： $k$ 是服务周期（吞吐口径），冲突损失要看 $k$ 相对「有用字节 ÷ 128 B/cycle（峰值带宽）」这一下界（单位：周期）多出几倍，不是见 $k$ 大于 1 就判冲突； $k$ 与 29-cycle load-to-use 延迟是两笔账（2.2 口径注 recap），服务周期算吞吐、延迟算隐藏并发（1.4），勿混。
 
 shared 与 global 的两套粒度对照（4.1 §5 末预告的兑现）：BP 逐字「Aside from memory bank conflicts, there is no penalty for non-sequential or unaligned accesses by a warp in shared memory.」——shared 没有 sector 粒度、没有 32 B 对齐要求，乱序与不对齐本身不罚，**只罚 bank 冲突**；global 则按 32 B sector 计流量（4.1 式 (1)）。同一个 stride-16：global 侧饱和于 $\eta = 1/8$（32 sector 地板），shared 侧 $k = 16$（16 路冲突，8 B/cycle @1.83 GHz = 14.6 GB/s）——两条定律各自的粒度各自算，勿互搬直觉。
 
