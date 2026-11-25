@@ -251,17 +251,17 @@ nvidia-smi 还报 repair flags（Channel Repair Pending / TPC Repair Pending / U
 ```
 健康检查四层（被动 → 主动 → 带外）
 ┌─────────────────────────────────────────────────┐
-│ 持续监控（in-band）：DCGM 字段 / nvidia-smi      │
-│   ECC 计数 · remap · NVLink CRC/replay/recovery  │
-│   温度功率 · throttle 计数器                     │
+│ 持续监控（in-band）：DCGM 字段 / nvidia-smi     │
+│   ECC 计数 · remap · NVLink CRC/replay/recovery │
+│   温度功率 · throttle 计数器                    │
 ├─────────────────────────────────────────────────┤
-│ 事件驱动：XID（kernel log）→ 分类处置（§4）      │
+│ 事件驱动：XID（kernel log）→ 分类处置（§4）     │
 │   DCGM watch / policy → 通知                    │
 ├─────────────────────────────────────────────────┤
-│ 主动诊断：dcgmi diag r1-r4（作业前门/定位/体检） │
+│ 主动诊断：dcgmi diag r1-r4（作业前门/定位/体检）│
 ├─────────────────────────────────────────────────┤
-│ 带外（out-of-band）：BMC / SMBPBI flag           │
-│   RMA 判定：Field Diagnostic（§3.4）             │
+│ 带外（out-of-band）：BMC / SMBPBI flag          │
+│   RMA 判定：Field Diagnostic（§3.4）            │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -331,5 +331,5 @@ straggler 是另一类「没坏但变慢」的故障：thermal throttle 持续�
 - [NVIDIA, nvidia-smi docs](../references.md)：NVIDIA nvidia-smi docs（key: nvidia-smi-docs），[C] 官方规格披露·一手权威，2026-11-26 一手核实——ECC volatile/aggregate + SRAM parity/SEC-DED + histogram + threshold flag；Clocks Event Reasons（SW/HW Thermal Slowdown「factor of 2 or more」逐字、SW Power Cap、HW Power Brake、Sync Boost）与 Counters（μs）；温度三档（Max Operating / Slowdown / Shutdown Temp）；--query-remapped-rows / nvlink -e（v560+ NVLink5）/ -r / -r bus；repair flags 与 GPU Recovery Action（Drain and Reset「Asserted only for UCE row remaps」逐字）
 - [NVIDIA, DCGM](../references.md)：NVIDIA/DCGM repo + docs（key: dcgm），教学参照 + 官方实现，2026-11-26 一手核实——diag r1-r4 时长与测试成员逐字表；dcgmi diag -r / -p 命令；field IDs（ECC 310-313 / SRAM 345-346 / row remap 392-396 / NVLink CRC 400 系列 · replay 420 系列 · recovery 430 系列 / 温度 140 · 150 / 能量 156 / PCIe replay 202）经 dcgm-api-field-ids 页逐项核实；Field Value Watches / Active Health Checks / Policy Notification；diag 边界（不替代 Field Diagnostic / 不服务 RMA）
 - [NVIDIA, Hopper whitepaper](../references.md)：NVIDIA H100 Tensor Core GPU Architecture Whitepaper V1.04（key: hopper-whitepaper），[C] 官方规格披露·一手权威——p.38 ECC Memory Resiliency（SECDED + Sideband + L2/L1/RF 清单 + boot-time row remap，recap 锚 2.1 §4）；Table 3 FP32 66.9 TFLOPS / 1980 MHz（§5.2 实例，recap 1.1 §3）；p.47 NVLink 18 link × 25 GB/s 单向（§6.3，recap 7.1）
-- [NVIDIA, Inside Blackwell Ultra blog](../references.md)：NVIDIA Inside Blackwell Ultra blog（key: inside-blackwell-blog），[C] 开放技术博客、非闭源，2026-11-26 一手核实——Advanced RAS engine 逐字（AI-powered reliability system monitoring thousands of parameters to predict failures...）；TEE-I/O + inline NVLink protection（§8.2 预防性维护产品化口径）
+- [NVIDIA, Inside Blackwell Ultra blog](../references.md)：NVIDIA Inside Blackwell Ultra blog（key: inside-blackwell-blog），[C] 开放技术博客、非闭源，2026-11-26 一手核实——Advanced RAS engine 逐字（AI-powered reliability system monitoring thousands of parameters to predict failures...）（§8.2 预防性维护产品化口径）
 - 跨维度指引（纯文字）：inference 8.5（弹性伸缩与容错：冗余 quota / rerouting / EP failover，recap 源）、training 7.4（checkpoint 与续训：五分量 / MTBF / 最优间隔，recap 源）、training 7.3（故障四分类与 SDC 统计，recap 源）；gpu 2.1 §4（ECC SECDED/Sideband 码族账）、1.1 §3（峰值频率账）、2.4（roofline）、7.1（NVLink link 几何）、9.3 §6-7（IB CRC/retry/链路降级/straggler）、11.1（供电散热与 PCIe 拓扑）、11.2（DCGM 监控与通信基准）；集群级故障编排 → cluster 维度

@@ -132,7 +132,7 @@ Task 1：P11（11.1 服务器形态 MIG / 11.2 Profiling 调优 / 11.3 故障可
 - **Repair flags**：Channel Repair Pending / TPC Repair Pending / Unrepairable Memory；「If one of the repair flags is pending, check the GPU Recovery action」。
 - **Page Retirement**：DBE 或多 SBE 同 page → retire（driver 隐藏，分配不可达）；Double Bit ECC / Single Bit ECC / Pending 计数。
 - **Recovery actions**（对齐 XID 154）：None / Drain P2P / **Drain and Reset**（contained HBM UCE，page offlining 降容量，**仅 UCE row remap 断言**，drain 后 reset 恢复全容量）/ GPU Reset / Bus Reset（nvidia-smi -r bus）/ System Reboot。
-- **--query-remapped-rows**（csv）；**nvidia-smi nvlink -e**（v550+ 含 NVLink5 error counters）；**nvidia-smi topo -m**（PCIe/NVLink 拓扑，11.1 NUMA/affinity 工具）。
+- **--query-remapped-rows**（csv）；**nvidia-smi nvlink -e**（v560+ 含 NVLink5 error counters）；**nvidia-smi topo -m**（PCIe/NVLink 拓扑，11.1 NUMA/affinity 工具）。
 
 ### 4.4 DCGM 监控 field IDs（[C] dcgm-api-field-ids + 教学参照 repo）
 

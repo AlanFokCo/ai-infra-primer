@@ -65,6 +65,9 @@ const PAGES = [
   // gpu 维度 W5 样章（P9/P10 通信落地代表章：GDR 带宽账重章 + EP a2a 代码走读密，spec §8）
   ['gpu-ch-gpudirect-rdma', '/gpu/09-rdma-gpudirect/02-gpudirect-rdma/'], // 带宽账密（9.2【重】，NIC→HBM min regime 判定 + 多 NIC 聚合 + bounce 对比 + BAR1 三道门场景图）
   ['gpu-ch-ep-alltoall', '/gpu/10-fabric-and-scale-communication/03-ep-alltoall-implementation/'], // 代码走读密（10.3，DeepEP 双锚 v1.2.1/main V2.5 走读 + incast 命题 + LL 带宽重算场景图）
+  // gpu 维度 W6 样章（P11 系统集成与生产落地代表章：公式密 + 推导重章，spec §8）
+  ['gpu-ch-server-forms-mig', '/gpu/11-system-integration/01-server-forms-mig/'], // 公式密（11.1，MIG 切片几何命题 2 + N+N 供电命题 1 + 散热介质账 + TCO 三形态表）
+  ['gpu-ch-profiling-tuning', '/gpu/11-system-integration/02-profiling-tuning/'], // 推导重章（11.2，三段账 + 四因子分解命题 1 + 带宽饱和加速命题 2 + achieved roofline 场景图）
 ];
 
 const VIEWPORTS = [

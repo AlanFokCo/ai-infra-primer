@@ -102,8 +102,8 @@ const DIMENSIONS = [
       { num: 10, dir: '10-fabric-and-scale-communication', titleEn: 'Fabric & Scale Communication', titleZh: '机间 fabric 与大规模通信', tagline: 'fabric 拓扑与收敛比账、SHARP 网内聚合、DeepEP a2a 实现、Ring Attention 通信', wave: 'W5' },
       { num: 11, dir: '11-system-integration', titleEn: 'System Integration & Production', titleZh: '系统集成与生产', tagline: '服务器形态与 MIG 分区、Nsight profiling 与调优、ECC/XID 故障诊断', wave: 'W6' },
     ],
-    // 建设期断言滚动：W0={0,0} → W1={8,2} → W2={16,4} → W3={24,6} → W4={31,8} → W5={38,10}（当前）→ W6={41,11} → W7 锁死
-    asserts: { chapters: 38, parts: 10, refsMin: 50 },
+    // 建设期断言滚动：W0={0,0} → W1={8,2} → W2={16,4} → W3={24,6} → W4={31,8} → W5={38,10} → W6={41,11}（当前，全书 41 章满）→ W7 收官锁死
+    asserts: { chapters: 41, parts: 11, refsMin: 50 },
   },
 ];
 
