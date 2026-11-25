@@ -118,12 +118,12 @@ RESET ──ibv_modify_qp──► INIT ──► RTR ──► RTS
  创建态        设 port/pkey/      设远端 QPN/PSN/    设本地 PSN/timeout/
               access flags      GID/LID/PATH_MTU   RETRY_CNT/RNR_RETRY
               （本地属性）       （Receive Ready）  （Send Ready）
- RC：RTR/RTS 需带外交换对端 QPN/PSN/GID/LID/MTU；UD：仅改 STATE（无连接）
+ RC：RTR/RTS 需带外交换对端 QPN/PSN/GID/LID/MTU；UD：INIT 需 pkey/port/qkey、RTS 需 SQ_PSN（无对端元数据）
 ```
 
-每态属性（man 迁移属性表）：INIT 设本地端口/pkey/访问权限；RTR（Ready to Receive）设远端 QPN、接收 PSN、GID/LID、路径 MTU——RC 须先拿到对端这些元数据；RTS（Ready to Send）设本地发送 PSN、超时 `TIMEOUT`、重传次数 `RETRY_CNT`、`RNR_RETRY`、`MAX_QP_RD_ATOMIC`。UD 无连接，迁移仅改 STATE，不需对端元数据。
+每态属性（man 迁移属性表）：INIT 设本地端口/pkey/访问权限；RTR（Ready to Receive）设远端 QPN、接收 PSN、GID/LID、路径 MTU——RC 须先拿到对端这些元数据；RTS（Ready to Send）设本地发送 PSN、超时 `TIMEOUT`、重传次数 `RETRY_CNT`、`RNR_RETRY`、`MAX_QP_RD_ATOMIC`。UD 无连接，但仍需本地属性：INIT 设 pkey_index/port/qkey、RTR 仅 STATE、RTS 设 SQ_PSN（man ibv_modify_qp.3 UD 迁移表），只是不需对端元数据（无连接）。
 
-**连接开销账**（RC 全互连）： $n$ 个 rank 两两建 RC 连接，每 rank 建 $n-1$ 个 QP，全网共 $n(n-1)$ 个 QP；每个 QP 须 4 态迁移 + 带外交换元数据（QPN/PSN/GID/LID/MTU）。代入 $n = 1024$：每 rank 1023 个 QP，全网 $1024 \times 1023 \approx 1.05 \times 10^{6}$ 个 QP。设每 QP bringup 需一次带外 RTT（**教学假设** 100 μs），串行建立约 $1.05 \times 10^{6} \times 100$ μs ≈ 105 s——控制面开销随 $n^{2}$ 涨。这是为什么大规模通信不用「每消息每对端全互连建连」，而是预建有限 QP 池复用：DeepEP `num_qps_per_rank = 24`（v1.2.1，10.3 走读）即用固定 QP 数承载所有 token 路由，把 $O(n^{2})$ 建连成本压到 $O(n)$。连接是控制面慢路径、传输是数据面快路径（§3 提点），长连接摊销建连成本。
+**连接开销账**（RC 全互连）： $n$ 个 rank 两两建 RC 连接，每 rank 对每个对端建 QP，单 QP/对端口径全网共 $n(n-1)$ 个 QP；每个 QP 须 4 态迁移 + 带外交换元数据（QPN/PSN/GID/LID/MTU）。代入 $n = 1024$：每 rank 1023 个对端，全网 $1024 \times 1023 \approx 1.05 \times 10^{6}$ 个 QP。设每 QP bringup 需一次带外 RTT（**教学假设** 100 μs），串行建立约 $1.05 \times 10^{6} \times 100$ μs ≈ 105 s——控制面开销随 $n^{2}$ 涨，靠预建长连接复用摊销（连接是控制面慢路径、传输是数据面快路径，§3 提点）。**一个常见误解须订正**：DeepEP `num_qps_per_rank = 24`（v1.2.1，10.3 走读）不是把连接数压到 $O(n)$——它是**每对端**（per-peer）的 QP 池：`buffer.py` L101 设 `NVSHMEM_IBGDA_NUM_RC_PER_PE = 24`，`ibgda_device.cuh` L77/L80 按 `rcs[pe * num_rc_per_pe + id]` 取 QP，24 恰等于本地 expert 数（buffer.py L47-48 逐字「equals to the number of local experts」），`internode_ll.cu` L164 以 `dst_expert_local_idx` 作 qp_id 选 QP。所以全网 QP 总数 = $24 \cdot n(n-1)$，仍是 $O(n^{2})$（ $n = 1024$ 时约 $2.51 \times 10^{7}$）；多 QP/对端的目的是把不同 expert 的流量分散到同一对端的多条 NIC 队列/路径（per-expert traffic spreading），不是减少连接数。
 
 ## 6. IB vs RoCE：链路层差异
 
@@ -173,7 +173,7 @@ NIC 内部模块与 verbs 语义的对应：**PCIe 接口**（DMA 到 host 或 G
 ## 练习
 
 1.（计算 · [10]）延迟账代入（命题 1，教学假设分量：单核 memcpy 10 GB/s、 $t_{\mathrm{ctx}} = 1$ μs、 $t_{\mathrm{stack}} = 1$ μs、 $t_{\mathrm{db}} = 0.2$ μs）： $M = 4$ KB。(a) 单次内核拷贝 $t_{\mathrm{copy}}$ 多少 μs；(b) TCP 软件开销 $\Delta_{\mathrm{TCP}}$；(c) RDMA 软件开销 $\Delta_{\mathrm{RDMA}}$ 与 TCP/RDMA 比值。校验：(a) 0.41 μs；(b) 3.82 μs；(c) 0.2 μs、19.1×，与 §2 逐数一致（容差 1%）。
-2.（计算 · [20]）QP 连接开销（§5，RC 全互连）： $n = 1024$。(a) 每 rank QP 数；(b) 全网 QP 总数；(c) 设每 QP bringup 一次带外 RTT（教学假设 100 μs），串行建立约多少秒；(d) 先预测 DeepEP 为何用 `num_qps_per_rank = 24` 而非全互连，再对照 §5。校验：(a) 1023；(b) ≈1.05×10⁶；(c) ≈105 s；(d) 控制面 O(n²) 成本，固定 QP 池压到 O(n)（10.3）。
+2.（计算 · [20]）QP 连接开销（§5，RC 全互连，单 QP/对端口径）： $n = 1024$。(a) 每 rank 对端数；(b) 全网 QP 总数；(c) 设每 QP bringup 一次带外 RTT（教学假设 100 μs），串行建立约多少秒；(d) 先预测 DeepEP `num_qps_per_rank = 24` 是每对端 QP 池还是全网总数、全网 QP 随 $n$ 几阶，再对照 §5 求 $n = 1024$ 时 DeepEP 全网 QP 总数。校验：(a) 1023；(b) ≈1.05×10⁶；(c) ≈105 s；(d) per-peer 池（NVSHMEM_IBGDA_NUM_RC_PER_PE），全网 24·n(n-1) = O(n²) ≈ 2.51×10⁷，目的 per-expert 流量 spreading 非省连接（10.3）。
 3.（推导 · [30]）证明命题 1（数据路径软件开销账）：(a) 逐跳枚举 TCP 发送/接收路径，标出 RDMA 删去的跳；(b) 写出 $\Delta_{\mathrm{TCP}}$/ $\Delta_{\mathrm{RDMA}}$ 表达式并说明每项来源；(c) 给边界：大消息哪项主导、小消息哪项主导；(d) 代入 $M = 1$ GB 求拷贝项。校验：(a) 2 拷贝 + 2 切换 + 协议栈被删；(d) 2×100 ms = 200 ms（10 GB/s 教学假设），与 §2 一致；先预测 (c) 再算。
 4.（论证 · [30]）操作语义与 QP 选型（§4/§5）：(a) 为什么 RDMA READ 仅 RC、UD 不支持 RDMA WRITE；(b) 接收方未 post RECV 时 RC SEND 与 UD SEND 各发生什么；(c) 给三场景选型判断句：跨机梯度 all-reduce、多对多服务发现、容忍丢包的遥测大块写。校验：(a) manual §3.2 操作×传输表（READ 仅 RC、WRITE UC/RC、UD max MTU）；(b) RC RNR 重试 / UD 丢包；(c) RC / UD / UC，与 §4/§5 表一致。
 

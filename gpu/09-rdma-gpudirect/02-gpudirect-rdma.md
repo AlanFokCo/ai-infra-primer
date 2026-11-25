@@ -8,7 +8,7 @@
 
 **本章口径**（章脊锁定）：主口径 **H100 SXM**（HBM 3.35 TB/s = 3350 GB/s，[NVIDIA, nvidia-datasheet](../references.md)，[C]）+ **单口 ConnectX-7 NDR 400G**（线速 50 GB/s 单向）+ **PCIe Gen5 x16 = 64 GB/s 单向**（Hopper wp p.49 逐字，recap 7.2 §5）；贯穿实例 $M = 1$ GB = $10^{9}$ B。带宽账取 **raw 峰值口径**（有效折扣两边同扣、比值结论不变，沿 7.3 §1）。对照口径：ConnectX-8 800G（100 GB/s）+ 主机 PCIe Gen5/Gen6 两代（regime 须注主机代际，§4）；多 NIC 聚合取 rail-optimized 每 GPU 一张 NIC（§5）。KV 容量对照引 inference 8.3 章脊 4.295 GB（32768-token，recap 不重推）。
 
-符号声明（spec §4.3）： $n$ = rank/GPU 数（**本章 $n$ 专归 rank 数**）； $M$ = 被传输消息总字节； $\alpha$ = 每消息固定延迟（**本章 $\alpha$ = 消息延迟，非 inference 接受率**）； $\beta$ = 每字节传输时间 = 有效带宽倒数； $\mathrm{BW}$ = 带宽（GB/s， $10^{9}$ B/s），下标 NIC / PCIe / HBM / GDR / D2H / H2D / serial / pipe / pool 标各段与各口径。局部符号： $n_{\mathrm{NIC}}$ = 参与聚合的 NIC 数（§5）； $T_{\mathrm{serial}}$ = 串行端到端总时间（§6，下标口径沿 7.3）。 $N$ 专归参数量、 $B$ 专归 batch，本章不占用；inference 8.3 的 $\kappa/L/T$ 几何本章不引入，KV 容量以文字数值 recap。
+符号声明（spec §4.3）： $n$ = rank/GPU 数（**本章 $n$ 专归 rank 数**）； $M$ = 被传输消息总字节； $\alpha$ = 每消息固定延迟（**本章 $\alpha$ = 消息延迟，非 inference 接受率**）； $\beta$ = 每字节传输时间 = 有效带宽倒数； $\mathrm{BW}$ = 带宽（GB/s， $10^{9}$ B/s），下标 NIC / PCIe / HBM / GDR / D2H / H2D / serial / pipe / pool 标各段与各口径。局部符号： $n_{\mathrm{NIC}}$ = 参与聚合的 NIC 数（§5）。 $N$ 专归参数量、 $B$ 专归 batch，本章不占用；inference 8.3 的 $\kappa/L/T$ 几何本章不引入，KV 容量以文字数值 recap。
 
 **边界声明**（recap 不重推）：inference 8.3 已交付的 KV 传输语义（粒度/方向/时序三自由度、push/pull、layer-wise 暴露时间账、egress/ingress 公式）本章只 recap + 指针，**不重推**；本章增量 = **GDR 硬件路径**（NIC 直访 HBM、peer memory、带宽账、BAR1）。inference 8.3 §5 边界声明把 RDMA 协议/NIC/PCIe 拓扑/NVLink 域/交换机/NCCL 指向 cluster 维度；重定界后归本维度——RDMA 协议与 QP 归 9.1，GDR 硬件路径归本章，PCIe 拓扑归 7.2/本章，NVLink 域归 P7，交换机与 fabric 归 10.1，NCCL 归 8.4/10.2。**代码 scope** = 机制片段级（nvidia-peermem/gdrcopy/NCCL net_ib 关键片段，非模块全量走读；DeepEP 全量走读归 10.3）。**测量口径**沿 7.2：本机无 NVIDIA GPU，数值账为 Python 独立重算 + 官方披露口径，非新跑 benchmark。
 
@@ -39,7 +39,7 @@ GDR 路径（NIC 经 PCIe 直访 HBM）：
 
 **定义**（GPUDirect RDMA）：所谓 GDR（GPUDirect RDMA），是指第三方 PCIe 设备（NIC / 视频 / 存储）经 PCIe 直接读写 GPU HBM、不经 host bounce buffer 与 CPU 拷贝的数据路径。GDR docs 逐字：「a technology ... that enables a **direct path for data exchange between the GPU and a third-party peer device** using standard features of PCI Express」（[NVIDIA, gpudirect-rdma-docs](../references.md)，[C]）。它是 7.3 GPUDirect 家族四成员之一（P2P / RDMA / Storage / Video），与 P2P 共享同一套 PCIe 拓扑约束（§7）。正例：H100 + ConnectX-7 同 root complex、IOMMU 关，NIC 凭注册的 GPU MR 直 DMA HBM；边界反例：IOMMU 开非 1:1 翻译时 GDR 不成立（§7），退回 bounce。
 
-**peer memory 机制：GPU 页怎么注册给 NIC**。NIC 要 DMA 到 GPU HBM，须先拿到 GPU 物理页的 DMA 地址——这由 **nvidia-peermem** 内核模块桥接（R470+ 内置于 GPU 驱动；legacy off-tree 模块 = Mellanox/nv_peer_memory，R470+ deprecated；spec 旧查的 Mellanox/peer-memory + NVIDIA/peer-memory 名称不存在，404）。走读 open-gpu-kernel-modules tag 620.73.04 的 `kernel-open/nvidia-peermem/nvidia-peermem.c`（696 行，[NVIDIA, open-gpu-kernel-modules](../references.md)，教学参照 + 官方实现）：
+**peer memory 机制：GPU 页怎么注册给 NIC**。NIC 要 DMA 到 GPU HBM，须先拿到 GPU 物理页的 DMA 地址——这由 **nvidia-peermem** 内核模块桥接（R470+ 内置于 GPU 驱动；legacy off-tree 模块 = Mellanox/nv_peer_memory，R470+ deprecated；Mellanox/peer-memory 与 NVIDIA/peer-memory 这两个 repo 名则不存在，404）。走读 open-gpu-kernel-modules tag 620.73.04 的 `kernel-open/nvidia-peermem/nvidia-peermem.c`（696 行，[NVIDIA, open-gpu-kernel-modules](../references.md)，教学参照 + 官方实现）：
 
 | 锚（file:line） | 机制 |
 | --- | --- |
@@ -75,7 +75,7 @@ $$
 | 配置 | $`\mathrm{BW}_{\mathrm{NIC}}`$ | $`\mathrm{BW}_{\mathrm{PCIe}}`$ | min | 瓶颈 regime |
 | --- | --- | --- | --- | --- |
 | 单口 CX7 NDR400 + Gen5 x16 主机 | 50 GB/s | 64 GB/s | **50** | **NIC 线速限**（50 低于 64） |
-| 双口 CX7（2×NDR200）+ Gen5 | 50 GB/s（总 400G） | 64 GB/s | 50 | NIC 线速限（双口不翻倍，§9.1 口径订正） |
+| 双口 CX7（2×NDR200）+ Gen5 | 50 GB/s（总 400G） | 64 GB/s | 50 | NIC 线速限（双口不翻倍，9.1 §7 口径订正） |
 | CX8 800G + **Gen5** x16 主机（H100/B200/GB200） | 100 GB/s | 64 GB/s | **64** | **PCIe 限**（100 高于 64） |
 | CX8 800G + **Gen6** x16 主机 | 100 GB/s | 128 GB/s | **100** | **NIC 线速限**（100 低于 128） |
 
