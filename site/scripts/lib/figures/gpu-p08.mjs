@@ -141,7 +141,7 @@ function ringVsA2a() {
   body.push(cap(534, 298, '全 bisection 需求 + 突发 · 偏斜 incast（→10.3）', { size: 9.5, anchor: 'middle' }));
 
   body.push(cap(36, 322, '语义差一条：all-reduce 有归约（数据被求和改变）；a2a 纯数据搬运 —— EP combine 加权求和在接收后本地做', { size: 10 }));
-  body.push(cap(36, 340, '均衡 a2a 是一个排列（每 rank 收发 (n-1)/n·M）：NVSwitch 非阻塞对任意排列线速，域内总注入不变', { size: 10 }));
+  body.push(cap(36, 340, '均衡 a2a 是均匀流量（双随机矩阵、非排列，每 rank 收发 (n-1)/n·M）：NVSwitch 非阻塞对任意排列线速，域内总注入不变', { size: 10 }));
 
   return scene(720, 356, body, { label: 'n=4 流量模式对比：ring 四节点方形环六步转发邻居链路均匀负载，all-to-all 完全图单跳直达每 peer M/n 全 bisection 需求与偏斜 incast' }).svg();
 }

@@ -372,17 +372,17 @@ function deepepLLHook() {
 }
 
 /* ============================================================
- * 10.3 §7（afterHeading）— a2a incast：均衡排列 vs 偏斜 σC
+ * 10.3 §7（afterHeading）— a2a incast：均衡（均匀）流量 vs 偏斜 σC
  * ============================================================ */
 function a2aIncast() {
   const UID = 'g10g';
   const body = [];
   const nodes = [];
 
-  body.push(cap(36, 24, 'a2a incast：均衡排列入口恰线速 C —— 偏斜 σ 向热卡集中，入口 σC，拥塞 iff σ>1 且持续', { size: 12, color: 'var(--ink-soft)' }));
+  body.push(cap(36, 24, 'a2a incast：均衡（均匀）流量入口恰线速 C —— 偏斜 σ 向热卡集中，入口 σC，拥塞 iff σ>1 且持续', { size: 12, color: 'var(--ink-soft)' }));
 
-  // 均衡排列
-  body.push(zone({ x: 36, y: 56, w: 324, h: 150, label: '均衡排列（σ=1）：入口恰线速' }));
+  // 均衡（均匀）流量
+  body.push(zone({ x: 36, y: 56, w: 324, h: 150, label: '均匀流量（σ=1）：入口恰线速' }));
   const rc = node({ id: 'rc', x: 240, y: 112, w: 100, h: 44, role: 'data', title: 'receiver', sub: '入口 = C', titleSize: 10.5, subSize: 8.5 });
   nodes.push(rc); body.push(rc.svg);
   [92, 132, 172].forEach((y, i) => {
@@ -435,7 +435,7 @@ function a2aIncast() {
   body.push(cap(36, 390, '治理两手：模型侧 EPLB 压 σ（moe_lb 1.090 → 吞吐 91.7%）；网络侧 ECN/PFC 调参 + AR 散列（10.2 §6/§7）', { size: 10, color: 'var(--seal-deep)' }));
   body.push(cap(36, 408, 'DCQCN 论文评估 16:1/32:1 incast —— 正是 a2a 热卡多对一的形态（9.3 recap）', { size: 9.5 }));
 
-  return scene(720, 424, body, { label: 'a2a incast 对照：均衡排列每 sender 出口均分 n-1 份入口恰线速 C；偏斜使热卡入口 σC 超额 σ-1 倍 C 累积，σ=2 时 1.28 毫秒填满 64MB 队列，拥塞当且仅当 σ 大于 1 且持续' }).svg();
+  return scene(720, 424, body, { label: 'a2a incast 对照：均匀流量每 sender 出口均分 n-1 份（双随机）入口恰线速 C；偏斜使热卡入口 σC 超额 σ-1 倍 C 累积，σ=2 时 1.28 毫秒填满 64MB 队列，拥塞当且仅当 σ 大于 1 且持续' }).svg();
 }
 
 /* ============================================================
