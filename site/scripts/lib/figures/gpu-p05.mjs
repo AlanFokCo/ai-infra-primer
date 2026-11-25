@@ -67,27 +67,30 @@ function reductionTree() {
   body.push(cap(196, 216, '层0→1→2：4 / 2 / 1 次并行加法 ← 结果', { size: 9, anchor: 'middle', color: 'var(--seal-deep)' }));
 
   // 右：层级映射
-  body.push(zone({ x: 396, y: 44, w: 288, h: 182, label: '层级映射（本章配置 256 线程/block）' }));
+  body.push(zone({ x: 396, y: 44, w: 288, h: 246, label: '层级映射（本章配置 256 线程/block）' }));
   const hier = [
     ['register：64 元素/线程串行链', 'grid-stride 装载 · HBM 每元素读一次', 'data'],
     ['warp：32 lane → shuffle 5 步', '免 shared（§3 命题 3）', 'cache'],
     ['block：8 partial → shared 8 字', 'warp0 shuffle 3 步（§4）', 'norm'],
     ['grid：1024 partial → 末趟归约', 'atomic / two-pass / cooperative', 'proj'],
   ].map(([t, s, role], i) => {
-    const n = node({ id: `h${i}`, x: 412, y: 70 + i * 38, w: 256, h: 32, role, title: t, sub: s, titleSize: 10.5, subSize: 8 });
+    // h=44：sub 基线 y+h/2+16=y+38，距卡底 y+44 留 6px，不骑边框
+    const n = node({ id: `h${i}`, x: 412, y: 70 + i * 56, w: 256, h: 44, role, title: t, sub: s, titleSize: 10.5, subSize: 8 });
     nodes.push(n); body.push(n.svg); return n;
   });
   for (let i = 0; i < 3; i++) {
-    body.push(edge(hier[i], hier[i + 1], { nodes, portFrom: hier[i].bottom, portTo: hier[i + 1].top, pulse: true, dur: 1.1, delay: 0.3 + i * 0.4, uid: UID, eid: `h${i}`, arrow: false }));
+    // 短竖边不加 pulse（端点 dwell 会压 sub 字区）；流向由箭头 + 右侧侧bus光点表现
+    body.push(edge(hier[i], hier[i + 1], { nodes, portFrom: hier[i].bottom, portTo: hier[i + 1].top, uid: UID, eid: `h${i}`, arrow: false }));
     body.push(arrowHead(hier[i + 1].top[0], hier[i + 1].top[1], 0, 1));
   }
+  body.push(pathPulse('M 676 70 V 282', { dur: 2.4, delay: 0.6 }));
 
-  body.push(cap(36, 250, '主口径 n_el = 2^24 = 16777216 fp32：读 67.11 MB ÷ 3352 GB/s = 20.02 μs（命题 1 下界；partial 4 KB 占 0.0061%）', { size: 10 }));
-  body.push(cap(36, 270, 'work/depth（命题 2）：W = n_el−1 = 16777215、D = log2 n_el = 24；串行 depth 16777215 —— work 同、depth 差 70 万倍', { size: 10 }));
-  body.push(cap(36, 290, '实际 depth = 层级拼接 63+5+3+10 ≈ 81 步；Brent 调度 W/p + D ≈ 64+24 = 88（p = 262144 线程，reduce6 注释点名）', { size: 10 }));
-  body.push(cap(36, 310, '优化目标是省搬运不是省加法：强度 I ≈ 1/bytes = 0.25 FLOP/byte，离 ridge 295 差约 1180 倍 → memory-bound', { size: 10, color: 'var(--seal-deep)' }));
+  body.push(cap(36, 310, '主口径 n_el = 2^24 = 16777216 fp32：读 67.11 MB ÷ 3352 GB/s = 20.02 μs（命题 1 下界；partial 4 KB 占 0.0061%）', { size: 10 }));
+  body.push(cap(36, 330, 'work/depth（命题 2）：W = n_el−1 = 16777215、D = log2 n_el = 24；串行 depth 16777215 —— work 同、depth 差 70 万倍', { size: 10 }));
+  body.push(cap(36, 350, '实际 depth = 层级拼接 63+5+3+10 ≈ 81 步；Brent 调度 W/p + D ≈ 64+24 = 88（p = 262144 线程，reduce6 注释点名）', { size: 10 }));
+  body.push(cap(36, 370, '优化目标是省搬运不是省加法：强度 I ≈ 1/bytes = 0.25 FLOP/byte，离 ridge 295 差约 1180 倍 → memory-bound', { size: 10, color: 'var(--seal-deep)' }));
 
-  return scene(720, 326, body, { label: 'reduction tree：8 元素二叉树 W 等于 7 D 等于 3，右侧 register 到 warp 到 block 到 grid 层级映射，主口径 2 的 24 次方元素读 67.11 MB 得 20.02 微秒下界' }).svg();
+  return scene(720, 386, body, { label: 'reduction tree：8 元素二叉树 W 等于 7 D 等于 3，右侧 register 到 warp 到 block 到 grid 层级映射，主口径 2 的 24 次方元素读 67.11 MB 得 20.02 微秒下界' }).svg();
 }
 
 /* ============================================================
@@ -171,12 +174,14 @@ function blellochScan() {
   nodes.push(rt); body.push(rt.svg);
   leafX.forEach((x, i) => {
     const tgt = up0[Math.floor(i / 2)];
-    body.push(edge([x, 188], [tgt.x + tgt.w / 2, 172], { nodes, portFrom: undefined, pulse: i % 2 === 0, dur: 1.2, delay: i * 0.1, uid: UID, eid: `ul${i}`, arrow: false }));
+    // dur2.4/delay2.3 → 3.5s 时相位恰在中段，光点不落在节点数字上
+    body.push(edge([x, 188], [tgt.x + tgt.w / 2, 172], { nodes, pulse: i % 2 === 0, dur: 2.4, delay: 2.3, uid: UID, eid: `ul${i}`, arrow: false }));
   });
+  // 短内边（up0→up1→root）改 top→bottom 正确走向且不加 pulse（端点 dwell 会遮 10/26/36）
   [[up0[0], up1[0]], [up0[1], up1[0]], [up0[2], up1[1]], [up0[3], up1[1]]].forEach(([a, b], i) =>
-    body.push(edge(a, b, { nodes, portFrom: a.bottom, portTo: b.top, pulse: true, dur: 1.2, delay: 0.5 + i * 0.12, uid: UID, eid: `um${i}`, arrow: false })));
+    body.push(edge(a, b, { nodes, portFrom: a.top, portTo: b.bottom, uid: UID, eid: `um${i}`, arrow: false })));
   [[up1[0], rt], [up1[1], rt]].forEach(([a, b], i) =>
-    body.push(edge(a, b, { nodes, portFrom: a.bottom, portTo: b.top, pulse: true, dur: 1.2, delay: 1.0 + i * 0.15, uid: UID, eid: `ur${i}`, arrow: false })));
+    body.push(edge(a, b, { nodes, portFrom: a.top, portTo: b.bottom, uid: UID, eid: `ur${i}`, arrow: false })));
   body.push(cap(392, 82, '根 = 总和 36 → 置根为 0', { size: 9, color: 'var(--seal-deep)' }));
 
   // down-sweep 结果 strip
@@ -228,7 +233,7 @@ function cutlassHierarchy() {
   const tc = node({ id: 'tc', x: 396, y: 206, w: 272, h: 40, role: 'attn', title: 'Tensor Core（wgmma ×8/tile）', sub: 'shared→TC 49152 B（B 读两遍）· 96 B/cycle', mono: true, titleSize: 11, subSize: 8 });
   const reg = node({ id: 'reg', x: 396, y: 274, w: 272, h: 40, role: 'proj', title: 'register 累加器（fp32）', sub: '128 regs/thread · k 方向归约 D 驻留', mono: true, titleSize: 11, subSize: 8 });
   nodes.push(hbm, shm, tc, reg); body.push(hbm.svg, shm.svg, tc.svg, reg.svg);
-  [[hbm, shm, 'cp.async/TMA'], [shm, tc, '描述符'], [tc, reg, 'D=A×B+C']].forEach(([a, b, lab], i) => {
+  [[hbm, shm, 'TMA'], [shm, tc, '描述符'], [tc, reg, 'D=A×B+C']].forEach(([a, b, lab], i) => {
     body.push(edge(a, b, { nodes, portFrom: a.bottom, portTo: b.top, pulse: true, dur: 1.3, delay: 0.4 + i * 0.4, uid: UID, eid: `f${i}`, arrow: false }));
     body.push(arrowHead(b.top[0], b.top[1], 0, 1));
     body.push(cap(672, a.bottom[1] + 16, lab, { mono: true, size: 8, anchor: 'end' }));

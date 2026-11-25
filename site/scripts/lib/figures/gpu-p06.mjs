@@ -501,7 +501,7 @@ function mlaSeesaw() {
   body.push(cap(505, 312, '·V1L（WG0 用 WG1 p1）', { size: 8, anchor: 'middle' }));
 
   body.push(cap(36, 342, '重叠：WG0 做 softmax/rescale（CUDA/SFU）时 WG1 占 TC，反之亦然；半区 rescale 因子 = 自上次更新以来全部 max 位移累积（O_R 为两 scale 之积）', { size: 10 }));
-  body.push(cap(36, 362, '正确性 = online softmax 不变量按半区维护（deep-dive 逐字：mathematically equivalent to FA online softmax）', { size: 10, color: 'var(--seal-deep)' }));
+  body.push(cap(36, 362, '正确性 = online softmax 不变量按半区维护（deep-dive 节引：…mathematically equivalent to FlashAttention’s online softmax algorithm）', { size: 10, color: 'var(--seal-deep)' }));
   body.push(cap(36, 382, 'EVICT_FIRST（decode 每 KV block 单 CTA 消费、无跨 CTA 复用）对照 FA3 EVICT_LAST —— cache hint 跟复用结构走', { size: 10 }));
 
   return scene(720, 398, body, { label: 'MLA seesaw 双 warpgroup：K0 K1 各九份 TMA，WG0 算 p0 更新 O_L，WG1 算 p1 更新 O_R，共享 running max，跨 WG 用对方 p 补半区 O_R 加 p0 V0R 与 O_L 加 p1 V1L' }).svg();
