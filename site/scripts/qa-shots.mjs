@@ -59,6 +59,9 @@ const PAGES = [
   // gpu 维度 W3 样章（P5/P6 代码走读密代表章：GEMM 走读重章 + FA 走读重章，spec §8）
   ['gpu-ch-gemm-kernel', '/gpu/05-kernel-compute-primitives/02-gemm-kernel-design/'], // 代码走读密（5.2【重】，CUTLASS 五层实体 + L2 波前修正 + MMA 利用率分解场景图）
   ['gpu-ch-flashattention', '/gpu/06-low-precision-attention-kernels/03-flashattention-kernel/'], // 代码走读密（6.3【重】，FA2/FA3 指令级走读 + tile 预算 + 精确 HBM 流量场景图）
+  // gpu 维度 W4 样章（P7/P8 通信落地代表章：互连带宽账密 + ring 下界推导重章，spec §8）
+  ['gpu-ch-gpudirect-p2p', '/gpu/07-nvlink-nvswitch/03-gpudirect-p2p/'], // 带宽账密（7.3，bounce 两跳半谐波均值 + PCIe 三道门 + GDS min 账场景图）
+  ['gpu-ch-ring-algorithms', '/gpu/08-nccl-collectives/02-ring-algorithms/'], // 推导重章（8.2【重】，带宽最优性下界证明 + 多 ring 聚合 + 分层 ring 场景图）
 ];
 
 const VIEWPORTS = [

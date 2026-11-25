@@ -399,7 +399,7 @@ function p2pVsBounce() {
   body.push(edge(hb, b1, { nodes, pulse: true, dur: 1.4, delay: 0.5, uid: UID, eid: 'h2d', arrow: false }));
   body.push(arrowHead(b1.left[0], b1.left[1], 1, 0));
   body.push(cap(489, 90, 'H2D · PCIe 跳 2', { mono: true, size: 8, anchor: 'middle' }));
-  body.push(cap(36, 138, 'CPU/copy engine 参与中转 · host DRAM 流量 2M · 串行端到端 = 谐波均值 (1/BW₁ + 1/BW₂)⁻¹', { size: 9.5 }));
+  body.push(cap(36, 138, 'CPU/copy engine 参与中转 · host DRAM 流量 2M · 串行端到端 = 半谐波均值 (1/BW₁ + 1/BW₂)⁻¹', { size: 9.5 }));
 
   // P2P 路径
   body.push(cap(36, 164, 'P2P 路径（启用，NVLink 域内）：单跳', { size: 10.5, color: 'var(--seal-deep)', weight: '650' }));
@@ -427,7 +427,7 @@ function p2pVsBounce() {
 
   body.push(cap(36, 348, '增益两层：路径增益（NVLink 换 PCIe 450/64 ≈ 7×）× 跳数增益（单跳换两跳，串行口径 2×）= 14.06×', { size: 10, color: 'var(--seal-deep)', weight: '650' }));
   body.push(cap(36, 366, 'PCIe P2P（同 root complex、ACS 关）64 GB/s → 15.625 ms：只拿跳数增益 2×，与流水 bounce 稳态持平', { size: 10 }));
-  body.push(cap(36, 384, '坑：API 报值 ≠ 必然 P2P —— 未启用或被 IOMMU/ACS 挡掉仍经 host（~32 GB/s）；先启用再用 nvbandwidth 核对路径', { size: 10 }));
+  body.push(cap(36, 384, '坑：API 报值 ≠ 必然 P2P —— 未启用 / IOMMU 挡经 host（~32 GB/s），ACS 开绕行 root complex；nvbandwidth 核对路径', { size: 10 }));
 
   return scene(720, 400, body, { label: 'bounce 路径 GPU A 经 D2H 到 host DRAM 再 H2D 到 GPU B，host 流量 2M 串行 31.25 ms；P2P 单跳 NVLink 450 GB/s 2.22 ms，host 零流量，快 14.06 倍' }).svg();
 }

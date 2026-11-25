@@ -38,7 +38,7 @@ $$
 
 **证明**（路线：单树内部节点/叶子分别计数 → 互补性叠加 → 与 ring 同 leading term，三步）。其一，单树处理 $D = M/2$：内部节点（2 孩子）发送 $3D$（上行 $D$ + 下行 $2D$），叶子发送 $D$（仅上行）。其二，互补性：每 rank 至多在一棵树是内部节点（发 $3D$）、另一棵是叶子（发 $D$），合计 $3D + D = 4D = 4 \times M/2 = 2M$；至多一个 rank 在两棵都是叶子（发 $2D = M$，更省）。其三， $2M$ 与 ring 的 $2(n-1)/n \cdot M = 2M - 2M/n$ 同 leading term（差 $2M/n$， $n \to \infty$ 时相对差趋 0），故带宽最优。∎ 代入 $n=8$、 $M=1$ GB：双树每 rank $\approx 2$ GB，ring 1.75 GB，差 0.25 GB（ $2M/n$）；大 $n$ 下两者都趋 $2M$。学术出处 Sanders-Speck-Träff 2009（[Sanders et al., 2009](../references.md)，[B]，「Two-tree algorithms for full bandwidth broadcast, reduction and scan」，Parallel Computing 35(12):581-594，NCCL blog ref [6] 自引）；延迟侧双树深 $\lceil \log_2 n \rceil$、上行 + 下行 $2\lceil \log_2 n \rceil \alpha$，仍 $O(\log n)$。**所以双树同时拿到带宽最优与对数延迟**——这是它取代单树的原因。
 
-NCCL 的双树构建代码是 `ncclGetDtree`（src/graph/trees.cc L90，[NVIDIA, NCCL](../references.md)，教学参照 + 官方实现，版本锚 2.32.7-1，fresh tarball 核实）：第一棵用 `ncclGetBtree`（L32，power-of-two 位模式最大化局部性），第二棵偶数 rank 用 mirror（`nranks-1-rank` 翻转）、奇数 rank 用 shift（移一位），注释逐字「mirror tree (if nranks is even)... shift it by one rank (if nranks is odd)」（L69-88）。代码自带的双树图（12-rank 偶数 mirror 例，trees.cc L69-88 注释逐字；左 = 第一棵 btree、右 = mirror 第二棵，各处理 $M/2$）：
+NCCL 的双树构建代码是 `ncclGetDtree`（src/graph/trees.cc L90，[NVIDIA, NCCL](../references.md)，教学参照 + 官方实现，版本锚 2.32.7-1，fresh tarball 核实）：第一棵用 `ncclGetBtree`（L32，power-of-two 位模式最大化局部性），第二棵在 nranks 为偶数时用 mirror（`nranks-1-rank` 翻转）、nranks 为奇数时用 shift（移一位），注释逐字「mirror tree (if nranks is even)... shift it by one rank (if nranks is odd)」（L69-88）。代码自带的双树图（12-rank 偶数 mirror 例，trees.cc L69-88 注释逐字；左 = 第一棵 btree、右 = mirror 第二棵，各处理 $M/2$）：
 
 ```
 0---------------8                   3----------------11
@@ -50,7 +50,7 @@ NCCL 的双树构建代码是 `ncclGetDtree`（src/graph/trees.cc L90，[NVIDIA,
   1   3   5   7   9   11     0   2    4   6  8   10
 ```
 
-读法：第一棵的内部节点（如 0、4、2、6、10）在第二棵里落到叶子位置，第二棵的内部节点（如 3、7、1、5、9）在第一棵里是叶子——**没有 rank 在两棵都是内部节点**（blog 逐字）。叠加后每 rank 至多在一棵树承担内部节点的 $3D$ 发送、另一棵只承担叶子的 $D$，这正是命题 1 互补性计数的结构来源。mirror（偶数 rank）与 shift（奇数 rank）两种构造都保证这条互补性，差异只在第二棵的根位置。
+读法：第一棵的内部节点（如 0、4、2、6、10）在第二棵里落到叶子位置，第二棵的内部节点（如 3、7、1、5、9）在第一棵里是叶子——**没有 rank 在两棵都是内部节点**（blog 逐字）。叠加后每 rank 至多在一棵树承担内部节点的 $3D$ 发送、另一棵只承担叶子的 $D$，这正是命题 1 互补性计数的结构来源。mirror（nranks 偶）与 shift（nranks 奇）两种构造都保证这条互补性，差异只在第二棵的根位置。
 
 ## 4. ring/tree 交叉临界 M*：实测带宽差才有交叉
 
@@ -76,7 +76,7 @@ $M \lt M^{\ast}$ 时 tree 赢（延迟项主导）、 $M \gt M^{\ast}$ 时 ring 
 
 **口径注**（硬规则）：其一， $\Delta\beta \gt 0$ 是交叉存在的**前提**——理想模型 $\Delta\beta = 0$ 时分母为零、 $M^{\ast}$ 无定义（无交叉），所以 $M^{\ast}$ 必须用实测 $\beta_{\mathrm{eff}}$ 差，不能从纯理想 α-β 解出。其二，一般 $n$（非 2 的幂）以 $\lceil \log_2 n \rceil$ 替 $\log_2 n$（双树深仍 $O(\log n)$），本章数值例 $n=8$ 两者同值。其三， $M^{\ast}$ 是 ring/tree **算法间**交叉，与 8.1 §5 的 $M_c$（ring **内部**延迟项/带宽项临界）不同——两个临界勿混（8.1 §5 口径注回链）。
 
-全数字代入（ $n=8$、 $\alpha=2$ μs、 $\beta_{\mathrm{ring,eff}} = 1/370.8$ GB/s、 $\beta_{\mathrm{tree,eff}} = 1/130$ GB/s 教学假设）： $\Delta\beta = 7.69 \times 10^{-12} - 2.70 \times 10^{-12} = 4.995 \times 10^{-12}$ s/B； $M^{\ast} = 8 \times (7-3) \times 2 \times 10^{-6} / (7 \times 4.995 \times 10^{-12}) = 1.83 \times 10^{6}$ B ≈ **1.83 MB**。即小消息（低于 1.83 MB）tree 赢延迟、大消息（高于 1.83 MB）ring 赢实测带宽。代入验证： $M = M^{\ast}$ 时 $T_{\mathrm{ring}} = T_{\mathrm{tree}} \approx 36.6$ μs，两式逐数闭合。这个 1.83 MB 与 8.1 的 $M_c = 5.93$ MB 同量级但不同物—— $M_c$ 是 ring 内部两项之比， $M^{\ast}$ 是 ring/tree 实测带宽差驱动的算法切换点。
+全数字代入（ $n=8$、 $\alpha=2$ μs、 $\beta_{\mathrm{ring,eff}} = 1/370.8$ GB/s、 $\beta_{\mathrm{tree,eff}} = 1/130$ GB/s 教学假设）： $\Delta\beta = 7.692 \times 10^{-12} - 2.697 \times 10^{-12} = 4.995 \times 10^{-12}$ s/B； $M^{\ast} = 8 \times (7-3) \times 2 \times 10^{-6} / (7 \times 4.995 \times 10^{-12}) = 1.83 \times 10^{6}$ B ≈ **1.83 MB**。即小消息（低于 1.83 MB）tree 赢延迟、大消息（高于 1.83 MB）ring 赢实测带宽。代入验证： $M = M^{\ast}$ 时 $T_{\mathrm{ring}} = T_{\mathrm{tree}} \approx 36.6$ μs，两式逐数闭合。这个 1.83 MB 与 8.1 的 $M_c = 5.93$ MB 同量级但不同物—— $M_c$ 是 ring 内部两项之比， $M^{\ast}$ 是 ring/tree 实测带宽差驱动的算法切换点。
 
 > **坑**：从纯理想 α-β 模型解 $M^{\ast}$。触发条件：把 ring/tree 带宽项都用同一个 $\beta$、令两式相等解 $M$；现象：带宽项相消、方程与 $M$ 无关，或分母 $\Delta\beta = 0$ 除零，得出「无交叉」或伪临界；规避：交叉必须引入实测 $\beta_{\mathrm{tree,eff}} \gt \beta_{\mathrm{ring,eff}}$（nccl-tests 实测或 NCCL tuning 表），理想模型只给「tree 延迟恒赢、带宽恒等」的结论（training 4.1 已交付）。
 
@@ -96,7 +96,7 @@ NCCL 把这套账落进 cost model：tree 的算法带宽取 bus 带宽之半（
 
 NCCL 怎么在 ring/tree/NVLS 之间选？选择逻辑归 8.4 模块走读，本章只立「按消息尺寸 + 拓扑选最小时间」的口径与本章账的接口。
 
-NCCL 对每个 (算法, 协议) 组合用 cost model 算时间，取最小者（`ncclTuningSelectBestTuning`，src/tuning/tuning.cc L153，版本锚 2.32.7-1）；时间即 `ncclTuningGetTime` 的 α-β 形态（§4）。候选算法含 Ring / Tree / NVLS / NVLS_TREE / CollNet / PAT（NCCL_ALGO 枚举，plugin/nccl_tuner.h L28-34；docs NCCL_ALGO 节，[NVIDIA, NCCL docs](../references.md)，[C]）。选择规律（本章账的定性接口）：**小消息**延迟主导 → tree（ $O(\log n)$ 延迟）或 NVLS（约 2 跳，7.1 §6）；**大消息**带宽主导 → ring（实测带宽最优）或 NVLS（每 rank 发送 $M$，域内）；**NVLink 域内**有 NVLS 时优先 NVLS（网内归约 bypass），跨机则 ring/tree 分层。环境变量 NCCL_ALGO / NCCL_PROTO 可强制指定（cost_model.cc L365-379 解析）。training 4.1 §2.2「选择逻辑归 cluster 维度」按 gpu 维度边界裁定重判到 gpu 8.4 / 10.2——算法选择的代码机制归 8.4，fabric 工程归 10.2。本章交付的 $M^{\ast}$（命题 2）正是 ring/tree 切换的定量依据，cost model 的 per-algo 表与 kernel dispatch 全量走读归 8.4。
+NCCL 对每个 (算法, 协议) 组合用 cost model 算时间，取最小者（`ncclTuningSelectBestTuning`，src/tuning/tuning.cc L153，版本锚 2.32.7-1）；时间即 `ncclTuningGetTime` 的 α-β 形态（§4）。候选算法含 Ring / Tree / NVLS / NVLS_TREE / CollNet / PAT（NCCL_ALGO 枚举，plugin/nccl_tuner.h L28-35；docs NCCL_ALGO 节，[NVIDIA, NCCL docs](../references.md)，[C]）。选择规律（本章账的定性接口）：**小消息**延迟主导 → tree（ $O(\log n)$ 延迟）或 NVLS（约 2 跳，7.1 §6）；**大消息**带宽主导 → ring（实测带宽最优）或 NVLS（每 rank 发送 $M$，域内）；**NVLink 域内**有 NVLS 时优先 NVLS（网内归约 bypass），跨机则 ring/tree 分层。环境变量 NCCL_ALGO / NCCL_PROTO 可强制指定（cost_model.cc L365-379 解析）。training 4.1 §2.2「选择逻辑归 cluster 维度」按 gpu 维度边界裁定重判到 gpu 8.4 / 10.2——算法选择的代码机制归 8.4，fabric 工程归 10.2。本章交付的 $M^{\ast}$（命题 2）正是 ring/tree 切换的定量依据，cost model 的 per-algo 表与 kernel dispatch 全量走读归 8.4。
 
 > **提点**：理想模型与实测模型各管一段——理想 α-β 给「tree 延迟恒赢、带宽恒等」的结构结论（谁也不会错），实测 $\beta_{\mathrm{eff}}$ 差才给「大消息 ring 反超」的交叉点（工程切换的依据）。把这两段分开，就不会犯「从纯理想模型凭空解出 $M^{\ast}$」的错，也不会把 blog 的端到端 180× 实测改善误当纯延迟项比值。
 
@@ -106,7 +106,7 @@ NCCL 对每个 (算法, 协议) 组合用 cost model 算时间，取最小者（
 | --- | --- | --- |
 | tree 延迟项 $2\lceil \log_2 n \rceil \alpha$ vs ring $2(n-1)\alpha$（recap training 4.1 练习 3 步数）； $n=8$ 12 vs 28 μs、 $n=1024$ 40 vs 4092 μs（约 102×）；blog Summit 24576 实测 180×（端到端口径，非纯延迟比） | 式 (1) | §2、练习 1 |
 | 单棵二叉树内部节点发 $3M$、root 热点带宽不最优；双互补树「no rank is a node on both trees」、各处理 $M/2$，每 rank $\approx 2M$ 带宽最优 + $O(\log n)$ 延迟 | 命题 1 | §3、练习 3 |
-| 双树学术出处 Sanders 2009 + NCCL blog；ncclGetDtree mirror（偶）/shift（奇）；内部节点 $3D$ + 叶子 $D = 2M$ | trees.cc L90/L32 | §3、8.4 |
+| 双树学术出处 Sanders 2009 + NCCL blog；ncclGetDtree mirror（nranks 偶）/shift（nranks 奇）；内部节点 $3D$ + 叶子 $D = 2M$ | trees.cc L90/L32 | §3、8.4 |
 | 理想 α-β 带宽项相同无交叉（recap training 4.1）；真实交叉来自 $\beta_{\mathrm{tree,eff}} \gt \beta_{\mathrm{ring,eff}}$； $M^{\ast} = n(n-1-\log_2 n)\alpha/((n-1)\Delta\beta)$， $n=8$ → 1.83 MB | 式 (2)，命题 2 | §4、练习 2/4 |
 | $M^{\ast}$（算法间，实测 $\beta_{\mathrm{eff}}$ 差）≠ $M_c$（ring 内部两项临界）； $\Delta\beta=0$ 除零无交叉 | §4 口径注 + 坑 | §4、8.1 §5 |
 | binomial root 收 $M\log_2 n$；k-ary 延迟 $2\lceil \log_k n \rceil\alpha$ 换带宽；分层 tree 延迟项 $2((ppn-1)\mathrm{intraLat} + \log_2(n_{\mathrm{node}})\mathrm{interLat})$ | tree.cc L58 | §5、8.1 §3 |
@@ -124,7 +124,7 @@ NCCL 对每个 (算法, 协议) 组合用 cost model 算时间，取最小者（
 - [NVIDIA, NCCL 2.4 blog](../references.md)：Massively Scale Deep Learning Training with NCCL 2.4（key: nccl-tree-blog），[C] 开放技术博客、非闭源，2026-11-25 逐字核——双互补树「half or less ranks... nodes... no rank is a node on both trees」+「as optimal as rings in terms of data sent/received」+「automatically switches back to rings when that pattern results in greater bandwidth」+ Summit 24576 GPU「up to 180x improvement」+ 跨 L3 switch 带宽降 + 2D hierarchical ring 逐字；ref [6]=Sanders 2009（§2/§3/§4）
 - [Sanders et al., 2009](../references.md)：Two-tree algorithms for full bandwidth broadcast, reduction and scan（key: sanders-two-tree），[B] 老经典无 arXiv，Parallel Computing 35(12):581-594，2009-12，DOI 10.1016/j.parco.2009.09.001，Crossref 2026-11-25 核实——double binary tree 学术出处（前驱版 EuroPVM/MPI 2007 LNCS 4757）；命题 1 按本书骨架独立重推，经典只作出处（§3）
 - [Rabenseifner, 2004](../references.md)：Optimization of Collective Reduction Operations（key: rabenseifner），[B] 老经典无 arXiv，Springer LNCS 3036 ICCS 2004 pp 1-9，Crossref 2026-11-25 再核——recursive halving/doubling 步数对照（§2，recap training 4.1 练习 3）
-- [NVIDIA, NCCL](../references.md)：NVIDIA/nccl repo（key: nccl），教学参照 + 官方实现，版本锚 2.32.7-1（commit 351f33fd087e，master 2026-11-24）fresh tarball 核实——src/graph/trees.cc ncclGetBtree L32 / ncclGetDtree L90（mirror 偶 / shift 奇，注释 L69-88 双树图）；src/tuning/tree.cc generalBandwidths=busBw×0.5 L44 / 延迟项 2×((ppn-1)intraLat + log2i(nNodes)interLat) L58 / treeCorrectionFactor L81；src/tuning/tuning_general.cc ncclTuningGetTime L58；src/tuning/tuning.cc ncclTuningSelectBestTuning L153；plugin/nccl_tuner.h NCCL_ALGO 枚举 L28-34（§3/§4/§5/§6，模块全量走读归 8.4）
+- [NVIDIA, NCCL](../references.md)：NVIDIA/nccl repo（key: nccl），教学参照 + 官方实现，版本锚 2.32.7-1（commit 351f33fd087e，master 2026-11-24）fresh tarball 核实——src/graph/trees.cc ncclGetBtree L32 / ncclGetDtree L90（nranks 偶 mirror / nranks 奇 shift，注释 L69-88 双树图）；src/tuning/tree.cc generalBandwidths=busBw×0.5 L44 / 延迟项 2×((ppn-1)intraLat + log2i(nNodes)interLat) L58 / treeCorrectionFactor L81；src/tuning/tuning_general.cc ncclTuningGetTime L58；src/tuning/tuning.cc ncclTuningSelectBestTuning L153；plugin/nccl_tuner.h NCCL_ALGO 枚举 L28-35（§3/§4/§5/§6，模块全量走读归 8.4）
 - [NVIDIA, NCCL docs](../references.md)：NCCL User Guide（key: nccl-docs），[C] 官方规格披露·一手权威，2.32.3（滞后 repo 2.32.7 注）——NCCL_ALGO（Ring/Tree/NVLS/NVLSTree/PAT）/ NCCL_PROTO 环境变量口径（§6）
 - [NVIDIA, nccl-tests](../references.md)：NVIDIA/nccl-tests repo（key: nccl-tests），教学参照 + 官方实现——all-reduce 带宽-延迟基准，实测 $\beta_{\mathrm{eff}}$ 差的测量工具（§4，真实 $M^{\ast}$ 以实测为准）
 - training 4.1 / 8.1 / 8.2 / 7.1 / 7.2（纯文字指引，不挂链接）：ring 消息量式 (2) + α-β 式 (3) + recursive halving/doubling 练习 3 + 「大消息带宽项相同树形赢延迟」结论（4.1 §2.2，recap 不重推）、regime 临界 $M_c$（8.1 §5）、ring 带宽最优性下界与万卡延迟（8.2 §3/§7）、NVLS 每 rank 发送 $M$（7.1 §6）、有效带宽 370.8 GB/s（7.2 §3）——recap 不重推（§1/§2/§4/§6）

@@ -1,6 +1,6 @@
 # 7.3 GPUDirect P2P（GPUDirect Peer-to-Peer）
 
-> 同一条 cudaMemcpyPeer，为什么在一台机器上 1 GB 拷 2.22 ms、另一台要 31.25 ms——差的不是 API，是路径走没走 host 内存？cudaDeviceEnablePeerAccess 启用之后，驱动到底映射了什么，指针为什么两边通用？PCIe P2P 被 IOMMU 与 ACS 各挡在哪一层，后果是变慢还是别的？GDS 把 NVMe 直连 HBM，省下的两跳值多少带宽？本章交付四块：GPUDirect 家族定位与 P2P 形式定义、peer access 的 API 语义与地址映射（含 8-peer 上限与一致性 scope）、P2P vs host bounce buffer 的带宽账（命题 1：串行谐波均值 / 流水 min）、PCIe P2P 限制清单与 GDS cuFile 接口及 min 带宽账 | 前置：7.1（NVLink/NVSwitch 几何与方向口径）、7.2（P2P 带宽账、PCIe 拓扑与 NUMA、nvbandwidth 测量口径）、3.2（fence 与 memory model scope）；下游 8.1/8.4（NCCL p2p transport 建立在 peer 映射上）、9.2（GPUDirect RDMA 与 BAR1）、10.2（compute fabric transport 与 MNNVL） | 锚点：CUDA Programming Guide（[NVIDIA, CUDA Programming Guide](../references.md)，[C] 官方规格披露·一手权威，13.5 §3.4.2 P2P 节）、GPUDirect docs（[NVIDIA, GPUDirect docs](../references.md)，[C] 官方规格披露·一手权威，家族页 + GDR docs）、GDS docs（[NVIDIA, GDS docs](../references.md)，[C] 官方规格披露·一手权威，cuFile API v1.20）、cuda-samples（[NVIDIA, cuda-samples](../references.md)，教学参照 + 官方实现，simpleP2P）、NCCL repo（[NVIDIA, NCCL](../references.md)，教学参照 + 官方实现，版本锚 2.32.7-1）、Hopper whitepaper（[NVIDIA, Hopper whitepaper](../references.md)，[C]，PCIe Gen5 数值）——官方文档 2026-11-25 一手核实
+> 同一条 cudaMemcpyPeer，为什么在一台机器上 1 GB 拷 2.22 ms、另一台要 31.25 ms——差的不是 API，是路径走没走 host 内存？cudaDeviceEnablePeerAccess 启用之后，驱动到底映射了什么，指针为什么两边通用？PCIe P2P 被 IOMMU 与 ACS 各挡在哪一层，后果是变慢还是别的？GDS 把 NVMe 直连 HBM，省下的两跳值多少带宽？本章交付四块：GPUDirect 家族定位与 P2P 形式定义、peer access 的 API 语义与地址映射（含 8-peer 上限与一致性 scope）、P2P vs host bounce buffer 的带宽账（命题 1：串行半谐波均值 / 流水 min）、PCIe P2P 限制清单与 GDS cuFile 接口及 min 带宽账 | 前置：7.1（NVLink/NVSwitch 几何与方向口径）、7.2（P2P 带宽账、PCIe 拓扑与 NUMA、nvbandwidth 测量口径）、3.2（fence 与 memory model scope）；下游 8.1/8.4（NCCL p2p transport 建立在 peer 映射上）、9.2（GPUDirect RDMA 与 BAR1）、10.2（compute fabric transport 与 MNNVL） | 锚点：CUDA Programming Guide（[NVIDIA, CUDA Programming Guide](../references.md)，[C] 官方规格披露·一手权威，13.5 §3.4.2 P2P 节）、GPUDirect docs（[NVIDIA, GPUDirect docs](../references.md)，[C] 官方规格披露·一手权威，家族页 + GDR docs）、GDS docs（[NVIDIA, GDS docs](../references.md)，[C] 官方规格披露·一手权威，cuFile API v1.20）、cuda-samples（[NVIDIA, cuda-samples](../references.md)，教学参照 + 官方实现，simpleP2P）、NCCL repo（[NVIDIA, NCCL](../references.md)，教学参照 + 官方实现，版本锚 2.32.7-1）、Hopper whitepaper（[NVIDIA, Hopper whitepaper](../references.md)，[C]，PCIe Gen5 数值）——官方文档 2026-11-25 一手核实
 
 ## 1. 三个问题与本章口径
 
@@ -8,7 +8,7 @@
 
 **本章口径**（章脊锁定）：主口径 **HGX H100 8-GPU**（NVLink4 + 4 颗第三代 NVSwitch，几何 recap 7.1 §3 / 7.2 §2）；**PCIe Gen5 x16 = 64 GB/s 单向**作同机对比路径（Hopper wp p.49 逐字「128 GB/sec total bandwidth (64 GB/sec in each direction)」，recap 7.2 §5）。带宽账取 **raw 峰值口径**（有效带宽折扣见 7.2 式 (2)，两边同扣协议效率、比值结论不变）；贯穿实例 $M = 1$ GB = $10^{9}$ B。方向口径沿 7.1 硬规则：头条 900 GB/s 为双向总和，单向拷贝峰值 450 GB/s。
 
-符号声明（spec §4.3）： $n$ = rank/GPU 数（**本章 $n$ 专归 rank 数**，取一 GPU 一 rank 口径）； $M$ = 被传输消息总字节； $\alpha$ = 每消息固定延迟（**本章 $\alpha$ = 消息延迟，非 inference 接受率**）； $\beta$ = 每字节传输时间 = 有效带宽倒数； $\mathrm{BW}$ = 带宽（GB/s， $10^{9}$ B/s），下标 uni / serial / pipe 标单向 / 串行端到端 / 流水稳态。 $N$ 专归参数量、 $B$ 专归 batch，本章均不占用。
+符号声明（spec §4.3）： $n$ = rank/GPU 数（**本章 $n$ 专归 rank 数**，取一 GPU 一 rank 口径）； $M$ = 被传输消息总字节； $\alpha$ = 每消息固定延迟（**本章 $\alpha$ = 消息延迟，非 inference 接受率**）； $\beta$ = 每字节传输时间 = 有效带宽倒数； $\mathrm{BW}$ = 带宽（GB/s， $10^{9}$ B/s），下标 uni / serial / pipe 标单向 / 串行端到端 / 流水稳态； $T_{\mathrm{serial}}$ = 串行两跳端到端总时间（§4 证明）。 $N$ 专归参数量、 $B$ 专归 batch，本章均不占用。
 
 **边界声明**：GPUDirect RDMA（NIC 直访 HBM、nvidia-peermem、BAR1 注册机制）归 9.2；NCCL p2p transport 模块走读归 8.4；ring 带宽最优性归 8.2；NVLink 硬件几何与有效带宽模型归 7.1/7.2，本章只引其结论。**测量口径**沿 7.2：本机无 NVIDIA GPU，测量项交付方法 + 官方披露口径，非一手来源数值一律标**教学假设口径**。
 
@@ -89,11 +89,11 @@ $$
 \mathrm{BW}_{\mathrm{serial}} = \left( \frac{1}{\mathrm{BW}_1} + \frac{1}{\mathrm{BW}_2} \right)^{-1}, \qquad \mathrm{BW}_{\mathrm{pipe}} = \min\left(\mathrm{BW}_1,\ \mathrm{BW}_2\right) \qquad (1)
 $$
 
-**符号**： $`\mathrm{BW}_{\mathrm{serial}}`$ = 串行（两跳不重叠）端到端有效带宽，为两跳带宽的谐波均值； $`\mathrm{BW}_{\mathrm{pipe}}`$ = 全流水（双缓冲、稳态）端到端有效带宽，取两跳较小者。P2P 直连路径把两跳换成单跳，带宽即该路径单向带宽 $`\mathrm{BW}_{\mathrm{P2P}}`$。
+**符号**： $`\mathrm{BW}_{\mathrm{serial}}`$ = 串行（两跳不重叠）端到端有效带宽，为两跳带宽的**谐波均值之半**（半谐波均值，并联电阻式——谐波均值为本式的 2 倍）； $`\mathrm{BW}_{\mathrm{pipe}}`$ = 全流水（双缓冲、稳态）端到端有效带宽，取两跳较小者。P2P 直连路径把两跳换成单跳，带宽即该路径单向带宽 $`\mathrm{BW}_{\mathrm{P2P}}`$。
 
-**证明**（路线：时间相加 → 谐波均值 → 流水瓶颈，三步）：其一，串行两跳时间相加， $`T = M/\mathrm{BW}_1 + M/\mathrm{BW}_2`$，端到端带宽按定义 $M/T$ 即得谐波均值。其二，流水下每个 chunk 须依次过两跳，稳态吞吐由较慢一跳决定——快跳的产出在中间缓冲堆积，慢跳喂不满则整条线速降到慢跳，即 min。其三，P2P 路径只有一跳， $M$ 字节只占该路径一次，时间 $`M/\mathrm{BW}_{\mathrm{P2P}}`$。∎
+**证明**（路线：时间相加 → 倒数和取倒数 → 流水瓶颈，三步）：其一，串行两跳时间相加， $`T_{\mathrm{serial}} = M/\mathrm{BW}_1 + M/\mathrm{BW}_2`$，端到端带宽按定义 $M/T_{\mathrm{serial}}$ 即得倒数和的倒数，亦即谐波均值之半。其二，流水下每个 chunk 须依次过两跳，稳态吞吐由较慢一跳决定——快跳的产出在中间缓冲堆积，慢跳喂不满则整条线速降到慢跳，即 min。其三，P2P 路径只有一跳， $M$ 字节只占该路径一次，时间 $`M/\mathrm{BW}_{\mathrm{P2P}}`$。∎
 
-全数字代入（两跳均 Gen5 x16 = 64 GB/s， $M = 1$ GB，raw 峰值口径）：串行 $1/(1/64 + 1/64) = 32$ GB/s，耗时 $10^{9}/(32 \times 10^{9}) = 31.25$ ms；流水 $\min(64, 64) = 64$ GB/s，耗时 15.625 ms。NVLink P2P 单向 raw 450 GB/s（7.1 式 (2)），耗时 $10^{9}/(450 \times 10^{9}) \approx 2.22$ ms——**对串行 bounce 快 14.06 倍，对流水 bounce 快 7.03 倍**。PCIe P2P（同 root complex、ACS 关，§5）64 GB/s，耗时 15.625 ms——对串行 bounce 快 2 倍，与流水 bounce 稳态持平。所以 P2P 的增益分两层：**路径增益**（NVLink 换 PCIe，450/64 ≈ 7×）与**跳数增益**（单跳换两跳，串行口径 2×）；PCIe P2P 只拿跳数增益，NVLink P2P 两层都拿。不等跳例（命题 1 代入）：跨 socket H2D 有效 40 GB/s（7.2 §5 教学假设）、D2H 64 GB/s，串行谐波均值 $1/(1/64 + 1/40) \approx 24.62$ GB/s，流水 $\min = 40$ GB/s。
+全数字代入（两跳均 Gen5 x16 = 64 GB/s， $M = 1$ GB，raw 峰值口径）：串行 $1/(1/64 + 1/64) = 32$ GB/s，耗时 $10^{9}/(32 \times 10^{9}) = 31.25$ ms；流水 $\min(64, 64) = 64$ GB/s，耗时 15.625 ms。NVLink P2P 单向 raw 450 GB/s（7.1 式 (2)），耗时 $10^{9}/(450 \times 10^{9}) \approx 2.22$ ms——**对串行 bounce 快 14.06 倍，对流水 bounce 快 7.03 倍**。PCIe P2P（同 root complex、ACS 关，§5）64 GB/s，耗时 15.625 ms——对串行 bounce 快 2 倍，与流水 bounce 稳态持平。所以 P2P 的增益分两层：**路径增益**（NVLink 换 PCIe，450/64 ≈ 7×）与**跳数增益**（单跳换两跳，串行口径 2×）；PCIe P2P 只拿跳数增益，NVLink P2P 两层都拿。不等跳例（命题 1 代入）：跨 socket H2D 有效 40 GB/s（7.2 §5 教学假设）、D2H 64 GB/s，串行半谐波均值 $1/(1/64 + 1/40) \approx 24.62$ GB/s，流水 $\min = 40$ GB/s。
 
 另一笔是 host 侧流量账：
 
@@ -103,7 +103,7 @@ $$
 
 **符号**： $`\mathrm{Traffic}_{\mathrm{host}}`$ = 一次拷贝在 host DRAM 上产生的读写流量。bounce 路径 host buffer 先被写 $M$（D2H 落地）再被读 $M$（H2D 取走），合计 $2M$；P2P 路径 host DRAM 零流量。代入 $M = 1$ GB：每拷 1 GB 省 2 GB host DRAM 流量，并免去 CPU/copy engine 的中转参与。多卡并发拷贝时 host 内存带宽是共享瓶颈，这笔节省是结构性的——不是单拷贝快一点，而是把 host 从数据路径上整个摘掉。口径注：串行与流水是同一路径的两种读数，勿混；两跳若共享同一物理链路（如同一 PCIe switch 的上行口）， $`\mathrm{BW}_1`$、 $`\mathrm{BW}_2`$ 不独立，min 账须按共享链路带宽计（边界反例：流水不突破 min 上界，共享链路时两跳带宽不能各按 64 独立取）。
 
-> **坑**：把 cudaMemcpyPeer 的报值当必然 P2P。触发条件：peer access 未启用，或被 IOMMU/ACS 挡掉（§5）而 API 仍返回成功；现象：路径实际 staged through host，带宽只有串行 ~32 GB/s 量级，与 NVLink 期望差 14 倍；规避：先 cudaDeviceCanAccessPeer 查可行、cudaDeviceEnablePeerAccess 启用，再用 nvbandwidth P2P 矩阵核对路径（测量方法 recap 7.2 §6）。
+> **坑**：把 cudaMemcpyPeer 的报值当必然 P2P。触发条件：peer access 未启用，或被 IOMMU 挡掉（§5）而 API 仍返回成功；现象：路径实际 staged through host，带宽只有串行 ~32 GB/s 量级，与 NVLink 期望差 14 倍。与 ACS 区分：ACS 开时 P2P 仍可行、但事务绕行 root complex（§5），仍是 device-to-device，降的是 bisection 带宽，不是退化为 host 中转 ~32 GB/s；规避：先 cudaDeviceCanAccessPeer 查可行、cudaDeviceEnablePeerAccess 启用，再用 nvbandwidth P2P 矩阵核对路径（测量方法 recap 7.2 §6）。
 
 ## 5. PCIe P2P：IOMMU、ACS、root complex 三道门
 
@@ -160,7 +160,7 @@ $$
 \mathrm{BW}_{\mathrm{GDS}} = \min\left(\mathrm{BW}_{\mathrm{NVMe}},\ \mathrm{BW}_{\mathrm{PCIe}}\right) \qquad (3)
 $$
 
-**符号**： $`\mathrm{BW}_{\mathrm{NVMe}}`$ = 存储侧有效读带宽； $`\mathrm{BW}_{\mathrm{PCIe}}`$ = GPU 所挂 PCIe 链路单向带宽。全数字代入（**教学假设口径**：设 Gen5 x4 NVMe SSD 顺序读 14 GB/s，GPU 侧 Gen5 x16 = 64 GB/s）：直路 $\min(14, 64) = 14$ GB/s；bounce 串行按式 (1) 谐波均值 $1/(1/14 + 1/64) \approx 11.49$ GB/s。增益 $14/11.49 \approx 1.22\times$——**带宽增益有限**，因为 NVMe 本身就是瓶颈，直路并没有把存储带宽变快。代入 $M = 1$ GB：直路 71.43 ms，bounce 串行 87.05 ms。所以 GDS 的主战场不在单盘单卡提速，而在两处结构性收益：其一，host DRAM $2M$ 流量与 CPU 中转摘掉（式 (2) 同构），多 GPU 并发读时不再争抢 host 内存带宽——聚合存储带宽随盘数扩展，不被 host 内存带宽封顶；其二，CPU 从数据路径卸载（家族页逐字「all without burdening the CPU」），让出 CPU 给数据预处理。口径注：14 GB/s 为教学假设值（Gen5 x4 SSD 量级），非官方披露；实测以本机 nvbandwidth / fio 为准。O_DIRECT 一条兼容注（docs Note）：GDS 1.7.x（CUDA 12.2）起支持非 O_DIRECT 打开（compat 模式），装有 nvidia-fs.ko 时若存在 O_DIRECT 直路仍走直路。
+**符号**： $`\mathrm{BW}_{\mathrm{NVMe}}`$ = 存储侧有效读带宽； $`\mathrm{BW}_{\mathrm{PCIe}}`$ = GPU 所挂 PCIe 链路单向带宽。全数字代入（**教学假设口径**：设 Gen5 x4 NVMe SSD 顺序读 14 GB/s，GPU 侧 Gen5 x16 = 64 GB/s）：直路 $\min(14, 64) = 14$ GB/s；bounce 串行按式 (1) 半谐波均值 $1/(1/14 + 1/64) \approx 11.49$ GB/s。增益 $14/11.49 \approx 1.22\times$——**带宽增益有限**，因为 NVMe 本身就是瓶颈，直路并没有把存储带宽变快。代入 $M = 1$ GB：直路 71.43 ms，bounce 串行 87.05 ms。所以 GDS 的主战场不在单盘单卡提速，而在两处结构性收益：其一，host DRAM $2M$ 流量与 CPU 中转摘掉（式 (2) 同构），多 GPU 并发读时不再争抢 host 内存带宽——聚合存储带宽随盘数扩展，不被 host 内存带宽封顶；其二，CPU 从数据路径卸载（家族页逐字「all without burdening the CPU」），让出 CPU 给数据预处理。口径注：14 GB/s 为教学假设值（Gen5 x4 SSD 量级），非官方披露；实测以本机 nvbandwidth / fio 为准。O_DIRECT 一条兼容注（docs Note）：GDS 1.7.x（CUDA 12.2）起支持非 O_DIRECT 打开（compat 模式），装有 nvidia-fs.ko 时若存在 O_DIRECT 直路仍走直路。
 
 ## 7. P2P 是集合通信的地基
 
@@ -173,7 +173,7 @@ $$
 | GPUDirect 四成员按直连两端区分：P2P（GPU↔GPU）/ RDMA（NIC↔HBM，9.2）/ Storage（NVMe↔HBM）/ Video（帧设备，仅 Windows）；P2P = 不经 host 中转、经 PCIe/NVLink 的拷贝与 load/store，CUDA Driver 原生支持 | 家族页逐字 | §2、练习 1 |
 | API 名不保证路径：peer access 未启用时 cudaMemcpyPeer staged through host；启用三步 CanAccessPeer → EnablePeerAccess（单向，双向各一次）→ 拷贝/解引用 | PG §3.4.2.1-2 逐字；simpleP2P L99/L130/L132 | §2、§3 |
 | 地址映射：UVA 同一指针两卡通用；peer 分配经 issuing process 预留并映射的虚拟地址到达；非 NVSwitch 每设备 ≤8 peer 连接 → 全互连 n ≤ 9 | PG §3.4.2.2/§3.4.2.6 逐字 | §3、练习 4 |
-| bounce 两跳：串行端到端 = 谐波均值、流水 = min；Gen5 64/64 → 串行 32 / 流水 64 GB/s；NVLink P2P 450 → 1 GB 2.22 ms，对串行快 14.06× / 对流水快 7.03×；PCIe P2P 只拿跳数增益 2× | 式 (1)，命题 1 | §4、练习 2/3 |
+| bounce 两跳：串行端到端 = 半谐波均值（并联电阻式）、流水 = min；Gen5 64/64 → 串行 32 / 流水 64 GB/s；NVLink P2P 450 → 1 GB 2.22 ms，对串行快 14.06× / 对流水快 7.03×；PCIe P2P 只拿跳数增益 2× | 式 (1)，命题 1 | §4、练习 2/3 |
 | host DRAM 流量：bounce 2M vs P2P 0；1 GB 拷贝省 2 GB host 流量 + CPU 中转；多卡并发时 host 带宽是共享瓶颈 | 式 (2) | §4、练习 2 |
 | PCIe 三道门：同 root complex（GDR docs 逐字）/ IOMMU bare-metal 不支持（后果 silent corruption，VM VFIO 与 Windows 例外）/ ACS 重定向经 root complex 降 bisection | PG §3.4.2.5 逐字 | §5、练习 4 |
 | GDS：NVMe→HBM 直路免 bounce；cuFile DriverOpen/HandleRegister/BufRegister/Read/Write；null stream 无排序语义；BW = min(NVMe, PCIe)，教学假设 14/64 → 14 vs bounce 11.49 GB/s = 1.22×，主战场在多卡聚合与 CPU 卸载 | 式 (3)；cuFile v1.20 | §6、练习 4 |
@@ -181,9 +181,9 @@ $$
 
 ## 练习
 
-1.（计算 · [10]）带宽口径代入（§4，raw 峰值口径）：(a) NVLink4 单向拷贝峰值多少 GB/s；(b) PCIe Gen5 x16 单向理论值多少；(c) 两者比值；(d) 两跳均 64 GB/s 时 bounce 串行端到端有效带宽多少。校验：(a) 450（头条 900 ÷ 2，7.1 方向口径）；(b) 64（Hopper wp p.49 逐字）；(c) 450/64 ≈ 7.03，与 7.1 式 (5) 的 7× 一致；(d) 32 = 64/2（命题 1 谐波均值，等跳特例）。
+1.（计算 · [10]）带宽口径代入（§4，raw 峰值口径）：(a) NVLink4 单向拷贝峰值多少 GB/s；(b) PCIe Gen5 x16 单向理论值多少；(c) 两者比值；(d) 两跳均 64 GB/s 时 bounce 串行端到端有效带宽多少。校验：(a) 450（头条 900 ÷ 2，7.1 方向口径）；(b) 64（Hopper wp p.49 逐字）；(c) 450/64 ≈ 7.03，与 7.1 式 (5) 的 7× 一致；(d) 32 = 64/2（命题 1 半谐波均值，等跳特例）。
 2.（计算 · [20]）bounce 账（命题 1， $M = 1$ GB）：(a) 串行 bounce（两跳 64 GB/s）耗时多少 ms；(b) NVLink P2P（450 GB/s）耗时多少 ms、对串行 bounce 快几倍；(c) PCIe P2P（64 GB/s）耗时多少 ms、对串行 bounce 快几倍；(d) 一次 1 GB 拷贝 P2P 比 bounce 省多少 GB host DRAM 流量？先预测 (b) 对 (c) 的增益来自路径还是跳数，再算。校验：(a) 31.25 ms；(b) ≈2.22 ms、14.06×；(c) 15.625 ms、2×；(d) 2 GB（式 (2)）；预测：路径增益（450/64 ≈ 7×），跳数增益已计入串行分母。
-3.（推导 · [30]）证明命题 1（式 (1)）：(a) 写出串行两跳时间相加 → 端到端带宽 = 谐波均值的推导；(b) 论证流水稳态吞吐 = min（慢跳决定线速、快跳产出堆积）；(c) 给边界反例：两跳共享同一物理上行链路时为什么 $`\mathrm{BW}_1`$、 $`\mathrm{BW}_2`$ 不能各按 64 独立取；(d) 代入不等跳 64/40 GB/s 算串行与流水值。校验：(a) $`(1/\mathrm{BW}_1 + 1/\mathrm{BW}_2)^{-1}`$；(d) 串行 ≈24.62、流水 40 GB/s，与 §4 不等跳例一致（容差 1%）。
+3.（推导 · [30]）证明命题 1（式 (1)）：(a) 写出串行两跳时间相加 → 端到端带宽 = 倒数和取倒数（半谐波均值）的推导；(b) 论证流水稳态吞吐 = min（慢跳决定线速、快跳产出堆积）；(c) 给边界反例：两跳共享同一物理上行链路时为什么 $`\mathrm{BW}_1`$、 $`\mathrm{BW}_2`$ 不能各按 64 独立取；(d) 代入不等跳 64/40 GB/s 算串行与流水值。校验：(a) $`(1/\mathrm{BW}_1 + 1/\mathrm{BW}_2)^{-1}`$；(d) 串行 ≈24.62、流水 40 GB/s，与 §4 不等跳例一致（容差 1%）。
 4.（计算 · [30]）PCIe 三道门与 GDS 账（§5/§6）：(a) 判定三配置下 PCIe P2P 可行性与实际路径：Linux bare-metal IOMMU 开 / IOMMU 关 + ACS 开 / VM VFIO passthrough；(b) 非 NVSwitch 系统 10 GPU 全互连 P2P 是否可行，至多几 GPU；(c) GDS 直路与 bounce 串行有效带宽各多少（NVMe 14 GB/s 教学假设、PCIe 64 GB/s）、1 GB 耗时各多少 ms、增益几倍？校验：(a) 不支持（silent corruption 风险）/ 可行但绕行 root complex / 支持；(b) 不可行（需 9 peer 超 8 上限），至多 9 GPU；(c) 14 vs ≈11.49 GB/s、71.43 vs 87.05 ms、≈1.22×，与 §6 逐数一致。
 
 ## 参考

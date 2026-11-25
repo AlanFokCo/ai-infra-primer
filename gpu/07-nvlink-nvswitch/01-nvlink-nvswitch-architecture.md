@@ -60,7 +60,7 @@ $$
 \mathrm{BW}_{\mathrm{chip,bidir}} = n_{\mathrm{port}} \cdot 2 \cdot \mathrm{BW}_{\mathrm{link}} = 64 \times 2 \times 25 = 3200 \ \mathrm{GB/s} = 3.2 \ \mathrm{TB/s} \qquad (3)
 $$
 
-**符号**： $n_{\mathrm{port}} = 64$（每 chip 端口数）； $`\mathrm{BW}_{\mathrm{link}} = 25`$ GB/s 单向（NVLink4）。对账：blog 25.6 Tbit/s ÷ 8 = 3.2 TB/s，与式 (3) 逐数闭环。口径注：Hopper wp 印「Total switch throughput increases to 13.6 Tbits/sec」是 **switch throughput 口径**（含信令开销），blog 25.6 Tbit/s 是**双向有效带宽口径**（= 3.2 TB/s）——本书用 blog 口径并注 wp 原文，两数不混（13.6 Tbit/s 含编码开销的单向信令口径，与 3.2 TB/s 有效双向不是同一笔账）。
+**符号**： $n_{\mathrm{port}} = 64$（每 chip 端口数）； $`\mathrm{BW}_{\mathrm{link}} = 25`$ GB/s 单向（NVLink4）。对账：blog 25.6 Tbit/s ÷ 8 = 3.2 TB/s，与式 (3) 逐数闭环。口径注：Hopper wp 印「Total switch throughput increases to 13.6 Tbits/sec」是 **switch throughput 口径**，blog 25.6 Tbit/s 是**双向有效带宽口径**（= 3.2 TB/s）——本书用 blog 口径并注 wp 原文，两数不混。13.6 Tbit/s 的方向与编码 basis 官方未逐字披露；按 64 端口 × 2 lanes × 100 Gbps × 1.0625 ≈ 13.6 Tbit/s 反推约为含编码开销的单向信令——此为推定口径（1.0625 为反推拟合因子），非官方 characterization。
 
 系统级端口账（聚合口径，可判定）：4 chips × 3.2 TB/s = **12.8 TB/s 双向**交换侧端口容量；GPU 侧 8 × 18 = **144 条 link**，每条 link 占一个交换侧端口，故 144 端口被占用（4 × 64 = 256 总端口，平均每 chip 36 个）。每 GPU 的 18 links 在 4 颗 switch 间的逐颗分布属闭源细节、官方未披露，本书只做聚合账；任意对可经交换矩阵线速接通是 blog 的非阻塞披露口径（7.2 §2 拓扑图），逐颗分布本书不推定。
 
@@ -151,7 +151,7 @@ ring all-reduce 的数据要在 GPU 之间走 $2(n-1)$ 跳，每跳 SM 做 load/
 
 流量账（**教学推导口径**，机制级；精确协议流程与 kernel 走读归 8.4）：ring all-reduce 每 rank 发送 $2(n-1)/n \cdot M$（recap training 4.1 式 (2)， $d \to n$ 翻译，不重推；此处 $n$ = rank 数、每 GPU 一个 rank， $M$ = 消息总字节——域 GPU 数本章其余处记 $n_{\mathrm{GPU}}$）；NVLS 的机制级图景是每 GPU 把自有 $M$ 字节写入 multicast 组（发送 $M$），NVSwitch 在交换侧完成归约、把全和 $M$ 字节回送每 GPU（接收 $M$）——每 rank 发送 $M$，对比 ring 的 $2(n-1)/n \cdot M$，比值 $2(n-1)/n$： $n = 8$ 时 1.75， $n \to \infty$ 时趋于 2。这正是 wp「up to 2x throughput gain」的流量侧来源（口径：「up to」是上界披露，非保证值；增益以 GPU 注入带宽为瓶颈口径，交换侧 multicast 复制流量由非阻塞端口容量承担，§3 式 (3)）。延迟侧：ring 走 $2(n-1)$ 跳，NVLS 发送-归约-回送约 2 跳，小消息延迟显著下降（wp 逐字）。SM 侧：归约计算从 SM 移进交换芯片，通信 kernel 的 SM 占用下降（NCCL 协议与 kernel 走读归 8.4）。
 
-全数字实例（ $n = 8$， $M = 1$ GB，单向有效带宽取 370.8 GB/s——7.2 §3 的 NCCL 模型口径，教学推导）：ring 每 rank 发送 $2 \times 7/8 \times 1 = 1.75$ GB，带宽项 $1.75 \times 10^{9} / (370.8 \times 10^{9}) \approx 4.72$ ms；NVLS 每 rank 发送 1 GB，带宽项 $10^{9} / (370.8 \times 10^{9}) \approx 2.70$ ms——比值 1.75，与 $2(n-1)/n$ 闭合。NVLS 算法选择与 NVLS_TREE 多节点变体归 8.4，NVLS vs IB SHARP 与 CollNet 集成归 10.2。
+全数字实例（ $n = 8$， $M = 1$ GB，单向有效带宽取 370.8 GB/s $= 18 \times 20.6$——NCCL per-link 模型值，推导见 7.2 §3，教学推导）：ring 每 rank 发送 $2 \times 7/8 \times 1 = 1.75$ GB，带宽项 $1.75 \times 10^{9} / (370.8 \times 10^{9}) \approx 4.72$ ms；NVLS 每 rank 发送 1 GB，带宽项 $10^{9} / (370.8 \times 10^{9}) \approx 2.70$ ms——比值 1.75，与 $2(n-1)/n$ 闭合。NVLS 算法选择与 NVLS_TREE 多节点变体归 8.4，NVLS vs IB SHARP 与 CollNet 集成归 10.2。
 
 ## 7. vs PCIe：7× 与 14× 怎么算
 

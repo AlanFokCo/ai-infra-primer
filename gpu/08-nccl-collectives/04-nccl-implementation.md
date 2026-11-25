@@ -6,7 +6,7 @@
 
 ncclAllReduce 返回时数据还没动（8.1 §7 stream 入队语义），那之后是谁在搬数据？一个调用要经过「选算法 → 选协议 → 切 channel → 发射 kernel → proxy 推进」整条链，这条链在 repo 里各落在哪个文件？LL 协议每 16 B 只搬 8 B 有效数据、带宽效率只有一半，为什么小消息还非用它不可？本章回答三个问题：ncclCommInitRank 到 kernel 发射的完整代码路径是什么？transport/proxy/协议三层各解决什么硬件约束？算法与协议的延迟-带宽账怎么在 cost model 里逐行兑现？
 
-**本章口径**（章脊锁定）：主口径 **HGX H100 8-GPU**（ $n = 8$，NVLink4 + 4 颗第三代 NVSwitch，几何 recap 7.1/7.2）；有效带宽取 **NCCL 模型 370.8 GB/s 单向**（7.2 式 (2)，18 × 20.6）； $\alpha = 2$ μs 为**教学假设口径**（7.2 §3）；贯穿实例 $M = 1$ GB = $10^{9}$ B、bf16。**版本锚**：NVIDIA/nccl **2.32.7-1**，commit **351f33fd087e0c4d0cfb99f1c61dc13da7996c28**（master，2026-11-24「Merge v2.32.7-1 release into master」，makefiles/version.mk L9-12 MAJOR 2 / MINOR 32 / PATCH 7）；本章全部 file:line 按该 commit 的 fresh tarball 核实（2026-11-25）。**结构漂移注**（vs 旧布局，阅读老资料必对）：`src/collectives/device/` → **`src/device/`**；`src/graph/tuning.cc` → **`src/tuning/`**（per-algo cost model）；`src/enqueue.cc` → **`src/enqueue/`**；`devcomm.h` → `device.h` + `plugin/nccl_tuner.h`；算法枚举新增 **NCCL_ALGO_PAT=6 / NVLS_TREE=5**。
+**本章口径**（章脊锁定）：主口径 **HGX H100 8-GPU**（ $n = 8$，NVLink4 + 4 颗第三代 NVSwitch，几何 recap 7.1/7.2）；有效带宽取 **NCCL 模型 370.8 GB/s 单向**（7.2 式 (2)，18 × 20.6）； $\alpha = 2$ μs 为**教学假设口径**（7.2 §3）；贯穿实例 $M = 1$ GB = $10^{9}$ B、bf16。**版本锚**：NVIDIA/nccl **2.32.7-1**，commit **351f33fd087e0c4d0cfb99f1c61dc13da7996c28**（master，2026-11-24「Merge v2.32.7-1 release into master」，makefiles/version.mk L9-11 MAJOR 2 / MINOR 32 / PATCH 7，+L13 PKG_REVISION 1 为「2.32.7-1」的「-1」出处）；本章全部 file:line 按该 commit 的 fresh tarball 核实（2026-11-25）。**结构漂移注**（vs 旧布局，阅读老资料必对）：`src/collectives/device/` → **`src/device/`**；`src/graph/tuning.cc` → **`src/tuning/`**（per-algo cost model）；`src/enqueue.cc` → **`src/enqueue/`**；`devcomm.h` → `device.h` + `plugin/nccl_tuner.h`；算法枚举新增 **NCCL_ALGO_PAT=6 / NVLS_TREE=5**。
 
 符号声明（spec §4.3）： $n$ = rank/GPU 数（**本章 $n$ 专归 rank 数**，recap training 4.1 时 $d \to n$ 翻译）； $M$ = 被归约向量总字节； $C$ = 每 rank 流量字节（ring all-reduce $C = 2(n-1)/n \cdot M$，本章局部符号）； $\alpha$ = 每消息固定延迟（**本章 $\alpha$ = 消息延迟，非 inference 接受率**）； $\beta$ = 每字节传输时间 = 有效带宽倒数； $k$ = 并行 channel 数（沿 8.2）； $\eta_{\mathrm{LL}}$ / $\eta_{\mathrm{LL128}}$ = 协议带宽效率、 $C^{\ast}$ = 协议交叉流量（§6 局部符号）。 $N$ 专归参数量、 $B$ 专归 batch，本章不占用；时间一律 $T_{\mathrm{comm}}$ / $T_{\mathrm{ring}}$ 下标。cost model 代码变量 lat（μs）/ bw（GB/s）以 code span 给出，与 $\alpha/\beta$ 的教学口径分开（§7 口径注）。
 
@@ -47,7 +47,7 @@ ncclCommInitRank            init.cc L3071   公共 API（newcomm, nranks, commId
 
 **ring 落 channel**：`ncclBuildRings`（src/graph/rings.cc L29）从本 rank 出发沿 next 指针走 $n$ 步生成环数组，并做两道校验——「ring does not loop back to start」（走 $n$ 步须回起点，L51）与全 rank 覆盖校验（每 rank 恰出现一次，L55-60 位图快查）。这两道校验保证逻辑环是覆盖全 rank 的单一循环（8.2 §4 已 recap，不重推）；本章增量是 **nrings 维度**：函数对 `r = 0..nrings-1` 各建一条环，每条环落一个 channel。ringGraph 的 `maxChannels = MAXCHANNELS/2 = 32`（init.cc L1487，MAXCHANNELS 64 见 device.h L80），即环最多 32 个 channel。
 
-**tree 落 channel**：`ncclGetBtree`（trees.cc L32）按 power-of-two 位模式建单棵二叉树，`ncclGetDtree`（L90）建双树——第一棵用 btree，第二棵偶数 rank 用 mirror、奇数 rank 用 shift，注释逐字「mirror tree (if nranks is even)... shift it by one rank (if nranks is odd)」（L69-88，含 12/13-rank 双树图）。双树互补性与带宽最优性已在 8.3 命题 1 证明，本章不重证，只走读构建入口。treeGraph 的 channel 数直接取 ring 的 nChannels（init.cc L1494-1495），保证 ring/tree 切换时 channel 布局一致。
+**tree 落 channel**：`ncclGetBtree`（trees.cc L32）按 power-of-two 位模式建单棵二叉树，`ncclGetDtree`（L90）建双树——第一棵用 btree，第二棵在 nranks 为偶数时用 mirror、nranks 为奇数时用 shift，注释逐字「mirror tree (if nranks is even)... shift it by one rank (if nranks is odd)」（L69-88，含 12/13-rank 双树图）。双树互补性与带宽最优性已在 8.3 命题 1 证明，本章不重证，只走读构建入口。treeGraph 的 channel 数直接取 ring 的 nChannels（init.cc L1494-1495），保证 ring/tree 切换时 channel 布局一致。
 
 **图 → channel 连接**：`ncclTopoPreset`（connect.cc L22）预设、`ncclTopoPostset`（L395）把搜好的图落成 channel 的 ring/tree 邻接（每 channel 的 prev/next、tree 的 up/down）。至此每个 channel 拿到自己的环排列或树位置，kernel 发射时按 channelId 取用（§9）。
 
@@ -107,7 +107,7 @@ GDR 路径（NIC 直访 GPU HBM，9.2）：
 
 搬同样一份数据，为什么有三种协议？因为**同步机制的开销与带宽利用率不可兼得**：小消息要低延迟（同步要轻），大消息要高带宽（同步开销要摊薄）。三协议各占一端。
 
-**LL（Low Latency）**：line 布局是 `union ncclLLFifoLine`（ll__types.h L14-26），`static_assert(sizeof == 16)`（L25）钉死 16 B：
+**LL（Low Latency）**：line 布局是 `union ncclLLFifoLine`（ll__types.h L14-26），`static_assert(sizeof == 16)`（L26）钉死 16 B：
 
 ```
 LL line（16 B）：  [data1 4B][flag1 4B][data2 4B][flag2 4B]
@@ -161,8 +161,8 @@ if (bw > 0) time += inputs->nBytes / (1000 * bw) * precision_ratio;
 
 **per-algo 模型**（src/tuning/ 各文件）把拓扑带宽折成算法带宽：
 
-- **ring.cc**：busBw = bw × nChannels；LL 取 `min(llMaxBw, busBw×0.5)`（L40，**50% 效率的代码兑现**，命题 1）；LL128 取 `busBw×0.92`（L43，注释 120/128，略保守）；`generalBandwidths = busBw×nRanks/nSteps`（L47，all-reduce nSteps = 2(n-1)，n=8 时 ×8/14 ≈ 0.571，对应 2M 流量）。延迟项 `(nSteps−nInterSteps)×intraLat + nInterSteps×interLat`（L86-87）。`ringSimplePlateau`（L109-139）：多节点 AllReduce 或 Blackwell 单节点 NVLink AR/AG/RS 时 lat × plateauFactor（≥sm80 取 1.4、<sm80 取 1.9），按 per-rank/channel 字节与 step 数调制——环的延迟平台效应。
-- **tree.cc**：**仅 AllReduce**（其余 func hard disable，L23-28）；busBw ×0.92（L34）；LL ×1/3.8（L36）；LL128 单节点 ×7/9、多节点 ×120/128（L38-40，**单节点 7/9 ≈ 0.778 比理论 93.75% 更保守，含 tree incast 余量**）；`generalBandwidths = busBw×0.5`（L44，**all-reduce 2M 流量 → 算法带宽 = bus 带宽之半**，8.3 §4 回链）；延迟项 `+= 2×((ppn−1)×intraLat + log2i(nNodes)×interLat)`（L57-58，**log2 树深延迟项的代码实化**，8.3 O(log n) 锚）；TreeModelSim 再按 `treeCorrectionFactor[proto][logSize]` 尺寸修正（L79-81，logSize = log2i(nBytes>>6)）。
+- **ring.cc**：busBw = bw × nChannels；LL 取 `min(llMaxBw, busBw×0.5)`（L40，**50% 效率的代码兑现**，命题 1）；LL128 取 `busBw×0.92`（L43，注释 120/128，略保守）；`generalBandwidths = busBw×nRanks/nSteps`（L47，all-reduce nSteps = 2(n-1)，n=8 时 ×8/14 ≈ 0.571，对应 2M 流量）。延迟项 `(nSteps−nInterSteps)×intraLat + nInterSteps×interLat`（L86-87）。`ringSimplePlateau`（L109-139）：多节点 AllReduce 或 Blackwell 单节点 NVLink AR/AG/RS 时 lat × plateauFactor（≥sm80 取 1.4、低于 sm80 取 1.9），按 per-rank/channel 字节与 step 数调制——环的延迟平台效应。
+- **tree.cc**：**仅 AllReduce**（其余 func hard disable，L23-28）；busBw ×0.92（L33）；LL ×1/3.8（L35）；LL128 单节点 ×7/9、多节点 ×120/128（L38-40，**单节点 7/9 ≈ 0.778 比理论 93.75% 更保守，含 tree incast 余量**）；`generalBandwidths = busBw×0.5`（L44，**all-reduce 2M 流量 → 算法带宽 = bus 带宽之半**，8.3 §4 回链）；延迟项 `+= 2×((ppn−1)×intraLat + log2i(nNodes)×interLat)`（L57-58，**log2 树深延迟项的代码实化**，8.3 O(log n) 锚）；TreeModelSim 再按 `treeCorrectionFactor[proto][logSize]` 尺寸修正（L79-81，logSize = log2i(nBytes>>6)）。
 
 **选择**：`ncclTuningSelectBestTuning`（tuning.cc L153）遍历候选取最小 timeUs，注释逐字「The tuning with the lowest simulated time/cost is determined to be best」。环境变量 **NCCL_ALGO / NCCL_PROTO** 经 parseList 解析（cost_model.cc L365-379，支持 ^ 排除与 per-function 分号语法）强制候选集。选择结果落 task：`task->algorithm = tuningOut.algo; task->protocol = tuningOut.proto`（task_posttuning.cc L547-548）；输入装配 fillCollTuningInput（task_pretuning.cc L24，调用 L248）。
 
@@ -217,7 +217,7 @@ ncclDevKernel_Generic (common.cu L23)
 | --- | --- | --- |
 | ncclCommInitRank L3071 → bootstrap L2314 → initTransportsRank L1219 → topo L1447 / 图搜索 L1488-1525 / transport L1957 / devComm L2076；版本锚 2.32.7-1 / 351f33fd | §2 流程图 | §2、练习 4 |
 | 路径梯子 PATH_NVL 1 / PXN 7 / PHB 8 / SYS 9；SM90_NVLINK_BW 20.6（模型值 vs raw 25 两层账）；ncclTopoGraph 持 bwIntra/bwInter/nChannels | topo.h L24 / graph.h L173 | §2、7.2 |
-| channel = 一个 CTA；ncclBuildRings 两道校验 + nrings 维；ncclGetDtree mirror 偶/shift 奇；MAXCHANNELS 64、ringGraph max 32；多 ring 带宽项 /k（k=4 → 1.18 ms） | 8.2 式 (6) recap | §3、8.2/8.3 |
+| channel = 一个 CTA；ncclBuildRings 两道校验 + nrings 维；ncclGetDtree mirror（nranks 偶）/shift（nranks 奇）；MAXCHANNELS 64、ringGraph max 32；多 ring 带宽项 /k（k=4 → 1.18 ms） | 8.2 式 (6) recap | §3、8.2/8.3 |
 | transport 表 p2p/shm/net/collNet（NVLS 独立）；p2pMap cudaIpcOpenMemHandle、useRead；shm 同机无 P2P 经 proxy 拷贝；net GDR 协商 | transport.cc L15-20 | §4、8.1 |
 | transport 延迟 ring+Simple：NVLink 3.4 / PCI 5.7 / NET 14.0 μs（NET≈4.1× NVLink）；高频集合留域内 | cost_model.cc hwLatencies | §4、7.2 |
 | proxy 线程 ncclProxyProgress L956 循环 progressOps；net sendProxyProgress L1327 posted/transmitted/done + NCCL_STEPS 8；GDR 控制面 vs 非 GDR 数据面 | proxy.cc / net.cc | §5、9.2 |
@@ -232,7 +232,7 @@ ncclDevKernel_Generic (common.cu L23)
 
 1.（计算 · [10]）协议效率与带宽项代入（式 (1)， $n=8$、 $M=1$ GB、 $\mathrm{BW}=370.8$ GB/s）：(a) LL / LL128 / Simple 的带宽效率各多少；(b) ring 每 rank 流量 $C$ 多少 GB；(c) 三协议各自的带宽项多少 ms。校验：(a) 0.5 / 0.9375 / 趋 1（ll__types.h sizeof 16、ll128__types.h DATAELEMS 15）；(b) 1.75 GB；(c) 9.44 / 5.03 / 4.72 ms，与 §6 逐数一致（容差 1%）。
 2.（计算 · [20]）协议交叉（式 (2)，ring baseLatencies Simple 8.4 − LL 6.6 = 1.8 μs， $\eta_{\mathrm{LL}}=0.5$， $\mathrm{BW}=370.8$ GB/s）：(a) $C^{\ast}$ 多少 KB；(b) 对应 $M^{\ast}$ 多少 KB（ $n=8$）；(c) $M=64$ KB 与 $M=1$ MB 各哪个协议赢？先预测 (c) 再算。校验：(a) 667.4 KB；(b) ≈381.4 KB；(c) 64 KB LL 赢、1 MB Simple 赢； $C=C^{\ast}$ 时两式均 10.2 μs，与 §6 闭合（容差 1%）。辨析：此 $C^{\ast}$ 与 8.3 $M^{\ast}$（1.83 MB）、8.1 $M_c$（5.93 MB）各驱动什么。
-3.（推导 · [30]）证明命题 1（协议效率）并辨析 flag 语义：(a) 逐字段数 LL line 16 B 的 data/flag 字节得 0.5；(b) 数 LL128 line 128 B 的 15 data 槽 + 1 flag 槽得 0.9375；(c) 解释为什么 flag 必须跟在 data 后（partial receive）；(d) 解释 LL128 为什么要求 128 B 写原子性、isLL128Enabled 按什么门控。校验：(a) static_assert sizeof==16（ll__types.h L25）；(b) LINESIZE 128 / DATAELEMS 15（ll128__types.h L13-15）；(c) 注释逐字「Flags follow data」；(d) intraType 不高于 PATH_NVB（cost_model.cc L125），与 §6 一致。
+3.（推导 · [30]）证明命题 1（协议效率）并辨析 flag 语义：(a) 逐字段数 LL line 16 B 的 data/flag 字节得 0.5；(b) 数 LL128 line 128 B 的 15 data 槽 + 1 flag 槽得 0.9375；(c) 解释为什么 flag 必须跟在 data 后（partial receive）；(d) 解释 LL128 为什么要求 128 B 写原子性、isLL128Enabled 按什么门控。校验：(a) static_assert sizeof==16（ll__types.h L26）；(b) LINESIZE 128 / DATAELEMS 15（ll128__types.h L13-15）；(c) 注释逐字「Flags follow data」；(d) intraType 不高于 PATH_NVB（cost_model.cc L125），与 §6 一致。
 4.（代码 · [30]）NCCL 2.32.7-1 走读（版本锚 351f33fd）：(a) 在 tuning_general.cc 找出 FP8 降级因子与触发条件；(b) tree.cc generalBandwidths = busBw×0.5 对应哪笔消息量账；(c) runRing 的 step k-1 调哪个 primitive、为什么 postOp=true；(d) 为什么 LL/LL128 dispatch 无 treeUpDown。校验：(a) 1024、ring 且 `nRanks > 8`（L65-67）；(b) all-reduce 2M 流量 → 算法带宽 = bus 之半（8.3 §4）；(c) directRecvReduceCopyDirectSend（all_reduce.h L64），产出全和块；(d) LL/LL128 树走 runTreeSplit 重叠（L762-787），与 §9 一致。
 
 ## 参考

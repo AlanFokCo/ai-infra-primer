@@ -82,7 +82,7 @@ $$
 
 all-reduce 为什么能拆成 reduce-scatter + all-gather？a2a 和 all-reduce 的流量模式差在哪？
 
-**组合恒等**（recap training 4.1 §2.2 / training 5.2 §2，不重推）：all-reduce = reduce-scatter + all-gather。语义追踪：reduce-scatter 让 rank $r$ 拿到分片 $r$ 的全归约和（每 rank 持一个全和分片），all-gather 把各分片的全和分发到全员——复合即「各持全量归约结果」的 all-reduce 语义。消息量恒等： $(n-1)/n \cdot M + (n-1)/n \cdot M = 2(n-1)/n \cdot M$，与式 (1) 逐项一致。语义组合的归纳证明已交付 training 4.1 §2.2，此处只登记恒等与原语级读法。ZeRO 读法（training 4.2 recap）：梯度 reduce-scatter + 参数 all-gather，两段分别落在「梯度归约」与「参数同步」两个事件上，每 rank 通信量与 DP 基线 all-reduce 严格同构——通信预算一文未涨，换优化器状态显存 $\div n$。
+**组合恒等**（recap training 4.1 §2.2 / training 5.2 §2，不重推）：all-reduce = reduce-scatter + all-gather。语义追踪：reduce-scatter 让 rank $r$ 拿到分片 $r$ 的全归约和（每 rank 持一个全和分片），all-gather 把各分片的全和分发到全员——复合即「各持全量归约结果」的 all-reduce 语义。消息量恒等： $(n-1)/n \cdot M + (n-1)/n \cdot M = 2(n-1)/n \cdot M$，与式 (1) 逐项一致。语义组合的归纳证明已交付 training 4.1 §2.2，此处只登记恒等与原语级读法。ZeRO 读法（training 4.2 recap）：梯度 reduce-scatter + 参数 all-gather，两段分别落在「梯度归约」与「参数同步」两个事件上，每 rank 通信量与 DP 基线 all-reduce 严格同构——通信预算一文未涨，换优化器状态显存 $/n$。
 
 **a2a vs all-reduce 流量模式**。两者通信图不同（ $n=4$ 示意）：
 
