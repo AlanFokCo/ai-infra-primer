@@ -323,16 +323,16 @@ function doubleBuffer() {
   body.push(`<rect class="dia-bar dia-bar-seal" x="150" y="196" width="58.8" height="20" rx="3"/>`);
   body.push(cap(179, 210, 'tile k', { size: 7.5, anchor: 'middle', color: 'var(--paper-raised)' }));
   body.push(`<rect x="208.8" y="196" width="322.1" height="20" rx="3" fill="none" stroke="rgb(24 27 32 / 0.22)" stroke-dasharray="4 4"/>`);
-  body.push(cap(370, 210, '等装载完成（766.9 ns）', { size: 8, anchor: 'middle' }));
+  body.push(cap(220, 210, '等装载完成（766.9 ns）', { size: 8 }));
   body.push(`<rect class="dia-bar dia-bar-seal" x="530.9" y="196" width="58.8" height="20" rx="3"/>`);
-  body.push(cap(560, 210, 'tile k+1', { size: 7, anchor: 'middle', color: 'var(--paper-raised)' }));
+  body.push(cap(560, 224, 'tile k+1', { size: 7, anchor: 'middle' }));
   body.push(cap(600, 210, '⋯', { size: 11 }));
   body.push(`<rect class="dia-bar dia-bar-warm" x="150" y="228" width="380.9" height="20" rx="3"/>`);
-  body.push(cap(340, 242, '装载 tile k+1（算 k 之初发射）', { size: 8.5, anchor: 'middle', color: 'var(--ink)' }));
+  body.push(cap(160, 242, '装载 tile k+1（算 k 之初发射）', { size: 8.5, color: 'var(--ink)' }));
   body.push(`<rect class="dia-bar dia-bar-warm" x="530.9" y="228" width="119" height="20" rx="3"/>`);
   body.push(cap(590, 242, 'tile k+2…', { size: 8, anchor: 'middle', color: 'var(--ink)' }));
-  body.push(pathPulse('M 152 254 H 648', { dur: 2.2, delay: 0.4 }));
-  body.push(pathPulse('M 152 222 H 588', { dur: 2.2, delay: 0 }));
+  body.push(pathPulse('M 152 238 H 648', { dur: 2.2, delay: 0.4 }));
+  body.push(pathPulse('M 152 206 H 588', { dur: 2.2, delay: 0 }));
   body.push(cap(150, 268, '稳态 τ_db = max(139.9, 906.8) = 906.8 ns（装载主导）—— 加速 1046.7/906.8 = 1.154，上界 2（t_lat→0 且两时间平衡）', { size: 9.5, weight: '650' }));
 
   body.push(cap(52, 292, '完全隐藏 iff t_comp ≥ t_lat+t_load，必要条件 I_blk ≥ R —— 本例 I=64 ≪ 295，双缓冲只藏掉计算那一段；T_K=64：1831.8/1552.0 = 1.180', { size: 10 }));
@@ -365,11 +365,13 @@ function multiStagePipeline() {
   body.push(cap(150, 108, '计算 139.9 ns/tile；稳态槽余量等缓冲 —— τ 由 t_load 地板封顶', { size: 8.5 }));
   body.push(cap(150, 122, '算 tile k 之初发射 tile k+2（缓冲 (k−1) mod S 刚释放）', { size: 8.5 }));
   const loads = [[150, 182.7, 'tile 2'], [280, 182.7, 'tile 3'], [410, 182.7, 'tile 4'], [540, 109.9, 'tile 5…']];
-  loads.forEach(([x, w, lab]) => {
+  loads.forEach(([x, w, lab], i) => {
     body.push(`<rect class="dia-bar dia-bar-warm" x="${x}" y="124" width="${w}" height="20" rx="3"/>`);
-    body.push(cap(x + w / 2, 138, lab, { mono: true, size: 8, anchor: 'middle', color: 'var(--ink)' }));
+    // tile 4 标签靠左：3.5s 快照脉冲落点（≈x490）不压字
+    if (i === 2) body.push(cap(x + 8, 138, lab, { mono: true, size: 8, color: 'var(--ink)' }));
+    else body.push(cap(x + w / 2, 138, lab, { mono: true, size: 8, anchor: 'middle', color: 'var(--ink)' }));
   });
-  body.push(pathPulse('M 152 150 H 648', { dur: 2.4, delay: 0.3 }));
+  body.push(pathPulse('M 152 134 H 648', { dur: 2.4, delay: 0.3 }));
   body.push(cap(52, 168, '恒有 2 份装载重叠：2 × 645.2 = 1290.4 ≥ 906.8 —— 不等待条件 (S−1)·τ_S ≥ t_lat + t_load 满足', { size: 9.5, weight: '650' }));
 
   body.push(cap(52, 194, 'τ_S = max(t_comp, t_load, (t_lat+t_load)/(S−1))（式 1）：S=2 → 906.8；S=3 → max(139.9, 645.2, 453.4) = 645.2 ns', { mono: true, size: 9.5 }));
