@@ -158,39 +158,44 @@ function qpStateMachine() {
   });
   body.push(cap(186, 48, 'ibv_modify_qp', { mono: true, size: 8, anchor: 'middle' }));
   // 每态属性（卡下注记列）
-  body.push(cap(96, 122, '设 port/pkey/', { size: 8.5, anchor: 'middle' }));
-  body.push(cap(96, 136, 'access flags', { size: 8.5, anchor: 'middle' }));
-  body.push(cap(276, 122, '设远端 QPN/PSN/', { size: 8.5, anchor: 'middle' }));
-  body.push(cap(276, 136, 'GID/LID/PATH_MTU', { size: 8.5, anchor: 'middle' }));
-  body.push(cap(456, 122, '设本地 PSN/TIMEOUT/', { size: 8.5, anchor: 'middle' }));
-  body.push(cap(456, 136, 'RETRY_CNT/RNR_RETRY', { size: 8.5, anchor: 'middle' }));
-  body.push(cap(630, 122, 'MAX_QP_RD_ATOMIC', { size: 8.5, anchor: 'middle' }));
-  body.push(cap(630, 136, '可发送', { size: 8.5, anchor: 'middle' }));
-  body.push(cap(36, 162, 'RC：RTR/RTS 需带外交换对端 QPN/PSN/GID/LID/MTU；UD：仅改 STATE（无连接，不需对端元数据）', { size: 9.5 }));
+  // 每态属性列对齐：各态列示「进入该态所设」属性（RC 口径；RESET 创建态不设属性）
+  body.push(cap(96, 122, '不设属性', { size: 8.5, anchor: 'middle' }));
+  body.push(cap(96, 136, '（创建态）', { size: 8.5, anchor: 'middle' }));
+  body.push(cap(276, 122, '设 port/pkey/', { size: 8.5, anchor: 'middle' }));
+  body.push(cap(276, 136, 'access flags（本地）', { size: 8.5, anchor: 'middle' }));
+  body.push(cap(456, 122, '设远端 QPN/PSN/', { size: 8.5, anchor: 'middle' }));
+  body.push(cap(456, 136, 'GID/LID/PATH_MTU', { size: 8.5, anchor: 'middle' }));
+  body.push(cap(630, 122, '设本地 PSN/TIMEOUT/', { size: 8.5, anchor: 'middle' }));
+  body.push(cap(630, 136, 'RETRY_CNT/RNR_RETRY', { size: 8.5, anchor: 'middle' }));
+  body.push(cap(630, 150, 'MAX_QP_RD_ATOMIC', { size: 8.5, anchor: 'middle' }));
+  body.push(cap(36, 170, 'RC：RTR/RTS 需带外交换对端 QPN/PSN/GID/LID/MTU；UD 无连接：不需对端元数据', { size: 9 }));
+  body.push(cap(36, 186, 'UD 迁移表（man）：INIT 设 pkey_index/port/qkey、RTR 仅 STATE、RTS 设 SQ_PSN', { size: 9 }));
 
   // 连接开销账
-  body.push(cap(36, 192, '连接开销账（RC 全互连）：控制面随 n² 涨', { size: 10.5, weight: '650' }));
-  const c1 = node({ id: 'c1', x: 36, y: 206, w: 180, h: 52, role: 'data', title: '每 rank n−1 个 QP', sub: '全网 n(n−1) 个', titleSize: 11, subSize: 8.5 });
-  const c2 = node({ id: 'c2', x: 268, y: 206, w: 190, h: 52, role: 'proj', title: 'n=1024 → ≈1.05×10⁶', sub: '每 QP 4 态迁移 + 带外交换', mono: true, titleSize: 10.5, subSize: 8 });
-  const c3 = node({ id: 'c3', x: 510, y: 206, w: 174, h: 52, role: 'attn', title: '串行建立 ≈105 s', sub: '每 QP 一次 RTT 100 μs（教学假设）', mono: true, titleSize: 10.5, subSize: 7.5 });
+  body.push(cap(36, 212, '连接开销账（RC 全互连，单 QP/对端口径）：控制面随 n² 涨', { size: 10.5, weight: '650' }));
+  const c1 = node({ id: 'c1', x: 36, y: 226, w: 180, h: 52, role: 'data', title: '每 rank n−1 个对端', sub: '全网 n(n−1) 个 QP', titleSize: 11, subSize: 8.5 });
+  const c2 = node({ id: 'c2', x: 268, y: 226, w: 190, h: 52, role: 'proj', title: 'n=1024 → ≈1.05×10⁶', sub: '每 QP 4 态迁移 + 带外交换', mono: true, titleSize: 10.5, subSize: 8 });
+  const c3 = node({ id: 'c3', x: 510, y: 226, w: 174, h: 52, role: 'attn', title: '串行建立 ≈105 s', sub: '每 QP 一次 RTT 100 μs（教学假设）', mono: true, titleSize: 10.5, subSize: 7.5 });
   nodes.push(c1, c2, c3); body.push(c1.svg, c2.svg, c3.svg);
   [[c1, c2, 1.2], [c2, c3, 1.6]].forEach(([a, b, dl], i) => {
     body.push(edge(a, b, { nodes, pulse: true, dur: 1.2, delay: dl, uid: UID, eid: `c${i}`, arrow: false }));
     body.push(arrowHead(b.left[0], b.left[1], 1, 0));
   });
 
-  // QP 池对照条
-  body.push(cap(36, 288, 'DeepEP 预建固定 QP 池复用：num_qps_per_rank = 24（v1.2.1，10.3）承载所有 token 路由', { size: 10 }));
-  body.push(cap(150, 313, '全互连 O(n²)', { size: 9.5, anchor: 'end' }));
-  body.push(`<rect class="dia-bar dia-bar-soft" x="160" y="302" width="440" height="14" rx="3"/>`);
-  body.push(cap(608, 313, '1.05M QP · 105 s', { mono: true, size: 9 }));
-  body.push(cap(150, 337, 'QP 池 O(n)', { size: 9.5, anchor: 'end' }));
-  body.push(`<rect class="dia-bar dia-bar-seal" x="160" y="326" width="${24 * 1024 / 1048576 * 440}" height="14" rx="3"/>`);
-  body.push(cap(180, 337, '24 QP/rank —— 建连成本压到 O(n)', { mono: true, size: 9 }));
+  // per-peer QP 池订正（章 9.1 §5 订正后口径）：24 是每对端池，全网仍 O(n²)，目的 spreading 非省连接
+  body.push(cap(36, 300, '订正：DeepEP num_qps_per_rank = 24 是每对端 QP 池（NVSHMEM_IBGDA_NUM_RC_PER_PE），非全网总数', { size: 10, color: 'var(--seal-deep)', weight: '650' }));
+  body.push(cap(36, 318, '24 = 本地 expert 数、按 dst_expert_local_idx 选 QP —— 不同 expert 流量分散到同一对端多条 NIC 队列（per-expert spreading）', { size: 9.5 }));
+  body.push(cap(170, 341, '全互连 1/对端', { size: 9.5, anchor: 'end' }));
+  body.push(`<rect class="dia-bar dia-bar-soft" x="180" y="330" width="${1.05 * 17.5}" height="14" rx="3"/>`);
+  body.push(cap(206, 341, '1.05×10⁶ · O(n²)', { mono: true, size: 9.5 }));
+  body.push(cap(620, 348, '24·n(n−1) ≈ 2.51×10⁷ · 仍 O(n²)', { mono: true, size: 9, anchor: 'end', color: 'var(--seal-deep)', weight: '650' }));
+  body.push(cap(170, 365, 'per-peer 池 24/对端', { size: 9.5, anchor: 'end' }));
+  body.push(`<rect class="dia-bar dia-bar-seal" x="180" y="354" width="${25.1 * 17.5}" height="14" rx="3"/>`);
 
-  body.push(cap(36, 366, '连接是控制面慢路径、传输是数据面快路径（§3 提点）—— 长连接摊销建连成本，不是每消息每对端建连', { size: 10, color: 'var(--seal-deep)' }));
+  body.push(cap(36, 394, '连接是控制面慢路径、传输是数据面快路径 —— 预建长连接复用摊销建连成本（§3 提点）', { size: 10 }));
+  body.push(cap(36, 412, '坑：把 24 读成全网总数 / O(n) —— per-peer 池总数 24·n(n−1) 阶不变；多 QP 买 spreading，不是省连接', { size: 10, color: 'var(--seal-deep)' }));
 
-  return scene(720, 382, body, { label: 'QP 状态机 RESET 经 INIT 设本地属性、RTR 设远端元数据到 RTS 可发送；RC 全互连 n(n-1) 个 QP，n=1024 约 1.05M 串行建立 105 秒，DeepEP 固定 24 QP 池把 O(n²) 压到 O(n)' }).svg();
+  return scene(720, 428, body, { label: 'QP 状态机 RESET 创建态、INIT 设本地属性、RTR 设远端元数据、RTS 设本地 PSN 与重试可发送；UD INIT 设 pkey port qkey、RTR 仅 STATE、RTS 设 SQ_PSN；RC 全互连 1.05M QP 105 秒，DeepEP 24 每对端池全网 24 n(n-1) 约 2.51e7 仍 O(n 平方)，目的 per-expert 流量分散' }).svg();
 }
 
 /* ============================================================
@@ -557,7 +562,7 @@ export const FIGURES = [
     dim: 'gpu',
     slug: '09-rdma-gpudirect/01-rdma-fundamentals',
     replacesBlock: 1,
-    title: 'QP 四态迁移 + 连接开销账：n(n-1) ≈ 1.05M QP，固定池压到 O(n)',
+    title: 'QP 四态迁移 + 连接开销账：全互连 1.05M，per-peer 池 24·n(n−1) 仍 O(n²)',
     svg: qpStateMachine,
   },
   {
