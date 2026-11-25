@@ -45,7 +45,7 @@ $$
 
 **符号**： $k_{\mathrm{down}}$ / $k_{\mathrm{up}}$ = leaf 下行/上行端口数（同速率端口，带宽比即端口数比）； $\rho = 1$ 即 1:1 无收敛， $\rho = 3$ 即 3:1 超售。代入：1:1 时 $k_{\mathrm{down}} = k_{\mathrm{up}} = k/2$（72/72，k=144）；3:1 时 48/16（k=64）。
 
-**定义**（全二分带宽）：所谓二分带宽（bisection bandwidth），是指把 NIC 集合分成数量相等的两半、所有跨割链路容量之和的最小值（对所有二分取 min）；**全二分带宽**指该值等于 $n_{\mathrm{NIC}}/2 \times r$——一半 NIC 同时向另一半线速发送时网络不卡。（口径：二分带宽是**聚合割容量**口径，不是单对峰值——单对峰值与聚合的区分 recap 7.1 §5 提点。）正例：1:1 两级 fat-tree 任意对半割容量 = 一半 NIC 的注入总和；边界反例：3:1 时割容量只有注入需求的 1/3，全二分不成立。
+**定义**（全二分带宽）：所谓二分带宽（bisection bandwidth），是指把 NIC 集合分成数量相等的两半、所有跨割链路容量之和的最小值（对所有二分取 min）；**全二分带宽**指该值等于 $n_{\mathrm{NIC}}/2 \times r$——一半 NIC 同时向另一半线速发送时网络不卡。（口径：二分带宽是**聚合割容量**口径，不是单对峰值——单对峰值与聚合的区分 recap 7.1 §4 提点。）正例：1:1 两级 fat-tree 任意对半割容量 = 一半 NIC 的注入总和；边界反例：3:1 时割容量只有注入需求的 1/3，全二分不成立。
 
 **命题 1**（1:1 全二分条件）：两级 leaf-spine，k 口交换机，每 leaf $k_{\mathrm{down}}$ 下行 + $k_{\mathrm{up}}$ 上行（和为 k），每台 spine 接全部 leaf。则全二分带宽成立当且仅当 $k_{\mathrm{up}} \ge k_{\mathrm{down}}$（ $\rho \le 1$）；且在排列流量（每 NIC 向唯一目的 NIC 线速发送）下，1:1 可把全部流线速路由（可重排无阻塞）：
 
@@ -57,7 +57,7 @@ $$
 
 全数字代入（k=144 XDR，1:1）： $k_{\mathrm{down}} = k_{\mathrm{up}} = 72$，全二分成立；代入 3:1（k=64，48/16）：割容量只有需求的 $16/48 = 1/3$——超售省的是上行端口与 spine 台数，丢的是全二分带宽。
 
-> **坑**：把 1:1 读成「严格无阻塞」。触发条件：以为任意时刻新增一条流都不影响已有流；现象：在线流量变化时误判「1:1 承诺失效」。事实：1:1（中平面数 = 下行口数）是**可重排无阻塞**（rearrangeably non-blocking）——对整个流量矩阵存在线速路由，但新流可能要重排已有流的路径；严格无阻塞 Clos 要求中平面数不少于 $2n-1$（图论口径）。规避：谈「无阻塞」先注口径（可重排 vs 严格），本书 1:1 均指可重排。
+> **坑**：把 1:1 读成「严格无阻塞」。触发条件：以为任意时刻新增一条流都不影响已有流；现象：在线流量变化时误判「1:1 承诺失效」。事实：1:1（中平面数 = 下行口数）是**可重排无阻塞**（rearrangeably non-blocking）——对整个流量矩阵存在线速路由，但新流可能要重排已有流的路径；严格无阻塞 Clos 要求中平面数不少于 $2k_{\mathrm{down}}-1$（图论口径：每 leaf 输入口数的两倍减一）。规避：谈「无阻塞」先注口径（可重排 vs 严格），本书 1:1 均指可重排。
 
 **命题 2**（两级 1:1 规模上界）：两级 1:1 leaf-spine（k 口交换机）可接 NIC 数满足
 
@@ -139,7 +139,7 @@ $$
 
 fat-tree 之外还有什么拓扑族，超节点又把 fabric 的边界推到哪？本节作结构对照（**图论结构口径，教学推导**，不引厂商实现数值），再给 NVL72 的域/fabric 分工账。
 
-**torus（环面）**：直连网络——每节点（或每交换机）只与固定邻居相连，k-ary n-cube 的节点按 n 维环面寻址。二维 $k \times k$ torus 的二分带宽：沿一维对半切，割断该行方向的 $k$ 条边 + 环绕回来的 $k$ 条边，共 $2k$ 条链路：
+**torus（环面）**：直连网络——每节点（或每交换机）只与固定邻居相连，标准名 k-ary n-cube 指每维 k 个节点的 n 维环面（**局部借用注**：此处 n = 维数、k = 每维边长（arity），本节临时借用，与章首 n = rank 数、k = 交换机 radix 不同义；下文二维 case 即 n=2）。二维 $k \times k$ torus 的二分带宽：沿一维对半切，割断该行方向的 $k$ 条边 + 环绕回来的 $k$ 条边，共 $2k$ 条链路：
 
 $$
 \mathrm{Bisection}_{\mathrm{torus2D}} = 2k \text{ 条链路}, \qquad \text{每节点摊} = \frac{2k}{k^{2}} = \frac{2}{k} \qquad (8)
@@ -165,7 +165,7 @@ $$
 \frac{\mathrm{BW}_{\mathrm{NVLink,unidir}}}{\mathrm{BW}_{\mathrm{NIC,unidir}}} = \frac{900}{100} = 9 \qquad (9)
 $$
 
-**超节点没有消灭 fabric，而是把 fabric 的边界外推**：72 GPU 以内走 NVLink（域内），以外仍走 IB fabric（NVL72 跨机架经 ConnectX-8 SuperNIC；Quantum-X800 平台口径每 GPU 至多 1.6 Tb/s = 2×CX8，[NVIDIA, connectx8](../references.md)，[C]）。规模账：两级 XDR fat-tree 接 10368 NIC，按每 GPU 一张 NIC 即 10368 GPU = **144 个 NVL72 机架**（ $10368/72 = 144$）。域扩大 9× 让分层环的跨域字节从 $M/8$ 压到 $M/72$（recap 8.2 §7 结构）——慢链路（fabric）承载的流量再降 9×，这是超节点对集合通信的算术价值。NVLink5 最大域 576 GPU（recap 7.1 §5），再往外仍是 fabric 的 scope。
+**超节点没有消灭 fabric，而是把 fabric 的边界外推**：72 GPU 以内走 NVLink（域内），以外仍走 IB fabric（NVL72 跨机架经 ConnectX-8 SuperNIC；Quantum-X800 平台口径每 GPU 至多 1.6 Tb/s = 2×CX8，[NVIDIA, connectx8](../references.md)，[C]）。规模账：两级 XDR fat-tree 接 10368 NIC，按每 GPU 一张 NIC 即 10368 GPU = **144 个 NVL72 机架**（ $10368/72 = 144$）。域扩大 9× 让分层环的跨域字节从 $M/8$ 压到 $M/72$（recap 8.2 §7 结构）——慢链路（fabric）承载的流量再降 9×，这是超节点对集合通信的算术价值。NVLink5 最大域 576 GPU（recap 7.1 §4），再往外仍是 fabric 的 scope。
 
 ## 7. 多轨多 NIC 工程：rail 对齐与子网管理
 
@@ -182,7 +182,7 @@ rail 对齐在软件侧怎么落地？三个落点：GPU-NIC 的 PCIe 亲和、N
 | 论断 | 公式 / 数值 | 回指 |
 | --- | --- | --- |
 | IB fabric = SM 集中控制面（发现/LID/转发表/QoS）+ 硬件数据面；RoCE 无 SM、LID=0、GID/IP 寻址；故障恢复 SM 重算 + APM（RoCE 无） | IBTA + OFED 逐字 | §2 |
-| 收敛比 $\rho = k_{\mathrm{down}}/k_{\mathrm{up}}$；全二分带宽 iff $k_{\mathrm{up}} \ge k_{\mathrm{down}}$（割容量账 + König 边着色）；1:1 是可重排无阻塞，非严格（严格需 $2n-1$ 中平面） | 命题 1、式 (1)(2) | §3、练习 2 |
+| 收敛比 $\rho = k_{\mathrm{down}}/k_{\mathrm{up}}$；全二分带宽 iff $k_{\mathrm{up}} \ge k_{\mathrm{down}}$（割容量账 + König 边着色）；1:1 是可重排无阻塞，非严格（严格需 $2k_{\mathrm{down}}-1$ 中平面） | 命题 1、式 (1)(2) | §3、练习 2 |
 | 两级 1:1 规模上界 $k^{2}/2$ 可达：k=144 → 10368（XDR 官方逐字闭合）、k=64 → 2048；三级 pod 计数 $k^{3}/4$ = 65536；pattern $k^{n_{\mathrm{tier}}}/2^{n_{\mathrm{tier}}-1}$ | 命题 2、式 (3)(4)(5) | §3、练习 1/3/4 |
 | 超售 3:1（48/16）：NIC 数 3072（+50%）但二分带宽 ÷3——拿每 NIC 跨割带宽换端口成本；AI factory 推荐 1:1 fat-tree | §3 权衡账 | §3、练习 2 |
 | rail-optimized = 每 GPU rail 接不同 leaf；同号跨机 1 跳、跨 rail 经 NVSwitch+PXN 仍 1 跳（否则 3 跳）；各 rail 独立平面 → 聚合 $`n_{\mathrm{NIC}} \times \mathrm{BW}_{\mathrm{NIC}}`$ = 400 GB/s、带宽项 ÷8（37.5→4.69 ms） | 式 (6)(7)，官方逐字 | §4、练习 2 |
