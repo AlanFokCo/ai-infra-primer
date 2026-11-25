@@ -478,11 +478,12 @@ function achievedRoofline() {
   body.push(cap(128, 338, 'E (0.083, 0.238) elementwise', { mono: true, size: 8 }));
 
   body.push(cap(36, 412, '三条轨迹：D→B 垂直上移（强度不变、并发补齐，latency 修复）· B 沿斜线向 roof（u_B 收窄，η 因子）· tiling 提复用 → 换更高 L2/L1 ceiling', { size: 9 }));
-  body.push(cap(36, 430, '点标口径：latency-bound 点在 2.4 §7 标 C，本章改标 D（避与并发符号 C 冲突）；坐标与损失读数不变', { size: 9, color: 'var(--seal-deep)' }));
-  body.push(cap(36, 448, '端到端对账（式 6）：MFU_step = duty × 忙碌加权 u_F = 0.667×0.551% = 0.368% —— decode MFU 天然低，优化目标是 u_B 与 duty 不是 MFU', { size: 9.5 }));
-  body.push(cap(36, 466, '两类 kernel 都贴斜线（u_B 85.1%）：GEMV 类 30×100 μs（75.8%）+ elementwise 300×3.2 μs（24.2%）；剩余 14.9% 带宽损失由 memory chart 分解', { size: 9 }));
+  body.push(cap(36, 430, '点标口径：D 取 2.4 §5 表第三行（64 sectors、O 0.25 配 ILP 1 → 2.58 TFLOPS、loss 69.2%），不是 2.4 §7 的点 C（104 sectors、4.19、50%）', { size: 9, color: 'var(--seal-deep)' }));
+  body.push(cap(36, 446, 'A/B 点 recap 2.4 §7，E 点为本章教学假设；本章标 D 而非沿用 C，避与并发符号 C（§1 声明）冲突', { size: 9, color: 'var(--seal-deep)' }));
+  body.push(cap(36, 464, '端到端对账（式 6）：MFU_step = duty × 忙碌加权 u_F = 0.667×0.551% = 0.368% —— decode MFU 天然低，优化目标是 u_B 与 duty 不是 MFU', { size: 9.5 }));
+  body.push(cap(36, 482, '两类 kernel 都贴斜线（u_B 85.1%）：GEMV 类 30×100 μs（75.8%）+ elementwise 300×3.2 μs（24.2%）；剩余 14.9% 带宽损失由 memory chart 分解', { size: 9 }));
 
-  return scene(720, 482, body, { label: 'Achieved roofline H100 BF16 log-log：水平 roof F_peak 九百八十九點五 TFLOPS 斜线 I 乘 BW 三点三五 TB/s ridge 约二百九十五；A 四百七百 compute-bound u_F 七十點七百分比，B 二點五七點一二五 memory-bound u_B 八十五點一百分比，D 二點五二點五八 latency-bound loss 六十九點二百分比，E 零點零八三零點二三八 elementwise；D 到 B 垂直上移 ILP 一到四 C 六十四到二百五十六 sectors，点标 D 非 C 避并发符号冲突，MFU_step 零點三六八百分比目标是 u_B 与 duty' }).svg();
+  return scene(720, 498, body, { label: 'Achieved roofline H100 BF16 log-log：水平 roof F_peak 九百八十九點五 TFLOPS 斜线 I 乘 BW 三点三五 TB/s ridge 约二百九十五；A 四百七百 compute-bound u_F 七十點七百分比，B 二點五七點一二五 memory-bound u_B 八十五點一百分比，D 二點五二點五八 latency-bound loss 六十九點二百分比，E 零點零八三零點二三八 elementwise；D 到 B 垂直上移 ILP 一到四 C 六十四到二百五十六 sectors，点标 D 非 C 避并发符号冲突，MFU_step 零點三六八百分比目标是 u_B 与 duty' }).svg();
 }
 
 /* ============================================================
