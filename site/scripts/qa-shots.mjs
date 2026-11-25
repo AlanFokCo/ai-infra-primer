@@ -62,6 +62,9 @@ const PAGES = [
   // gpu 维度 W4 样章（P7/P8 通信落地代表章：互连带宽账密 + ring 下界推导重章，spec §8）
   ['gpu-ch-gpudirect-p2p', '/gpu/07-nvlink-nvswitch/03-gpudirect-p2p/'], // 带宽账密（7.3，bounce 两跳半谐波均值 + PCIe 三道门 + GDS min 账场景图）
   ['gpu-ch-ring-algorithms', '/gpu/08-nccl-collectives/02-ring-algorithms/'], // 推导重章（8.2【重】，带宽最优性下界证明 + 多 ring 聚合 + 分层 ring 场景图）
+  // gpu 维度 W5 样章（P9/P10 通信落地代表章：GDR 带宽账重章 + EP a2a 代码走读密，spec §8）
+  ['gpu-ch-gpudirect-rdma', '/gpu/09-rdma-gpudirect/02-gpudirect-rdma/'], // 带宽账密（9.2【重】，NIC→HBM min regime 判定 + 多 NIC 聚合 + bounce 对比 + BAR1 三道门场景图）
+  ['gpu-ch-ep-alltoall', '/gpu/10-fabric-and-scale-communication/03-ep-alltoall-implementation/'], // 代码走读密（10.3，DeepEP 双锚 v1.2.1/main V2.5 走读 + incast 命题 + LL 带宽重算场景图）
 ];
 
 const VIEWPORTS = [
