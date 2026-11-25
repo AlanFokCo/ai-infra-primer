@@ -19,7 +19,7 @@ Request → Recipe（多协议 → 统一对话，§9）→ Entrypoint（CHECK �
    KVCache Storage（3FS kvcache-store 专用集群，任何机命中任何前缀，release 外；2.4）
 ```
 
-**本章口径**：模型几何取 V4.1-Flash config（[W]： $E$ = 384 routed + 1 shared、 $k$ = 6、 $d_{\mathrm{model}}$ = 5120、moe_intermediate_size 2304、expert MXFP4）；并行度记 $e$（EP）/ $d$（DP）， $B$ 为全局 batch（ $B = d\cdot B_{\mathrm{local}}$， $B_{\mathrm{local}}$ 单 DP 组本地 batch，1.2 §5 记号 recap）；带宽换算沿用 1.3 参数表的 B200 HBM 口径 7.7 TB/s（官方规格 [C]，参数表出处见 1.3，本章不另引 datasheet）。生产数字标「官方披露」+ doc 行号 + 核实日期 2026-11-23。边界：本章讲 serving 侧 EP 部署与负载均衡算法；RDMA / NVLink 硬件与网络拓扑归 cluster 维度，serving 并行组合（TP/PP/CP）归 8.1，弹性容错详展归 8.5。V4.1-Flash 模型侧（Engram / DSpark draft / CED）形式化归 models 维度（V4.1 待补），本章只引 config 字段做 serving 账。
+**本章口径**：模型几何取 V4.1-Flash config（[W]： $E$ = 384 routed + 1 shared、 $k$ = 6、 $d_{\mathrm{model}}$ = 5120、moe_intermediate_size 2304、expert MXFP4）；并行度记 $e$（EP）/ $d$（DP）， $B$ 为全局 batch（ $B = d\cdot B_{\mathrm{local}}$， $B_{\mathrm{local}}$ 单 DP 组本地 batch，1.2 §5 记号 recap）；带宽换算沿用 1.3 参数表的 B200 HBM 口径 7.7 TB/s（官方规格 [C]，参数表出处见 1.3，本章不另引 datasheet）。生产数字标「官方披露」+ doc 行号 + 核实日期 2026-11-23。边界：本章讲 serving 侧 EP 部署与负载均衡算法；RDMA / NVLink 硬件与网络拓扑归 gpu 7.1 / 9.1 / 10.1，serving 并行组合（TP/PP/CP）归 8.1，弹性容错详展归 8.5。V4.1-Flash 模型侧（Engram / DSpark draft / CED）形式化归 models 维度（V4.1 待补），本章只引 config 字段做 serving 账。
 
 ## 2. Wide-EP 账兑现：从 $\propto 1/e$ 到生产数字
 
@@ -71,7 +71,7 @@ $$
 
 **证明**（独立和的方差，两步）：卡负载 = $m$ 个独立 expert 负载之和，均值 $m\mu$、方差 $m\sigma^2$、标准差 $\sigma\sqrt{m}$；代入定义 $\mathrm{CV} = \sigma\sqrt{m}/(m\mu) = \sigma/(\mu\sqrt{m})$，再代入 $m = E/e$ 得式 (1)，对 $e$ 增。∎ 代入（ $\sigma/\mu$ = 1 示意）：EP2 CV ≈ 0.072、EP4 ≈ 0.102、EP64 ≈ 0.408——EP 越大、每卡 expert 越少、相对偏斜越大。方向与官方 moe_lb 一致：1.045（EP2）< 1.074（EP4）< 1.090（EP64），随 $e$ 单调升。口径注：iid 是理想化（热 expert 相关、EPLB 已改变分布），命题 2 给方向不给定量拟合；moe_lb 是 max/mean 非 CV，两者不可直接等同。这解释了 prefill 取小 EP（均衡好，doc L57）与 decode 大 EP 必须配 EPLB（粒度粗、偏斜大）的取向。
 
-training 5.4 §4 负载不均衡 recap（不重推）：一层 MoE 墙上时间由最慢卡决定，偏斜度 $\max_j R_j/\bar{R}$ 乘性进层时长（木桶命题）；模型侧读数 router $\max_i f_i$ 与分布熵、系统侧读数 $\max_j R_j$ 是同一偏斜两端。V3 aux-loss-free 偏置控制器（步长 $\gamma = 10^{-3}$、seq 级 aux $\alpha = 10^{-4}$，training 5.4 记号 recap）把均衡写进路由控制回路；推理侧的系统兜底就是 EPLB 冗余副本——训练靠路由控制、推理靠容量复制。指针收窄（spec §2 errata 通道）：training 5.4 §4 与 models 4.5 §7 原「EPLB 系统实现归 cluster」句，spec §2 已裁定重判——serving 侧 EPLB（冗余副本/统计窗/重分配/moe_lb）归本章（8.1 recap），硬件/网络拓扑归 cluster；指针句收窄留 W4 closeout errata 执行（截至本章核实，training 5.4 §4 / models 4.5 §7 原文尚未改）。
+training 5.4 §4 负载不均衡 recap（不重推）：一层 MoE 墙上时间由最慢卡决定，偏斜度 $\max_j R_j/\bar{R}$ 乘性进层时长（木桶命题）；模型侧读数 router $\max_i f_i$ 与分布熵、系统侧读数 $\max_j R_j$ 是同一偏斜两端。V3 aux-loss-free 偏置控制器（步长 $\gamma = 10^{-3}$、seq 级 aux $\alpha = 10^{-4}$，training 5.4 记号 recap）把均衡写进路由控制回路；推理侧的系统兜底就是 EPLB 冗余副本——训练靠路由控制、推理靠容量复制。指针收窄（spec §2 errata 通道）：training 5.4 §4 与 models 4.5 §7 原「EPLB 系统实现归 cluster」句，spec §2 已裁定重判——serving 侧 EPLB（冗余副本/统计窗/重分配/moe_lb）归本章（8.1 recap），网络拓扑归 gpu 10.1、EPLB 通信影响归 gpu 10.3；serving 侧指针句收窄已于 inference W4 closeout errata 执行（历史注：「原文尚未改」为 W4 写作时点记录，training 5.4 §4 / models 4.5 §7 现文已含「归 inference 7.4」；gpu 部分于 W7 收窄到章号）。
 
 ## 4. EPLB 两套算法走读：repo 计划算法 ≠ release 引擎算法
 
@@ -130,9 +130,9 @@ Engram 的 embedding 表大到单卡放不下，怎么分片又不让取数成�
 
 config 字段（[W]，只列不推导）：engram_layer_ids [1, 14]、engram_num_embeddings [384006168, 384016682]、engram_vocab_size 16,000,000、engram_max_ngram_size 4、engram_n_heads 8、engram_head_dim 256、engram_compressed_vocab_size 99092、engram_pad_token_id 2。分片算术（serving 账）：ENP8 时每 rank 持 engram_num_embeddings[0]/8 = 384,006,168/8 = 48,000,771 条（python 复核，整除）；decode ENP = DP/EP（如 64）时按 1/ENP 口径分片（doc 口径，非整除时由引擎处理，本章不虚构每 rank 精确条数）。模型侧 Engram（n-gram 记忆机制、compressed tokenizer 数学）归 models 维度（V4.1 待补），本章只讲 serving 分片与取数。
 
-机制三笔账。其一，为什么 host memory + RDMA 而非全留 HBM：embedding 表条数亿级（384M），全留 HBM 挤占 KV cache 与权重；host memory 容量大、RDMA 注册后 NIC 直取，one-sided read 不占对端 CPU（发起方单方读，语义归 cluster）。其二，为什么 scales 留 GPU 经 NVLink：scales 小（相对 embedding 数据），留 GPU 避免每次取数都走 host→GPU，NVLink 域内传 scale 延迟低。其三，为什么 forward 开始即发 read：取数与计算重叠（NIC 后台搬），kernel 发起后不阻塞——与 2.4 GDR swap-in（RDMA NIC 直写 HBM 不占 SM）同思路，但 Engram 是 host→GPU 读、KV swap-in 是存储→GPU，方向与源不同。NPU 无 offload 的代码互证：environ.py L154 `DEEPINFER_ENGRAM_FORCE_GPU_STORAGE = EnvVar(lambda v: _bool(v) or envs.DEEPINFER_ACCELERATOR == "ascend")`——Ascend 强制全留 NPU memory，与 doc L87 一致。
+机制三笔账。其一，为什么 host memory + RDMA 而非全留 HBM：embedding 表条数亿级（384M），全留 HBM 挤占 KV cache 与权重；host memory 容量大、RDMA 注册后 NIC 直取，one-sided read 不占对端 CPU（发起方单方读，语义归 gpu 9.1）。其二，为什么 scales 留 GPU 经 NVLink：scales 小（相对 embedding 数据），留 GPU 避免每次取数都走 host→GPU，NVLink 域内传 scale 延迟低。其三，为什么 forward 开始即发 read：取数与计算重叠（NIC 后台搬），kernel 发起后不阻塞——与 2.4 GDR swap-in（RDMA NIC 直写 HBM 不占 SM）同思路，但 Engram 是 host→GPU 读、KV swap-in 是存储→GPU，方向与源不同。NPU 无 offload 的代码互证：environ.py L154 `DEEPINFER_ENGRAM_FORCE_GPU_STORAGE = EnvVar(lambda v: _bool(v) or envs.DEEPINFER_ACCELERATOR == "ascend")`——Ascend 强制全留 NPU memory，与 doc L87 一致。
 
-库层与引擎侧落点（映射级）。库层：DeepEP `EngramBuffer`（experimental，RDMA，GPU/CPU 多层存储 + 多层 fetch，`fetch(indices)` 每层返回 completion hook，7.3 §6 已走读接口，README L382+）——one-sided RDMA read 的库层落点。引擎侧：`model_executor/models/v4_modules/engram.py` CompressedTokenizer L35 / NgramEmbedding L69 / Engram L107 / EngramRuntime L164 + `tilelang_ops/gather_engram_tokens_zos.py`（ZOS 路径取 Engram token）——引擎管分片放置与取数调度，DeepEP 管 RDMA 通信。RDMA 硬件层归 cluster 维度。
+库层与引擎侧落点（映射级）。库层：DeepEP `EngramBuffer`（experimental，RDMA，GPU/CPU 多层存储 + 多层 fetch，`fetch(indices)` 每层返回 completion hook，7.3 §6 已走读接口，README L382+）——one-sided RDMA read 的库层落点。引擎侧：`model_executor/models/v4_modules/engram.py` CompressedTokenizer L35 / NgramEmbedding L69 / Engram L107 / EngramRuntime L164 + `tilelang_ops/gather_engram_tokens_zos.py`（ZOS 路径取 Engram token）——引擎管分片放置与取数调度，DeepEP 管 RDMA 通信。RDMA 硬件层归 gpu 9.1 / 9.2。
 
 ## 9. deepseek-recipe：多协议统一与流式解析
 

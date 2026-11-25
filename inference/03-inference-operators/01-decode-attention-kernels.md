@@ -8,7 +8,7 @@ FlashAttention 在 prefill 把 batch、head、query 块三个维度铺满 GPU；
 
 先 recap 三件已交付的数学（models 4.1 §5，本章不重推）：online softmax 把行归一化拆成 running max 与 running 指数和，每来一块换基准重缩放，换基准是恒等变换（models 4.1 式 (15)(16)）；tiling 让 Q/K/V 分块驻留 SRAM，score 矩阵从生到死不碰 HBM；IO 账 $O(T^{2} d_{\mathrm{head}}^{2} / M)$（models 4.1 式 (17)，其 d = head 维，按 spec §4.3 翻译规则译为本章 $d_{\mathrm{head}}$ ）说明长序列瓶颈是访存不是 FLOPs。本章的全部 split / merge 数学都是这条「换基准恒等式」的推广：tile 块级归约归 models（online softmax 本体），段级（split 间）归约是本章增量。
 
-decode 的 shape 走读：q 为 [B, H_q, 1, d_head]，K/V cache 为 [B, H_kv, T, d_head]（GQA 口径；MLA 与 DSA 的几何分别见 §5 / §7）。FA2 的 query 块并行在 q = 1 时只剩一个块，grid（kernel 一次启动的全部 thread block 集合）退化为 B × H_kv ——FlashInfer 的 decode scheduler 里 grid y 维 `gdy = num_kv_heads`（`scheduler.cuh`，2026-11-23 main 核实）正是这个网格模型。代入章脊口径：8B、B = 1 时 grid 只有 8 个 CTA（cooperative thread array，即 thread block），对 A100 的 108 个 SM（博客口径）覆盖率 8/108 ≈ 7.4%。博客的论断逐字：「if the batch size is smaller than the number of streaming multiprocessors (SMs) on the GPU (108 for an A100), the operation will only use a small part of the GPU」；长上下文让情况更糟，因为 KV 容量把 batch 压得更小。所谓占用率（occupancy），本章按「grid 的 CTA 数能否铺满 SM」读（口径：博客的粗口径；warp 级占用率的精确定义与硬件来源归 gpu 维度）。
+decode 的 shape 走读：q 为 [B, H_q, 1, d_head]，K/V cache 为 [B, H_kv, T, d_head]（GQA 口径；MLA 与 DSA 的几何分别见 §5 / §7）。FA2 的 query 块并行在 q = 1 时只剩一个块，grid（kernel 一次启动的全部 thread block 集合）退化为 B × H_kv ——FlashInfer 的 decode scheduler 里 grid y 维 `gdy = num_kv_heads`（`scheduler.cuh`，2026-11-23 main 核实）正是这个网格模型。代入章脊口径：8B、B = 1 时 grid 只有 8 个 CTA（cooperative thread array，即 thread block），对 A100 的 108 个 SM（博客口径）覆盖率 8/108 ≈ 7.4%。博客的论断逐字：「if the batch size is smaller than the number of streaming multiprocessors (SMs) on the GPU (108 for an A100), the operation will only use a small part of the GPU」；长上下文让情况更糟，因为 KV 容量把 batch 压得更小。所谓占用率（occupancy），本章按「grid 的 CTA 数能否铺满 SM」读（口径：博客的粗口径；warp 级占用率的精确定义与硬件来源归 gpu 1.2 / 3.4）。
 
 **本章口径**（章脊锁定，全章例题复用，换口径随文声明）：
 
@@ -20,7 +20,7 @@ decode 的 shape 走读：q 为 [B, H_q, 1, d_head]，K/V cache 为 [B, H_kv, T,
 
 符号约定：B = batch 内请求数，T = KV 长度，b = block size（token 数，2.1），κ = 每 token 每层 KV 字节数（1.2），H_q = query head 数（本章声明），S = split 数；bytes 不占字母，一律文字「字节」或 $\mathrm{bytes}$ 。跨维度翻译沿 spec §4.3：models 的 d（hidden）译 $d_{\mathrm{model}}$ 、b（每元素字节数）译「字节」（1.2 同口径）。
 
-算子边界声明（spec §2 三层划分）：本章讲算法、tiling 策略、IO 与算力账、引擎调用接口；warp 内寄存器分配、tensor core 指令形状、SASS 调度归 gpu 维度（纯文字指引，不展开）；引擎模块全量走读归 5.3 / 6.x / 7.3；模型侧数学归 models。下文 FA3 的 warp specialization 与 FlashMLA 的 seesaw 都是**调度策略级**描述，不属指令级内容。本章增量六件：§2 split-KV 正确性与账、§3 FA2/FA3 策略、§4 FlashInfer 格式与接口（含 cascade 正确性）、§5 FlashMLA 吸收形几何、§6 paged kernel 接口、§7 DSA 选择链。
+算子边界声明（spec §2 三层划分）：本章讲算法、tiling 策略、IO 与算力账、引擎调用接口；warp 内寄存器分配、tensor core 指令形状、SASS 调度归 gpu 1.3 / 2.3 / 6.3（纯文字指引，不展开）；引擎模块全量走读归 5.3 / 6.x / 7.3；模型侧数学归 models。下文 FA3 的 warp specialization 与 FlashMLA 的 seesaw 都是**调度策略级**描述，不属指令级内容。本章增量六件：§2 split-KV 正确性与账、§3 FA2/FA3 策略、§4 FlashInfer 格式与接口（含 cascade 正确性）、§5 FlashMLA 吸收形几何、§6 paged kernel 接口、§7 DSA 选择链。
 
 ## 2. split-KV：把 KV 维变成并行维（FlashDecoding）
 
@@ -122,11 +122,11 @@ KV 序列 T=131072（逻辑连续，物理按块散落——2.1）
 
 ## 3. FA2 / FA3：同一数学，改并行与流水（算法级）
 
-FA1 只跑到理论峰值的 25–40%，FA2 在 A100 提到 50–73%，FA3 在 H100 把 FP16 推到 740 TFLOPs/s（75% util）——三代改的不是 attention 的数学对象，是并行划分与执行流水。本节只到策略级；指令级归 gpu 维度。
+FA1 只跑到理论峰值的 25–40%，FA2 在 A100 提到 50–73%，FA3 在 H100 把 FP16 推到 740 TFLOPs/s（75% util）——三代改的不是 attention 的数学对象，是并行划分与执行流水。本节只到策略级；指令级归 gpu 6.3。
 
 FA2 三技术（[Dao, 2023](../references.md)，arXiv:2307.08691，[A]，摘要口径）：(1) 减少 non-matmul FLOPs——softmax 的重缩放与除法跑在 CUDA core 上，吞吐远低于 tensor core 的 matmul，削减它们的次数直接抬利用率；(2) 单 head 也沿 seq 维跨 thread block 并行，提 occupancy（FA2 论文的 seq 维并行沿 query 维；decode q = 1 时该思路的同构策略是 KV split——那是 FlashDecoding 的独立贡献，FA ≥ 2.2 集成，博客口径，见 §2）；(3) thread block 内 warp 间的 work partitioning，减 shared memory 通信。报告数字：约 2× FA1，A100 50–73% 峰值，训练至 225 TFLOPs/s（72% MFU，摘要口径）。
 
-FA3 三技术（[Shah et al., 2024](../references.md)，arXiv:2407.08608，[A]，摘要口径）：(1) warp-specialization——把 thread block 内的 warp 分成生产者 / 消费者角色，数据搬运（TMA 异步）与计算重叠，这是调度策略描述，TMA / WGMMA 的指令语义归 gpu；(2) block-wise matmul 与 softmax 交错（ping-pong）——两个 warpgroup 交替，一个做 matmul 时另一个做 softmax，把 CUDA core 与 tensor core 同时喂饱；(3) FP8 block quantization + incoherent processing——逐块量化控误差，随机正交变换把 outlier 摊开（算法级；变换的矩阵构造归论文）。报告数字：FA2 在 H100 仅 35% util（异步硬件特性未被同步调度利用），FA3 提升 1.5–2.0×，FP16 至 740 TFLOPs/s（75%）、FP8 近 1.2 PFLOPs/s，FP8 数值误差比基线 FP8 attention 低 2.6×。一致性核对：740 / 989.5 = 74.8% ≈ 75%（H100 BF16 dense 峰值取 [NVIDIA datasheet](../references.md)，[C]）。
+FA3 三技术（[Shah et al., 2024](../references.md)，arXiv:2407.08608，[A]，摘要口径）：(1) warp-specialization——把 thread block 内的 warp 分成生产者 / 消费者角色，数据搬运（TMA 异步）与计算重叠，这是调度策略描述，TMA / WGMMA 的指令语义归 gpu 1.3 / 4.4；(2) block-wise matmul 与 softmax 交错（ping-pong）——两个 warpgroup 交替，一个做 matmul 时另一个做 softmax，把 CUDA core 与 tensor core 同时喂饱；(3) FP8 block quantization + incoherent processing——逐块量化控误差，随机正交变换把 outlier 摊开（算法级；变换的矩阵构造归论文）。报告数字：FA2 在 H100 仅 35% util（异步硬件特性未被同步调度利用），FA3 提升 1.5–2.0×，FP16 至 740 TFLOPs/s（75%）、FP8 近 1.2 PFLOPs/s，FP8 数值误差比基线 FP8 attention 低 2.6×。一致性核对：740 / 989.5 = 74.8% ≈ 75%（H100 BF16 dense 峰值取 [NVIDIA datasheet](../references.md)，[C]）。
 
 | 代际 | 并行 / 流水策略 | 报告数字（出处口径） |
 | --- | --- | --- |
@@ -207,7 +207,7 @@ $$
 
 ——score 直接打在 cached latent 上，k^C 从计算图消失。V 侧：线性性给出 $\sum_s p_{t,s,h} W_h^{UV} c_s^{KV} = W_h^{UV} \sum_s p_{t,s,h} c_s^{KV}$ ——先加权和再上投影；输出投影吸收 $W_h^{O} W_h^{UV}$ 。RoPE 部分不吸收（k^R 逐位置旋转、原样缓存）：decoupled 结构是吸收的前提，低秩与 RoPE 的冲突推导归 models 4.1 §4.1-4.2，不重推。∎
 
-serving 含义一（几何与读取）。score 内维从 192 涨到 576（逐对 FLOPs ×3），KV 读从展开形每 token 每层 32832 元素降到 576 元素（57× 削减，models 4.1 §4.3 账 recap）。代价侧（本章账，非 models 4.1 §4.4 原文账）：Q 侧合并矩阵每 head 1536×512 = 786432 元素，是展开形两因子（128×1536 + 128×512 = 262144）的 3 倍，参数字节同比例放大；decode 逐步 query 投影 FLOPs 则是展开形的 4 倍（2×1536×512 对 2×1536×128——展开形 k^C 已缓存，逐步只投 q^C）。score 逐对 FLOPs ×3 才是 models 4.1 §4.4 的代价账（recap）。decode memory-bound 下用 FLOPs 换 57× 读取削减是净赚，prefill / 训练走展开形（models 4.1 §4.4）。kernel 几何：K block 64×576 = 512 latent + 64 rope，V 就是同一份 512 维 latent（deep-dive 逐字：「in MLA, K and V are the same with different names」）；576 = 9 × 64，故一个 K block 拆 9 次 64×64 的 TMA copy，第一份落地即启动第一段 GEMM（fine-grained copy-GEMM pipelining，策略级；TMA 指令语义归 gpu）。paged KV：块表 + cache_seqlens 输入，每 token 576 元素连续存放，kernel 按 64×576 tile 读取——2.1 式 (3) 的地址翻译同形。
+serving 含义一（几何与读取）。score 内维从 192 涨到 576（逐对 FLOPs ×3），KV 读从展开形每 token 每层 32832 元素降到 576 元素（57× 削减，models 4.1 §4.3 账 recap）。代价侧（本章账，非 models 4.1 §4.4 原文账）：Q 侧合并矩阵每 head 1536×512 = 786432 元素，是展开形两因子（128×1536 + 128×512 = 262144）的 3 倍，参数字节同比例放大；decode 逐步 query 投影 FLOPs 则是展开形的 4 倍（2×1536×512 对 2×1536×128——展开形 k^C 已缓存，逐步只投 q^C）。score 逐对 FLOPs ×3 才是 models 4.1 §4.4 的代价账（recap）。decode memory-bound 下用 FLOPs 换 57× 读取削减是净赚，prefill / 训练走展开形（models 4.1 §4.4）。kernel 几何：K block 64×576 = 512 latent + 64 rope，V 就是同一份 512 维 latent（deep-dive 逐字：「in MLA, K and V are the same with different names」）；576 = 9 × 64，故一个 K block 拆 9 次 64×64 的 TMA copy，第一份落地即启动第一段 GEMM（fine-grained copy-GEMM pipelining，策略级；TMA 指令语义归 gpu 4.4）。paged KV：块表 + cache_seqlens 输入，每 token 576 元素连续存放，kernel 按 64×576 tile 读取——2.1 式 (3) 的地址翻译同形。
 
 serving 含义二（regime 翻转）。吸收形 decode attention 的算术强度（deep-dive doc 公式，翻译：doc 的 d_k = d_latent + d_rope = 576、d_v = d_latent = 512、s_q = 每请求 query token 数，decode 无投机时 = 1）：
 
@@ -282,7 +282,7 @@ $$
 E[W_{\mathrm{sel}}] \le \left( 1 + \frac{K}{b_2} \right) (K + b_s + b_2) \thinspace H_m, \qquad m = \lceil T / b_s \rceil, \quad H_m = \sum_{i=1}^{m} \frac{1}{i} \qquad (9)
 $$
 
-**符号**：W_sel = 全部 radix-select 调用处理的元素总数（doc 记 W，译名避与 1.2 权重字节 W 冲突）；b_s = 扫描块长；b_2 = 压实触发增量；H_m = 调和数。路线一句（doc 证明骨架，分析设元素两两不同，doc 注明同分不恶化界）：随机块序下第 i 块新 append 的元素在已见元素中秩 ≤ C_buf，故 E[A_i] ≤ C_buf / i，对 i 求和得调和数；W_sel = A + K·R（A 为 append 总数，R 为循环内压实次数，R·b_2 ≤ A）。b_s, b_2 = Θ(K) 时额外计算 O(K log(T/K)) ≪ T。代入章脊口径（T = 131072、K = 512、b_s = b_2 = 1024）：m = 128、H_128 ≈ 5.433，E[W_sel] ≤ 1.5 × 2560 × 5.433 ≈ 20863 个元素 ≈ T 的 16%；输入读一遍 = 256 KiB/行（bf16）。指令级优化（PTX 比较 / 位操作、浮点加法代整数加法等）归 gpu 维度。
+**符号**：W_sel = 全部 radix-select 调用处理的元素总数（doc 记 W，译名避与 1.2 权重字节 W 冲突）；b_s = 扫描块长；b_2 = 压实触发增量；H_m = 调和数。路线一句（doc 证明骨架，分析设元素两两不同，doc 注明同分不恶化界）：随机块序下第 i 块新 append 的元素在已见元素中秩 ≤ C_buf，故 E[A_i] ≤ C_buf / i，对 i 求和得调和数；W_sel = A + K·R（A 为 append 总数，R 为循环内压实次数，R·b_2 ≤ A）。b_s, b_2 = Θ(K) 时额外计算 O(K log(T/K)) ≪ T。代入章脊口径（T = 131072、K = 512、b_s = b_2 = 1024）：m = 128、H_128 ≈ 5.433，E[W_sel] ≤ 1.5 × 2560 × 5.433 ≈ 20863 个元素 ≈ T 的 16%；输入读一遍 = 256 KiB/行（bf16）。指令级优化（PTX 比较 / 位操作、浮点加法代整数加法等）归 gpu 6.4。
 
 candidate blocks（DeepInfer `deepinfer/model_executor/layers/tilelang_ops/candidate_blocks.py`，W1 同日 tarball 核实）：两级选择——(1) `candidate_block_max` 把 token 分数按 b_c（8 或 16）池化成块分数（块内有效 token 取 max），最后一个有效块强制 +inf（当前块必选）；(2) 块级 TopK 选 K_b 块；(3) 压实选中块的 token 分数（K_b · b_c 列），第二级 token TopK 取最终 K 个；(4) `restore_candidate_indices_inplace` 把压实索引还原成序列局部索引：block_id × b_c + offset——与 2.1 式 (3) 的块表算术同形。行 padding 到 1024 字节对齐 DeepSelect 的 stride 要求（接口事实，README `get_stride_requirement`）。
 
@@ -347,4 +347,4 @@ sparse MLA 接口（FlashMLA README，2026-11-23 核实；Hopper kernel 内部�
 - [Yuan et al., 2025](../references.md)：NSA，arXiv:2502.11089，[B] 无官方 repo（key: nsa）——块级稀疏背景对照
 - [OCP MX](../references.md)：MX Specification v1.0，[C] 官方格式规范（key: ocp-mx）——MXFP4 每元素 0.5 + 1/32 字节
 - [DeepSeek-AI, DeepGEMM](../references.md)：教学参照（key: deepgemm）——indexer MQA logits kernel（走读归 3.3）
-- 跨维度指引（纯文字）：models 4.1 §5（online softmax 式 (15)(16)、tiling、IO 式 (17)）、§4.3-4.4（absorption 式 (11)-(14)）；models 4.2 §6（DSA indexer）/ §8（召回风险）；models 2.4（前缀不可变命题）；inference 1.2（κ 式 (3)、decode 账式 (2)(4)）、1.4（batch invariance）、2.1（块表式 (3)）、2.2（prefix caching）、2.3 / 3.2（KV 量化与格式账）、3.3（DeepGEMM）、3.4（融合 / CUDA Graph / batch-invariant kernels）、4.4 / 4.5（投机解码）、5.3（vLLM attention 全量走读）、7.2（V4.1 混合几何）、7.3（FlashMLA 当前 main 与 SASS 差距）、8.x（跨实例 partial attention 合并）；warp / tensor core / SASS 指令级归 gpu 维度
+- 跨维度指引（纯文字）：models 4.1 §5（online softmax 式 (15)(16)、tiling、IO 式 (17)）、§4.3-4.4（absorption 式 (11)-(14)）；models 4.2 §6（DSA indexer）/ §8（召回风险）；models 2.4（前缀不可变命题）；inference 1.2（κ 式 (3)、decode 账式 (2)(4)）、1.4（batch invariance）、2.1（块表式 (3)）、2.2（prefix caching）、2.3 / 3.2（KV 量化与格式账）、3.3（DeepGEMM）、3.4（融合 / CUDA Graph / batch-invariant kernels）、4.4 / 4.5（投机解码）、5.3（vLLM attention 全量走读）、7.2（V4.1 混合几何）、7.3（FlashMLA 当前 main 与 SASS 差距）、8.x（跨实例 partial attention 合并）；warp / tensor core / SASS 指令级归 gpu 6.3 / 6.4

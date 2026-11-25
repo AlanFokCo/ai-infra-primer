@@ -64,7 +64,7 @@ decode batch 64、 $d_{\mathrm{model}}$ = 7168（V3 口径 recap training 5.1 §
 | `quick_all_reduce` / `ring_simple_all_reduce` / `dpx_hier_all_reduce` | 同目录 | 轻量 / ring / 分层变体 |
 | `multicast_all_gather` / `shm_broadcast` | 同目录 | all-gather 与共享内存广播 |
 
-选择原则是机制级的：域内小消息走 custom kernel / symmetric memory 省 launch 与协议开销，大消息走 ring 类算法摊带宽；逐原语的延迟-带宽账与 NVLink 域边界归 8.1，RDMA / NVLink 硬件层归 cluster 维度。同目录还有 `mooncake_transfer_engine.py` `MooncakeTransferEngine` L117（`KVTransferEngine` 子类）——它不做集合通信，是 PD 数据面的传输底座（§6），集合通信与 KV 传输共用一个 device_communicators 目录但语义两族。
+选择原则是机制级的：域内小消息走 custom kernel / symmetric memory 省 launch 与协议开销，大消息走 ring 类算法摊带宽；逐原语的延迟-带宽账与 NVLink 域边界归 8.1，RDMA / NVLink 硬件层归 gpu 7.1 / 9.1。同目录还有 `mooncake_transfer_engine.py` `MooncakeTransferEngine` L117（`KVTransferEngine` 子类）——它不做集合通信，是 PD 数据面的传输底座（§6），集合通信与 KV 传输共用一个 device_communicators 目录但语义两族。
 
 ## 3. eplb/ 与 elastic_ep/：expert 重分布与弹性
 

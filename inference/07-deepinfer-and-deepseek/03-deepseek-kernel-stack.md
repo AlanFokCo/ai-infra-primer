@@ -25,7 +25,7 @@ V4.1-Flash forward（model_executor/models/deepseek.py DeepseekForCausalLM L251�
 
 两条目录事实先登记（7.1 详展，此处一句）。其一，`vendor/` 含 DeepEP / DeepEP-Ascend / DeepGEMM / DeepGEMM-Ascend / DeepSelect / FlashMLA 六个 submodule——kernel 栈以 submodule 形式钉进引擎树（2026-11-23 tarball 核实）。其二，`deep_cluster/`（topology/bind + hardware/{nvidia,ascend}）是硬件拓扑绑定，属大纲外新增，本章不展开。Ascend 变体的分列口径：DeepGEMM-Ascend / DeepEP-Ascend 另立 repo（2026.09.30 发布、同 API），FlashMLA / TileKernels / DeepSelect 的 Ascend 支持在主 repo 内（双后端运行时选择）——§3 / §5 / §6 / §7 按此分列。
 
-**本章口径**：模型几何取 V4.1-Flash config（[W]： $H_{kv}$=1、共享 KV 向量 512 维 = kv_lora_rank 448 + rope 64（config `head_dim` 512 **含** rope，引擎导出 kv_lora_rank=448，读法见 §3）、index_head_dim 128、index_topk 512、40 层 + 3 nextn、384 routed + 1 shared top-6）；硬件取 SM100（B200）与 Ascend 950 双平台；性能数字一律 README / doc 官方口径，生产数字标「官方披露」+ doc 行号 + 核实日期 2026-11-23。边界声明：本章讲算子的算法、tiling / 分裂策略、IO 与算力账、引擎调用接口；warp / tensor core / SASS 指令级实现归 gpu 维度，RDMA / NVLink 硬件层归 cluster 维度。V4.1-Flash 模型侧形式化（CED / Engram / DSpark draft / compress_ratios）归 models 维度（V4.1 待补），本章只引 config 字段做 serving 账。
+**本章口径**：模型几何取 V4.1-Flash config（[W]： $H_{kv}$=1、共享 KV 向量 512 维 = kv_lora_rank 448 + rope 64（config `head_dim` 512 **含** rope，引擎导出 kv_lora_rank=448，读法见 §3）、index_head_dim 128、index_topk 512、40 层 + 3 nextn、384 routed + 1 shared top-6）；硬件取 SM100（B200）与 Ascend 950 双平台；性能数字一律 README / doc 官方口径，生产数字标「官方披露」+ doc 行号 + 核实日期 2026-11-23。边界声明：本章讲算子的算法、tiling / 分裂策略、IO 与算力账、引擎调用接口；warp / tensor core / SASS 指令级实现归 gpu 6.3 / 6.4，RDMA / NVLink 硬件层归 gpu 7.1 / 9.1。V4.1-Flash 模型侧形式化（CED / Engram / DSpark draft / compress_ratios）归 models 维度（V4.1 待补），本章只引 config 字段做 serving 账。
 
 ## 2. P3 公式 ↔ repo 映射总表
 
@@ -45,7 +45,7 @@ P3 四章交付了算子的算法级账，本章不重推——映射怎么读�
 | 3.4 式 (2)(3)、§5 | launch 开销 / CUDA Graph replay；TileLang DSL | DeepJIT + tilelang_ops + masked layout 消费 | §5 / §7 |
 | 3.4 §5 | TileLang tile 抽象、调度与数据流解耦 | tilelang [A] + TileKernels + tilelang_ops/cuda/schedule_mtp_varlen.py（7.2 实例） | §7 |
 
-读表三件事。其一，「repo 落点」列给的是接口 / 文件级锚，不是指令级实现——后者归 gpu。其二，版本口径随锚注明：FlashMLA 分 main（V4.1）与 ba89a34（Hopper），DeepEP 分 main（V2.5）与 tag v1.2.1（V1），混读会全部落空（§3 / §6 坑注）。其三，Mega MoE 是 DeepGEMM 的**组件**而非独立 repo（DeepGEMM README 口径，3.3 §5 已辨），表中归在 DeepGEMM 行下。EP > 32 递减账（3.3 命题 3）的生产 instantiation 与 EPLB 配套归 7.4，本章只登记 Mega MoE 接口与 doc 论断。
+读表三件事。其一，「repo 落点」列给的是接口 / 文件级锚，不是指令级实现——后者归 gpu 5.2 / 6.3 / 6.4。其二，版本口径随锚注明：FlashMLA 分 main（V4.1）与 ba89a34（Hopper），DeepEP 分 main（V2.5）与 tag v1.2.1（V1），混读会全部落空（§3 / §6 坑注）。其三，Mega MoE 是 DeepGEMM 的**组件**而非独立 repo（DeepGEMM README 口径，3.3 §5 已辨），表中归在 DeepGEMM 行下。EP > 32 递减账（3.3 命题 3）的生产 instantiation 与 EPLB 配套归 7.4，本章只登记 Mega MoE 接口与 doc 论断。
 
 ## 3. FlashMLA：V4.1 sparse / fused 与 Hopper 双锚
 
@@ -66,7 +66,7 @@ Hopper 旧口径 recap（3.1 §5 已完整走读，此处只记几何）：吸�
 | dense MHA | 1460 TFlops（fwd） | 1000 TFlops（bwd） | B200，NVIDIA 报 |
 | sparse attention | 410 TFlops（95% 峰值） | 360 TFlops（83% 峰值） | Ascend 950；deep-dive docs/20260930 |
 
-两个读数。其一，fused decode 标称 950 低于 sparse decode 1024，但 2026.09.30 release 把 fused decode 再优化 10–15%（README News 逐字），且 fused 省掉前后小 kernel 的独立 launch 与 IO——单看 attention kernel 的 TFlops 会误判，端到端步时还要算融合省下的那几遍小 kernel（3.4 式 (1)(2)）。其二，Ascend 950 的 410 / 360 TFlops 各标 95% / 83% 硬件峰值，反推峰值约 432 TFlops 量级（410/0.95 ≈ 431.6、360/0.83 ≈ 433.7，舍入一致）——这是 sparse attention 在该 NPU 上的有效峰值口径，与 datasheet 的稠密 FP8 峰值不是同一个数（硬件参数表归 1.3，微架构归 gpu）。requirements：NVIDIA SM100 / SM103 + CUDA 13.1+（13.2+ 推荐，提供量化 decode kernel 用的原生 `cvt.rn.bf16x2`，13.1 回退经 FP32 加宽更慢）；Ascend 950 + CANN 9.2.0+。
+两个读数。其一，fused decode 标称 950 低于 sparse decode 1024，但 2026.09.30 release 把 fused decode 再优化 10–15%（README News 逐字），且 fused 省掉前后小 kernel 的独立 launch 与 IO——单看 attention kernel 的 TFlops 会误判，端到端步时还要算融合省下的那几遍小 kernel（3.4 式 (1)(2)）。其二，Ascend 950 的 410 / 360 TFlops 各标 95% / 83% 硬件峰值，反推峰值约 432 TFlops 量级（410/0.95 ≈ 431.6、360/0.83 ≈ 433.7，舍入一致）——这是 sparse attention 在该 NPU 上的有效峰值口径，与 datasheet 的稠密 FP8 峰值不是同一个数（硬件参数表归 1.3，NVIDIA 微架构归 gpu 1.1 / 2.1；Ascend 微架构 gpu 不覆盖，沿 inference 1.3 [C] keynote 口径只引规格事实）。requirements：NVIDIA SM100 / SM103 + CUDA 13.1+（13.2+ 推荐，提供量化 decode kernel 用的原生 `cvt.rn.bf16x2`，13.1 回退经 FP32 加宽更慢）；Ascend 950 + CANN 9.2.0+。
 
 ## 4. 低精度落地：528 / 288 / 68 三格式字节账
 
@@ -107,7 +107,7 @@ deep_gemm.fp8_fp4_mega_moe(y, l1, l2, buffer)          # 执行 mega-kernel
 
 symmetric memory（对称内存：各 rank 以相同布局分配、可被远端直接访问的 buffer）须多进程 launch、PyTorch ≥ 2.9——这是 Mega MoE 把 NVLink 通信融进 kernel 的前提（通信对端 buffer 地址已知，才能在一个 kernel 内重叠搬运与计算）。`localize` 对应 locality domain（#462），把权重变换到本地域布局。官方论断（doc L285 逐字，官方披露，2026-11-23 核实）：「Mega MoE is the general solution within a scale-up domain: regardless of EP size or batch size, Mega MoE is significantly faster than unfused MoE」——限定词「within a scale-up domain」的账（域内带宽高、 $\tau_{\mathrm{comm}}$ 藏得进计算；跨域 RDMA 延迟藏不住）归 3.3 §5。EP > 32 递减（doc L293-297：带宽不再瓶颈后通信 / 同步主导 + 超节点多 job NVLink 干扰、整超节点单 EP 组避免）的生产账与 EPLB 配套归 7.4，本章只登记接口与论断。
 
-组件另两件：indexer MQA logits（`fp8_fp4_mqa_logits` non-paged / `fp8_fp4_paged_mqa_logits` paged，weighted ReLU MQA，DSA 打分侧，3.1 §7 选择链的上游）；HyperConnection（HC，V4.1 hc_* 字段的算子侧，模型侧形式化归 models 维度 V4.1 待补）。DeepGEMM-Ascend 另立 repo（2026.09.30 发布、同 API），与主 repo 的 CUDA 路径分列。warp specialization / TMA / SASS 级优化归 gpu 维度。
+组件另两件：indexer MQA logits（`fp8_fp4_mqa_logits` non-paged / `fp8_fp4_paged_mqa_logits` paged，weighted ReLU MQA，DSA 打分侧，3.1 §7 选择链的上游）；HyperConnection（HC，V4.1 hc_* 字段的算子侧，模型侧形式化归 models 维度 V4.1 待补）。DeepGEMM-Ascend 另立 repo（2026.09.30 发布、同 API），与主 repo 的 CUDA 路径分列。warp specialization / TMA / SASS 级优化归 gpu 4.4 / 6.3。
 
 ## 6. DeepEP：V2.5 统一接口与负载均衡原语
 
@@ -117,7 +117,7 @@ V1 语义锚 tag v1.2.1（V1 最后版本，机制讲解用；当前 main 已移
 
 两个新原语是 7.4 的库层落点（README Expert load balancing 节 L330-380 + Engram 节 L382+，2026-11-23 核实）。其一，`EPBuffer.lb_prefetch_weights(redundant_expert_weights, expert_weights, redundancy_mapping)`：expert 计算前经 NVLink 把原 expert 权重 + 量化 scale 推到冗余槽；`lb_reduce_grads`：backward 把冗余 expert 的 FP32 梯度经 NVLink 归约回原 expert。两者是 NVLink 域内 collective（域内每 rank 都须调用，含无冗余槽的 rank）、异步跑在通信流上返回 EventOverlap、`.wait()` 后才能消费；冗余存储经 `lb_allocation_plan_or_num_bytes` 预留（BufferAllocator 计划或对齐字节数），与 dispatch/combine buffer 分离。README 自述动机来自 MoonEP / UltraEP 的 expert-replication 路线——这是 EPLB 冗余副本权重 shuffle 的通信原语层（7.4 §4 走读引擎侧怎么用）。其二，`EngramBuffer`（experimental，RDMA）：GPU/CPU 多层存储 + 多层 fetch，`fetch(indices)` 取 [num_layers, num_tokens, num_entries_per_token] int32、每层返回一个 completion hook、用该层数据前须调对应 hook——这是 Engram ENP one-sided RDMA read 的库层落点（7.4 §8）。
 
-SM 账（V2.5 README Notes 逐字）：「EP dispatch and combine require GPU SMs; zero-SM RDMA EP is not supported」——通信 kernel 占 SM、与计算竞争，是 3.3 命题 3 里 $g(e)$ 的一个成分；对照 2.4 的 GDR swap-in（RDMA NIC 直写 HBM、不占 SM）：KV 传输可零 SM，EP dispatch/combine 不行（当前版本口径）。口径分层注：V1 low-latency 的 hook 接收是后台 RDMA 不占 SM（v1.2.1 README「without any SM occupation」，指接收侧），V2.5 Notes 说 dispatch/combine 整体——版本与范围都不同，勿混读（3.3 §6 同注）。DeepEP-Ascend 另立 repo（同 API、Ascend 950 全性能）；Engram 需 NCCL 提供 `ncclGinOptFlagsWarpGet` 的 build。requirements：Hopper+ / CUDA 13.1+ / NCCL 2.32.3+ / PyTorch 2.10+。硬件层归 cluster 维度。
+SM 账（V2.5 README Notes 逐字）：「EP dispatch and combine require GPU SMs; zero-SM RDMA EP is not supported」——通信 kernel 占 SM、与计算竞争，是 3.3 命题 3 里 $g(e)$ 的一个成分；对照 2.4 的 GDR swap-in（RDMA NIC 直写 HBM、不占 SM）：KV 传输可零 SM，EP dispatch/combine 不行（当前版本口径）。口径分层注：V1 low-latency 的 hook 接收是后台 RDMA 不占 SM（v1.2.1 README「without any SM occupation」，指接收侧），V2.5 Notes 说 dispatch/combine 整体——版本与范围都不同，勿混读（3.3 §6 同注）。DeepEP-Ascend 另立 repo（同 API、Ascend 950 全性能）；Engram 需 NCCL 提供 `ncclGinOptFlagsWarpGet` 的 build。requirements：Hopper+ / CUDA 13.1+ / NCCL 2.32.3+ / PyTorch 2.10+。硬件层归 gpu 8.4 / 10.3。
 
 ## 7. TileLang / TileKernels / DeepSelect：编译底座与选择算子
 
@@ -133,7 +133,7 @@ DeepSelect（[DeepSeek-AI, DeepSelect](../references.md)，教学参照，README
 
 ## 8. open vs internal 差距与 benchmark 方法学
 
-官方披露 FlashMLA 开源版 decode kernel 慢 5–10%、端到端至多差 5%——这两个数互相一致的条件是什么？doc L289 逐字（[DeepSeek-AI, inference_deployment_qa.md](../references.md)，教学参照，官方披露，2026-11-23 核实）：「They are broadly the same; the indexer and mega series differ somewhat. FlashMLA lacks one hand-tuned SASS optimization, which makes the decoding kernel 5%–10% slower.」L291：「End-to-end performance is close — at most 5% apart.」口径注：SASS 级归因属官方披露口径，本章不展开指令级实现（spec risk 豁免，silicon 归 gpu）；「broadly the same」指开源版与内部版总体一致，差异集中在 indexer 与 mega 系列（略有不同）及 FlashMLA 缺的那一个手调 SASS 优化。
+官方披露 FlashMLA 开源版 decode kernel 慢 5–10%、端到端至多差 5%——这两个数互相一致的条件是什么？doc L289 逐字（[DeepSeek-AI, inference_deployment_qa.md](../references.md)，教学参照，官方披露，2026-11-23 核实）：「They are broadly the same; the indexer and mega series differ somewhat. FlashMLA lacks one hand-tuned SASS optimization, which makes the decoding kernel 5%–10% slower.」L291：「End-to-end performance is close — at most 5% apart.」口径注：SASS 级归因属官方披露口径，本章不展开指令级实现（spec risk 豁免，silicon 归 gpu 6.4）；「broadly the same」指开源版与内部版总体一致，差异集中在 indexer 与 mega 系列（略有不同）及 FlashMLA 缺的那一个手调 SASS 优化。
 
 把两个官方数对成一笔账。路线：decode kernel 慢 $\delta$（本章 $\delta$ = kernel 慢比例，非 7.2 的回溯 $\delta$=6）只影响它在步时里的占比部分，其余不变——关键一步是「e2e 相对差距 = kernel 占比 × kernel 相对慢」。设 decode attention kernel 占端到端步时的比例为 $f$（ $0 \le f \le 1$），开源版该 kernel 时间乘 $(1+\delta)$，其余部分不变：
 

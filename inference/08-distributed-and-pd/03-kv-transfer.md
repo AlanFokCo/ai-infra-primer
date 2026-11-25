@@ -191,7 +191,7 @@ NIXL × Mooncake 对照：NIXL 的 mooncake 插件把 Mooncake TE 接成一个 b
 
 同样搬 KV，用 SM kernel、CUDA copy engine 还是 RDMA NIC 直写，差别不只是带宽，还有**谁付成本**——SM 付了计算就少了，copy engine 付了细粒度拷贝就慢了。本节 recap 2.4 §4 的三条路径，补 P2D 语境。
 
-所谓 GDR（GPUDirect RDMA），是指 RDMA NIC 绕过 host memory 与 CPU 拷贝栈、直接读写 GPU HBM 的 PCIe 直连数据路径（硬件协议层归 cluster 维度）。DeepInfer swap-in 口径（官方披露，doc L191 逐字）：
+所谓 GDR（GPUDirect RDMA），是指 RDMA NIC 绕过 host memory 与 CPU 拷贝栈、直接读写 GPU HBM 的 PCIe 直连数据路径（硬件协议层归 gpu 9.2）。DeepInfer swap-in 口径（官方披露，doc L191 逐字）：
 
 > 「Because the CUDA copy engine performs poorly on the fine-grained copies of KV cache blocks, swap-in is implemented with GDR: an RDMA NIC saturates PCIe bandwidth without consuming SMs.」
 
@@ -207,7 +207,7 @@ P2D 语境下 GDR 的价值：Dynamo 的 NIXL KV 传输是 **VRAM→VRAM 直传*
 
 小片段问题与 bounce buffer：当 ctx 与 gen 的 attention 切分不同（ctx TP ≠ gen TP / attention DP），一次 KV write 由大量小 fragment 组成，每个 fragment 一个 NIXL descriptor——描述符开销主导。TRT-LLM 的对策是 bounce buffer：sender 把小 fragment gather 进一块连续缓冲、按 chunk 发送，receiver 再 scatter 回 KV cache（默认 ≥ 1024 descriptor 且平均 ≤ 16 KiB 才启用，8.4 §5 详）。这是「把小块聚合成大拷贝」的 P2D 版本，与 2.4 §4 坑注的规避手段同源。
 
-**边界声明**：RDMA 协议（RC/UC/QP）、NIC 硬件、PCIe 拓扑、NVLink 域、交换机与 NCCL 实现归 cluster 维度。本章只讲传输语义（push/pull、layer-wise、Segment/descriptor）、带宽账与系统设计；GDR 的 PCIe 直连机制、RoCE vs InfiniBand 的协议差异不展开。
+**边界声明**：RDMA 协议（RC/UC/QP）与 NIC 硬件归 gpu 9.1、PCIe 拓扑归 gpu 7.2、NVLink 域归 gpu 7.1、交换机归 gpu 10.1、NCCL 实现归 gpu 8.4。本章只讲传输语义（push/pull、layer-wise、Segment/descriptor）、带宽账与系统设计；GDR 的 PCIe 直连机制、RoCE vs InfiniBand 的协议差异不展开。
 
 ## 6. 带宽账：TTFT 预算、egress/ingress 与跨 DC
 
@@ -322,7 +322,7 @@ SGLang（recap 6.3 §4-6）：`disaggregation/base/conn.py` 四抽象——`KVAr
 | GDR：RDMA NIC 直写 HBM、不占 SM / copy engine；细粒度块拷贝 copy engine 差 | doc L191 逐字；bounce buffer 聚合小 fragment | §5、2.4 §4 |
 | 跨 DC P/D：压缩使可行（V4.1 FP4 60.4 ms 达标余量 3.31×），可靠性付代价（光纤易断、相邻 DC） | doc L97；每 8 GPU 400 Gbps = 6.25 GB/s/GPU ≫ BW* 0.376 GB/s | §6.3、练习 4 |
 | 预算约束的是暴露时间而非裸传输时间——P2D 可重叠，offload 取回不可 | 式 (5) BW_req 21.5 GB/s vs layer-wise 暴露 2.68 ms | §6.1、2.4 §3 |
-| 硬件层（RDMA 协议 / NIC / PCIe 拓扑 / NVLink / NCCL）归 cluster 维度 | 边界声明 | §5 |
+| 硬件层（RDMA 协议 / NIC / PCIe 拓扑 / NVLink / NCCL）归 gpu 7.1 / 7.2 / 8.4 / 9.1 / 10.1 | 边界声明 | §5 |
 
 ## 练习
 

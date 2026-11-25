@@ -93,7 +93,7 @@ $$
 
 时机：swap-out（D2H）发生在驱逐 / 抢占（4.2 的 recompute vs swap 账）与 write-back（prefix cache 持久化，2.2）；swap-in（H2D）发生在 prefix 命中后的调度。write-back 是 best-effort：DeepInfer 写失败不上报引擎，读时严格校验保正确（官方披露）——**写路径可以丢，读路径是正确性边界**，丢了写只是命中率损失，不是正确性损失。写带宽也要算账：SSD 层写 5 GB/s、读 40 GB/s，不对称 8×；章脊每 token 写 $\kappa L$ = 128 KiB，单服务器写容量 ≈ 5 × $10^{9}$ / 131072 ≈ 3.8 × $10^{4}$ token/s，由多实例共享——write-back 必须批量、限速、可丢，否则写路径挤占读路径的带宽预算。
 
-拷贝路径三条：(1) SM kernel 拷贝——vLLM `kv_offload/cpu/swap_blocks_triton.py` 的机制例证（Triton kernel 搬块），占 SM、与计算争资源；(2) CUDA copy engine（DMA）——不占 SM，但细粒度块拷贝性能差（下方坑注）；(3) GDR——所谓 GDR（GPUDirect RDMA），是指 RDMA NIC 绕过 host memory 与 CPU 拷贝栈、直接读写 GPU HBM 的 PCIe 直连数据路径（硬件协议层归 cluster 维度）。DeepInfer swap-in 口径（官方披露，doc 逐字）：
+拷贝路径三条：(1) SM kernel 拷贝——vLLM `kv_offload/cpu/swap_blocks_triton.py` 的机制例证（Triton kernel 搬块），占 SM、与计算争资源；(2) CUDA copy engine（DMA）——不占 SM，但细粒度块拷贝性能差（下方坑注）；(3) GDR——所谓 GDR（GPUDirect RDMA），是指 RDMA NIC 绕过 host memory 与 CPU 拷贝栈、直接读写 GPU HBM 的 PCIe 直连数据路径（硬件协议层归 gpu 9.2）。DeepInfer swap-in 口径（官方披露，doc 逐字）：
 
 > 「Because the CUDA copy engine performs poorly on the fine-grained copies of KV cache blocks, swap-in is implemented with GDR: an RDMA NIC saturates PCIe bandwidth without consuming SMs.」
 
@@ -118,7 +118,7 @@ Mooncake 是 Kimi 的生产 serving 平台：prefill / decode 集群分离，利
 
 transfer engine 是传输底座（repo design doc 口径，docs/source/design/transfer-engine/）：零拷贝传输库，两个核心抽象——**Segment**：RAM Segment = 可远程读写的 DRAM/VRAM 地址空间，每进程一个，内部划 Buffer 注册 (GPUDirect) RDMA；NVMeof Segment = NVMe 文件偏移直传 DRAM/VRAM，零拷贝。**BatchTransfer**：异步 Read/Write，同步非连续空间，design doc 称之为异步且更灵活的 AllScatter/AllGather。接口为 TransferEngine 类（mooncake-transfer-engine/include/transfer_engine.h）；Transport 当前列表：Tcp / Rdma / Efa / NVMeoF / Nvlink / IntraNodeNvlink / Hip / Shm。
 
-拓扑感知路径选择：每服务器生成 topology matrix 广播集群；NIC 按内存类型分 preferred / secondary 列表，正常走 preferred（本地 NUMA / 本地 PCIe switch 的 GDR 路径），故障时两列表皆可用；多网卡池化 + 重试；本地目标走 memcpy / cudaMemcpy。带宽账：池化聚合带宽 = 各 NIC 带宽之和——§3「单盘不够就池化」的实现落点。硬件 / 拓扑 / RDMA 协议细节归 cluster 维度；PD 分离的编排与 goodput 账在 8.2 / 8.3。
+拓扑感知路径选择：每服务器生成 topology matrix 广播集群；NIC 按内存类型分 preferred / secondary 列表，正常走 preferred（本地 NUMA / 本地 PCIe switch 的 GDR 路径），故障时两列表皆可用；多网卡池化 + 重试；本地目标走 memcpy / cudaMemcpy。带宽账：池化聚合带宽 = 各 NIC 带宽之和——§3「单盘不够就池化」的实现落点。硬件 / 拓扑 / RDMA 协议细节归 gpu 7.2 / 9.1 / 9.2 / 10.1；PD 分离的编排与 goodput 账在 8.2 / 8.3。
 
 ## 6. LMCache 与 CacheGen：压缩换带宽
 
@@ -178,7 +178,7 @@ write-back 与版本（doc L195 / L199 官方披露）：写失败不上报引�
 
 CXL 附加 DRAM 作 HBM 与 SSD 之间的 L2 层——DeepInfer QA 的回答是收益有限、当前不用。三条理由全是账。
 
-CXL（Compute Express Link）一句机制：字节寻址的远程内存池化，host 经 PCIe 物理层扩展 DRAM 容量（硬件协议细节归 cluster 维度）。L2 = 插在 HBM 与 SSD 之间的 CXL DRAM 层，带宽 / 延迟介于两者之间。
+CXL（Compute Express Link）一句机制：字节寻址的远程内存池化，host 经 PCIe 物理层扩展 DRAM 容量（CXL 硬件协议细节非本书覆盖范围）。L2 = 插在 HBM 与 SSD 之间的 CXL DRAM 层，带宽 / 延迟介于两者之间。
 
 DeepInfer QA（官方披露，doc L203-207）：(1) V4.1 KV 小（MLA + 低精度，§9 账），容量压力不在 DRAM 层；(2) 读已与排队 / 计算重叠（§2 / §4），更快介质的 TTFT 边际收益有限；(3) SSD 远比 DRAM 便宜（每字节成本口径），容量扩展优先 SSD。开放问题：CXL 减 SSD 写（延寿）——写密集 workload 的 SSD 寿命账，当前不用。教学结论：一层介质的收益 = 容量缓解 × 延迟边际收益 − 成本；KV 小且读被重叠藏住时两项都缩水，CXL 层不划算。介质选型跟着 workload 的账走，不跟着层级图的对称性走。
 

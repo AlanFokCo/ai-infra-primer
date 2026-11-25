@@ -87,7 +87,7 @@ $$
 1. **dense 前向**：每 token 激活全部参数。MoE 模型把 $N$ 换成激活参数 $N_{\mathrm{act}}$ 是近似（假设 expert 负载均衡），第 9 节的 DeepSeek-V3 算例即用此口径。
 2. **忽略 attention 二次项**：成立条件是 $2LTd \ll 2N$ 即 $T \ll N/(Ld)$ ，换算实例见第 6 节。
 3. **无激活重计算**：梯度检查点（gradient checkpointing）全开大约多付一次前向， $C$ 涨到 $8ND$ 量级（练习 4）；重计算策略属 training 维度。
-4. **只计 matmul**：elementwise、通信、IO 不计；后两者归 cluster 维度。
+4. **只计 matmul**：elementwise、通信、IO 不计；通信账归 gpu 8.1 / 10.1，IO 项按内容分账——访存 IO 归 gpu 2.4、数据加载 IO 归 training 7.1。
 5. **optimizer step 摊薄**：AdamW 的参数更新是 $O(N)$ 逐元素运算，摊到一个 step 的 $B_{\mathrm{tok}}$ 个 token 上每 token 只有 $O(N / B_{\mathrm{tok}})$ ，相对 $6N$ 可忽略。
 
 ## 6. attention 的二次项： $2LT^{2}d$ 单算
@@ -242,7 +242,7 @@ $$
 
 ## 10. 两笔账的会合：算术强度
 
-算力和带宽，谁先卡住推理？把式 (2) 与式 (7) 放在一起相除，得到答案——推理 decode 阶段的关键比率。每生成一个 token，要算约 $2N$ FLOPs（长上下文时外加随 $t$ 线性增长的 attention 项，见本节末），同时至少把全部权重从显存读一遍，即 $2N$ bytes。两者的比值叫算术强度（arithmetic intensity，FLOPs 与访存字节之比），decode 下约等于 1 FLOP/byte。任何实际 GPU 的「峰值 FLOPS ÷ 显存带宽」都比 1 高两个数量级以上（逐卡 datasheet 参数表见 inference 1.3，微架构来源与测量方法归 gpu 维度），所以 decode 吞吐的上限由带宽决定、算力大量闲置——这就是「decode 是访存瓶颈」的精确含义。
+算力和带宽，谁先卡住推理？把式 (2) 与式 (7) 放在一起相除，得到答案——推理 decode 阶段的关键比率。每生成一个 token，要算约 $2N$ FLOPs（长上下文时外加随 $t$ 线性增长的 attention 项，见本节末），同时至少把全部权重从显存读一遍，即 $2N$ bytes。两者的比值叫算术强度（arithmetic intensity，FLOPs 与访存字节之比），decode 下约等于 1 FLOP/byte。任何实际 GPU 的「峰值 FLOPS ÷ 显存带宽」都比 1 高两个数量级以上（逐卡 datasheet 参数表见 inference 1.3，微架构来源与测量方法归 gpu 2.1 / 2.4 / 11.2），所以 decode 吞吐的上限由带宽决定、算力大量闲置——这就是「decode 是访存瓶颈」的精确含义。
 
 prefill 相反：一次前向处理 $T$ 个 prompt token，算 $2NT$ FLOPs 而权重只读一遍，算术强度 $\approx T$ ， $T$ 上千时进入计算瓶颈区。decode 侧的补救也写在同一公式里：把 $B$ 条序列的请求合成一个 batch，每步算 $2NB$ FLOPs、权重仍只读一遍，算术强度升到 $\approx B$ 。只要 KV cache 放得下，batch 越大每卡吞吐越高——这就是推理服务拼命凑 batch 的算术根源。同一个模型、同一份权重，不同阶段瓶颈不同，推理系统因此把 prefill 与 decode 分开调度、分开定价（系统展开属 inference 1.1 / 1.2 / 4.3 / 8.2 / 9.1）。训练侧同理：一个 step 里 $B \cdot T$ 个 token 摊一份权重读取与更新，算术强度 $\propto B \cdot T$ 。这就是训练追求大 batch 的硬件原因，也是激活账（随 $B \cdot T$ 线性）必须被重计算压住的硬件原因。
 

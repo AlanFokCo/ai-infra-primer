@@ -68,7 +68,7 @@ $$
 
 **显存账与「近无限」的读法**。CP 每卡的 attention 常驻只有本段 Q 与当前轮到的 K/V 块，相关激活从 $O(s)$ 降到 $O(s/c)$ 加一块工作缓冲。scores 类 $s^{2}$ 中间量在 FlashAttention 内核下本就不物化（models 4.1）；CP 进一步把单块的算子内尺寸压到 $(s/c)^{2}$。论文标题里的 "near-infinite context" 说的就是这条线性：显存约束下，可训练的上下文长度随 $c$ 线性放大——每加一卡，序列就能再长一份 $s/c$。代价是式 (2) 的同阶通信与 ring 步进的同步开销。
 
-> **提点**：工程落地——每个「Q 块 × 收到的 K/V 块」的部分 attention 由支持分块 K/V 摄入的 FlashAttention 族 kernel 完成；online softmax 状态的合并（重缩放与累加）在 kernel 边界显式进行。块调度与 SRAM 驻留的 kernel 细节归 gpu 维度；训练栈侧的 CP 组配置走读归 6.2。
+> **提点**：工程落地——每个「Q 块 × 收到的 K/V 块」的部分 attention 由支持分块 K/V 摄入的 FlashAttention 族 kernel 完成；online softmax 状态的合并（重缩放与累加）在 kernel 边界显式进行。块调度与 SRAM 驻留的 kernel 细节归 gpu 6.3（通信调度 → 10.4）；训练栈侧的 CP 组配置走读归 6.2。
 
 **归属边界**：ring 轮转与 online softmax 累积的机制出自 Ring Attention 原文；下一节的负载均衡修正（striped / zigzag）不在其中（[Liu et al., 2023](../references.md) 不含此项——出处勿张冠李戴）。指针一句：本章只管「长序列怎么切」；上下文窗口本身的训练期扩展（staged 拉长与 mid-training 配方一侧）归 7.5。
 

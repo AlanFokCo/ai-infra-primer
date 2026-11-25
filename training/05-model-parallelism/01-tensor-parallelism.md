@@ -155,7 +155,7 @@ $$
 O_j = \mathrm{softmax}\left( \frac{Q_j K_j^{\top}}{\sqrt{d_{\mathrm{head}}}} \right) V_j \qquad (8)
 $$
 
-**符号**： $Q_j, K_j, V_j \in \mathbb{R}^{m \times d_{\mathrm{head}}}$：head $j$ 的投影结果。softmax 的归一化沿 key 位置维收缩，封闭在单个 head 内。所以 head $j$ 的输出只依赖 $Q_j, K_j, V_j$，不触碰任何其他 head 的中间量。这意味着「按 head 分组到各卡」对 attention core 是精确切分：每卡持 $a/t$ 个 head 的 $Q, K, V$，本地跑自己的 FlashAttention（机制归 models 4.1，kernel 归 gpu 维度），全程无通信。
+**符号**： $Q_j, K_j, V_j \in \mathbb{R}^{m \times d_{\mathrm{head}}}$：head $j$ 的投影结果。softmax 的归一化沿 key 位置维收缩，封闭在单个 head 内。所以 head $j$ 的输出只依赖 $Q_j, K_j, V_j$，不触碰任何其他 head 的中间量。这意味着「按 head 分组到各卡」对 attention core 是精确切分：每卡持 $a/t$ 个 head 的 $Q, K, V$，本地跑自己的 FlashAttention（机制归 models 4.1，kernel 归 gpu 6.3），全程无通信。
 
 两端的线性层按 §2 落位。QKV 投影 $W_{QKV} \in \mathbb{R}^{h \times 3h}$ 沿输出维**列切**，切口对齐 head 边界：每卡 $[h, 3h/t]$，恰好 $a/t$ 个 head 的 Q/K/V，前面贴 f。out 投影 $W_O \in \mathbb{R}^{h \times h}$ 沿输入维（head 拼接轴）**行切**：每卡 $[h/t, h]$，输入恰是本卡 $a/t$ 个 head 的输出拼接段，后面贴 g。整块的通信与 MLP 块逐项同构：前向 1 次 all-reduce（g）、反向 1 次（f），消息同为 $[m, h]$。参数账： $W_{QKV}$ 与 $W_O$ 各 $h^{2}$ 量级（MHA），每卡合计约 $4h^{2}/t$；与 MLP 的 $8h^{2}/t$ 相加，单层参数每卡约 $12h^{2}/t$。沿用上节的 8B 几何：attention 两块每卡再添约 800 万个参数，单层合计约 2500 万个。
 

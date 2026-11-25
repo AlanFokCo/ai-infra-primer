@@ -293,13 +293,13 @@ $$
 
 与 naive 的比值 $\Theta(d^{2} / M)$： $d$ = 64（FA 论文 benchmark 的 head 维口径）、 $M \approx 10^{5}$ 元素时约 1/25。 $T$ 增大时两边同涨 $T^{2}$，FA 的常数小一个 $d^{2} / M$ 因子，且彻底免去 $P$ 的落盘与反向重读。
 
-两句定位。其一，FLOPs 一分未省：causal 口径每层 $2 T^{2} d$（2.3 式 (12)）照付，收益全部来自访存与调度；实测吞吐数字归 gpu 维度的 benchmark 口径。其二，分块归一化作为数值技术早于 FlashAttention 存在；论文的贡献在组合——online softmax + tiling + 反向重算 + IO 复杂度分析——以及可执行的高性能 kernel（[Dao et al., 2022](../references.md)，[A]），并把「attention 的长序列瓶颈是 IO 而非 FLOPs」立为后续 kernel 设计的默认前提。
+两句定位。其一，FLOPs 一分未省：causal 口径每层 $2 T^{2} d$（2.3 式 (12)）照付，收益全部来自访存与调度；实测吞吐数字归 gpu 2.4 / 11.2 的 benchmark 口径。其二，分块归一化作为数值技术早于 FlashAttention 存在；论文的贡献在组合——online softmax + tiling + 反向重算 + IO 复杂度分析——以及可执行的高性能 kernel（[Dao et al., 2022](../references.md)，[A]），并把「attention 的长序列瓶颈是 IO 而非 FLOPs」立为后续 kernel 设计的默认前提。
 
-FA2 与 FA3 各一句话：FA2（[Dao, 2023](../references.md)，arXiv:2307.08691，[A]）保持同一数学，改并行划分——外循环移到 Q 块以并行化序列维、削减非 matmul FLOPs 与 warp 间冗余分工，同代硬件再快约一倍；FA3 面向 Hopper 代际的异步硬件特性（TMA、warp specialization、FP8）。算法与策略级见 inference 3.1，指令级 kernel 实现归 gpu 维度，官方 repo Dao-AILab/flash-attention（[Dao-AILab, flash-attention](../references.md)，[A]）。
+FA2 与 FA3 各一句话：FA2（[Dao, 2023](../references.md)，arXiv:2307.08691，[A]）保持同一数学，改并行划分——外循环移到 Q 块以并行化序列维、削减非 matmul FLOPs 与 warp 间冗余分工，同代硬件再快约一倍；FA3 面向 Hopper 代际的异步硬件特性（TMA、warp specialization、FP8）。算法与策略级见 inference 3.1，指令级 kernel 实现归 gpu 6.3，官方 repo Dao-AILab/flash-attention（[Dao-AILab, flash-attention](../references.md)，[A]）。
 
 ## 6. 接口与去向
 
-本章交付两类账与两组推导。先说账。KV cache 的三种形态系数——MHA / GQA 的 $2 H_{kv} d_{\mathrm{head}}$（式 (3)）、MLA 的 $d_c + d_R$ = 576（§4.2 表）——将在 4.6 的长上下文内存对照与 5.2 的 DeepSeek 案例里直接代入；FlashAttention 的 IO 复杂度 $O(T^{2} d^{2} / M)$（式 (17)）是 inference 3.1 的入口（指令级 kernel 实现归 gpu 维度）。再说推导：RoPE×低秩冲突（§4.1）与 absorption 的对称结构（§4.3–4.4）会在 4.4 的 hybrid 模型（Kimi-Linear 的 MLA + NoPE 变体）中复用。方法论上，§2–§4 改「存什么」，§5 改「怎么算」，4.2（稀疏注意力：改可见集）与 4.3（linear attention：改核函数）改「算什么」——Part 4 上半部分的全部省算工作可按这三个动词分类。
+本章交付两类账与两组推导。先说账。KV cache 的三种形态系数——MHA / GQA 的 $2 H_{kv} d_{\mathrm{head}}$（式 (3)）、MLA 的 $d_c + d_R$ = 576（§4.2 表）——将在 4.6 的长上下文内存对照与 5.2 的 DeepSeek 案例里直接代入；FlashAttention 的 IO 复杂度 $O(T^{2} d^{2} / M)$（式 (17)）是 inference 3.1 的入口（指令级 kernel 实现归 gpu 6.3）。再说推导：RoPE×低秩冲突（§4.1）与 absorption 的对称结构（§4.3–4.4）会在 4.4 的 hybrid 模型（Kimi-Linear 的 MLA + NoPE 变体）中复用。方法论上，§2–§4 改「存什么」，§5 改「怎么算」，4.2（稀疏注意力：改可见集）与 4.3（linear attention：改核函数）改「算什么」——Part 4 上半部分的全部省算工作可按这三个动词分类。
 
 ## 总结
 
@@ -313,7 +313,7 @@ FA2 与 FA3 各一句话：FA2（[Dao, 2023](../references.md)，arXiv:2307.0869
 | W_UK / W_UV absorption | 式 (11)(12) / (13)(14) | $`\tilde{W}_h = (W_h^{UQ})^{\top} W_h^{UK}`$、 $`\widehat{W}_h = W_h^{O} W_h^{UV}`$ 离线预计算；decode 吸收形（读 576 而非 32832 元素，57×）/ prefill 展开形 |
 | online softmax | 式 (15)(16) | running max / sum，重缩放因子 $e^{m_{old} - m_{new}}$ 只换基准；归纳不变量 ⟹ 逐点精确 |
 | FlashAttention | tiling 图；式 (17) | 精确等价非近似；HBM 流量 $O(T^{2} d^{2} / M)$ vs naive $\Theta(T^{2})$；反向重算，前向内存 $O(T)$ |
-| FA2 / FA3 | 同一数学 | FA2 改并行划分（约一倍）；FA3 面向 Hopper 异步；算法级见 inference 3.1，指令级归 gpu |
+| FA2 / FA3 | 同一数学 | FA2 改并行划分（约一倍）；FA3 面向 Hopper 异步；算法级见 inference 3.1，指令级归 gpu 6.3 |
 
 ## 练习
 

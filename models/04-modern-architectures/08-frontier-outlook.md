@@ -63,7 +63,7 @@ $$
 
 **符号**： $f^{l}$：第 $l$ 个 block（attention + FFN）； $k$：静态容量（论文用序列长的固定分数，如 1/8）； $\tilde{x}^{l}$：选中 token 的子序列。容量写死 ⇒ 负载均衡由构造保证，无 aux loss——与 4.5 的 expert choice 同族（选择方在 block 侧而非 token 侧）。论文报告 iso-FLOPs 训练曲线下移，部分配置下同质量每前向 FLOPs 省至一半量级（论文 claim）。代价两笔：router 的 top-$`k`$ 依赖整条序列，AR 推理需要辅助预测头来近似；选中 token 的 attention 只在选中集合内闭合，逐 token 的深度不再均匀。**成熟度：研究原型**（无官方代码）。
 
-early-exit 是同族更激进的版本：判定器不问「过不过这一层」而问「是否就此读出」，可视为式 (4) 的容量随 token 自适应的极限形态。两者共同的工程难点是逐 token 可变深度与 batch 规整执行的冲突——序列内每个位置的层数不同，kernel 与流水线的处理归 inference 与 cluster 维度。
+early-exit 是同族更激进的版本：判定器不问「过不过这一层」而问「是否就此读出」，可视为式 (4) 的容量随 token 自适应的极限形态。两者共同的工程难点是逐 token 可变深度与 batch 规整执行的冲突——序列内每个位置的层数不同，kernel 与流水线的处理归 inference（算子策略）与 gpu（kernel 实现）维度。
 
 ## 3. Differential Attention：两张 softmax 图相减
 

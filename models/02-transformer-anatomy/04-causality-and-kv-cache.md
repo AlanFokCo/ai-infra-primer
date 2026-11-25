@@ -85,7 +85,7 @@ $$
 
 **符号**： $N$ ：参与 matmul 的参数量（1.2 式 (2) 口径）； $L$ ：层数； $d$ ：stream 宽度。第二步用了 $\sum_t t = T(T+1)/2$ 与 $\sum_t t^{2} = T(T+1)(2T+1)/6$ 。
 
-attention 项随 $T^{3}$ 涨。代入 Llama-3.1-8B（ $N \approx 6.98 \times 10^{9}$ 层参数口径、 $L$ = 32、 $d$ = 4096，[Llama-3.1-8B config](../references.md)，[A]）生成满窗 $T$ = 131072：attention 项约 $2.0 \times 10^{20}$ FLOPs。按 1.2 §9 推出的 $3.3 \times 10^{14}$ FLOPS 有效吞吐（口径：可持续实测吞吐而非峰值，逐卡测量方法归 gpu 维度），这相当于单卡跑约 7 天。而第 4 节的 cache 把同一生成压到 $4.5 \times 10^{15}$ FLOPs（式 (8) 的 attention 项）。式 (5) 就是 cache 要消灭的对象。
+attention 项随 $T^{3}$ 涨。代入 Llama-3.1-8B（ $N \approx 6.98 \times 10^{9}$ 层参数口径、 $L$ = 32、 $d$ = 4096，[Llama-3.1-8B config](../references.md)，[A]）生成满窗 $T$ = 131072：attention 项约 $2.0 \times 10^{20}$ FLOPs。按 1.2 §9 推出的 $3.3 \times 10^{14}$ FLOPS 有效吞吐（口径：可持续实测吞吐而非峰值，逐卡测量方法归 gpu 2.4 / 11.2），这相当于单卡跑约 7 天。而第 4 节的 cache 把同一生成压到 $4.5 \times 10^{15}$ FLOPs（式 (8) 的 attention 项）。式 (5) 就是 cache 要消灭的对象。
 
 ## 4. KV cache 从零推导
 
@@ -213,7 +213,7 @@ $$
 
 ## 6. prefill vs decode：算术强度分野与 roofline 入口
 
-两个阶段，谁受算力限制、谁受带宽限制？1.2 §10 已把「每 token 前向 $2N$ FLOPs、权重读一遍 $2N$ bytes」放在一起；本节把它接到 prefill / decode 两阶段上，并补上 cache 项。算术强度（arithmetic intensity） $I$ = FLOPs ÷ 访存字节数。屋顶线模型（roofline model）给出的吞吐上限 = $\min($ 峰值算力 $,\ I \times$ 带宽 $)$ ，分界线（ridge point）= 峰值算力 ÷ 带宽；现代加速器的取值在 $10^{2}$ FLOP/byte 量级（逐卡 datasheet 参数表见 inference 1.3，微架构来源与测量方法归 gpu 维度）。
+两个阶段，谁受算力限制、谁受带宽限制？1.2 §10 已把「每 token 前向 $2N$ FLOPs、权重读一遍 $2N$ bytes」放在一起；本节把它接到 prefill / decode 两阶段上，并补上 cache 项。算术强度（arithmetic intensity） $I$ = FLOPs ÷ 访存字节数。屋顶线模型（roofline model）给出的吞吐上限 = $\min($ 峰值算力 $,\ I \times$ 带宽 $)$ ，分界线（ridge point）= 峰值算力 ÷ 带宽；现代加速器的取值在 $10^{2}$ FLOP/byte 量级（逐卡 datasheet 参数表见 inference 1.3，微架构来源与测量方法归 gpu 2.1 / 2.4 / 11.2）。
 
 **prefill**： $T_p$ 个 token 一次前向，FLOPs = $2NT_p + 2LT_p^{2}d$ ；权重只从显存读一遍（ $2N$ bytes），激活读写随 $T_p$ 线性、在长 prompt 下被 matmul 摊销：
 
@@ -241,7 +241,7 @@ $$
 
 $B$ 小时权重项主导分母， $I \approx B$ ——这是 1.2 §10「拼命凑 batch」结论的适用区。 $B$ 大到 cache 项主导后，强度饱和于 $(2N + 4Ltd) / (2 L H_{kv} d_{\mathrm{head}} t b)$ ；8B 满窗时这个上界约 $8.4 \times 10^{10} / 1.72 \times 10^{10} \approx 4.9$ 。长上下文 regime 里，batch 对强度的提升被 cache 读取封顶，「只要 cache 放得下就凑 batch」的有效区间在短中端。inference 4.1 / 2.3 把 continuous batching 与 cache 压缩放在一起优化，账面原因就在式 (12) 的分母结构。
 
-两阶段瓶颈不同，调度与定价因此分离（prefill 按算力计价、decode 按带宽与显存驻留计价），系统展开属 inference 1.2 / 1.3 / 8.2；roofline 的逐卡 datasheet 参数表归 inference 1.3，微架构来源与测量方法归 gpu 维度。本章交付的是式 (10)–(12) 加上「decode 每步必须读全量 cache」这一机制事实——那两个维度全部讨论的入口。
+两阶段瓶颈不同，调度与定价因此分离（prefill 按算力计价、decode 按带宽与显存驻留计价），系统展开属 inference 1.2 / 1.3 / 8.2；roofline 的逐卡 datasheet 参数表归 inference 1.3，微架构来源与测量方法归 gpu 2.1 / 2.4 / 11.2。本章交付的是式 (10)–(12) 加上「decode 每步必须读全量 cache」这一机制事实——那两个维度全部讨论的入口。
 
 ## 7. teacher forcing 与 causality：无泄漏论证
 

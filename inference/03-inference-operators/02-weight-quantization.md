@@ -308,7 +308,7 @@ expert 侧换 FP4。DeepInfer 生产披露（官方披露，doc 逐字，核实 
 | routed expert | FP8 | FP4（MXFP4 per-32 ue8m0） | config [W] + doc 官方披露 |
 | expert 每元素字节 | ≈1.00024 | 0.53125 | 式 (3) |
 
-对照读法：V4.1 非 expert 权重仍 FP8（字节数与 V3 几乎相同，差别在粒度与 scale 编码），真正的位宽下探在 expert——FP8 → FP4 砍半。这与 MoE 的结构一致：routed expert 占参数大头（V4.1 384 routed + 1 shared，1.2 §5），压 expert 收益最大；attention / 非 expert 部分对精度更敏感，保 FP8。模型侧形式化（为何 expert 可压更狠）归 models 维度（V4.1 待补），本章只引 config / doc 做 serving 字节账。量化 GEMM 与 fused MoE kernel 怎么消费这些格式（DeepGEMM fine-grained scaling / Marlin W4A16 / Mega MoE FP8×FP4）归 3.3，指令级归 gpu 维度。
+对照读法：V4.1 非 expert 权重仍 FP8（字节数与 V3 几乎相同，差别在粒度与 scale 编码），真正的位宽下探在 expert——FP8 → FP4 砍半。这与 MoE 的结构一致：routed expert 占参数大头（V4.1 384 routed + 1 shared，1.2 §5），压 expert 收益最大；attention / 非 expert 部分对精度更敏感，保 FP8。模型侧形式化（为何 expert 可压更狠）归 models 维度（V4.1 待补），本章只引 config / doc 做 serving 字节账。量化 GEMM 与 fused MoE kernel 怎么消费这些格式（DeepGEMM fine-grained scaling / Marlin W4A16 / Mega MoE FP8×FP4）归 3.3，指令级归 gpu 6.2。
 
 ## 8. 质量评估口径：perplexity / task，没有普适「无损」
 

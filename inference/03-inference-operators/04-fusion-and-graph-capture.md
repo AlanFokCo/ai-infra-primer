@@ -4,9 +4,9 @@
 
 ## 1. 主流量之外的开销与章脊口径
 
-1.2 的步时账只算了两笔主流量：权重读与 KV 读。8B decode $B$ = 64、 $T$ = 4096 的带宽下界是 15.1 ms——但步时不止这两笔：每个 kernel 的 CPU launch（发射：CPU 把 kernel 提交给 GPU）、pointwise（逐元素）算子之间落 HBM 的中间结果、batch 组成变化带来的 reduction（归约）漂移，都是主流量之外的**开销**（口径：本章「开销」指主流量之外的 CPU 提交、中间 tensor IO、同步与编译成本）。本章回答算子层怎么对付这些开销：融合省中间 IO（§2）、CUDA Graph 省 launch（§3）、torch.compile 把两者自动化（§4）、TileLang 提供手写融合 kernel 的声明式路线（§5）、batch-invariant kernel 用固定 reduction 顺序换确定性（§6）、NanoFlow 用 nano-batch 流水把异构资源重叠起来（§7）。算子边界声明（spec §2）：本章讲算法、IO 与接口；warp / tensor core / SASS 指令级、Triton codegen 内部归 gpu 维度，引擎编译模块全量走读归 5.3 / 6.3。
+1.2 的步时账只算了两笔主流量：权重读与 KV 读。8B decode $B$ = 64、 $T$ = 4096 的带宽下界是 15.1 ms——但步时不止这两笔：每个 kernel 的 CPU launch（发射：CPU 把 kernel 提交给 GPU）、pointwise（逐元素）算子之间落 HBM 的中间结果、batch 组成变化带来的 reduction（归约）漂移，都是主流量之外的**开销**（口径：本章「开销」指主流量之外的 CPU 提交、中间 tensor IO、同步与编译成本）。本章回答算子层怎么对付这些开销：融合省中间 IO（§2）、CUDA Graph 省 launch（§3）、torch.compile 把两者自动化（§4）、TileLang 提供手写融合 kernel 的声明式路线（§5）、batch-invariant kernel 用固定 reduction 顺序换确定性（§6）、NanoFlow 用 nano-batch 流水把异构资源重叠起来（§7）。算子边界声明（spec §2）：本章讲算法、IO 与接口；warp / tensor core / SASS 指令级、Triton codegen 内部归 gpu 5.4 / 6.3，引擎编译模块全量走读归 5.3 / 6.3。
 
-本章口径（章脊锁定，沿用 1.2 的 8B dense 口径，换口径随文声明）：Llama-3.1-8B， $L$ = 32、 $d_{\mathrm{model}}$ = 4096、 $d_{\mathrm{ff}}$ = 14336（models 1.2 §9 config 账）；硬件 H100 SXM（HBM 3.35 TB/s、BF16 dense 989.5 TFLOPS，[NVIDIA datasheet](../references.md)，[C] 官方规格披露）；decode $B$ = 64、 $T$ = 4096 步时 15.1 ms、prefill $T$ = 4096 计算下界 66.5 ms——两者 recap 1.2 §2–3 的算例，不重推； $B$ = 1 步时 4.81 ms 为**本章权重-only 下界算例**（权重 16.1 GB ÷ 带宽；加上 KV 读 0.537 GB 的完整下界 ≈ 4.97 ms，KV 项 +3.3%——下文 launch 账用权重-only 口径，随文注）。局部记号： $S$ = 单个 tensor 的字节数、 $n$ = 融合链的算子数、 $n_{\mathrm{ker}}$ = 每步 kernel 数、 $t_{\mathrm{launch}}$ = 每 kernel 的 CPU 提交开销（声明教学值 5 μs，量级 ~μs；测量与微架构来源归 gpu 维度）、 $\tau_{\mathrm{step}}$ = 步时。 $B$ = batch 内序列数（decode 每序列 1 token）。
+本章口径（章脊锁定，沿用 1.2 的 8B dense 口径，换口径随文声明）：Llama-3.1-8B， $L$ = 32、 $d_{\mathrm{model}}$ = 4096、 $d_{\mathrm{ff}}$ = 14336（models 1.2 §9 config 账）；硬件 H100 SXM（HBM 3.35 TB/s、BF16 dense 989.5 TFLOPS，[NVIDIA datasheet](../references.md)，[C] 官方规格披露）；decode $B$ = 64、 $T$ = 4096 步时 15.1 ms、prefill $T$ = 4096 计算下界 66.5 ms——两者 recap 1.2 §2–3 的算例，不重推； $B$ = 1 步时 4.81 ms 为**本章权重-only 下界算例**（权重 16.1 GB ÷ 带宽；加上 KV 读 0.537 GB 的完整下界 ≈ 4.97 ms，KV 项 +3.3%——下文 launch 账用权重-only 口径，随文注）。局部记号： $S$ = 单个 tensor 的字节数、 $n$ = 融合链的算子数、 $n_{\mathrm{ker}}$ = 每步 kernel 数、 $t_{\mathrm{launch}}$ = 每 kernel 的 CPU 提交开销（声明教学值 5 μs，量级 ~μs；测量与微架构来源归 gpu 3.3 / 11.2）、 $\tau_{\mathrm{step}}$ = 步时。 $B$ = batch 内序列数（decode 每序列 1 token）。
 
 ## 2. 算子融合：中间 tensor 的 IO 账
 
@@ -78,7 +78,7 @@ piecewise（attention 动态 shape 排除）:
 
 ## 4. torch.compile：融合的自动化与 graph break
 
-谁来自动决定融合哪些算子？手写融合 kernel（3.3 的 Marlin、§5 的 TileKernels）覆盖关键路径，长尾 pointwise 链交给编译器。torch.compile 的两段分工：Dynamo（前端）把 Python 字节码捕获成 FX graph（torch 的算子图中间表示），沿途记录 guards（编译期假设条件：shape、dtype、常量值）；Inductor（默认后端）把 FX graph lowering（降级生成）成融合后的 Triton kernel（GPU kernel DSL，codegen 内部归 gpu 维度）——§2 的 pointwise 融合账由它自动执行。
+谁来自动决定融合哪些算子？手写融合 kernel（3.3 的 Marlin、§5 的 TileKernels）覆盖关键路径，长尾 pointwise 链交给编译器。torch.compile 的两段分工：Dynamo（前端）把 Python 字节码捕获成 FX graph（torch 的算子图中间表示），沿途记录 guards（编译期假设条件：shape、dtype、常量值）；Inductor（默认后端）把 FX graph lowering（降级生成）成融合后的 Triton kernel（GPU kernel DSL，codegen 内部归 gpu 5.4）——§2 的 pointwise 融合账由它自动执行。
 
 graph break（图断裂）：遇到数据依赖控制流或不支持的 op，Dynamo 把图切断、断点段回退 eager。教学片段（教学用，非优化实现）：
 
@@ -96,11 +96,11 @@ torch.compile(f)(torch.randn(64, 4096, device="cuda"))
 
 `y.sum() > 0` 的值运行时才知道，编译期无法定分支——图在此切断，两侧各自成图、分支判断 eager 执行。dynamic shape 的处理：符号维（如 batch 维记 $s_0$ ）+ guards；guard 失效（batch 越过假设区间）触发 recompile（重编译），编译成本计入启动与抖动。vLLM 的 VLLM_COMPILE = 3 在此之上加四件（config docstring 逐字）：caching（编译缓存）、piecewise compilation（按 splitting_ops 切段编译，接 §3 的分段图）、shape specialization（按 `compile_sizes` / cudagraph capture size 特化，消掉符号维）、custom passes（自定义融合 pass，pass = 编译器对图的一轮变换——`pass_config` 的 fuse_attn_quant 等开关，2026-11-23 tarball 核实；§2 的 RMSNorm+quant / SiLU+mul 正是 pass 的目标形态）。
 
-编译与图捕获正交：compile 减 $n_{\mathrm{ker}}$ （融合）并特化 shape，graph 减每次 launch 的成本；piecewise graph 依赖 piecewise compilation（mode = VLLM_COMPILE 且 splitting_ops 非空，config docstring 口径），full graph 则有无编译都支持。合并账（声明教学估计）：pointwise 融合把 $n_{\mathrm{ker}}$ 从 330 压到约 150，再整体 replay → launch 项 ≈ 单次 graph launch，式 (2) 的 1.65 ms 趋零。边界：Inductor / Triton 内部归 gpu 维度；vLLM 编译模块全量走读归 5.3，SGLang 归 6.3。
+编译与图捕获正交：compile 减 $n_{\mathrm{ker}}$ （融合）并特化 shape，graph 减每次 launch 的成本；piecewise graph 依赖 piecewise compilation（mode = VLLM_COMPILE 且 splitting_ops 非空，config docstring 口径），full graph 则有无编译都支持。合并账（声明教学估计）：pointwise 融合把 $n_{\mathrm{ker}}$ 从 330 压到约 150，再整体 replay → launch 项 ≈ 单次 graph launch，式 (2) 的 1.65 ms 趋零。边界：Inductor / Triton 内部归 gpu 5.4；vLLM 编译模块全量走读归 5.3，SGLang 归 6.3。
 
 ## 5. TileLang / TileKernels：声明式的融合 kernel
 
-Marlin 的技术清单有八项（3.3 §2），每个 kernel 都手写一遍代价太高——有没有声明式路线？TileLang（[Wang et al., 2025](../references.md)，arXiv:2504.17577，[A]）的答案是 tile 抽象的 DSL（domain-specific language，领域专用语言）：AI kernel 的数据流模式高度规整——tile 在 DRAM（显存）与 SRAM（片上缓存）之间搬运、tile 上执行一串计算；TileLang 把**调度空间**（thread binding、layout、tensorize、pipeline）与**数据流**解耦，调度封装成一组可定制注解与原语（摘要口径），用户写数据流、编译器负责其余优化。多硬件后端（NVIDIA + Ascend）；tile 到 thread / warp（线程束）的映射与指令选择归 gpu 维度。
+Marlin 的技术清单有八项（3.3 §2），每个 kernel 都手写一遍代价太高——有没有声明式路线？TileLang（[Wang et al., 2025](../references.md)，arXiv:2504.17577，[A]）的答案是 tile 抽象的 DSL（domain-specific language，领域专用语言）：AI kernel 的数据流模式高度规整——tile 在 DRAM（显存）与 SRAM（片上缓存）之间搬运、tile 上执行一串计算；TileLang 把**调度空间**（thread binding、layout、tensorize、pipeline）与**数据流**解耦，调度封装成一组可定制注解与原语（摘要口径），用户写数据流、编译器负责其余优化。多硬件后端（NVIDIA + Ascend）；tile 到 thread / warp（线程束）的映射与指令选择归 gpu 4.3 / 5.4。
 
 TileKernels（[DeepSeek-AI, TileKernels](../references.md)，教学参照 + 官方实现）是这条路线的算子库实证（README，2026-11-23 核实）：数十个 TileLang 优化算子——MoE routing top-k / scoring、per-token / per-block / per-channel FP8/FP4 cast / dequant + fused SwiGLU+quant（§2 的生产实例）、Engram gating（fused RMSNorm，前反向）、mHC（Sinkhorn normalization，迭代行列归一）、RoPE；多数接近硬件算力或带宽极限，已用于内部训练与推理；2026-09-30 起 NVIDIA + Ascend 双后端运行时自动选择。DeepInfer 的 custom ops 在 `deepinfer/model_executor/layers/tilelang_ops/`（candidate_blocks.py / compress.py / norm.py / fused_sample.py 等，2026-11-23 tarball 核实）——3.3 的 DSA（DeepSeek sparse attention）candidate blocks、量化 cast、采样在此都有 TileLang 实现；FlashMLA 的 fused kernel 与 DeepInfer 亦基于 TileLang（tilelang 条目口径）。Engram / mHC 的模型侧形式化归 models 维度（V4.1 待补），本章只列算子名。
 

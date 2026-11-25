@@ -100,7 +100,7 @@ V3 论文完整披露了 671B 规模的 FP8 混精训练配方（[A]，论文 §
 3. **online quantization**：每个 tile / block 的 amax 即时计算，不用历史滑动最大值（delayed scaling）——这样分布漂移时 scale 不失效。
 4. **敏感模块豁免**：embedding、输出头、MoE gate、norm 算子、attention 算子保持原始精度（BF16 / FP32，论文清单）；Tensor Core 的部分和定期提升到 CUDA core 做 FP32 累加，补回累加精度。
 
-工程侧——DualPipe 流水、all-to-all 通信的低精度化、kernel 实现——归 training / cluster / gpu 维度。对模型侧的接口只有一条：量化方案决定了哪些张量可以 1 字节化。这就是「671B 权重以 FP8 驻留约 671 GB」这笔部署账（4.1 练习 3 的设定）的出处。
+工程侧——DualPipe 流水归 training 5.3，all-to-all 通信的低精度化归 gpu 10.3（低精度格式 → 6.1），kernel 实现归 gpu 6.2 / 6.3。对模型侧的接口只有一条：量化方案决定了哪些张量可以 1 字节化。这就是「671B 权重以 FP8 驻留约 671 GB」这笔部署账（4.1 练习 3 的设定）的出处。
 
 ### 3.6 YaRN 128K（recap → 4.6 §2.3）
 

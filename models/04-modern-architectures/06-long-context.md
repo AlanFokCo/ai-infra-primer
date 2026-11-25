@@ -224,7 +224,7 @@ SWA 与 §2 缩放族有一层交互值得点破：Gemma 3 给 local 层配 rope
   （发送/接收与下一步 block-attn 计算重叠）
 ```
 
-两个不变量。其一，数学逐点不变：online softmax 的分块归一化归纳不变量与 4.1 §5 同一个，跨设备只是分块边界的移动——Ring Attention 与 FlashAttention 是正交叠加的两层 tiling（一个在块内抗 HBM，一个在设备间抗单卡显存）。其二，FLOPs 总量不变： $O(T^{2})$ 拆成 $P$ 份并行，单设备内存 $O(T/P)$ 加一块在途 KV；墙一从「单卡内存 + 串行时长」改写为「聚合算力 + 通信带宽」。causal mask 下各设备的 Q 块可见 KV 量不同，朴素分块负载不均，工程上用均衡切分处理——通信调度、overlap 策略与拓扑映射的全部细节归 cluster 维度（边界划分见 [cluster/README.md](../../cluster/README.md)），此处只登记机制与账。
+两个不变量。其一，数学逐点不变：online softmax 的分块归一化归纳不变量与 4.1 §5 同一个，跨设备只是分块边界的移动——Ring Attention 与 FlashAttention 是正交叠加的两层 tiling（一个在块内抗 HBM，一个在设备间抗单卡显存）。其二，FLOPs 总量不变： $O(T^{2})$ 拆成 $P$ 份并行，单设备内存 $O(T/P)$ 加一块在途 KV；墙一从「单卡内存 + 串行时长」改写为「聚合算力 + 通信带宽」。causal mask 下各设备的 Q 块可见 KV 量不同，朴素分块负载不均，工程上用均衡切分处理——通信调度、overlap 策略与拓扑映射的全部细节归 gpu 维度（Ring Attention 调度 / overlap → 10.4，拓扑映射 → 10.2；边界划分见 [gpu/README.md](../../gpu/README.md)），此处只登记机制与账。
 
 ### 3.3 cache 经济学对照表
 
@@ -284,7 +284,7 @@ effective 侧只有行为测量能填。读法收束全章：claimed 回答的�
 | YaRN | $r_j = W / \lambda_j$ 三段 ramp 式 (12)(13)；温度 $\sqrt{1/t} = 0.1 \ln s + 1$ 式 (14) | DeepSeek-V3： $W$ = 4096、 $s$ = 40、 $\alpha$ = 1、 $\beta$ = 32 → 9 通道全压、11 通道不动、12 通道 ramp； $1/t \approx 1.87$ |
 | LongRoPE | $`\mathrm{arg\thinspace min}_{\eta} \mathrm{PPL}_{sW}`$，约束 $\eta_0$ = 1 且单调不减，式 (15) | 逐维搜索；[B] 证据边界 |
 | dual-chunk | key 编号 $j\ \mathrm{mod}\ S$ + query 三张表，式 (16)–(18) | 塌缩块身份、保块内顺序；编号上界为常数 $W - 1$（与 $T$ 无关）；Qwen2.5-1M：base $10^{7}$ + DCA + YaRN 温度 |
-| Ring Attention | 序列维 $P$ 段环流 + online softmax | 数学逐点不变；通信实现归 cluster 维度 |
+| Ring Attention | 序列维 $P$ 段环流 + online softmax | 数学逐点不变；通信实现归 gpu 10.4 |
 | 训练配方 | staged extension + 长文档上采样 | Llama-3.1：六阶段 8K→128K、约 800B token（论文口径）；V3：两阶段，扩窗 119K H800 GPU-hours（练习 1） |
 | 评测 | needle 只测单针单跳；RULER 13 任务 4 类定义 effective context | claimed（config）≠ effective（行为测量）；四堵墙付清才重合（练习 3） |
 

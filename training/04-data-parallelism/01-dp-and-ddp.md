@@ -70,9 +70,9 @@ $$
 T_{\mathrm{ring}} = 2(d-1)\thinspace \alpha + 2 \thinspace \frac{d-1}{d} \cdot M \cdot \beta \qquad (3)
 $$
 
-**符号**： $\alpha$ ：每跳消息的固定延迟； $\beta$ ：每字节传输时间（有效带宽的倒数）。这个模型有两个 regime。小 $M$ 时，延迟项 $2(d-1)\alpha$ 主导，随 $d$ 线性涨；大 $M$ 时，带宽项主导，与 $d$ 无关。LLM 的梯度同步牢固处于第二个 regime：7B bf16 梯度 $M \approx 13$ GiB，一次 all-reduce 每 rank 发送约 $2M \approx 26$ GiB（与 1.5 §4 的账同一数字），耗时 $\approx 2M \cdot \beta$ 。所以注意力全在有效带宽上。节点内 NVLink 与跨节点 IB 的有效带宽差一个量级（硬件侧归 cluster 维度），这条量级差决定了 DP 组在拓扑上怎么摆（组合规则归 5.5）。
+**符号**： $\alpha$ ：每跳消息的固定延迟； $\beta$ ：每字节传输时间（有效带宽的倒数）。这个模型有两个 regime。小 $M$ 时，延迟项 $2(d-1)\alpha$ 主导，随 $d$ 线性涨；大 $M$ 时，带宽项主导，与 $d$ 无关。LLM 的梯度同步牢固处于第二个 regime：7B bf16 梯度 $M \approx 13$ GiB，一次 all-reduce 每 rank 发送约 $2M \approx 26$ GiB（与 1.5 §4 的账同一数字），耗时 $\approx 2M \cdot \beta$ 。所以注意力全在有效带宽上。节点内 NVLink 与跨节点 IB 的有效带宽差一个量级（硬件侧归 gpu：节点内 → 7.2，机间 → 9.1 / 9.2），这条量级差决定了 DP 组在拓扑上怎么摆（组合规则归 5.5）。
 
-**树形 all-reduce 值得对照一句**。recursive halving/doubling 把消息步数从 $2(d-1)$ 压到 $2 \lceil \log_2 d \rceil$ ，每 rank 字节数仍是约 $2M$ 量级。大消息下两者的带宽项相同，树形赢的只是延迟项。DDP 论文在背景节同时引用了 ring-based 与 tree-based 两种 all-reduce 实现（[Li et al., 2020](../references.md)，arXiv:2006.15704，[A]，§2）。NCCL 按消息大小与拓扑在变体间选择；选择逻辑归 cluster 维度，本书只用式 (2)(3) 的账。
+**树形 all-reduce 值得对照一句**。recursive halving/doubling 把消息步数从 $2(d-1)$ 压到 $2 \lceil \log_2 d \rceil$ ，每 rank 字节数仍是约 $2M$ 量级。大消息下两者的带宽项相同，树形赢的只是延迟项。DDP 论文在背景节同时引用了 ring-based 与 tree-based 两种 all-reduce 实现（[Li et al., 2020](../references.md)，arXiv:2006.15704，[A]，§2）。NCCL 按消息大小与拓扑在变体间选择；选择逻辑归 gpu 8.3 / 8.4 / 10.2，本书只用式 (2)(3) 的账。
 
 ## 3. DDP 实现走读：bucket 化、hook 与 overlap
 
@@ -127,7 +127,7 @@ DP 只摊薄了**计算**：每 rank 算 $1/d$ 的数据、付 $1/d$ 的 FLOPs�
 | DP 平均等价 | $d$ 副本梯度平均 = $d \cdot b$ 大 batch 梯度；与 accumulation 是同一线性叠加的两个轴 | 式 (1)；1.5 式 (2)(3)(6) |
 | 同步 vs 异步 | 同步 DP 与单机大 batch 逐步同义；异步 SGD 引入 staleness、更新规则不同 | §1 |
 | ring all-reduce | scatter-reduce + all-gather 各 $d-1$ 步；每 rank $2(d-1)/d \cdot M$ bytes；带宽项与 $d$ 无关 | 式 (2)(3) |
-| 树形对照 | 消息步数 $2 \lceil \log_2 d \rceil$ 、字节数同量级；变体选择归 cluster | §2.2 |
+| 树形对照 | 消息步数 $2 \lceil \log_2 d \rceil$ 、字节数同量级；变体选择归 gpu 8.3 / 8.4 / 10.2 | §2.2 |
 | DDP 分桶 | 参数注册逆序入桶；默认 25 MiB、首桶约 1 MB；桶内 hook 齐套即发异步 all-reduce | arXiv:2006.15704 §3.2；`distributed.py` |
 | overlap | 判据：桶通信 $\le$ 该桶就绪后的剩余反向时间；逆序注册为对齐梯度就绪顺序 | §3.2-3.3 |
 | 平均语义 | 除 world size 后求和、写回 `.grad`；optimizer 与单卡同语义 | §3.2 |

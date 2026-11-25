@@ -122,7 +122,7 @@ CUDA Graph 兼容是自定义归约的硬约束。CustomAllreduce 提供 capture
 
 > **坑**：把自定义归约捕进 CUDA Graph 而不注册图 buffer。触发条件：capture 路径未走 register_graph_buffers（L489）；现象：replay 按捕获期记录的指针访问归约 buffer，违反 3.4 命题 2 的「指针固定」前提——输出不随输入变或归约错位；规避：capture / register_graph_buffers 配对使用，或让该归约落在图外（piecewise 切分点，§6）。
 
-EP 侧的通信不是 all-reduce 而是 all-to-all（MoE dispatch / combine，语义与账 recap 3.3，DeepEP 模式与硬件层归 cluster 维度）。vLLM 把它做成一个 manager 族——`distributed/device_communicators/all2all.py`（1381 行，2026-11-23）：
+EP 侧的通信不是 all-reduce 而是 all-to-all（MoE dispatch / combine，语义与账 recap 3.3，DeepEP 模式与硬件层归 gpu 10.3）。vLLM 把它做成一个 manager 族——`distributed/device_communicators/all2all.py`（1381 行，2026-11-23）：
 
 | manager | 锚点 | 后端 / 路线 |
 | --- | --- | --- |
@@ -402,4 +402,4 @@ PD KV 接口的基线细节（为 8.4 立，本章不展开传输账）：`distr
 - [Qin et al., 2024](../references.md)：Mooncake，arXiv:2407.00079，[A]（key: mooncake）——MooncakeConnector L798 的传输引擎源头（transfer engine 账归 2.4 / 8.3）
 - [NIXL repo](../references.md)：ai-dynamo/nixl，教学参照（key: nixl）——NixlPullConnector L374 / NixlPushConnector L415 与 NixlEPAll2AllManager L441 的传输抽象源头（agent / descriptor 语义归 8.3）
 - [NVIDIA, H100/H200/B200 datasheet](../references.md)：[C] 官方规格披露（key: nvidia-datasheet）——H100 SXM HBM 3.35 TB/s、BF16 dense 989.5 TFLOPS、NVLink 900 GB/s（§3 带宽换算）
-- 跨维度指引（纯文字）：training 5.1（f/g 共轭、每层 4 次归约、消息量 2bsh）、training 4.1（ring 账式 (2)(3)，符号 α→τ_hop、β→1/BW 翻译）、training 5.4（EP all-to-all 训练账）；models 4.1（MLA 低秩与吸收）、models 4.2（DSA indexer）；inference 1.2（步时账）、2.1（块表与 block size 式 (6)(7)）、2.3（KV 量化）、2.4（三层账与临界带宽、SGLang HiSparse）、3.1（算子算法级）、3.3（DeepEP / grouped GEMM）、3.4（融合 / launch 账 / piecewise 命题 2）、4.3（chunked prefill）、4.5（verify 的 γ+1 token）、5.1（架构与数据流）、5.2（调度器 / KV 管理器 / AsyncScheduler / EncoderCacheManager）、5.4（LoRA / sleep / sampling / kv_offload）、6.2（TBO/SBO 与 FutureMap 区分）、6.3（SGLang 分布式与 PD）、7.1 / 7.3 / 7.4（DeepInfer）、8.1（TP decode 延迟账与 DP attention 通信账）、8.3 / 8.4（KV 传输与 PD 系统）、8.5（弹性与容错）、9.3（权重更新）、9.4（多模态）；silicon 与通信硬件层归 gpu / cluster 维度
+- 跨维度指引（纯文字）：training 5.1（f/g 共轭、每层 4 次归约、消息量 2bsh）、training 4.1（ring 账式 (2)(3)，符号 α→τ_hop、β→1/BW 翻译）、training 5.4（EP all-to-all 训练账）；models 4.1（MLA 低秩与吸收）、models 4.2（DSA indexer）；inference 1.2（步时账）、2.1（块表与 block size 式 (6)(7)）、2.3（KV 量化）、2.4（三层账与临界带宽、SGLang HiSparse）、3.1（算子算法级）、3.3（DeepEP / grouped GEMM）、3.4（融合 / launch 账 / piecewise 命题 2）、4.3（chunked prefill）、4.5（verify 的 γ+1 token）、5.1（架构与数据流）、5.2（调度器 / KV 管理器 / AsyncScheduler / EncoderCacheManager）、5.4（LoRA / sleep / sampling / kv_offload）、6.2（TBO/SBO 与 FutureMap 区分）、6.3（SGLang 分布式与 PD）、7.1 / 7.3 / 7.4（DeepInfer）、8.1（TP decode 延迟账与 DP attention 通信账）、8.3 / 8.4（KV 传输与 PD 系统）、8.5（弹性与容错）、9.3（权重更新）、9.4（多模态）；silicon 归 gpu P1–P6、通信硬件层归 gpu P7–P10（cluster 仅平台编排）

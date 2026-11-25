@@ -16,7 +16,7 @@ decode 每生成一个 token 要算约 $2N$ FLOPs、同时把全部权重从显�
 | V3 MoE | DeepSeek-V3：671B 总 / 37B 激活、61 层（3 dense + 58 MoE）、 $d_{\mathrm{model}}$ = 7168、 $E$ = 256 routed + 1 shared、 $k$ = 8、expert 中间维 2048、MLA 512 + 64、窗口 163840 | 权重 fp8；带宽换算沿用 H100（教学口径，随文注） | [DeepSeek-AI, 2024](../references.md)，[A]；models 5.2 config 账 |
 | V4.1-Flash | 40 层、 $d_{\mathrm{model}}$ = 5120、 $H_{kv}$ = 1 / head_dim 512 / qk_rope 64（MLA）、 $E$ = 384 routed + 1 shared、 $k$ = 6、index_topk 512 / index_n_heads 32 / index_head_dim 128、sliding_window 128、nextn 3 | config 声明 fp8 权重 / expert fp4；KV 精度随文注 | [DeepSeek-AI, V4.1-Flash config.json](../references.md)，[W]（hf-mirror 传输核实，2026-11-23） |
 
-8B 口径的两个参数量沿用 models 1.2 §9 的声明： $N = 7.50 \times 10^{9}$ 为 matmul 口径（层参数 + 输出头，FLOPs 用）， $N_{\mathrm{full}} = 8.03 \times 10^{9}$ 为存储口径（含输入 embedding，权重字节用），两者差约 7%——embedding 查表不计 FLOPs 但计存储。跨章口径注：本章 FLOPs 用 matmul 口径 $N = 7.50 \times 10^{9}$ ，1.3 的 prefill 近似用存储口径 $N_{\mathrm{full}} = 8.03 \times 10^{9}$ （总参数量）且略去二次项（matmul 口径 N=7.50e9 vs 存储口径 N_full=8.03e9）——前者高估约 7%、后者在 $T$ = 4096 时低估约 6.7%，两误差相消，prefill 66.5 ms 的结果跨章一致（见 1.3 §4）；权重字节 $W$ 两章同取 $1.61 \times 10^{10}$ B。硬件只取本章需要的两个 H100 数（完整逐卡参数表归 1.3，微架构来源归 gpu 维度）。 $B$ = batch 内序列数（MoE 节起 = 全局 batch，DP 组合计，§5 声明）； $T$ = 当前序列长（prompt + 已生成）； $\kappa$ = 每 token 每层 KV 字节数； $R$ = ridge point = 峰值算力 ÷ 带宽。
+8B 口径的两个参数量沿用 models 1.2 §9 的声明： $N = 7.50 \times 10^{9}$ 为 matmul 口径（层参数 + 输出头，FLOPs 用）， $N_{\mathrm{full}} = 8.03 \times 10^{9}$ 为存储口径（含输入 embedding，权重字节用），两者差约 7%——embedding 查表不计 FLOPs 但计存储。跨章口径注：本章 FLOPs 用 matmul 口径 $N = 7.50 \times 10^{9}$ ，1.3 的 prefill 近似用存储口径 $N_{\mathrm{full}} = 8.03 \times 10^{9}$ （总参数量）且略去二次项（matmul 口径 N=7.50e9 vs 存储口径 N_full=8.03e9）——前者高估约 7%、后者在 $T$ = 4096 时低估约 6.7%，两误差相消，prefill 66.5 ms 的结果跨章一致（见 1.3 §4）；权重字节 $W$ 两章同取 $1.61 \times 10^{10}$ B。硬件只取本章需要的两个 H100 数（完整逐卡参数表归 1.3，微架构来源归 gpu 2.1 / 2.4）。 $B$ = batch 内序列数（MoE 节起 = 全局 batch，DP 组合计，§5 声明）； $T$ = 当前序列长（prompt + 已生成）； $\kappa$ = 每 token 每层 KV 字节数； $R$ = ridge point = 峰值算力 ÷ 带宽。
 
 本章增量有三件，全部是 serving 侧精确化而非重推：其一，临界 batch $B^{\ast}$ 的闭式与**存在条件**（§4）——饱和上界低于 ridge 时根本不存在 compute-bound 临界；其二，MoE 每 expert batch $Bk/E$ 与 EP 度无关的论证及强度稀释（§5）；其三，Wide-EP 每卡权重流量 $\propto 1/e$ 的账（§6）。V4.1-Flash 的模型侧形式化（CED / YOCO 混合注意力、Engram、DSpark draft 结构）归 models 维度（V4.1 待补），本章只引 config 字段做 serving 账。
 
@@ -223,7 +223,7 @@ $$
 
 > **提点**：强度与流量是两笔账，别混。强度（FLOPs ÷ 字节）决定 compute-bound 还是 memory-bound 的 regime；每卡流量决定步时墙钟。Wide-EP 在固定全局 batch 下不改强度、只缩步时（命题 3）；耦合扩 DP 才改强度（§5 reconciling 注）。读 doc 的「raises TPS」时先问它动的是哪个量。
 
-代价面与边界，各一句伏笔。通信侧：dispatch/combine 两次 all-to-all 的延迟随 $e$ 与跨节点比例上升，decode 小消息延迟敏感（训练侧账 recap training 5.4，serving 侧增量归 8.1）。 $e$ = 64–128 必然跨出单机 NVLink 域——scale-up domain（NVLink 域 / 超节点）的概念与逐卡互联参数归 1.3，RDMA 硬件层归 cluster 维度，本章只记「通信代价随域直径上升」这一笔； $e$ 继续增大时通信与同步开销逐渐主导、Wide-EP 边际收益递减（DeepInfer 官方 doc L295 口径，正式账归 3.3 / 7.4）。激活条件侧： $B_{\mathrm{exp}} \ge 1$ 要求 $B \ge E/k$ （V3 = 32）；低于此值只有部分 expert 激活，式 (13) 改为按激活数计、流量更低但 GEMM 更窄（grouped GEMM 的 padding 浪费账归 3.3）。负载均衡的部署与算法（EPLB）归 7.4，本节只交付流量账本身。
+代价面与边界，各一句伏笔。通信侧：dispatch/combine 两次 all-to-all 的延迟随 $e$ 与跨节点比例上升，decode 小消息延迟敏感（训练侧账 recap training 5.4，serving 侧增量归 8.1）。 $e$ = 64–128 必然跨出单机 NVLink 域——scale-up domain（NVLink 域 / 超节点）的概念与逐卡互联参数归 1.3，RDMA 硬件层归 gpu 9.1 / 9.2，本章只记「通信代价随域直径上升」这一笔； $e$ 继续增大时通信与同步开销逐渐主导、Wide-EP 边际收益递减（DeepInfer 官方 doc L295 口径，正式账归 3.3 / 7.4）。激活条件侧： $B_{\mathrm{exp}} \ge 1$ 要求 $B \ge E/k$ （V3 = 32）；低于此值只有部分 expert 激活，式 (13) 改为按激活数计、流量更低但 GEMM 更窄（grouped GEMM 的 padding 浪费账归 3.3）。负载均衡的部署与算法（EPLB）归 7.4，本节只交付流量账本身。
 
 ## 7. 三口径汇总与账的边界
 
@@ -239,7 +239,7 @@ $$
 | 临界 batch 读数 | $T \gtrsim 393$ 无 compute-bound 临界 | expert GEMM 进 ridge 需 $B \approx 9452$（fp8） | 同形，稀释更深 |
 | Wide-EP 每卡流量 | 不适用（dense） | 654 GB / $e$（routed fp8） | expert fp4 再减半，格式账归 3.2 |
 
-账的边界声明（本维度分工，纯文字指引）：硬件逐卡参数表与排队论归 1.3；KV 的系统手段——分页与碎片（2.1）、前缀复用（2.2）、量化与驱逐（2.3）、offload 与分层（2.4）——全部以本章的 $\kappa L T B$ 为输入；decode attention 与量化 GEMM 的 kernel 算法归 P3；组批与 chunked prefill 归 P4；EPLB 部署与 Wide-EP 生产形态归 7.4，serving 侧并行组合与 PD 分离归 8.1 / 8.2；V4.1-Flash 模型侧形式化归 models 维度（V4.1 待补）。V4.1 行的 expert fp4 使每卡流量在 V3 fp8 基础上再减半（每参数 0.5 字节，scale 开销归格式账 3.2）——量化与 Wide-EP 两个杠杆在流量账上相乘： $`M_{\mathrm{rank}} \propto \mathrm{bytes}_{\mathrm{param}}/e`$ ，这是 7.4 生产部署同时动两个旋钮的账面依据。本章不做的事也声明清楚：不推导 kernel 内的 tiling 与指令级实现（归 P3 与 gpu 维度）、不建立排队论延迟模型（归 1.3）、不展开模型侧架构数学（归 models）。本章交付的是这些章共用的三笔底账：prefill FLOPs（式 (1)）、decode 强度与临界（式 (4)(7)(8)）、MoE 每 expert batch 与每卡流量（式 (11)(13)）。
+账的边界声明（本维度分工，纯文字指引）：硬件逐卡参数表与排队论归 1.3；KV 的系统手段——分页与碎片（2.1）、前缀复用（2.2）、量化与驱逐（2.3）、offload 与分层（2.4）——全部以本章的 $\kappa L T B$ 为输入；decode attention 与量化 GEMM 的 kernel 算法归 P3；组批与 chunked prefill 归 P4；EPLB 部署与 Wide-EP 生产形态归 7.4，serving 侧并行组合与 PD 分离归 8.1 / 8.2；V4.1-Flash 模型侧形式化归 models 维度（V4.1 待补）。V4.1 行的 expert fp4 使每卡流量在 V3 fp8 基础上再减半（每参数 0.5 字节，scale 开销归格式账 3.2）——量化与 Wide-EP 两个杠杆在流量账上相乘： $`M_{\mathrm{rank}} \propto \mathrm{bytes}_{\mathrm{param}}/e`$ ，这是 7.4 生产部署同时动两个旋钮的账面依据。本章不做的事也声明清楚：不推导 kernel 内的 tiling 与指令级实现（归 P3 与 gpu 4.3 / 5.2 / 6.3）、不建立排队论延迟模型（归 1.3）、不展开模型侧架构数学（归 models）。本章交付的是这些章共用的三笔底账：prefill FLOPs（式 (1)）、decode 强度与临界（式 (4)(7)(8)）、MoE 每 expert batch 与每卡流量（式 (11)(13)）。
 
 ## 总结
 
