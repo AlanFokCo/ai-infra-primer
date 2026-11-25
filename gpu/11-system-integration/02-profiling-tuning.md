@@ -1,10 +1,10 @@
 # 11.2 Profiling 与调优方法论（Profiling and Tuning Methodology）
 
-> 每个 kernel 的带宽利用率都有 85%，端到端墙钟里却有 33% 的时间不属于任何 kernel——损失在 kernel 内、kernel 间隙，还是 CPU 侧？本章交付 profiling 全流程与调优方法论：Nsight Systems 系统级 timeline（kernel launch / copy / API trace、CPU-GPU 重叠、NVTX 标注）先把端到端时间拆成三段并归因，Nsight Compute 四面板（SpeedOfLight / roofline / stall reason / memory chart / occupancy）再读 kernel 内部，bottleneck 三区判定（recap 2.4）接 stall 签名逐层 drill-down，调优决策树（coalescing 4.1 → bank conflict 4.2 → tiling 4.3 → occupancy 3.4 → fusion 5.4 → 精度 6.1）选手段，调优前后带宽/吞吐对账（命题 1 四因子分解 + 命题 2 带宽饱和加速上界）确认收益，achieved roofline 逐 kernel 绘制与端到端 MFU 对账，profiling 开销与采样偏差的口径纪律，nvbandwidth / nccl-tests 通信基准（recap 2.4/10.2）与 DCGM 机群监控 | 前置：models 2.4 §6（roofline 入口，经 2.4 recap，不重推）、2.4（三区判定式 (6)(7) / 测量口径式 (8)(9) / 实测点上界式 (10)(11)）、1.4（Little's law 与 stall reason 四分类）、3.4（occupancy 精确计算与 NCU 读法）、3.3（stream / graph 与 launch 摊销）、4.1–4.3 / 5.4 / 6.1（调优手段机制章）、7.2 / 10.2（通信带宽账与 nccl-tests 方法）；下游 11.3（DCGM diag 健康检查与故障归因）、inference 9.1（serving 操作点校准） | 锚点：Nsight Systems UserGuide v2026.6（[NVIDIA, Nsight Systems](../references.md)，[C] 官方规格披露·一手权威）、Nsight Compute ProfilingGuide（[NVIDIA, Nsight Compute](../references.md)，[C]）、nvbandwidth（[NVIDIA, nvbandwidth](../references.md)，教学参照 + 官方实现）、nccl-tests（[NVIDIA, nccl-tests](../references.md)，教学参照 + 官方实现）、DCGM（[NVIDIA, DCGM](../references.md)，教学参照 + 官方实现）、datasheet（[NVIDIA, datasheet](../references.md)，[C]）、Best Practices（[NVIDIA, Best Practices](../references.md)，[C]）、NCCL repo 与 2.4 blog（[NVIDIA, NCCL](../references.md) / [NVIDIA, NCCL 2.4 blog](../references.md)，教学参照 / [C]）——官方文档 2026-11-26 一手核实
+> 每个 kernel 的带宽利用率都有 85%，端到端墙钟里却有 33% 的时间不属于任何 kernel——损失在 kernel 内、kernel 间隙，还是 CPU 侧？本章交付 profiling 全流程与调优方法论：Nsight Systems 系统级 timeline（kernel launch / copy / API trace、CPU-GPU 重叠、NVTX 标注）先把端到端时间拆成三段并归因，Nsight Compute 五面板（SpeedOfLight / roofline / stall reason / memory chart / occupancy）再读 kernel 内部，bottleneck 三区判定（recap 2.4）接 stall 签名逐层 drill-down，调优决策树（coalescing 4.1 → bank conflict 4.2 → tiling 4.3 → occupancy 3.4 → fusion 5.4 → 精度 6.1）选手段，调优前后带宽/吞吐对账（命题 1 四因子分解 + 命题 2 带宽饱和加速上界）确认收益，achieved roofline 逐 kernel 绘制与端到端 MFU 对账，profiling 开销与采样偏差的口径纪律，nvbandwidth / nccl-tests 通信基准（recap 2.4/10.2）与 DCGM 机群监控 | 前置：models 2.4 §6（roofline 入口，经 2.4 recap，不重推）、2.4（三区判定式 (6)(7) / 测量口径式 (8)(9) / 实测点上界式 (10)(11)）、1.4（Little's law 与 stall reason 四分类）、3.4（occupancy 精确计算与 NCU 读法）、3.3（stream / graph 与 launch 摊销）、4.1–4.3 / 5.4 / 6.1（调优手段机制章）、7.2 / 10.2（通信带宽账与 nccl-tests 方法）；下游 11.3（DCGM diag 健康检查与故障归因）、inference 9.1（serving 操作点校准） | 锚点：Nsight Systems UserGuide v2026.6（[NVIDIA, Nsight Systems](../references.md)，[C] 官方规格披露·一手权威）、Nsight Compute ProfilingGuide（[NVIDIA, Nsight Compute](../references.md)，[C]）、nvbandwidth（[NVIDIA, nvbandwidth](../references.md)，教学参照 + 官方实现）、nccl-tests（[NVIDIA, nccl-tests](../references.md)，教学参照 + 官方实现）、DCGM（[NVIDIA, DCGM](../references.md)，教学参照 + 官方实现）、datasheet（[NVIDIA, datasheet](../references.md)，[C]）、Best Practices（[NVIDIA, Best Practices](../references.md)，[C]）、NCCL repo 与 2.4 blog（[NVIDIA, NCCL](../references.md) / [NVIDIA, NCCL 2.4 blog](../references.md)，教学参照 / [C]）——官方文档 2026-11-26 一手核实
 
 ## 1. 33% 的时间不属于任何 kernel：三个问题与本章口径
 
-一个推理 step 有 330 个 kernel（recap inference 3.4 / 3.3 §5 的 8B decode kernel 数口径），GPU 上执行时间合计 3.96 ms，墙钟却走了 5.93 ms——多出的 1.97 ms 不属于任何 kernel，Nsight Compute 看不见它，因为它是 kernel 之间的间隙。把这段间隙归因清楚，再谈 kernel 内优化，否则优化方向从一开始就错。本章回答三个问题：端到端时间怎么拆成 kernel / 间隙 / CPU 三段并归因（§2–§3）？kernel 的瓶颈落在 compute / memory / latency 哪一区、该选哪个调优手段（§4–§5）？调优前后的带宽/吞吐怎么对账、实测 roofline 怎么画、测量本身的开销与偏差怎么控制（§6–§9）？
+一个推理 step 有 330 个 kernel（recap inference 3.4 §3 的 8B decode kernel 数口径，经 3.3 §5 中转），GPU 上执行时间合计 3.96 ms，墙钟却走了 5.93 ms——多出的 1.97 ms 不属于任何 kernel，Nsight Compute 看不见它，因为它是 kernel 之间的间隙。把这段间隙归因清楚，再谈 kernel 内优化，否则优化方向从一开始就错。本章回答三个问题：端到端时间怎么拆成 kernel / 间隙 / CPU 三段并归因（§2–§3）？kernel 的瓶颈落在 compute / memory / latency 哪一区、该选哪个调优手段（§4–§5）？调优前后的带宽/吞吐怎么对账、实测 roofline 怎么画、测量本身的开销与偏差怎么控制（§6–§9）？
 
 **本章口径**（章脊锁定；本章为方法章，数值口径一次声明，表外不再换）：
 
@@ -60,7 +60,7 @@ cudaProfilerStop();
 nsys profile --trace=cuda,nvtx --cuda-graph-trace=graph -o step python app.py
 ```
 
-全数字实例（**教学假设口径**；kernel 数 recap inference 3.4，时长与间隔为教学假设，非 8B 权重字节账——权重-only 理想步时 4.79 ms 见 2.4 §7，两套口径勿混）：330 个 kernel、每个 GPU 时长 12 μs、CPU 侧提交间隔 18 μs（含框架 dispatch，其中 driver 提交约 5 μs 沿 inference 3.4 教学值）。间隔大于 kernel 时长，CPU 喂不饱 GPU，属 CPU-bound。三段账：
+全数字实例（**教学假设口径**；kernel 数 recap inference 3.4 §3，时长与间隔为教学假设，非 8B 权重字节账——权重-only 理想步时 4.79 ms 见 2.4 §7，两套口径勿混）：330 个 kernel、每个 GPU 时长 12 μs、CPU 侧提交间隔 18 μs（含框架 dispatch，其中 driver 提交约 5 μs 沿 inference 3.4 §3 教学值）。间隔大于 kernel 时长，CPU 喂不饱 GPU，属 CPU-bound。三段账：
 
 $$
 t_{\mathrm{busy}} = n_{\mathrm{kernel}} \cdot t_{\mathrm{kernel}} = 330 \times 12 = 3960 \ \mathrm{\mu s} \qquad (1)
@@ -76,9 +76,9 @@ $$
 
 **符号**： $t_{\mathrm{kernel}}$ = 单 kernel GPU 时长； $t_{\mathrm{dispatch}}$ = CPU 侧相邻两次提交的间隔。**口径注**：式 (2) 取 CPU-bound、无同步、等长 kernel 口径——第 $i$ 个 kernel 在 $(i-1) t_{\mathrm{dispatch}}$ 时刻开始、末尾 kernel 的尾巴再加一个 $t_{\mathrm{kernel}}$；若 GPU-bound（间隔小于时长），间隙被队列填平， $t_{\mathrm{wall}} \approx t_{\mathrm{busy}}$，式 (2) 不适用。间隙 $t_{\mathrm{gap}} = 5934 - 3960 = 1974$ μs，占墙钟 33.3%。signature 核对：GPU 行有隙、CPU 行连轴转、无 sync API——CPU-bound 确诊。修法是 CUDA Graph（recap 3.3 §5：整段录图一次重放，抹掉逐 kernel 的 CPU dispatch）：重放后 kernel 背靠背， $t_{\mathrm{wall}} \approx 3960 + 5 = 3965$ μs（graph launch 约 5 μs，教学假设、与单 kernel launch 同量级），加速 $5934/3965 = 1.50$。**这 1.50 倍不来自任何 kernel 变快**——kernel 一个没动，动的是提交路径。drill-down 顺序由此定：先修占比最大的损失段（此处间隙 33.3%），再进 kernel 内部。
 
-## 3. Nsight Compute：kernel 内部的四组面板
+## 3. Nsight Compute：kernel 内部的五组面板
 
-间隙归因之后，剩下的 3.96 ms 全是 kernel 时间——哪个 kernel 值得钻？按时间贡献排序取头部（§6 给逐 kernel 分解）。所谓 Nsight Compute（NCU），是指 NVIDIA 的 kernel 级 profiler：对单个 kernel 采集硬件计数器与 SASS 级指标，代价是 kernel replay 与测量口径受控（§7）。四组面板各回答一个问题，机制细节各有 recap 源：
+间隙归因之后，剩下的 3.96 ms 全是 kernel 时间——哪个 kernel 值得钻？按时间贡献排序取头部（§6 给逐 kernel 分解）。所谓 Nsight Compute（NCU），是指 NVIDIA 的 kernel 级 profiler：对单个 kernel 采集硬件计数器与 SASS 级指标，代价是 kernel replay 与测量口径受控（§7）。五组面板各回答一个问题，机制细节各有 recap 源：
 
 - **SpeedOfLight（SOL）——「哪个资源先到顶」**：逐单元报 compute（SM）与 memory（DRAM）两个利用率百分比，官方逐字「the throughput reports the achieved percentage of utilization with respect to the theoretical maximum」（[NVIDIA, Nsight Compute](../references.md)，[C]）——即 $u_F$ 与 $u_B$ 的直接读数（recap 2.4 §6 式 (9)，不重推）。读法：哪个高，瓶颈方向就在哪边；两个都低，问题在并发（latency-bound，§4）。
 - **Roofline chart——「点落在哪条 roof 下」**：achieved 点坐标 $(I_{\mathrm{ach}}, F_{\mathrm{ach}})$，点到 roof 的距离 = 改进机会（2.4 §7 命题 2 recap，Nsight 逐字「The distance from the achieved value to the respective roofline boundary … represents the opportunity for performance improvement.」）。层级版分 L1/L2/DRAM 三条 ceiling（逐字「Hierarchical roofline overlays can separate L1, L2, and DRAM bandwidth ceilings.」）；2026-11-26 重核的 section 名含 SpeedOfLight_Hierarchical{Double,Half,Single,Tensor}RooflineChart——Tensor Core kernel 须用 tensor 版并交叉核对 SM frequency 与 SASS 操作计数（2.4 §7 recap）。本章增量是逐 kernel 绘制工作流与 baseline 追踪（§6）。
@@ -202,7 +202,7 @@ $$
 
 对账：总 FLOPs $2.16 \times 10^{10}$、总 DRAM 字节 11.29 GB；忙碌加权 $u_F = 0.551\text{％}$，乘 duty 0.667 得 $`\mathrm{MFU}_{\mathrm{step}} = 0.368\text{％}`$。读法：decode 类负载 MFU 天然低（强度 2.5 离 ridge 295 差两个数量级，models 2.4 §6 结论 recap），**优化目标是 $u_B$ 与 duty，不是 MFU**——MFU 是对账读数，不是目标读数。两类 kernel 都贴斜线（ $u_B$ 85.1%），剩余 14.9% 的带宽损失去向由 memory chart 分解（§3）。
 
-实测 roofline 示意（H100 BF16 主口径，log-log，示意非按比例；点位 recap 2.4 §7 并加本章调优轨迹）：
+实测 roofline 示意（H100 BF16 主口径，log-log，示意非按比例；A/B 点 recap 2.4 §7，D 点取 2.4 §5 表第三行，E 点为本章教学假设；加本章调优轨迹）：
 
 ```
  F_ach (TFLOPS, log)
@@ -228,7 +228,7 @@ $$
                    R ≈ 295
 ```
 
-三条轨迹的读法：D → B 是**垂直上移**（强度不变、并发补齐，latency-bound 修复）；B 沿斜线向 roof 贴近是 $u_B$ 收窄（coalescing / 流量优化， $\eta$ 因子）；若 tiling 提复用，点所在的斜线换到更高的 L2/L1 ceiling、强度不变点上移（2.4 §7 层级 roofline recap，4.3 的几何解释）。A 点（ $u_F$ 70.7%）的损失在算力侧，与 B/D 不同侧——三区判定（§4）决定看哪条 roof。点标口径注：latency-bound 点在 2.4 §7 标 C，本章改标 D，避与并发符号 C（§1 声明）冲突；坐标与损失读数不变。
+三条轨迹的读法：D → B 是**垂直上移**（强度不变、并发补齐，latency-bound 修复）；B 沿斜线向 roof 贴近是 $u_B$ 收窄（coalescing / 流量优化， $\eta$ 因子）；若 tiling 提复用，点所在的斜线换到更高的 L2/L1 ceiling、强度不变点上移（2.4 §7 层级 roofline recap，4.3 的几何解释）。A 点（ $u_F$ 70.7%）的损失在算力侧，与 B/D 不同侧——三区判定（§4）决定看哪条 roof。点标口径注：点 D 取 2.4 §5 表第三行（64 sectors、 $\mathcal{O} = 0.25$ 配 ILP 1 → 2.58 TFLOPS、loss 69.2%），**不是** 2.4 §7 的点 C（那是 104 sectors 案，4.19 TFLOPS、loss 50%）；本章标 D 而非沿用 C，避与并发符号 C（§1 声明）冲突。
 
 ## 7. Profiling 开销与采样偏差：测量本身改变被测量
 
@@ -322,7 +322,7 @@ r3 把 §8 的两个基准工具内嵌为 plugin——作业前健康检查与�
 | --- | --- | --- |
 | nsys 系统级单 pass（不 replay / 不 flush / 不锁频）；间隙归因三类：CPU-bound / sync / GPU 依赖；NVTX range 投影 GPU timeline（逐字） | §2 三行 timeline + 归因 | §2、练习 1 |
 | 三段账：busy 3960 μs / wall 5934 μs / gap 33.3%（330 kernel × 12 μs、间隔 18 μs，教学假设）；graph 修复加速 1.50，kernel 一个没动 | 式 (1)(2)(3) | §2、练习 1 |
-| NCU 四面板交叉读：SOL 给方向（ $u_B$/ $u_F$ 逐字）、roofline 给距离、stall 给并发证据、memory chart 给浪费定位、occupancy 给库存 | §3（recap 2.4/1.4/4.1/3.4） | §3 |
+| NCU 五面板交叉读：SOL 给方向（ $u_B$/ $u_F$ 逐字）、roofline 给距离、stall 给并发证据、memory chart 给浪费定位、occupancy 给库存 | §3（recap 2.4/1.4/4.1/3.4） | §3 |
 | $u_B = 100\text{％}$ 不等于优化到顶：strideCopy 浪费 7/8 sector，Sectors/Req 32 对 ideal 4 | §3 实例（recap 4.1） | §3、练习 2 |
 | 三区判定接 NCU 读数： $I_{\mathrm{ach}}$ 对 $R$、 $C$ 对 $L_{\mathrm{req}}$（208 sectors）、stall 签名交叉验证 | §4 流程（recap 2.4 §5/1.4 §7） | §4、练习 4 |
 | 端到端四因子分解 $`\mathrm{BW}_{\mathrm{e2e}} = \mathrm{BW} \cdot u_B \cdot \eta \cdot \mathrm{duty}`$；0.85/1/0.667 → 1901 GB/s（56.7%）；哪个因子离 1 最远先修哪个 | 式 (4)，命题 1 | §4、练习 3 |
@@ -337,7 +337,7 @@ r3 把 §8 的两个基准工具内嵌为 plugin——作业前健康检查与�
 
 ## 练习
 
-1.（计算 · [10]）三段分解与 duty（式 (1)-(3)，教学假设口径）：330 kernel、单时长 12 μs、CPU 提交间隔 18 μs。(a) $t_{\mathrm{busy}}$；(b) $t_{\mathrm{wall}}$（CPU-bound 口径）；(c) duty 与间隙占比；(d) graph 修复后墙钟（busy + 5 μs）与加速比。先预测 (c) 的间隙占比量级再算。校验：(a) 3960 μs；(b) 5934 μs；(c) 0.667 / 33.3%；(d) 3965 μs / 1.50，与 §2 实例逐数一致（容差 1%）；kernel 数口径 recap inference 3.4。
+1.（计算 · [10]）三段分解与 duty（式 (1)-(3)，教学假设口径）：330 kernel、单时长 12 μs、CPU 提交间隔 18 μs。(a) $t_{\mathrm{busy}}$；(b) $t_{\mathrm{wall}}$（CPU-bound 口径）；(c) duty 与间隙占比；(d) graph 修复后墙钟（busy + 5 μs）与加速比。先预测 (c) 的间隙占比量级再算。校验：(a) 3960 μs；(b) 5934 μs；(c) 0.667 / 33.3%；(d) 3965 μs / 1.50，与 §2 实例逐数一致（容差 1%）；kernel 数口径 recap inference 3.4 §3。
 2.（计算 · [20]）strideCopy 对账（命题 2，recap 4.1 §6）： $n_{\mathrm{vec}} = 16777216$ fp32、 $s = 16$。(a) $\eta$ 与 Sectors/Req；(b) DRAM 流量与 $t_{\mathrm{copy}}$；(c) 修复为 $s = 1$ 后的流量与时长；(d) 前后有用带宽与加速比，核对命题 2 上界；(e) 若修复后 $u_B = 0.9$，实际时长与加速比。先预测 (d) 的加速上界再算。校验：(a) 1/8 / 32（ideal 4）；(b) 1024 MiB / 320.33 μs；(c) 128 MiB / 40.04 μs（4.1 §6 表公开数值锚）；(d) 419 → 3352 GB/s、8×；(e) 44.49 μs、7.20×（低于上界，命题 2 边界反例方向）。
 3.（推导 · [30]）补全命题 1 的证明（端到端四因子分解）：(a) 由 $`\mathrm{BW}_{\mathrm{e2e}} = W/t_{\mathrm{wall}}`$ 出发，插入 $t_{\mathrm{busy}}$ 拆成两因子，推出式 (4)；(b) 代入 strideCopy 单 kernel（duty 1、 $u_B$ 1、 $\eta$ 1/8）与 §2 step（ $u_B$ 0.85、 $\eta$ 1、duty 0.667）数值验证；(c) 解释为什么 kernel 侧 $u_B$ 0.85 → 1 至多 1.18× 而修间隙有 1.50×，由此给出 drill-down 顺序规则；(d) 边界：compute-bound step 把 $\mathrm{BW}$ 换 $F_{\mathrm{peak}}$ 时四因子各换什么语义，非纯访存流（kernel 间有 L2 复用）时 $\eta$ 口径怎么变。校验：(b) 419 GB/s / 1901 GB/s 与 §4 逐数一致（容差 1%）；(c) $1/0.85 = 1.176$、 $5934/3965 = 1.497$；(d) 与 §4 边界反例及 2.4 §6 $I_{\mathrm{ach}}$ 分母口径注一致。
 4.（计算 · [30]）通信读数与 roofline 点综合账（式 (7)，recap 2.4 §5/§7）：(a) $n = 8$、 $M = 1$ GB、 $t = 4.75$ ms 的 algbw 与 busbw；(b) busbw 对 370.8 GB/s 模型的相对差，并说明差的来源；(c) $n = 64$ 的 AllReduce 因子；(d) $I = 2.5$ kernel、achieved occupancy 0.25、ILP 1：提供并发 $C$、 $F_{\mathrm{ach}}$（2.4 式 (7)）、loss；ILP 提到 4 后的 $F_{\mathrm{ach}}$ 与加速比；(e) 写出 (d) 前后两点的 roofline 坐标与各自 roof。先预测 (b) 的差是否算「配置问题」再算。校验：(a) 210.5 / 368.4 GB/s；(b) ≈0.6%，α 项 + 舍入、非配置问题（§8）；(c) 1.96875（10.2 §8 因子表）；(d) 64 sectors / 2.58 TFLOPS / loss 69.2% → 8.38 TFLOPS / 3.25×（2.4 §5 表公开数值锚，容差 1%）；(e) (2.5, 2.58) 与 (2.5, 8.38)，roof = 8.375 TFLOPS（3.35 TB/s 口径）。
