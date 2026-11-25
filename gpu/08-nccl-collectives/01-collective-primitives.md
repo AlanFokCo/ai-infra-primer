@@ -95,7 +95,7 @@ ring all-reduce（每 rank 只与 2 邻居通信）：     all-to-all（完全�
    2(n-1) 步转发，邻居链路持续均匀负载             单跳直达，每 peer M/n，全 bisection 需求
 ```
 
-ring all-reduce 每 rank 只与 prev/next 两个邻居通信，走 $2(n-1)$ 步转发，邻居链路承载持续均匀负载；all-to-all 是完全图，每 rank 同时向 $n-1$ 个 peer 各发 $M/n$，单跳直达、无多步转发。NVSwitch 非阻塞对任意排列线速（recap 7.2 §4）：均衡 a2a 是一个排列（每 rank 收发均 $(n-1)/n \cdot M$），域内总注入不变，switch 任意对可满带宽。a2a 的压力在**全 bisection 需求与突发性**，以及偏斜路由（热 expert）造成的 incast（多对一同时涌入）——拥塞账归 10.3。语义差一条：all-reduce 有归约语义（数据被求和改变），a2a 是纯数据搬运（无归约；EP combine 的加权求和在接收后本地做，training 5.4 recap）。
+ring all-reduce 每 rank 只与 prev/next 两个邻居通信，走 $2(n-1)$ 步转发，邻居链路承载持续均匀负载；all-to-all 是完全图，每 rank 同时向 $n-1$ 个 peer 各发 $M/n$，单跳直达、无多步转发。NVSwitch 非阻塞对任意排列线速（recap 7.2 §4）：均衡 a2a 是均匀流量（双随机矩阵、非排列；每 rank 收发均 $(n-1)/n \cdot M$），域内总注入不变，switch 任意对可满带宽。a2a 的压力在**全 bisection 需求与突发性**，以及偏斜路由（热 expert）造成的 incast（多对一同时涌入）——拥塞账归 10.3。语义差一条：all-reduce 有归约语义（数据被求和改变），a2a 是纯数据搬运（无归约；EP combine 的加权求和在接收后本地做，training 5.4 recap）。
 
 ## 5. α-β regime：延迟主导 vs 带宽主导
 

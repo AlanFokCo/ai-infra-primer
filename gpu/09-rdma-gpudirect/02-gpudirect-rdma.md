@@ -119,7 +119,7 @@ $$
 \mathrm{BW}_{\mathrm{serial,e2e}} = \left( \frac{1}{64} + \frac{1}{50} + \frac{1}{64} \right)^{-1} = 19.51\text{ GB/s} \qquad (4)
 $$
 
-GDR 端到端 ≈ 50 GB/s（两端 DMA cut-through），对 bounce 端到端串行快 50/19.51 = **2.56×**——这就是「省 D2H+D2H 两跳」的带宽侧定量（两跳 = 发送 D2H + 接收 H2D）。
+GDR 端到端 ≈ 50 GB/s（两端 DMA cut-through），对 bounce 端到端串行快 50/19.51 = **2.56×**——这就是「省 D2H+H2D 两跳」的带宽侧定量（两跳 = 发送 D2H + 接收 H2D）。
 
 **host 流量账**（recap 7.3 式 (2) 结构，扩到两端）：
 

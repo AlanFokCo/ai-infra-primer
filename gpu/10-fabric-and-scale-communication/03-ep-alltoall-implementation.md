@@ -46,7 +46,7 @@ $$
 
 **符号**： $B_{\mathrm{local}}$ = 每 rank token 数（normal 测试 4096）； $k$ = top-8； $d_{\mathrm{model}} = 7168$； $`\mathrm{bytes}_{\mathrm{act}} = 1.03125`$（FP8 + scale）。代入： $4096 \times 8 \times 7168 \times 1.03125 = 242.2$ MB/rank（逐副本口径）。**但 normal 两阶段按节点去重**（§4 命题 1）：RDMA 上每 token 只发「命中的不同节点数」份，组限定路由期望 3.6 节点（training 5.4 §2 recap），故 RDMA 字节 ≈ $4096 \times 3.6 \times 7168 \times 1.03125 = 109.0$ MB/rank——逐副本 242.2 MB 对节点去重 109.0 MB，比值 **2.22×**（= $8/3.6$）。口径注：逐副本口径是 NVLink 域内转发量（每 expert 一份），节点去重口径是 RDMA 跨机量（每节点一份），两笔账落在不同链路（§4）。
 
-**a2a vs all-reduce 流量模式**（recap 8.1 §4，不重推）：ring all-reduce 每 rank 只与 prev/next 两邻居通信、 $2(n-1)$ 步转发、邻居链路持续均匀负载；a2a 是完全图，每 rank 同时向 $n-1$ 个 peer 各发 $M/n$、单跳直达、无多步转发。压力差两条：其一，a2a 要**全 bisection 带宽**（任意对同时满带宽，10.1 fat-tree 1:1 无阻塞 recap），ring 只要邻居链路；其二，a2a 有**突发性与偏斜 incast**（热 expert 多对一同时涌入，§7）。NVSwitch 非阻塞对均衡排列线速（7.2 §4 recap），但偏斜路由打破排列均衡——这是 EP 拥塞的根源。
+**a2a vs all-reduce 流量模式**（recap 8.1 §4，不重推）：ring all-reduce 每 rank 只与 prev/next 两邻居通信、 $2(n-1)$ 步转发、邻居链路持续均匀负载；a2a 是完全图，每 rank 同时向 $n-1$ 个 peer 各发 $M/n$、单跳直达、无多步转发。压力差两条：其一，a2a 要**全 bisection 带宽**（任意对同时满带宽，10.1 fat-tree 1:1 无阻塞 recap），ring 只要邻居链路；其二，a2a 有**突发性与偏斜 incast**（热 expert 多对一同时涌入，§7）。NVSwitch 非阻塞对均衡（均匀）流量线速（7.2 §4 recap），但偏斜路由打破流量均衡——这是 EP 拥塞的根源。
 
 ## 4. DeepEP normal 模式走读（v1.2.1 锚）：两阶段 WarpRole
 

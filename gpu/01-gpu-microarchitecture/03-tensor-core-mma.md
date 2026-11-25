@@ -173,7 +173,7 @@ tcgen05（Blackwell，sm_100a）操作数路径
   对比 wgmma：累加器从 register 搬到 TMEM，寄存器腾出给 occupancy/ILP
 ```
 
-**2-SM 协作**（PTX `.cta_group::1` / `::2`，[C]）：`cta_group::2` 让两个相邻 SM 上的 CTA 协同执行一条 MMA——两个 SM 的 Tensor Core 一起算、各持一半累加器在自己的 TMEM，有效 M 维翻倍。这建立在 Hopper thread block cluster / DSMEM 的物理相邻 SM 分组之上（1.1 §2 提点、3.1 cluster 语义）。精确形状清单与单线程发射语义等细节 ⟨verify W3 PTX/CUTLASS sm100 atom⟩（cta_group::1/::2 存在与 TMEM 几何已经 PTX 逐字核实，更细的 operand 选项与形状表留 W3 走读销项）。
+**2-SM 协作**（PTX `.cta_group::1` / `::2`，[C]）：`cta_group::2` 让两个相邻 SM 上的 CTA 协同执行一条 MMA——两个 SM 的 Tensor Core 一起算、各持一半累加器在自己的 TMEM，有效 M 维翻倍。这建立在 Hopper thread block cluster / DSMEM 的物理相邻 SM 分组之上（1.1 §2 提点、3.1 cluster 语义）。精确形状清单与单线程发射语义等细节非本书交付（scope 注：cta_group::1/::2 存在与 TMEM 几何已经 PTX 逐字核实；更细的 operand 选项与形状表沿 PTX ISA tcgen05 节，本书不展开）。
 
 block scaling 一笔：`tcgen05.mma ... kind::mxf4nvf4` 支持 NVFP4 的块缩放（per-16 UE4M3 scale + global FP32），这是 Blackwell FP4 吞吐翻倍的指令基础。**NVFP4 非 OCP MX v1.0 格式**（MX 族 per-32 E8M0 scale）——位布局与 scale 粒度账归 6.1（recap inference 3.2），本章只标指令族支持。FP4/FP6 的代际吞吐倍数（FP8 2×、FP4 4× vs BF16）同样归 6.1 逐格式账。
 
@@ -227,4 +227,4 @@ block scaling 一笔：`tcgen05.mma ... kind::mxf4nvf4` 支持 NVFP4 的块缩�
 - [NVIDIA, Blackwell brief](../references.md)：NVIDIA Blackwell Architecture Technical Brief（key: blackwell-whitepaper），[C] 官方规格披露·一手权威，2026-11-25——第 5 代 Tensor Core FP4/FP6 + OCP MX、Table 1 数据类型（FP64/FP32/TF32/FP16/BF16/FP8/INT8/FP6/FP4）
 - [NVIDIA, datasheet](../references.md)：NVIDIA H100/Blackwell 官方 datasheet（key: nvidia-datasheet），[C] 官方规格披露·一手权威，2026-11-25——dense = sparse 表值之半（逐字折半脚注仅 Blackwell datasheet；H100 脚注为「*With sparsity」，1.1 §6）、HGX B200 BF16 2250 / FP8 4500 / FP4 9000 dense（SKU 口径沿 1.1 §4）
 - [Luo et al., 2024](../references.md)：Benchmarking and Dissecting the Nvidia Hopper GPU Architecture（key: hopper-microbench），arXiv:2402.13499，[B] 有 paper 无官方代码，2026-11-25——H800 微基准 Table IV：wgmma m64n128k16 dense 128 cycles / sparse SS 144 cycles（实测口径，§3 延迟核对）
-- [NVIDIA, CUTLASS](../references.md)：NVIDIA/cutlass repo（key: cutlass），教学参照 + 官方实现，2026-11-24——MMA atom include/cute/arch/mma*.hpp（CuTe MMA_Atom 封装 PTX 指令；当前版本架构 ⟨verify W3⟩，模块全量走读归 5.2，本章只作机制片段级指针）
+- [NVIDIA, CUTLASS](../references.md)：NVIDIA/cutlass repo（key: cutlass），教学参照 + 官方实现，2026-11-24——MMA atom include/cute/arch/mma*.hpp（CuTe MMA_Atom 封装 PTX 指令；版本锚 4.9.0 / commit 5c179edeb3e2 经 5.2 fresh tarball 核实，模块全量走读归 5.2，本章只作机制片段级指针）

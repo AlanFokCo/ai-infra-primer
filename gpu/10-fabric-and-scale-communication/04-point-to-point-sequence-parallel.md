@@ -196,7 +196,7 @@ rail 对齐环把节点 1 的遍历顺序反转，让两条机间边都落在同
 
 **transport 选择账**（域内 P2P vs 跨机 RDMA）。把两种带宽代入式 (4) 阈值：
 
-| 环放置 | 最慢边 BW | 阈值（bf16 MHA， $F_{\mathrm{eff}} = 400$ TFLOPS） | 章脊 $T_{\mathrm{blk}} = 8192$ 读法 |
+| 环放置 | 最慢边 BW | 阈值（bf16 MHA， $F_{\mathrm{eff}} = 400$ TFLOPS） | 章脊读法（ $n = 16$ 行 $T_{\mathrm{blk}} = 8192$； $n = 8$ 对比行 $T_{\mathrm{blk}} = 16384$） |
 | --- | --- | --- | --- |
 | 单节点 NVLink 域（ $n = 8$ ） | 370.8 GB/s | 1079 token | 比值 0.066，轻松藏住 |
 | 跨机 CX7 NDR400（ $n = 16$ ） | 50 GB/s | 8000 token | 比值 0.977，勉强藏住 |
